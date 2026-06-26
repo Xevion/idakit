@@ -22,6 +22,12 @@ int64_t idakit_seg_name(int n, char *buf, size_t cap);
 idakit_ea_t idakit_seg_start(int n);
 idakit_ea_t idakit_seg_end(int n);
 
+int   idakit_hexrays_init(void);                       /* 1 = decompiler ready, 0 = unavailable */
+void *idakit_decompile(idakit_ea_t ea);                /* opaque cfunc handle (owns a ref), NULL on fail */
+void  idakit_cfunc_dispose(void *cfunc);
+int64_t idakit_cfunc_pseudocode(void *cfunc, char *buf, size_t cap); /* tag-stripped text length */
+void  idakit_cfunc_ctree_counts(void *cfunc, int *n_insn, int *n_expr, int *n_calls);
+
 #ifdef __cplusplus
 }
 #endif

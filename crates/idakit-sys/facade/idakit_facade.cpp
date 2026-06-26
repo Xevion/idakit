@@ -16,6 +16,7 @@
 #include <loader.hpp>  // load_plugin
 #include <idp.hpp>     // HEXDSP / get_hexdsp
 #include <hexrays.hpp>
+#include <cstring>
 
 #include "idakit_facade.h"
 
@@ -74,4 +75,83 @@ extern "C" idakit_ea_t idakit_seg_end(int n)
 {
   segment_t *s = getnseg(n);
   return s != nullptr ? (idakit_ea_t)s->end_ea : (idakit_ea_t)BADADDR;
+}
+
+// The decompiler is a plugin; init_hexrays_plugin() wires HEXDSP via callui
+// broadcast once the plugin is loaded. Headless, load hexx64 explicitly if needed.
+extern "C" int idakit_hexrays_init(void)
+{
+  if ( init_hexrays_plugin() )
+    return 1;
+  load_plugin("hexx64");
+  return init_hexrays_plugin() ? 1 : 0;
+}
+
+extern "C" void *idakit_decompile(idakit_ea_t ea)
+{
+  func_t *pfn = get_func((ea_t)ea);
+  if ( pfn == nullptr )
+    return nullptr;
+  hexrays_failure_t hf;
+  cfuncptr_t cf = decompile_func(pfn, &hf, 0);
+  if ( cf == nullptr )
+    return nullptr;
+  // Own a ref on the heap so the result survives past this call.
+  return new cfuncptr_t(cf);
+}
+
+extern "C" void idakit_cfunc_dispose(void *h)
+{
+  delete reinterpret_cast<cfuncptr_t *>(h);
+}
+
+extern "C" int64_t idakit_cfunc_pseudocode(void *h, char *buf, size_t cap)
+{
+  if ( h == nullptr )
+    return -1;
+  cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
+  const strvec_t &sv = cf->get_pseudocode();
+  qstring out;
+  for ( size_t i = 0; i < sv.size(); ++i )
+  {
+    qstring line;
+    tag_remove(&line, sv[i].line);
+    out.append(line);
+    out.append('\n');
+  }
+  size_t n = out.length() < cap ? out.length() : cap;
+  memcpy(buf, out.c_str(), n);
+  return (int64_t)out.length();
+}
+
+// Read-only ctree traversal: count statements, expressions, and call sites.
+// CV_FAST = don't maintain a parent stack (we don't need it here).
+struct ctree_counter_t : public ctree_visitor_t
+{
+  int n_insn = 0;
+  int n_expr = 0;
+  int n_calls = 0;
+  ctree_counter_t() : ctree_visitor_t(CV_FAST) {}
+  int idaapi visit_insn(cinsn_t *) override
+  {
+    ++n_insn;
+    return 0;
+  }
+  int idaapi visit_expr(cexpr_t *e) override
+  {
+    ++n_expr;
+    if ( e->op == cot_call )
+      ++n_calls;
+    return 0;
+  }
+};
+
+extern "C" void idakit_cfunc_ctree_counts(void *h, int *n_insn, int *n_expr, int *n_calls)
+{
+  cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
+  ctree_counter_t v;
+  v.apply_to(&cf->body, nullptr);
+  *n_insn = v.n_insn;
+  *n_expr = v.n_expr;
+  *n_calls = v.n_calls;
 }

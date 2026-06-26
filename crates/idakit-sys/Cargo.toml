@@ -10,3 +10,7 @@ cc = "1"
 [[example]]
 name = "read"
 path = "examples/read.rs"
+
+[[example]]
+name = "decompile"
+path = "examples/decompile.rs"

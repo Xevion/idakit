@@ -3,7 +3,7 @@
 pub type Ea = u64;
 pub const BADADDR: Ea = u64::MAX;
 
-use std::ffi::{c_char, c_int};
+use std::ffi::{c_char, c_int, c_void};
 
 // idalib lifecycle entry points (plain C ABI from libidalib.so)
 unsafe extern "C" {
@@ -23,4 +23,13 @@ unsafe extern "C" {
     pub fn idakit_seg_name(n: c_int, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_seg_start(n: c_int) -> Ea;
     pub fn idakit_seg_end(n: c_int) -> Ea;
+}
+
+// hex-rays decompiler
+unsafe extern "C" {
+    pub fn idakit_hexrays_init() -> c_int;
+    pub fn idakit_decompile(ea: Ea) -> *mut c_void;
+    pub fn idakit_cfunc_dispose(cfunc: *mut c_void);
+    pub fn idakit_cfunc_pseudocode(cfunc: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_cfunc_ctree_counts(cfunc: *mut c_void, n_insn: *mut c_int, n_expr: *mut c_int, n_calls: *mut c_int);
 }
