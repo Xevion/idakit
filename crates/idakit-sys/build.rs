@@ -11,6 +11,13 @@ fn main() {
         format!("{home}/ida-pro-9.3")
     });
 
+    let runtime = PathBuf::from(&idadir).join("libida.so");
+    assert!(
+        runtime.exists(),
+        "libida.so not found at {} - set IDADIR to your IDA install directory",
+        runtime.display()
+    );
+
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let sdk_include = manifest.join("../../ida-sdk-tmp/src/include");
     assert!(
