@@ -6,3 +6,7 @@ publish = false
 
 [build-dependencies]
 cc = "1"
+
+[[example]]
+name = "read"
+path = "examples/read.rs"

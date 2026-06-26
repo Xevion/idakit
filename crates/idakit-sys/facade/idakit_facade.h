@@ -13,6 +13,15 @@ extern "C" {
 
 typedef uint64_t idakit_ea_t; /* ea_t under __EA64__ */
 
+size_t      idakit_func_qty(void);
+idakit_ea_t idakit_func_ea(size_t n);                              /* start_ea of nth func, or BADADDR */
+int64_t     idakit_func_name(idakit_ea_t ea, char *buf, size_t cap); /* name length, <0 on miss */
+
+int     idakit_seg_qty(void);
+int64_t idakit_seg_name(int n, char *buf, size_t cap);
+idakit_ea_t idakit_seg_start(int n);
+idakit_ea_t idakit_seg_end(int n);
+
 #ifdef __cplusplus
 }
 #endif
