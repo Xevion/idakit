@@ -67,3 +67,9 @@ unsafe extern "C" {
     pub fn idakit_cfunc_pseudocode(cfunc: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_cfunc_ctree_counts(cfunc: *mut c_void, n_insn: *mut c_int, n_expr: *mut c_int, n_calls: *mut c_int);
 }
+
+// libida kernel writes
+unsafe extern "C" {
+    pub fn set_name(ea: Ea, name: *const c_char, flags: c_int) -> bool;
+    pub fn set_cmt(ea: Ea, comm: *const c_char, rptble: bool) -> bool;
+}
