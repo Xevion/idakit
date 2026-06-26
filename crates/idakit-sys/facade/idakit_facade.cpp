@@ -76,6 +76,29 @@ extern "C" idakit_ea_t idakit_seg_end(int n)
   return s != nullptr ? (idakit_ea_t)s->end_ea : (idakit_ea_t)BADADDR;
 }
 
+extern "C" int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size)
+{
+  return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);
+}
+
+extern "C" size_t idakit_xrefs_to(idakit_ea_t ea, idakit_ea_t *from, uint8_t *type,
+                                  uint8_t *iscode, size_t cap)
+{
+  xrefblk_t xb;
+  size_t n = 0;
+  for ( bool ok = xb.first_to((ea_t)ea, XREF_NOFLOW); ok; ok = xb.next_to() )
+  {
+    if ( n < cap )
+    {
+      from[n] = (idakit_ea_t)xb.from;
+      type[n] = xb.type;
+      iscode[n] = xb.iscode;
+    }
+    ++n;
+  }
+  return n;
+}
+
 // The decompiler is a plugin; init_hexrays_plugin() wires HEXDSP via callui
 // broadcast once the plugin is loaded. Headless, load hexx64 explicitly if needed.
 extern "C" int idakit_hexrays_init(void)

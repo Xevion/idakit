@@ -25,6 +25,12 @@ unsafe extern "C" {
     pub fn idakit_seg_end(n: c_int) -> Ea;
 }
 
+// raw bytes + cross-references
+unsafe extern "C" {
+    pub fn idakit_get_bytes(ea: Ea, buf: *mut c_void, size: usize) -> i64;
+    pub fn idakit_xrefs_to(ea: Ea, from: *mut Ea, type_: *mut u8, iscode: *mut u8, cap: usize) -> usize;
+}
+
 // hex-rays decompiler
 unsafe extern "C" {
     pub fn idakit_hexrays_init() -> c_int;
