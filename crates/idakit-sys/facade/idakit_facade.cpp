@@ -16,7 +16,6 @@
 #include <loader.hpp>  // load_plugin
 #include <idp.hpp>     // HEXDSP / get_hexdsp
 #include <hexrays.hpp>
-#include <cstring>
 
 #include "idakit_facade.h"
 
@@ -119,8 +118,7 @@ extern "C" int64_t idakit_cfunc_pseudocode(void *h, char *buf, size_t cap)
     out.append(line);
     out.append('\n');
   }
-  size_t n = out.length() < cap ? out.length() : cap;
-  memcpy(buf, out.c_str(), n);
+  qstrncpy(buf, out.c_str(), cap);
   return (int64_t)out.length();
 }
 
