@@ -10,14 +10,18 @@
 //! `&mut Idb` gives borrow-checked read/write separation.
 
 use std::ffi::{c_char, CStr, CString};
+use std::marker::PhantomData;
 use std::ptr;
 use std::sync::mpsc::{channel, Sender};
 use std::thread;
 
 use idakit_sys as sys;
 
-/// The open database. It only exists inside a job running on the kernel (main) thread.
-pub struct Idb {}
+/// The open database. `!Send + !Sync`: it only ever exists inside a job running on
+/// the kernel (main) thread, so the "main thread only" rule is enforced at compile time.
+pub struct Idb {
+    _not_send: PhantomData<*const ()>,
+}
 
 impl Idb {
     pub fn open(&mut self, path: &str) -> Result<(), i32> {
@@ -109,7 +113,7 @@ where
         })
         .expect("spawn app thread");
 
-    let mut idb = Idb {};
+    let mut idb = Idb { _not_send: PhantomData };
     while let Ok(job) = rx.recv() {
         job(&mut idb);
     }
