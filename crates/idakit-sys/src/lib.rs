@@ -1,4 +1,19 @@
 //! Raw FFI bindings to IDA's idalib runtime and the idakit C++ facade.
+//!
+//! # Buffer conventions
+//!
+//! Functions that accept `(*mut c_char, cap: usize)` copy the value into the
+//! caller-supplied buffer and NUL-terminate within `cap` bytes. The return value
+//! is the full source length, which may exceed `cap` when the output was
+//! truncated. A negative return value means the query failed (missing symbol,
+//! null handle, etc.).
+//!
+//! # Owned handles
+//!
+//! `idakit_decompile` and `idakit_type_open` return opaque `*mut c_void` handles
+//! that are owned by the caller. Each must be released with its matching
+//! `*_dispose` function (`idakit_cfunc_dispose` / `idakit_type_dispose`).
+//! Passing a handle to any other function after disposal is undefined behaviour.
 
 pub type Ea = u64;
 pub const BADADDR: Ea = u64::MAX;
@@ -29,6 +44,19 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn idakit_get_bytes(ea: Ea, buf: *mut c_void, size: usize) -> i64;
     pub fn idakit_xrefs_to(ea: Ea, from: *mut Ea, type_: *mut u8, iscode: *mut u8, cap: usize) -> usize;
+}
+
+// type information
+unsafe extern "C" {
+    pub fn idakit_func_type(ea: Ea, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_type_ordinal_count() -> usize;
+    pub fn idakit_type_ordinal_name(ordinal: u32, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_type_open(name: *const c_char) -> *mut c_void;
+    pub fn idakit_type_dispose(h: *mut c_void);
+    pub fn idakit_type_size(h: *mut c_void) -> i64;
+    pub fn idakit_type_print(h: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_type_nmembers(h: *mut c_void) -> usize;
+    pub fn idakit_type_member(h: *mut c_void, i: usize, namebuf: *mut c_char, namecap: usize, offset: *mut u64, size: *mut u64, typebuf: *mut c_char, typecap: usize) -> c_int;
 }
 
 // hex-rays decompiler

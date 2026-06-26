@@ -99,6 +99,104 @@ extern "C" size_t idakit_xrefs_to(idakit_ea_t ea, idakit_ea_t *from, uint8_t *ty
   return n;
 }
 
+extern "C" int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap)
+{
+  qstring out;
+  if ( !print_type(&out, (ea_t)ea, PRTYPE_1LINE | PRTYPE_SEMI) )
+  {
+    if ( cap > 0 )
+      buf[0] = 0;
+    return -1;
+  }
+  qstrncpy(buf, out.c_str(), cap);
+  return (int64_t)out.length();
+}
+
+// A resolved named type plus its expanded member layout (if it is a struct/union).
+struct idakit_type_t
+{
+  tinfo_t tif;
+  udt_type_data_t udt;
+  bool is_udt = false;
+};
+
+extern "C" void *idakit_type_open(const char *name)
+{
+  idakit_type_t *t = new idakit_type_t;
+  if ( !t->tif.get_named_type(get_idati(), name) )
+  {
+    delete t;
+    return nullptr;
+  }
+  t->is_udt = t->tif.get_udt_details(&t->udt);
+  return t;
+}
+
+extern "C" void idakit_type_dispose(void *h)
+{
+  delete reinterpret_cast<idakit_type_t *>(h);
+}
+
+extern "C" int64_t idakit_type_size(void *h)
+{
+  size_t s = reinterpret_cast<idakit_type_t *>(h)->tif.get_size();
+  return s == BADSIZE ? -1 : (int64_t)s;
+}
+
+extern "C" int64_t idakit_type_print(void *h, char *buf, size_t cap)
+{
+  qstring out;
+  if ( !reinterpret_cast<idakit_type_t *>(h)->tif.print(&out) )
+  {
+    if ( cap > 0 )
+      buf[0] = 0;
+    return -1;
+  }
+  qstrncpy(buf, out.c_str(), cap);
+  return (int64_t)out.length();
+}
+
+extern "C" size_t idakit_type_nmembers(void *h)
+{
+  idakit_type_t *t = reinterpret_cast<idakit_type_t *>(h);
+  return t->is_udt ? t->udt.size() : 0;
+}
+
+extern "C" int idakit_type_member(void *h, size_t i, char *namebuf, size_t namecap,
+                                  uint64_t *offset, uint64_t *size,
+                                  char *typebuf, size_t typecap)
+{
+  idakit_type_t *t = reinterpret_cast<idakit_type_t *>(h);
+  if ( !t->is_udt || i >= t->udt.size() )
+    return 0;
+  const udm_t &m = t->udt[i];
+  qstrncpy(namebuf, m.name.c_str(), namecap);
+  *offset = m.offset / 8;  // SDK reports member offset/size in bits
+  *size = m.size / 8;
+  qstring ts;
+  m.type.print(&ts);
+  qstrncpy(typebuf, ts.c_str(), typecap);
+  return 1;
+}
+
+extern "C" size_t idakit_type_ordinal_count(void)
+{
+  return get_ordinal_count(get_idati());
+}
+
+extern "C" int64_t idakit_type_ordinal_name(uint32_t ordinal, char *buf, size_t cap)
+{
+  const char *nm = get_numbered_type_name(get_idati(), ordinal);
+  if ( nm == nullptr )
+  {
+    if ( cap > 0 )
+      buf[0] = 0;
+    return -1;
+  }
+  qstrncpy(buf, nm, cap);
+  return (int64_t)qstrlen(nm);
+}
+
 // The decompiler is a plugin; init_hexrays_plugin() wires HEXDSP via callui
 // broadcast once the plugin is loaded. Headless, load hexx64 explicitly if needed.
 extern "C" int idakit_hexrays_init(void)

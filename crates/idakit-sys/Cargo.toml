@@ -18,3 +18,7 @@ path = "examples/decompile.rs"
 [[example]]
 name = "bytesxref"
 path = "examples/bytesxref.rs"
+
+[[example]]
+name = "typeinfo"
+path = "examples/typeinfo.rs"
