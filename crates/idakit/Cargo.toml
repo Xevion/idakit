@@ -7,3 +7,7 @@ publish = false
 [dependencies]
 idakit-sys = { path = "../idakit-sys" }
 libc = "0.2"
+
+[[example]]
+name = "actor"
+path = "examples/actor.rs"
