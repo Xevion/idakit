@@ -3,7 +3,7 @@
 //! Run: cargo run -p idakit-sys --example writeop -- scratch/bf4-write.i64
 
 use std::env;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
 use idakit_sys::*;
@@ -17,18 +17,26 @@ fn func_name(ea: Ea) -> String {
     if n <= 0 {
         return String::new();
     }
-    unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(buf.as_ptr()) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn main() {
-    let db = env::args().nth(1).expect("usage: writeop <db.i64>  (a writable COPY)");
+    let db = env::args()
+        .nth(1)
+        .expect("usage: writeop <db.i64>  (a writable COPY)");
     let new_name = "idakit_renamed_fn";
 
     unsafe {
         // Pass 1: rename + comment, then SAVE.
         assert_eq!(init_library(0, ptr::null_mut()), 0, "init failed");
         let cpath = CString::new(db.clone()).unwrap();
-        assert_eq!(open_database(cpath.as_ptr(), false, ptr::null()), 0, "open failed");
+        assert_eq!(
+            open_database(cpath.as_ptr(), false, ptr::null()),
+            0,
+            "open failed"
+        );
 
         let ea = idakit_func_ea(7);
         let old = func_name(ea);
@@ -47,7 +55,11 @@ fn main() {
     unsafe {
         // Pass 2: reopen and confirm persistence.
         let cpath = CString::new(db).unwrap();
-        assert_eq!(open_database(cpath.as_ptr(), false, ptr::null()), 0, "reopen failed");
+        assert_eq!(
+            open_database(cpath.as_ptr(), false, ptr::null()),
+            0,
+            "reopen failed"
+        );
         let ea = idakit_func_ea(7);
         let now = func_name(ea);
         println!("after reopen, func[7] name = {now}");

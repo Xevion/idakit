@@ -2,7 +2,7 @@
 //! Run: cargo run -p idakit-sys --example bytesxref -- scratch/bf4-smoke.i64
 
 use std::env;
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr;
 
 use idakit_sys::*;

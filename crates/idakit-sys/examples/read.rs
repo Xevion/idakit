@@ -2,7 +2,7 @@
 //! Run: cargo run -p idakit-sys --example read -- scratch/bf4-smoke.i64
 
 use std::env;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
 use idakit_sys::*;

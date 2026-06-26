@@ -9,10 +9,10 @@
 //! `Ida` handle. `Idb` only exists inside a job on the main thread; `&Idb` vs
 //! `&mut Idb` gives borrow-checked read/write separation.
 
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::marker::PhantomData;
 use std::ptr;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
 
 use idakit_sys as sys;
@@ -48,7 +48,9 @@ impl Idb {
         if n <= 0 {
             return String::new();
         }
-        unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned()
+        unsafe { CStr::from_ptr(buf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
     }
 
     pub fn segment_count(&self) -> i32 {
@@ -113,7 +115,9 @@ where
         })
         .expect("spawn app thread");
 
-    let mut idb = Idb { _not_send: PhantomData };
+    let mut idb = Idb {
+        _not_send: PhantomData,
+    };
     while let Ok(job) = rx.recv() {
         job(&mut idb);
     }

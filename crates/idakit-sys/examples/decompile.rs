@@ -2,7 +2,7 @@
 //! Run: cargo run -p idakit-sys --example decompile -- scratch/bf4-smoke.i64 [func_index]
 
 use std::env;
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::ptr;
 
 use idakit_sys::*;
@@ -25,7 +25,11 @@ fn main() {
     unsafe {
         assert_eq!(init_library(0, ptr::null_mut()), 0, "init_library failed");
         let cpath = CString::new(db).unwrap();
-        assert_eq!(open_database(cpath.as_ptr(), false, ptr::null()), 0, "open failed");
+        assert_eq!(
+            open_database(cpath.as_ptr(), false, ptr::null()),
+            0,
+            "open failed"
+        );
 
         let hr = idakit_hexrays_init();
         println!("hexrays_init -> {hr}");

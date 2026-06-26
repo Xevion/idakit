@@ -43,7 +43,13 @@ unsafe extern "C" {
 // raw bytes + cross-references
 unsafe extern "C" {
     pub fn idakit_get_bytes(ea: Ea, buf: *mut c_void, size: usize) -> i64;
-    pub fn idakit_xrefs_to(ea: Ea, from: *mut Ea, type_: *mut u8, iscode: *mut u8, cap: usize) -> usize;
+    pub fn idakit_xrefs_to(
+        ea: Ea,
+        from: *mut Ea,
+        type_: *mut u8,
+        iscode: *mut u8,
+        cap: usize,
+    ) -> usize;
 }
 
 // type information
@@ -56,7 +62,16 @@ unsafe extern "C" {
     pub fn idakit_type_size(h: *mut c_void) -> i64;
     pub fn idakit_type_print(h: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_type_nmembers(h: *mut c_void) -> usize;
-    pub fn idakit_type_member(h: *mut c_void, i: usize, namebuf: *mut c_char, namecap: usize, offset: *mut u64, size: *mut u64, typebuf: *mut c_char, typecap: usize) -> c_int;
+    pub fn idakit_type_member(
+        h: *mut c_void,
+        i: usize,
+        namebuf: *mut c_char,
+        namecap: usize,
+        offset: *mut u64,
+        size: *mut u64,
+        typebuf: *mut c_char,
+        typecap: usize,
+    ) -> c_int;
 }
 
 // hex-rays decompiler
@@ -65,7 +80,12 @@ unsafe extern "C" {
     pub fn idakit_decompile(ea: Ea) -> *mut c_void;
     pub fn idakit_cfunc_dispose(cfunc: *mut c_void);
     pub fn idakit_cfunc_pseudocode(cfunc: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
-    pub fn idakit_cfunc_ctree_counts(cfunc: *mut c_void, n_insn: *mut c_int, n_expr: *mut c_int, n_calls: *mut c_int);
+    pub fn idakit_cfunc_ctree_counts(
+        cfunc: *mut c_void,
+        n_insn: *mut c_int,
+        n_expr: *mut c_int,
+        n_calls: *mut c_int,
+    );
 }
 
 // libida kernel writes
