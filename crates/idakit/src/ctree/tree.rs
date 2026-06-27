@@ -112,6 +112,12 @@ impl Ctree {
         v
     }
 
+    /// Visit each direct child without allocating — the push-based form that
+    /// [`children`](Self::children) buffers into a `Vec`.
+    pub fn children_for_each(&self, node: NodeRef, f: impl FnMut(NodeRef)) {
+        for_each_child(&self.exprs, &self.stmts, node, f);
+    }
+
     /// A pre-order walk of `node` and all its descendants (the node itself first).
     #[must_use]
     pub fn descendants(&self, node: NodeRef) -> Descendants<'_> {

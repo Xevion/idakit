@@ -54,6 +54,13 @@ impl std::fmt::Debug for Ea {
     }
 }
 
+impl std::fmt::Display for Ea {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#x}", self.get())
+    }
+}
+
 impl std::fmt::LowerHex for Ea {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -108,6 +115,18 @@ impl Add<Offset> for Ea {
     fn add(self, rhs: Offset) -> Ea {
         let clamped = self.get().saturating_add_signed(rhs.get()).min(MAX_EA);
         Ea::try_new(clamped).expect("clamped below BADADDR")
+    }
+}
+
+impl std::ops::Sub<Offset> for Ea {
+    type Output = Ea;
+
+    /// Saturating signed displacement, sharing [`Add<Offset>`]'s clamp. Negating
+    /// saturates because `i64::MIN.checked_neg()` is `None`; without it, subtracting
+    /// the minimum offset would overflow.
+    #[inline]
+    fn sub(self, rhs: Offset) -> Ea {
+        self + Offset::new(rhs.get().saturating_neg())
     }
 }
 

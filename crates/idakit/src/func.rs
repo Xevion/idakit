@@ -60,6 +60,30 @@ impl std::fmt::Debug for Func<'_> {
     }
 }
 
+// Identity is the entry address alone; the `db` borrow is incidental and must not
+// participate, so these are hand-written rather than derived.
+impl PartialEq for Func<'_> {
+    fn eq(&self, o: &Self) -> bool {
+        self.ea == o.ea
+    }
+}
+impl Eq for Func<'_> {}
+impl std::hash::Hash for Func<'_> {
+    fn hash<H: std::hash::Hasher>(&self, s: &mut H) {
+        self.ea.hash(s);
+    }
+}
+impl Ord for Func<'_> {
+    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+        self.ea.cmp(&o.ea)
+    }
+}
+impl PartialOrd for Func<'_> {
+    fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(o))
+    }
+}
+
 /// Lazy iterator over every function in the database, in kernel order.
 pub struct Functions<'db> {
     db: &'db Idb,

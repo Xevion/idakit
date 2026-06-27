@@ -26,15 +26,20 @@ fn main() {
         sdk_include.display()
     );
 
+    let sdk_include_str = sdk_include.to_str().expect("SDK include path is not UTF-8");
+
     cc::Build::new()
         .cpp(true)
         .std("c++17")
         .file("facade/idakit_facade.cpp")
         .include("facade")
-        .include(&sdk_include)
+        // Treat the SDK headers as system includes so their warning noise is
+        // suppressed while the facade's own warnings still surface. Emitted as an
+        // adjacent pair so the compiler reads the path as `-isystem`'s argument.
+        .flag("-isystem")
+        .flag(sdk_include_str)
         .define("__EA64__", None)
         .define("__LINUX__", None)
-        .flag_if_supported("-w") // SDK headers are warning-noisy; silence for the spike
         .compile("idakit_facade");
 
     println!("cargo:rustc-link-search=native={idadir}");

@@ -7,7 +7,7 @@ use num_enum::FromPrimitive;
 use crate::ea::Ea;
 
 /// A cross-reference pointing *to* a queried address.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Xref {
     /// Where the reference originates.
     pub from: Ea,
@@ -37,14 +37,14 @@ impl Xref {
 }
 
 /// A reference classified into the code or data type space.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum XrefKind {
     Code(CodeRef),
     Data(DataRef),
 }
 
 /// Code cross-reference type, mirroring IDA's `cref_t`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, FromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, FromPrimitive)]
 #[repr(u8)]
 pub enum CodeRef {
     CallFar = 16,
@@ -57,7 +57,7 @@ pub enum CodeRef {
 }
 
 /// Data cross-reference type, mirroring IDA's `dref_t`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, FromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, FromPrimitive)]
 #[repr(u8)]
 pub enum DataRef {
     Offset = 1,

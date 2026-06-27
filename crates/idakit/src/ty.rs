@@ -12,7 +12,7 @@ use crate::Idb;
 use crate::ffi::read_string;
 
 /// One field of a struct/union type. Offset and size are in bytes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Member {
     pub name: String,
     pub offset: u64,

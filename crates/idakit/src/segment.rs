@@ -64,6 +64,30 @@ impl std::fmt::Debug for Segment<'_> {
     }
 }
 
+// Identity is the kernel index alone; the `db` borrow is incidental and must not
+// participate, so these are hand-written rather than derived.
+impl PartialEq for Segment<'_> {
+    fn eq(&self, o: &Self) -> bool {
+        self.index == o.index
+    }
+}
+impl Eq for Segment<'_> {}
+impl std::hash::Hash for Segment<'_> {
+    fn hash<H: std::hash::Hasher>(&self, s: &mut H) {
+        self.index.hash(s);
+    }
+}
+impl Ord for Segment<'_> {
+    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+        self.index.cmp(&o.index)
+    }
+}
+impl PartialOrd for Segment<'_> {
+    fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(o))
+    }
+}
+
 /// Lazy iterator over every segment in the database, in kernel order.
 pub struct Segments<'db> {
     db: &'db Idb,
