@@ -3,6 +3,8 @@
 //! A decompiled function is materialized on the kernel thread into owned arenas of
 //! nodes and types, then handed back as a `Send` value any worker thread can analyze.
 
+mod arena;
 mod ops;
 
+pub use arena::{Arena, Idx};
 pub use ops::{AssignOp, BinOp, UnOp};

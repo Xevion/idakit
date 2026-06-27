@@ -15,7 +15,7 @@ use std::thread;
 use idakit_sys as sys;
 
 mod claim;
-mod ctree;
+pub mod ctree;
 mod decompile;
 mod ea;
 mod error;
