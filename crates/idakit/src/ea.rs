@@ -124,6 +124,9 @@ impl std::ops::Sub<Offset> for Ea {
     /// Saturating signed displacement, sharing [`Add<Offset>`]'s clamp. Negating
     /// saturates because `i64::MIN.checked_neg()` is `None`; without it, subtracting
     /// the minimum offset would overflow.
+    // Subtracting an offset is adding its negation, so this `Sub` impl reuses `Add`'s
+    // clamp by design (clippy::suspicious_arithmetic_impl).
+    #[allow(clippy::suspicious_arithmetic_impl)]
     #[inline]
     fn sub(self, rhs: Offset) -> Ea {
         self + Offset::new(rhs.get().saturating_neg())

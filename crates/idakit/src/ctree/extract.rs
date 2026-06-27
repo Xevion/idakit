@@ -527,7 +527,7 @@ impl CallbackBuilder {
 ///
 /// # Safety
 /// For a non-zero `len`, `*ptr` must point to `len` initialized `T` valid for the borrow.
-unsafe fn slice<'a, T>(ptr: &'a *const T, len: usize) -> &'a [T] {
+unsafe fn slice<T>(ptr: &*const T, len: usize) -> &[T] {
     if len == 0 {
         &[]
     } else {
@@ -555,7 +555,11 @@ unsafe fn lossy(ptr: *const c_char, len: usize) -> Option<String> {
 /// # Safety
 /// `*ctx` must be the `*mut CallbackBuilder` passed to `idakit_cfunc_walk_ctree`, unaliased
 /// for the call (the walk is single-threaded and never re-enters a callback).
-unsafe fn builder<'a>(ctx: &'a *mut c_void) -> &'a mut CallbackBuilder {
+// Reborrowing a `&mut` from a `&` (clippy::mut_from_ref) is intentional: taking `ctx` by
+// reference bounds the returned lifetime to its stack holder (see above), and the
+// single-threaded, non-re-entrant walk guarantees the builder is unaliased for each call.
+#[allow(clippy::mut_from_ref)]
+unsafe fn builder(ctx: &*mut c_void) -> &mut CallbackBuilder {
     unsafe { &mut *(*ctx as *mut CallbackBuilder) }
 }
 

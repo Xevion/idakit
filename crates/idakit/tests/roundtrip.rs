@@ -44,7 +44,7 @@ fn main() {
                     // Materialize the whole ctree and cross-check it against the
                     // independent visitor counts: two separate traversals of the same
                     // cfunc must agree, node-for-node.
-                    use idakit::ctree::{Cinsn, NodeRef};
+                    use idakit::ctree::{Cexpr, Cinsn, NodeRef};
                     let tree = cf.ctree().expect("ctree extraction");
                     let root = tree.root();
                     assert!(
@@ -75,6 +75,42 @@ fn main() {
                         tree.stmts().count(),
                         tree.types().count()
                     );
+
+                    // Round-trip the owned tree back to C-like pseudocode and check it
+                    // against IDA's own rendering. Exact text won't match (IDA has its own
+                    // formatting), but every lvar our tree references must appear in IDA's
+                    // pseudocode: the names come from the same lvar table, so a dropped or
+                    // misresolved `Var` surfaces here as a missing name.
+                    let rendered = tree.to_pseudocode();
+                    if let Some(ida_pc) = cf.pseudocode() {
+                        let mut referenced: Vec<String> = tree
+                            .exprs()
+                            .filter_map(|(_, e)| match &e.kind {
+                                Cexpr::Var(v) => Some(tree.lvar(*v).name.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        referenced.sort();
+                        referenced.dedup();
+                        let missing: Vec<&String> = referenced
+                            .iter()
+                            .filter(|name| !ida_pc.contains(name.as_str()))
+                            .collect();
+                        assert!(
+                            missing.is_empty(),
+                            "lvar names referenced by the tree but absent from IDA's \
+                             pseudocode (extraction dropped or misresolved a Var): {missing:?}"
+                        );
+                        println!(
+                            "round-trip OK: {} referenced lvars all present in IDA's pseudocode",
+                            referenced.len()
+                        );
+                        println!(
+                            "--- idakit render ---\n{rendered}\n--- IDA pseudocode ---\n{ida_pc}"
+                        );
+                    } else {
+                        println!("round-trip: IDA pseudocode unavailable; rendered:\n{rendered}");
+                    }
                 }
                 Err(e) => println!("decompile unavailable ({e})"),
             }
