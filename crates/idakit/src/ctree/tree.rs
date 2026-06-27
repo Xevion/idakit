@@ -3,7 +3,7 @@
 //! once the tree is complete.
 
 use super::arena::Arena;
-use super::node::{Cexpr, Cinsn, ExprId, ExprNode, NodeRef, StmtId, StmtNode};
+use super::node::{Cexpr, Cinsn, ExprId, ExprNode, Lvar, LvarId, NodeRef, StmtId, StmtNode};
 use super::types::{TypeData, TypeId, TypeTable};
 use crate::Ea;
 
@@ -25,13 +25,15 @@ fn for_each_child(
 
 /// A decompiled function's ctree. The root is always a block statement.
 ///
-/// Owned and `Send`: materialized on the kernel thread, then analyzed anywhere. Reads
-/// borrow `&Ctree`; there is no in-place mutation (edits go through `&mut Idb`, keyed
-/// by each node's `ea` — see design §4.5).
+/// Owned and `Send`: materialized on the kernel thread, then analyzed anywhere. A
+/// read-only analysis snapshot — there is no in-place mutation, and it does not track
+/// the live database, so it goes stale if the function is re-decompiled. Writing back to
+/// IDA is a separate concern, not routed through these handles.
 pub struct Ctree {
     exprs: Arena<ExprNode>,
     stmts: Arena<StmtNode>,
     types: TypeTable,
+    lvars: Vec<Lvar>,
     root: StmtId,
 }
 
@@ -62,6 +64,18 @@ impl Ctree {
     #[must_use]
     pub fn type_of(&self, id: TypeId) -> &TypeData {
         self.types.get(id)
+    }
+
+    /// The local variable a [`Cexpr::Var`] refers to.
+    #[inline]
+    #[must_use]
+    pub fn lvar(&self, id: LvarId) -> &Lvar {
+        &self.lvars[id.0 as usize]
+    }
+
+    /// Every local variable of the function, in lvar-index order.
+    pub fn lvars(&self) -> impl ExactSizeIterator<Item = &Lvar> {
+        self.lvars.iter()
     }
 
     /// Every expression node, flat, in allocation order — for whole-tree scans like
@@ -136,6 +150,7 @@ pub struct CtreeBuilder {
     exprs: Arena<ExprNode>,
     stmts: Arena<StmtNode>,
     types: TypeTable,
+    lvars: Vec<Lvar>,
 }
 
 impl CtreeBuilder {
@@ -145,12 +160,33 @@ impl CtreeBuilder {
             exprs: Arena::new(),
             stmts: Arena::new(),
             types: TypeTable::new(),
+            lvars: Vec::new(),
         }
     }
 
     /// Intern a type, returning a shared handle to pass to [`expr`](Self::expr).
     pub fn intern_type(&mut self, data: TypeData) -> TypeId {
         self.types.intern(data)
+    }
+
+    /// Reserve a placeholder type handle to fill later via [`fill_type`](Self::fill_type)
+    /// — the recursion break for aggregate extraction
+    /// (see [`TypeTable::alloc_placeholder`]).
+    pub fn alloc_type_placeholder(&mut self) -> TypeId {
+        self.types.alloc_placeholder()
+    }
+
+    /// Supply the body of a placeholder from [`alloc_type_placeholder`](Self::alloc_type_placeholder).
+    pub fn fill_type(&mut self, id: TypeId, data: TypeData) {
+        self.types.fill(id, data);
+    }
+
+    /// Append a local variable; the returned [`LvarId`] (its index) is what
+    /// [`Cexpr::Var`] carries.
+    pub fn push_lvar(&mut self, lvar: Lvar) -> LvarId {
+        let id = LvarId(self.lvars.len() as u32);
+        self.lvars.push(lvar);
+        id
     }
 
     /// Allocate an expression node of type `ty` (parent set later by
@@ -210,6 +246,7 @@ impl CtreeBuilder {
             exprs: self.exprs,
             stmts: self.stmts,
             types: self.types,
+            lvars: self.lvars,
             root,
         }
     }
@@ -320,7 +357,7 @@ mod tests {
         );
     }
 
-    /// The marquee invariant (design §4.5): a materialized ctree is `Send + Sync`, so
+    /// The marquee invariant: a materialized ctree is `Send + Sync`, so
     /// it can be shipped off the kernel thread to a worker for analysis. Fails to
     /// compile if a non-`Send` field is ever added.
     #[test]

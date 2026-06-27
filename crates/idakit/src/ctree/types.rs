@@ -2,9 +2,11 @@
 //!
 //! Every expression carries a [`TypeId`] into a [`TypeTable`]. Types are interned, so
 //! identical types share one handle, and recursion (a struct pointing at itself) is
-//! represented by a [`TypeId`] back-reference — through a [`TypeKind::Named`] cycle
-//! breaker — rather than by nesting. The table stays flat, finite, and `Send`, so a
-//! materialized ctree carries its full type information off the kernel thread.
+//! represented by a [`TypeId`] back-reference — a named aggregate reserves its handle
+//! via [`alloc_placeholder`](TypeTable::alloc_placeholder) before its body is filled, so
+//! a member can point back at it — rather than by nesting. The table stays flat, finite,
+//! and `Send`, so a materialized ctree carries its full type information off the kernel
+//! thread.
 
 use std::collections::HashMap;
 
@@ -25,9 +27,11 @@ pub struct TypeData {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeMember {
     pub name: String,
-    /// Byte offset from the start of the aggregate.
-    pub offset: u64,
+    /// Offset from the start of the aggregate, in bits.
+    pub bit_offset: u64,
     pub ty: TypeId,
+    /// Width in bits for a bitfield member; `None` for an ordinary field.
+    pub bitfield_width: Option<u32>,
 }
 
 /// One member of an enum.
@@ -78,10 +82,8 @@ pub enum TypeKind {
     },
     /// a typedef to another type
     Typedef { name: String, underlying: TypeId },
-    /// a named type not (yet) resolved — forward declarations and the cycle breaker
-    /// for recursive types.
-    Named(String),
-    /// a type IDA could not describe
+    /// a type IDA could not describe, and the transient state of an aggregate placeholder
+    /// before its body is filled (see [`TypeTable::alloc_placeholder`]).
     Unknown,
 }
 
@@ -110,6 +112,23 @@ impl TypeTable {
         let id = self.arena.alloc(data.clone());
         self.dedup.insert(data, id);
         id
+    }
+
+    /// Reserve a handle for a not-yet-known type, returning a placeholder ([`Unknown`]).
+    /// This breaks recursion: a recursive member can reference the aggregate's handle
+    /// before [`fill`](Self::fill) supplies its body. Not deduplicated.
+    ///
+    /// [`Unknown`]: TypeKind::Unknown
+    pub fn alloc_placeholder(&mut self) -> TypeId {
+        self.arena.alloc(TypeData {
+            kind: TypeKind::Unknown,
+            size: None,
+        })
+    }
+
+    /// Supply the body of a handle from [`alloc_placeholder`](Self::alloc_placeholder).
+    pub fn fill(&mut self, id: TypeId, data: TypeData) {
+        self.arena[id] = data;
     }
 
     /// The type behind a handle.
@@ -174,34 +193,36 @@ mod tests {
     }
 
     #[test]
-    fn recursive_struct_uses_a_named_back_reference() {
-        // struct node { struct node *next; } — the pointer targets a Named cycle
-        // breaker, so the table stays finite.
+    fn recursive_struct_uses_a_placeholder_back_reference() {
+        // struct node { struct node *next; } — reserve the struct's handle first, so the
+        // member pointer can target it before the body is filled. The table stays finite.
         let mut table = TypeTable::new();
-        let named = table.intern(TypeData {
-            kind: TypeKind::Named("node".into()),
-            size: None,
-        });
+        let node = table.alloc_placeholder();
         let ptr = table.intern(TypeData {
-            kind: TypeKind::Ptr(named),
+            kind: TypeKind::Ptr(node),
             size: Some(8),
         });
-        let node = table.intern(TypeData {
-            kind: TypeKind::Struct {
-                name: Some("node".into()),
-                members: vec![TypeMember {
-                    name: "next".into(),
-                    offset: 0,
-                    ty: ptr,
-                }],
+        table.fill(
+            node,
+            TypeData {
+                kind: TypeKind::Struct {
+                    name: Some("node".into()),
+                    members: vec![TypeMember {
+                        name: "next".into(),
+                        bit_offset: 0,
+                        ty: ptr,
+                        bitfield_width: None,
+                    }],
+                },
+                size: Some(8),
             },
-            size: Some(8),
-        });
+        );
 
         let TypeKind::Struct { members, .. } = &table.get(node).kind else {
             panic!("expected a struct");
         };
-        assert_eq!(table.get(members[0].ty).kind, TypeKind::Ptr(named));
+        // the member pointer resolves back to the struct itself
+        assert_eq!(table.get(members[0].ty).kind, TypeKind::Ptr(node));
     }
 
     #[test]

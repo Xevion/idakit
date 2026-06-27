@@ -46,23 +46,23 @@ struct FuncImage {
 }
 
 /// Resolve a call's callee to a name, if it is a direct symbol or a decompiler helper.
-/// Indirect calls (through a variable or computed pointer) stay unresolved.
-fn callee_name(idb: &Idb, tree: &Ctree, callee: ExprId) -> Option<String> {
+/// Indirect calls (through a variable or computed pointer) stay unresolved. Enrichment
+/// win: the symbol name now rides on the `Obj` node, so this no longer needs the kernel.
+fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
     match &tree.expr(callee).kind {
-        Cexpr::Obj(ea) => idb.func(*ea).name(),
+        Cexpr::Obj { name, .. } => name.clone(),
         Cexpr::Helper(h) => Some(h.clone()),
         _ => None,
     }
 }
 
-/// Build the callee-name map for a tree. One `idb.func(ea).name()` per direct call —
-/// this is the part that hammers IDA, and the reason `analyze` can't run until the
-/// kernel thread has enriched the tree.
-fn resolve_callees(idb: &Idb, tree: &Ctree) -> HashMap<ExprId, String> {
+/// Build the callee-name map for a tree. Now that the tree carries callee names, this is
+/// pure (no `Idb`) — the kernel-thread name resolution that used to dominate is gone.
+fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
     let mut map = HashMap::new();
     for (id, node) in tree.exprs() {
         if let Cexpr::Call { callee, .. } = &node.kind
-            && let Some(name) = callee_name(idb, tree, *callee)
+            && let Some(name) = callee_name(tree, *callee)
         {
             map.insert(id, name);
         }
@@ -176,7 +176,7 @@ fn run(idb: &mut Idb, db: &str) -> Result<(), idakit::Error> {
         t.extract += started.elapsed();
 
         let started = Instant::now();
-        let callees = resolve_callees(idb, &tree);
+        let callees = resolve_callees(&tree);
         t.resolve += started.elapsed();
 
         t.nodes += (tree.exprs().count() + tree.stmts().count()) as u64;

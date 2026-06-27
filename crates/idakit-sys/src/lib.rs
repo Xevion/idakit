@@ -86,94 +86,96 @@ unsafe extern "C" {
     pub fn idakit_type_member_type(h: *mut c_void, i: usize, buf: *mut c_char, cap: usize) -> i64;
 }
 
-// ctree extraction records: the flat, POD image of a decompiled function's ctree that
-// the facade fills (one DFS) and idakit's ctree builder reads. Field meaning depends on
-// `tag` and is interpreted there — these are layout only. `#[repr(C)]` so the layout
-// matches the facade's identical structs byte-for-byte (the `static_assert`s on the C++
-// side and the size checks below are the tripwire if either drifts).
+/// Absent optional child / sentinel, matching `IDAKIT_NONE` in the facade.
+pub const IDAKIT_NONE: u32 = 0xFFFF_FFFF;
 
-/// One expression node. `tag` is a `ctype_t` (`cot_*`) value; `a`/`b`/`c` are child or
-/// pool references, `aux` carries a wide literal (`cot_num`/`cot_obj`/`cot_fnum`).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ExprRec {
-    pub ea: Ea,
-    pub aux: u64,
-    pub ty: u32,
-    pub a: u32,
-    pub b: u32,
-    pub c: u32,
-    pub tag: u32,
-    pub flags: u32,
-}
-
-/// One statement node. `tag` is a `ctype_t` (`cit_*`) value; otherwise like [`ExprRec`]
-/// without a type (`aux` holds a `body` statement reference for `cit_for`).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct StmtRec {
-    pub ea: Ea,
-    pub aux: u64,
-    pub a: u32,
-    pub b: u32,
-    pub c: u32,
-    pub tag: u32,
-    pub flags: u32,
-}
-
-/// One resolved type. `tag` is a small type-kind code (not a `ctype_t`); `a`/`b` are a
-/// child type or a `bytes`-pool string slice (named types).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TypeRec {
-    pub size: u64,
-    pub aux: u64,
-    pub a: u32,
-    pub b: u32,
-    pub tag: u32,
-    pub bytes: u32,
-    pub signed: u32,
-    pub has_size: u32,
-}
-
-/// One `switch` case: a slice of `longs` (the case values) and a `body` statement.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct CaseRec {
-    pub values_off: u32,
-    pub values_len: u32,
-    pub body: u32,
-    pub flags: u32,
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<ExprRec>() == 40);
-    assert!(core::mem::size_of::<StmtRec>() == 40);
-    assert!(core::mem::size_of::<TypeRec>() == 40);
-    assert!(core::mem::size_of::<CaseRec>() == 16);
-};
-
-/// A view over a facade-owned ctree extraction (see [`idakit_cfunc_extract_ctree`]). All
-/// pointers are valid until the extraction handle is disposed; lengths are element
-/// counts (and the pointer may be null when the count is zero).
+/// One struct/union member, as the facade passes it to [`EmitVtbl::t_fill_struct`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct CtreeView {
-    pub types: *const TypeRec,
-    pub n_types: usize,
-    pub exprs: *const ExprRec,
-    pub n_exprs: usize,
-    pub stmts: *const StmtRec,
-    pub n_stmts: usize,
-    pub nodes: *const u32,
-    pub n_nodes: usize,
-    pub bytes: *const u8,
-    pub n_bytes: usize,
-    pub longs: *const u64,
-    pub n_longs: usize,
-    pub cases: *const CaseRec,
-    pub n_cases: usize,
-    pub root: u32,
+pub struct MemberDesc {
+    pub name: *const c_char,
+    pub name_len: usize,
+    pub bit_offset: u64,
+    pub ty: u32,
+    pub bitfield_width: u32,
+}
+
+/// One enum constant, as passed to [`EmitVtbl::t_fill_enum`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct EnumConstDesc {
+    pub name: *const c_char,
+    pub name_len: usize,
+    pub value: u64,
+}
+
+/// One `switch` case, as passed to [`EmitVtbl::s_switch`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct CaseDesc {
+    pub values: *const u64,
+    pub nvalues: usize,
+    pub body: u32,
+}
+
+/// The callbacks the facade invokes while streaming a ctree walk. The consumer (idakit)
+/// builds owned nodes inside each callback and returns the handle the parent will
+/// reference; children are emitted before parents. `#[repr(C)]` and field order mirror
+/// `idakit_emit_vtbl_t` exactly — the facade indexes by offset.
+#[repr(C)]
+pub struct EmitVtbl {
+    pub e_num: unsafe extern "C" fn(*mut c_void, Ea, u64, u32) -> u32,
+    pub e_fnum: unsafe extern "C" fn(*mut c_void, Ea, f64, u32) -> u32,
+    pub e_obj: unsafe extern "C" fn(*mut c_void, Ea, Ea, *const c_char, usize, u32) -> u32,
+    pub e_var: unsafe extern "C" fn(*mut c_void, Ea, u32, u32) -> u32,
+    pub e_str: unsafe extern "C" fn(*mut c_void, Ea, *const c_char, usize, u32) -> u32,
+    pub e_helper: unsafe extern "C" fn(*mut c_void, Ea, *const c_char, usize, u32) -> u32,
+    pub e_call: unsafe extern "C" fn(*mut c_void, Ea, u32, *const u32, usize, u32) -> u32,
+    pub e_memref: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
+    pub e_memptr: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
+    pub e_deref: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
+    pub e_op: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32, u32, u32) -> u32,
+
+    pub s_block: unsafe extern "C" fn(*mut c_void, Ea, *const u32, usize) -> u32,
+    pub s_expr: unsafe extern "C" fn(*mut c_void, Ea, u32) -> u32,
+    pub s_if: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
+    pub s_for: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32, u32) -> u32,
+    pub s_while: unsafe extern "C" fn(*mut c_void, Ea, u32, u32) -> u32,
+    pub s_do: unsafe extern "C" fn(*mut c_void, Ea, u32, u32) -> u32,
+    pub s_switch: unsafe extern "C" fn(*mut c_void, Ea, u32, *const CaseDesc, usize) -> u32,
+    pub s_break: unsafe extern "C" fn(*mut c_void, Ea) -> u32,
+    pub s_continue: unsafe extern "C" fn(*mut c_void, Ea) -> u32,
+    pub s_return: unsafe extern "C" fn(*mut c_void, Ea, u32) -> u32,
+    pub s_goto: unsafe extern "C" fn(*mut c_void, Ea, i32) -> u32,
+    pub s_asm: unsafe extern "C" fn(*mut c_void, Ea, *const u64, usize) -> u32,
+    pub s_try: unsafe extern "C" fn(*mut c_void, Ea, u32, *const u32, usize) -> u32,
+    pub s_throw: unsafe extern "C" fn(*mut c_void, Ea, u32) -> u32,
+    pub s_empty: unsafe extern "C" fn(*mut c_void, Ea) -> u32,
+
+    pub t_scalar: unsafe extern "C" fn(*mut c_void, u32, u32, u32, u64, u32) -> u32,
+    pub t_ptr: unsafe extern "C" fn(*mut c_void, u32, u64, u32) -> u32,
+    pub t_array: unsafe extern "C" fn(*mut c_void, u32, u64, u64, u32) -> u32,
+    pub t_func: unsafe extern "C" fn(*mut c_void, u32, *const u32, usize, u32) -> u32,
+    pub t_named_ref: unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> u32,
+    pub t_anon: unsafe extern "C" fn(*mut c_void) -> u32,
+    pub t_fill_struct:
+        unsafe extern "C" fn(*mut c_void, u32, u32, *const MemberDesc, usize, u64, u32),
+    pub t_fill_enum:
+        unsafe extern "C" fn(*mut c_void, u32, u32, *const EnumConstDesc, usize, u64, u32),
+    pub t_fill_typedef: unsafe extern "C" fn(*mut c_void, u32, u32),
+
+    pub l_lvar: unsafe extern "C" fn(
+        *mut c_void,
+        *const c_char,
+        usize,
+        u32,
+        u32,
+        u32,
+        *const c_char,
+        usize,
+        u32,
+        i64,
+    ),
 }
 
 // hex-rays decompiler
@@ -188,10 +190,14 @@ unsafe extern "C" {
         n_expr: *mut c_int,
         n_calls: *mut c_int,
     );
-    /// Extract `cfunc`'s ctree, returning a handle that owns the storage `out` points
-    /// into. Release with [`idakit_ctree_dispose`]. Returns null if `cfunc` is null.
-    pub fn idakit_cfunc_extract_ctree(cfunc: *mut c_void, out: *mut CtreeView) -> *mut c_void;
-    pub fn idakit_ctree_dispose(h: *mut c_void);
+    /// Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) per node and writing the root
+    /// statement handle to `*root`. Returns 0 on success, non-zero if `cfunc` is null.
+    pub fn idakit_cfunc_walk_ctree(
+        cfunc: *mut c_void,
+        vtbl: *const EmitVtbl,
+        ctx: *mut c_void,
+        root: *mut u32,
+    ) -> c_int;
 }
 
 // libida kernel writes

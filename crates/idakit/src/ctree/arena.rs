@@ -21,8 +21,10 @@ pub struct Idx<T> {
 }
 
 impl<T> Idx<T> {
+    /// Reconstruct a handle from a raw index. `pub(crate)` for the ctree builder, which
+    /// receives node indices back across the facade boundary as bare `u32`s.
     #[inline]
-    fn from_raw(raw: u32) -> Self {
+    pub(crate) fn from_raw(raw: u32) -> Self {
         Self {
             raw,
             _ty: PhantomData,

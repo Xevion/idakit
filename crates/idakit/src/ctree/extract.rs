@@ -1,810 +1,1163 @@
-//! Building a [`Ctree`] from the facade's flat record image ([`idakit_sys::ExprRec`] et
-//! al.). The facade emits one DFS — types, then expressions, then statements, each in
-//! post-order so a node's children and its type precede it — and [`build`] turns those
-//! records back into owned arenas via [`CtreeBuilder`].
+//! Building a [`Ctree`] from the facade's streaming ctree walk.
 //!
-//! The expression `tag` is a raw `ctype_t`: operators map straight through
-//! [`BinOp::from_raw`]/[`AssignOp::from_raw`]/[`UnOp::from_raw`] (the enum discriminants
-//! *are* the ctype values), and the handful of structural kinds match the named
-//! constants in [`ct`]. There is exactly one shared contract with the C++ side — the
-//! per-tag meaning of `a`/`b`/`c`/`aux` and the side pools — and it lives in this file.
+//! The facade ([`idakit_sys::idakit_cfunc_walk_ctree`]) is a pure SDK walker: it reads a
+//! decompiled function depth-first and, per node, calls one callback in [`VTBL`] to mint
+//! the owned node. Children are emitted before their parents, so each callback receives
+//! its children as the handles their own callbacks returned. [`CallbackBuilder`] holds
+//! the in-progress arenas; the `extern "C"` shims are thin adapters that decode the FFI
+//! arguments and call its safe methods (which the tests drive directly).
+//!
+//! All identity and meaning live here, not in the facade: an operator's `ctype` maps to
+//! [`BinOp`]/[`AssignOp`]/[`UnOp`] (their discriminants *are* the ctype values) or one of
+//! the structural [`ct`] constants; named aggregate types are interned by name with a
+//! placeholder so recursion resolves; structural types dedup through the type table.
 
-use idakit_sys::{CaseRec, ExprRec, StmtRec, TypeRec};
+use std::collections::HashMap;
+use std::ffi::{c_char, c_void};
+
+use idakit_sys::{CaseDesc, EmitVtbl, EnumConstDesc, IDAKIT_NONE, MemberDesc};
 use snafu::Snafu;
 
 use super::arena::Idx;
-use super::node::{Case, Cexpr, Cinsn, ExprId, LvarId, StmtId};
+use super::node::{Case, Cexpr, Cinsn, ExprId, Lvar, LvarId, LvarLocation, StmtId};
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::{Ctree, CtreeBuilder};
-use super::types::{TypeData, TypeId, TypeKind};
+use super::types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember};
 use crate::Ea;
 
-/// Sentinel in an optional child slot: the edge is absent.
-const NONE: u32 = u32::MAX;
-
-/// Structural `ctype_t` values matched by name (operators go through `from_raw`).
+/// Structural `ctype_t` values the generic operator callback dispatches by name
+/// (operators proper go through `from_raw`).
 mod ct {
     pub const EMPTY: u32 = 0;
     pub const TERN: u32 = 16;
     pub const CAST: u32 = 48;
-    pub const PTR: u32 = 51;
-    pub const CALL: u32 = 57;
     pub const IDX: u32 = 58;
-    pub const MEMREF: u32 = 59;
-    pub const MEMPTR: u32 = 60;
-    pub const NUM: u32 = 61;
-    pub const FNUM: u32 = 62;
-    pub const STR: u32 = 63;
-    pub const OBJ: u32 = 64;
-    pub const VAR: u32 = 65;
-    // 66 = cot_insn (a statement in expression position) is not matched by name; it and
-    // any unmodeled ctype collapse to `Cexpr::Internal`.
+    /// `cot_insn`: a statement in expression position — never present in a finalized
+    /// tree, collapsed to [`Cexpr::Internal`](super::Cexpr::Internal) rather than erroring.
+    pub const INSN: u32 = 66;
     pub const SIZEOF: u32 = 67;
-    pub const HELPER: u32 = 68;
     pub const TYPE: u32 = 69;
-
-    pub const CIT_EMPTY: u32 = 70;
-    pub const BLOCK: u32 = 71;
-    pub const EXPR: u32 = 72;
-    pub const IF: u32 = 73;
-    pub const FOR: u32 = 74;
-    pub const WHILE: u32 = 75;
-    pub const DO: u32 = 76;
-    pub const SWITCH: u32 = 77;
-    pub const BREAK: u32 = 78;
-    pub const CONTINUE: u32 = 79;
-    pub const RETURN: u32 = 80;
-    pub const GOTO: u32 = 81;
-    pub const ASM: u32 = 82;
-    pub const TRY: u32 = 83;
-    pub const THROW: u32 = 84;
 }
 
-/// Type-kind codes for [`TypeRec::tag`]. Types are not `ctype_t`, so this is a small
-/// private contract with the facade — only the kinds it currently emits.
-mod tk {
-    pub const UNKNOWN: u32 = 0;
-    pub const VOID: u32 = 1;
-    pub const BOOL: u32 = 2;
-    pub const INT: u32 = 3;
-    pub const FLOAT: u32 = 4;
-    pub const PTR: u32 = 5;
-    pub const ARRAY: u32 = 6;
-    pub const NAMED: u32 = 7;
-}
-
-/// Borrowed view of the facade's record image: the three node/type arrays plus the side
-/// pools their variadic edges point into. [`build`] reads only these slices.
-pub(crate) struct Records<'a> {
-    pub types: &'a [TypeRec],
-    pub exprs: &'a [ExprRec],
-    pub stmts: &'a [StmtRec],
-    /// Homogeneous index lists: block bodies, call args, try catches.
-    pub nodes: &'a [u32],
-    /// String bytes for `cot_str` / `cot_helper` / named types.
-    pub bytes: &'a [u8],
-    /// Wide values: `cit_asm` addresses and `switch` case values.
-    pub longs: &'a [u64],
-    pub cases: &'a [CaseRec],
-    /// Statement index of the root block.
-    pub root: u32,
-}
-
-/// Why a record image could not be turned into a [`Ctree`].
+/// Why a ctree walk could not be turned into a [`Ctree`].
 #[derive(Debug, Snafu, PartialEq, Eq)]
 pub enum ExtractError {
-    #[snafu(display("unknown statement ctype {tag}"))]
-    UnknownStmtTag { tag: u32 },
+    #[snafu(display("the facade could not walk the ctree (null cfunc)"))]
+    WalkFailed,
 
-    #[snafu(display("unknown type kind {tag}"))]
-    UnknownTypeTag { tag: u32 },
+    #[snafu(display("unmodeled expression ctype {tag}"))]
+    UnknownExprTag { tag: u32 },
 
-    #[snafu(display("{kind} reference {index} is out of range"))]
-    BadIndex { kind: &'static str, index: u32 },
-
-    #[snafu(display("{kind} pool slice {off}..{off}+{len} is out of range"))]
-    BadPool {
-        kind: &'static str,
-        off: u32,
-        len: u32,
-    },
-
-    #[snafu(display("a node carries the BADADDR sentinel as its address"))]
+    #[snafu(display("a node carries the BADADDR sentinel as a required address"))]
     BadEa,
 }
 
-/// Turn a facade record image into an owned [`Ctree`]. Validates every tag, reference,
-/// and pool slice; assumes the records come from a trusted emitter (it does not guard
-/// against a hand-crafted image with unreachable nodes — `finish` debug-asserts that).
-pub(crate) fn build(r: &Records) -> Result<Ctree, ExtractError> {
-    let mut b = CtreeBuilder::new();
-    // The records arrive in post-order, so a child/type reference always resolves
-    // against an earlier (already-pushed) entry of these maps.
-    let mut type_map: Vec<TypeId> = Vec::with_capacity(r.types.len());
-    let mut expr_map: Vec<ExprId> = Vec::with_capacity(r.exprs.len());
-    let mut stmt_map: Vec<StmtId> = Vec::with_capacity(r.stmts.len());
-
-    for rec in r.types {
-        let data = build_type(rec, &type_map, r.bytes)?;
-        type_map.push(b.intern_type(data));
-    }
-    for rec in r.exprs {
-        let ty = resolve(&type_map, rec.ty, "type")?;
-        let kind = build_expr(rec, &expr_map, r)?;
-        expr_map.push(b.expr(node_ea(rec.ea), ty, kind));
-    }
-    for rec in r.stmts {
-        let kind = build_stmt(rec, &expr_map, &stmt_map, r)?;
-        stmt_map.push(b.stmt(node_ea(rec.ea), kind));
-    }
-
-    let root = resolve(&stmt_map, r.root, "stmt")?;
-    Ok(b.finish(root))
-}
-
-/// A node's source address: `None` for a synthetic node (the BADADDR sentinel).
+/// A node's own source address: `None` for a synthetic node (the BADADDR sentinel).
 fn node_ea(raw: u64) -> Option<Ea> {
     Ea::try_new(raw)
 }
 
-/// A referenced address that must be real (a `cot_obj` target, a `cit_asm` instruction):
-/// the BADADDR sentinel here is malformed input.
-fn ea(raw: u64) -> Result<Ea, ExtractError> {
-    Ea::try_new(raw).ok_or(ExtractError::BadEa)
+fn eid(raw: u32) -> ExprId {
+    Idx::from_raw(raw)
 }
 
-/// Translate a record index into the handle allocated for it.
-fn resolve<T>(map: &[Idx<T>], raw: u32, kind: &'static str) -> Result<Idx<T>, ExtractError> {
-    map.get(raw as usize)
-        .copied()
-        .ok_or(ExtractError::BadIndex { kind, index: raw })
+fn sid(raw: u32) -> StmtId {
+    Idx::from_raw(raw)
 }
 
-/// Like [`resolve`], but a [`NONE`] index yields `None`.
-fn resolve_opt<T>(
-    map: &[Idx<T>],
-    raw: u32,
-    kind: &'static str,
-) -> Result<Option<Idx<T>>, ExtractError> {
-    if raw == NONE {
-        Ok(None)
+fn tid(raw: u32) -> TypeId {
+    Idx::from_raw(raw)
+}
+
+fn opt_e(raw: u32) -> Option<ExprId> {
+    (raw != IDAKIT_NONE).then(|| eid(raw))
+}
+
+fn opt_s(raw: u32) -> Option<StmtId> {
+    (raw != IDAKIT_NONE).then(|| sid(raw))
+}
+
+fn raw<T>(id: Idx<T>) -> u32 {
+    id.index() as u32
+}
+
+fn opt_size(size: u64, has_size: u32) -> Option<u64> {
+    (has_size != 0).then_some(size)
+}
+
+/// Accumulates the owned ctree as the facade walks. Its methods are the safe surface the
+/// `extern "C"` shims (and the unit tests) call; each returns the new node's handle as a
+/// bare `u32` for the facade to thread to the parent.
+pub(crate) struct CallbackBuilder {
+    b: CtreeBuilder,
+    /// Named aggregate/typedef -> its interned handle (recursion + dedup).
+    name2type: HashMap<Box<str>, TypeId>,
+    /// Placeholder handle -> its name (`None` = anonymous), pending its body.
+    pending: HashMap<TypeId, Option<Box<str>>>,
+    /// First deferred failure; checked at [`finish`](Self::finish).
+    error: Option<ExtractError>,
+}
+
+impl CallbackBuilder {
+    fn new() -> Self {
+        Self {
+            b: CtreeBuilder::new(),
+            name2type: HashMap::new(),
+            pending: HashMap::new(),
+            error: None,
+        }
+    }
+
+    fn fail(&mut self, e: ExtractError) {
+        if self.error.is_none() {
+            self.error = Some(e);
+        }
+    }
+
+    fn push_expr(&mut self, ea: u64, ty: u32, kind: Cexpr) -> u32 {
+        raw(self.b.expr(node_ea(ea), tid(ty), kind))
+    }
+
+    fn push_stmt(&mut self, ea: u64, kind: Cinsn) -> u32 {
+        raw(self.b.stmt(node_ea(ea), kind))
+    }
+
+    fn num(&mut self, ea: u64, value: u64, ty: u32) -> u32 {
+        self.push_expr(ea, ty, Cexpr::Num(value))
+    }
+
+    fn fnum(&mut self, ea: u64, value: f64, ty: u32) -> u32 {
+        self.push_expr(ea, ty, Cexpr::Fnum(value))
+    }
+
+    fn obj(&mut self, ea: u64, target: u64, name: Option<String>, ty: u32) -> u32 {
+        match Ea::try_new(target) {
+            Some(addr) => self.push_expr(ea, ty, Cexpr::Obj { ea: addr, name }),
+            None => {
+                self.fail(ExtractError::BadEa);
+                self.push_expr(ea, ty, Cexpr::Empty)
+            }
+        }
+    }
+
+    fn var(&mut self, ea: u64, idx: u32, ty: u32) -> u32 {
+        self.push_expr(ea, ty, Cexpr::Var(LvarId(idx)))
+    }
+
+    fn string(&mut self, ea: u64, s: String, ty: u32) -> u32 {
+        self.push_expr(ea, ty, Cexpr::Str(s))
+    }
+
+    fn helper(&mut self, ea: u64, s: String, ty: u32) -> u32 {
+        self.push_expr(ea, ty, Cexpr::Helper(s))
+    }
+
+    fn call(&mut self, ea: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
+        let args = args.iter().map(|&a| eid(a)).collect();
+        self.push_expr(
+            ea,
+            ty,
+            Cexpr::Call {
+                callee: eid(callee),
+                args,
+            },
+        )
+    }
+
+    fn memref(&mut self, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+        self.push_expr(
+            ea,
+            ty,
+            Cexpr::MemberRef {
+                obj: eid(obj),
+                offset,
+            },
+        )
+    }
+
+    fn memptr(&mut self, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+        self.push_expr(
+            ea,
+            ty,
+            Cexpr::MemberPtr {
+                obj: eid(obj),
+                offset,
+            },
+        )
+    }
+
+    fn deref(&mut self, ea: u64, x: u32, size: u32, ty: u32) -> u32 {
+        self.push_expr(ea, ty, Cexpr::Deref { x: eid(x), size })
+    }
+
+    fn op(&mut self, ea: u64, ctype: u32, x: u32, y: u32, z: u32, ty: u32) -> u32 {
+        let kind = self.classify(ctype, x, y, z);
+        self.push_expr(ea, ty, kind)
+    }
+
+    /// Map a generic operator `ctype` to its expression kind. Assignment ctypes overlap
+    /// the binary numeric range, so probe assignments first.
+    fn classify(&mut self, ctype: u32, x: u32, y: u32, z: u32) -> Cexpr {
+        if ctype == ct::INSN {
+            return Cexpr::Internal;
+        }
+        let op16 = u16::try_from(ctype).ok();
+        if let Some(op) = op16.and_then(AssignOp::from_raw) {
+            return Cexpr::Assign {
+                op,
+                x: eid(x),
+                y: eid(y),
+            };
+        }
+        if let Some(op) = op16.and_then(BinOp::from_raw) {
+            return Cexpr::Binary {
+                op,
+                x: eid(x),
+                y: eid(y),
+            };
+        }
+        if let Some(op) = op16.and_then(UnOp::from_raw) {
+            return Cexpr::Unary { op, x: eid(x) };
+        }
+        match ctype {
+            ct::TERN => Cexpr::Ternary {
+                cond: eid(x),
+                then_: eid(y),
+                else_: eid(z),
+            },
+            ct::CAST => Cexpr::Cast { x: eid(x) },
+            ct::IDX => Cexpr::Index {
+                array: eid(x),
+                index: eid(y),
+            },
+            ct::SIZEOF => Cexpr::Sizeof(eid(x)),
+            ct::EMPTY => Cexpr::Empty,
+            ct::TYPE => Cexpr::TypeExpr,
+            other => {
+                self.fail(ExtractError::UnknownExprTag { tag: other });
+                Cexpr::Internal
+            }
+        }
+    }
+
+    fn block(&mut self, ea: u64, kids: &[u32]) -> u32 {
+        let kids = kids.iter().map(|&s| sid(s)).collect();
+        self.push_stmt(ea, Cinsn::Block(kids))
+    }
+
+    fn expr_stmt(&mut self, ea: u64, e: u32) -> u32 {
+        self.push_stmt(ea, Cinsn::Expr(eid(e)))
+    }
+
+    fn if_(&mut self, ea: u64, cond: u32, then_s: u32, else_s: u32) -> u32 {
+        self.push_stmt(
+            ea,
+            Cinsn::If {
+                cond: eid(cond),
+                then_: sid(then_s),
+                else_: opt_s(else_s),
+            },
+        )
+    }
+
+    fn for_(&mut self, ea: u64, init: u32, cond: u32, step: u32, body: u32) -> u32 {
+        self.push_stmt(
+            ea,
+            Cinsn::For {
+                init: opt_e(init),
+                cond: opt_e(cond),
+                step: opt_e(step),
+                body: sid(body),
+            },
+        )
+    }
+
+    fn while_(&mut self, ea: u64, cond: u32, body: u32) -> u32 {
+        self.push_stmt(
+            ea,
+            Cinsn::While {
+                cond: eid(cond),
+                body: sid(body),
+            },
+        )
+    }
+
+    fn do_(&mut self, ea: u64, body: u32, cond: u32) -> u32 {
+        self.push_stmt(
+            ea,
+            Cinsn::Do {
+                body: sid(body),
+                cond: eid(cond),
+            },
+        )
+    }
+
+    fn switch(&mut self, ea: u64, expr: u32, cases: Vec<Case>) -> u32 {
+        self.push_stmt(
+            ea,
+            Cinsn::Switch {
+                expr: eid(expr),
+                cases,
+            },
+        )
+    }
+
+    fn return_(&mut self, ea: u64, e: u32) -> u32 {
+        self.push_stmt(ea, Cinsn::Return(opt_e(e)))
+    }
+
+    fn goto(&mut self, ea: u64, label: i32) -> u32 {
+        self.push_stmt(ea, Cinsn::Goto { label })
+    }
+
+    fn asm(&mut self, ea: u64, addrs: &[u64]) -> u32 {
+        let mut out = Vec::with_capacity(addrs.len());
+        for &a in addrs {
+            match Ea::try_new(a) {
+                Some(e) => out.push(e),
+                None => self.fail(ExtractError::BadEa),
+            }
+        }
+        self.push_stmt(ea, Cinsn::Asm(out))
+    }
+
+    fn try_(&mut self, ea: u64, body: u32, catches: &[u32]) -> u32 {
+        let catches = catches.iter().map(|&s| sid(s)).collect();
+        self.push_stmt(
+            ea,
+            Cinsn::Try {
+                body: sid(body),
+                catches,
+            },
+        )
+    }
+
+    fn throw(&mut self, ea: u64, e: u32) -> u32 {
+        self.push_stmt(ea, Cinsn::Throw(opt_e(e)))
+    }
+
+    fn break_(&mut self, ea: u64) -> u32 {
+        self.push_stmt(ea, Cinsn::Break)
+    }
+
+    fn continue_(&mut self, ea: u64) -> u32 {
+        self.push_stmt(ea, Cinsn::Continue)
+    }
+
+    fn empty_stmt(&mut self, ea: u64) -> u32 {
+        self.push_stmt(ea, Cinsn::Empty)
+    }
+
+    fn scalar(&mut self, kind: u32, bytes: u32, signed: u32, size: u64, has_size: u32) -> u32 {
+        let kind = match kind {
+            1 => TypeKind::Void,
+            2 => TypeKind::Bool,
+            3 => TypeKind::Int {
+                bytes: bytes as u8,
+                signed: signed != 0,
+            },
+            4 => TypeKind::Float { bytes: bytes as u8 },
+            _ => TypeKind::Unknown,
+        };
+        raw(self.b.intern_type(TypeData {
+            kind,
+            size: opt_size(size, has_size),
+        }))
+    }
+
+    fn ptr(&mut self, target: u32, size: u64, has_size: u32) -> u32 {
+        raw(self.b.intern_type(TypeData {
+            kind: TypeKind::Ptr(tid(target)),
+            size: opt_size(size, has_size),
+        }))
+    }
+
+    fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
+        raw(self.b.intern_type(TypeData {
+            kind: TypeKind::Array {
+                elem: tid(elem),
+                len: nelems,
+            },
+            size: opt_size(size, has_size),
+        }))
+    }
+
+    fn func(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
+        let params = params.iter().map(|&p| tid(p)).collect();
+        raw(self.b.intern_type(TypeData {
+            kind: TypeKind::Func {
+                ret: tid(ret),
+                params,
+                varargs: vararg != 0,
+            },
+            size: None,
+        }))
+    }
+
+    fn named_ref(&mut self, name: String) -> u32 {
+        if let Some(&id) = self.name2type.get(name.as_str()) {
+            return raw(id);
+        }
+        let id = self.b.alloc_type_placeholder();
+        let key: Box<str> = name.into_boxed_str();
+        self.name2type.insert(key.clone(), id);
+        self.pending.insert(id, Some(key));
+        raw(id)
+    }
+
+    fn anon(&mut self) -> u32 {
+        let id = self.b.alloc_type_placeholder();
+        self.pending.insert(id, None);
+        raw(id)
+    }
+
+    fn take_name(&mut self, id: TypeId) -> Option<String> {
+        self.pending.remove(&id).flatten().map(String::from)
+    }
+
+    fn fill_struct(
+        &mut self,
+        id: u32,
+        is_union: bool,
+        members: Vec<TypeMember>,
+        size: u64,
+        has_size: u32,
+    ) {
+        let id = tid(id);
+        let name = self.take_name(id);
+        let kind = if is_union {
+            TypeKind::Union { name, members }
+        } else {
+            TypeKind::Struct { name, members }
+        };
+        self.b.fill_type(
+            id,
+            TypeData {
+                kind,
+                size: opt_size(size, has_size),
+            },
+        );
+    }
+
+    fn fill_enum(
+        &mut self,
+        id: u32,
+        underlying: u32,
+        members: Vec<EnumMember>,
+        size: u64,
+        has_size: u32,
+    ) {
+        let id = tid(id);
+        let name = self.take_name(id);
+        self.b.fill_type(
+            id,
+            TypeData {
+                kind: TypeKind::Enum {
+                    name,
+                    underlying: tid(underlying),
+                    members,
+                },
+                size: opt_size(size, has_size),
+            },
+        );
+    }
+
+    fn fill_typedef(&mut self, id: u32, underlying: u32) {
+        let id = tid(id);
+        let name = self.take_name(id).unwrap_or_default();
+        self.b.fill_type(
+            id,
+            TypeData {
+                kind: TypeKind::Typedef {
+                    name,
+                    underlying: tid(underlying),
+                },
+                size: None,
+            },
+        );
+    }
+
+    fn push_lvar(&mut self, lvar: Lvar) {
+        self.b.push_lvar(lvar);
+    }
+
+    fn finish(mut self, root: u32) -> Result<Ctree, ExtractError> {
+        if let Some(e) = self.error.take() {
+            return Err(e);
+        }
+        Ok(self.b.finish(sid(root)))
+    }
+}
+
+/// Borrow a facade array as a slice; a zero length yields an empty slice without
+/// dereferencing the (possibly null) pointer.
+///
+/// # Safety
+/// For a non-zero `len`, `ptr` must point to `len` initialized `T` valid for the borrow.
+unsafe fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if len == 0 {
+        &[]
     } else {
-        resolve(map, raw, kind).map(Some)
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
 
-/// A `[off, off+len)` window into a side pool, bounds-checked.
-fn sub<'a, T>(
-    pool: &'a [T],
-    off: u32,
-    len: u32,
-    kind: &'static str,
-) -> Result<&'a [T], ExtractError> {
-    let start = off as usize;
-    let end = start
-        .checked_add(len as usize)
-        .filter(|&end| end <= pool.len())
-        .ok_or(ExtractError::BadPool { kind, off, len })?;
-    Ok(&pool[start..end])
+/// Decode a pooled string lossily (IDA names and literals are not guaranteed UTF-8);
+/// `None` for an empty/null span.
+///
+/// # Safety
+/// For a non-zero `len`, `ptr` must point to `len` readable bytes.
+unsafe fn lossy(ptr: *const c_char, len: usize) -> Option<String> {
+    if ptr.is_null() || len == 0 {
+        return None;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), len) };
+    Some(String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// Resolve a pool window of record indices to handles in one pass.
-fn resolve_pool<T>(
-    pool: &[u32],
-    off: u32,
-    len: u32,
-    map: &[Idx<T>],
-    kind: &'static str,
-) -> Result<Vec<Idx<T>>, ExtractError> {
-    sub(pool, off, len, kind)?
+/// Reborrow the opaque context as the builder the walk threads through every callback.
+///
+/// # Safety
+/// `ctx` must be the `*mut CallbackBuilder` passed to `idakit_cfunc_walk_ctree`, unaliased
+/// for the call (the walk is single-threaded and never re-enters a callback).
+unsafe fn builder<'a>(ctx: *mut c_void) -> &'a mut CallbackBuilder {
+    unsafe { &mut *(ctx as *mut CallbackBuilder) }
+}
+
+unsafe extern "C" fn cb_num(ctx: *mut c_void, ea: u64, value: u64, ty: u32) -> u32 {
+    unsafe { builder(ctx) }.num(ea, value, ty)
+}
+unsafe extern "C" fn cb_fnum(ctx: *mut c_void, ea: u64, value: f64, ty: u32) -> u32 {
+    unsafe { builder(ctx) }.fnum(ea, value, ty)
+}
+unsafe extern "C" fn cb_obj(
+    ctx: *mut c_void,
+    ea: u64,
+    target: u64,
+    name: *const c_char,
+    name_len: usize,
+    ty: u32,
+) -> u32 {
+    let name = unsafe { lossy(name, name_len) };
+    unsafe { builder(ctx) }.obj(ea, target, name, ty)
+}
+unsafe extern "C" fn cb_var(ctx: *mut c_void, ea: u64, idx: u32, ty: u32) -> u32 {
+    unsafe { builder(ctx) }.var(ea, idx, ty)
+}
+unsafe extern "C" fn cb_str(
+    ctx: *mut c_void,
+    ea: u64,
+    s: *const c_char,
+    len: usize,
+    ty: u32,
+) -> u32 {
+    let s = unsafe { lossy(s, len) }.unwrap_or_default();
+    unsafe { builder(ctx) }.string(ea, s, ty)
+}
+unsafe extern "C" fn cb_helper(
+    ctx: *mut c_void,
+    ea: u64,
+    s: *const c_char,
+    len: usize,
+    ty: u32,
+) -> u32 {
+    let s = unsafe { lossy(s, len) }.unwrap_or_default();
+    unsafe { builder(ctx) }.helper(ea, s, ty)
+}
+unsafe extern "C" fn cb_call(
+    ctx: *mut c_void,
+    ea: u64,
+    callee: u32,
+    args: *const u32,
+    nargs: usize,
+    ty: u32,
+) -> u32 {
+    let args = unsafe { slice(args, nargs) };
+    unsafe { builder(ctx) }.call(ea, callee, args, ty)
+}
+unsafe extern "C" fn cb_memref(ctx: *mut c_void, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+    unsafe { builder(ctx) }.memref(ea, obj, offset, ty)
+}
+unsafe extern "C" fn cb_memptr(ctx: *mut c_void, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+    unsafe { builder(ctx) }.memptr(ea, obj, offset, ty)
+}
+unsafe extern "C" fn cb_deref(ctx: *mut c_void, ea: u64, x: u32, size: u32, ty: u32) -> u32 {
+    unsafe { builder(ctx) }.deref(ea, x, size, ty)
+}
+unsafe extern "C" fn cb_op(
+    ctx: *mut c_void,
+    ea: u64,
+    ctype: u32,
+    x: u32,
+    y: u32,
+    z: u32,
+    ty: u32,
+) -> u32 {
+    unsafe { builder(ctx) }.op(ea, ctype, x, y, z, ty)
+}
+
+unsafe extern "C" fn cb_block(ctx: *mut c_void, ea: u64, kids: *const u32, nkids: usize) -> u32 {
+    let kids = unsafe { slice(kids, nkids) };
+    unsafe { builder(ctx) }.block(ea, kids)
+}
+unsafe extern "C" fn cb_expr(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
+    unsafe { builder(ctx) }.expr_stmt(ea, e)
+}
+unsafe extern "C" fn cb_if(ctx: *mut c_void, ea: u64, cond: u32, then_s: u32, else_s: u32) -> u32 {
+    unsafe { builder(ctx) }.if_(ea, cond, then_s, else_s)
+}
+unsafe extern "C" fn cb_for(
+    ctx: *mut c_void,
+    ea: u64,
+    init: u32,
+    cond: u32,
+    step: u32,
+    body: u32,
+) -> u32 {
+    unsafe { builder(ctx) }.for_(ea, init, cond, step, body)
+}
+unsafe extern "C" fn cb_while(ctx: *mut c_void, ea: u64, cond: u32, body: u32) -> u32 {
+    unsafe { builder(ctx) }.while_(ea, cond, body)
+}
+unsafe extern "C" fn cb_do(ctx: *mut c_void, ea: u64, body: u32, cond: u32) -> u32 {
+    unsafe { builder(ctx) }.do_(ea, body, cond)
+}
+unsafe extern "C" fn cb_switch(
+    ctx: *mut c_void,
+    ea: u64,
+    expr: u32,
+    cases: *const CaseDesc,
+    ncases: usize,
+) -> u32 {
+    let cds = unsafe { slice(cases, ncases) };
+    let cases = cds
         .iter()
-        .map(|&i| resolve(map, i, kind))
-        .collect()
+        .map(|cd| Case {
+            values: unsafe { slice(cd.values, cd.nvalues) }.to_vec(),
+            body: sid(cd.body),
+        })
+        .collect();
+    unsafe { builder(ctx) }.switch(ea, expr, cases)
+}
+unsafe extern "C" fn cb_break(ctx: *mut c_void, ea: u64) -> u32 {
+    unsafe { builder(ctx) }.break_(ea)
+}
+unsafe extern "C" fn cb_continue(ctx: *mut c_void, ea: u64) -> u32 {
+    unsafe { builder(ctx) }.continue_(ea)
+}
+unsafe extern "C" fn cb_return(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
+    unsafe { builder(ctx) }.return_(ea, e)
+}
+unsafe extern "C" fn cb_goto(ctx: *mut c_void, ea: u64, label: i32) -> u32 {
+    unsafe { builder(ctx) }.goto(ea, label)
+}
+unsafe extern "C" fn cb_asm(ctx: *mut c_void, ea: u64, addrs: *const u64, n: usize) -> u32 {
+    let addrs = unsafe { slice(addrs, n) };
+    unsafe { builder(ctx) }.asm(ea, addrs)
+}
+unsafe extern "C" fn cb_try(
+    ctx: *mut c_void,
+    ea: u64,
+    body: u32,
+    catches: *const u32,
+    n: usize,
+) -> u32 {
+    let catches = unsafe { slice(catches, n) };
+    unsafe { builder(ctx) }.try_(ea, body, catches)
+}
+unsafe extern "C" fn cb_throw(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
+    unsafe { builder(ctx) }.throw(ea, e)
+}
+unsafe extern "C" fn cb_empty(ctx: *mut c_void, ea: u64) -> u32 {
+    unsafe { builder(ctx) }.empty_stmt(ea)
 }
 
-/// A pooled string, decoded lossily (IDA names and string literals are not guaranteed
-/// UTF-8; see `ffi::cstr`).
-fn string(bytes: &[u8], off: u32, len: u32) -> Result<String, ExtractError> {
-    let slice = sub(bytes, off, len, "string")?;
-    Ok(String::from_utf8_lossy(slice).into_owned())
+unsafe extern "C" fn cb_scalar(
+    ctx: *mut c_void,
+    kind: u32,
+    bytes: u32,
+    signed: u32,
+    size: u64,
+    has_size: u32,
+) -> u32 {
+    unsafe { builder(ctx) }.scalar(kind, bytes, signed, size, has_size)
+}
+unsafe extern "C" fn cb_ptr(ctx: *mut c_void, target: u32, size: u64, has_size: u32) -> u32 {
+    unsafe { builder(ctx) }.ptr(target, size, has_size)
+}
+unsafe extern "C" fn cb_array(
+    ctx: *mut c_void,
+    elem: u32,
+    nelems: u64,
+    size: u64,
+    has_size: u32,
+) -> u32 {
+    unsafe { builder(ctx) }.array(elem, nelems, size, has_size)
+}
+unsafe extern "C" fn cb_func(
+    ctx: *mut c_void,
+    ret: u32,
+    params: *const u32,
+    n: usize,
+    vararg: u32,
+) -> u32 {
+    let params = unsafe { slice(params, n) };
+    unsafe { builder(ctx) }.func(ret, params, vararg)
+}
+unsafe extern "C" fn cb_named_ref(ctx: *mut c_void, name: *const c_char, name_len: usize) -> u32 {
+    let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
+    unsafe { builder(ctx) }.named_ref(name)
+}
+unsafe extern "C" fn cb_anon(ctx: *mut c_void) -> u32 {
+    unsafe { builder(ctx) }.anon()
+}
+unsafe extern "C" fn cb_fill_struct(
+    ctx: *mut c_void,
+    id: u32,
+    is_union: u32,
+    members: *const MemberDesc,
+    n: usize,
+    size: u64,
+    has_size: u32,
+) {
+    let members = unsafe { slice(members, n) }
+        .iter()
+        .map(|m| TypeMember {
+            name: unsafe { lossy(m.name, m.name_len) }.unwrap_or_default(),
+            bit_offset: m.bit_offset,
+            ty: tid(m.ty),
+            bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
+        })
+        .collect();
+    unsafe { builder(ctx) }.fill_struct(id, is_union != 0, members, size, has_size);
+}
+unsafe extern "C" fn cb_fill_enum(
+    ctx: *mut c_void,
+    id: u32,
+    underlying: u32,
+    consts: *const EnumConstDesc,
+    n: usize,
+    size: u64,
+    has_size: u32,
+) {
+    let members = unsafe { slice(consts, n) }
+        .iter()
+        .map(|c| EnumMember {
+            name: unsafe { lossy(c.name, c.name_len) }.unwrap_or_default(),
+            value: c.value,
+        })
+        .collect();
+    unsafe { builder(ctx) }.fill_enum(id, underlying, members, size, has_size);
+}
+unsafe extern "C" fn cb_fill_typedef(ctx: *mut c_void, id: u32, underlying: u32) {
+    unsafe { builder(ctx) }.fill_typedef(id, underlying);
 }
 
-fn build_type(rec: &TypeRec, type_map: &[TypeId], bytes: &[u8]) -> Result<TypeData, ExtractError> {
-    let size = (rec.has_size != 0).then_some(rec.size);
-    let kind = match rec.tag {
-        tk::UNKNOWN => TypeKind::Unknown,
-        tk::VOID => TypeKind::Void,
-        tk::BOOL => TypeKind::Bool,
-        tk::INT => TypeKind::Int {
-            bytes: rec.bytes as u8,
-            signed: rec.signed != 0,
-        },
-        tk::FLOAT => TypeKind::Float {
-            bytes: rec.bytes as u8,
-        },
-        tk::PTR => TypeKind::Ptr(resolve(type_map, rec.a, "type")?),
-        tk::ARRAY => TypeKind::Array {
-            elem: resolve(type_map, rec.a, "type")?,
-            len: rec.aux,
-        },
-        tk::NAMED => TypeKind::Named(string(bytes, rec.a, rec.b)?),
-        tag => return Err(ExtractError::UnknownTypeTag { tag }),
+#[allow(clippy::too_many_arguments)]
+unsafe extern "C" fn cb_lvar(
+    ctx: *mut c_void,
+    name: *const c_char,
+    name_len: usize,
+    ty: u32,
+    flags: u32,
+    width: u32,
+    comment: *const c_char,
+    comment_len: usize,
+    loc_kind: u32,
+    loc_val: i64,
+) {
+    let location = match loc_kind {
+        1 => LvarLocation::Register(loc_val as u32),
+        2 => LvarLocation::Stack(loc_val),
+        _ => LvarLocation::Other,
     };
-    Ok(TypeData { kind, size })
+    let lvar = Lvar {
+        name: unsafe { lossy(name, name_len) }.unwrap_or_default(),
+        ty: tid(ty),
+        is_arg: flags & 1 != 0,
+        is_result: flags & 2 != 0,
+        is_byref: flags & 4 != 0,
+        width,
+        comment: unsafe { lossy(comment, comment_len) },
+        location,
+    };
+    unsafe { builder(ctx) }.push_lvar(lvar);
 }
 
-fn build_expr(rec: &ExprRec, em: &[ExprId], r: &Records) -> Result<Cexpr, ExtractError> {
-    // An operator's kind is its ctype value: probe assignments first (their range
-    // overlaps the numeric binary range), then plain binary, then unary.
-    let op = u16::try_from(rec.tag).ok();
-    if let Some(op) = op.and_then(AssignOp::from_raw) {
-        return Ok(Cexpr::Assign {
-            op,
-            x: resolve(em, rec.a, "expr")?,
-            y: resolve(em, rec.b, "expr")?,
-        });
-    }
-    if let Some(op) = op.and_then(BinOp::from_raw) {
-        return Ok(Cexpr::Binary {
-            op,
-            x: resolve(em, rec.a, "expr")?,
-            y: resolve(em, rec.b, "expr")?,
-        });
-    }
-    if let Some(op) = op.and_then(UnOp::from_raw) {
-        return Ok(Cexpr::Unary {
-            op,
-            x: resolve(em, rec.a, "expr")?,
-        });
-    }
+/// The callback table handed to the facade. Field order matches `idakit_emit_vtbl_t`.
+static VTBL: EmitVtbl = EmitVtbl {
+    e_num: cb_num,
+    e_fnum: cb_fnum,
+    e_obj: cb_obj,
+    e_var: cb_var,
+    e_str: cb_str,
+    e_helper: cb_helper,
+    e_call: cb_call,
+    e_memref: cb_memref,
+    e_memptr: cb_memptr,
+    e_deref: cb_deref,
+    e_op: cb_op,
+    s_block: cb_block,
+    s_expr: cb_expr,
+    s_if: cb_if,
+    s_for: cb_for,
+    s_while: cb_while,
+    s_do: cb_do,
+    s_switch: cb_switch,
+    s_break: cb_break,
+    s_continue: cb_continue,
+    s_return: cb_return,
+    s_goto: cb_goto,
+    s_asm: cb_asm,
+    s_try: cb_try,
+    s_throw: cb_throw,
+    s_empty: cb_empty,
+    t_scalar: cb_scalar,
+    t_ptr: cb_ptr,
+    t_array: cb_array,
+    t_func: cb_func,
+    t_named_ref: cb_named_ref,
+    t_anon: cb_anon,
+    t_fill_struct: cb_fill_struct,
+    t_fill_enum: cb_fill_enum,
+    t_fill_typedef: cb_fill_typedef,
+    l_lvar: cb_lvar,
+};
 
-    Ok(match rec.tag {
-        ct::TERN => Cexpr::Ternary {
-            cond: resolve(em, rec.a, "expr")?,
-            then_: resolve(em, rec.b, "expr")?,
-            else_: resolve(em, rec.c, "expr")?,
-        },
-        ct::CAST => Cexpr::Cast {
-            x: resolve(em, rec.a, "expr")?,
-        },
-        ct::PTR => Cexpr::Deref {
-            x: resolve(em, rec.a, "expr")?,
-            size: rec.b,
-        },
-        ct::CALL => Cexpr::Call {
-            callee: resolve(em, rec.a, "expr")?,
-            args: resolve_pool(r.nodes, rec.b, rec.c, em, "expr")?,
-        },
-        ct::IDX => Cexpr::Index {
-            array: resolve(em, rec.a, "expr")?,
-            index: resolve(em, rec.b, "expr")?,
-        },
-        ct::MEMREF => Cexpr::MemberRef {
-            obj: resolve(em, rec.a, "expr")?,
-            offset: rec.b,
-        },
-        ct::MEMPTR => Cexpr::MemberPtr {
-            obj: resolve(em, rec.a, "expr")?,
-            offset: rec.b,
-        },
-        ct::NUM => Cexpr::Num(rec.aux),
-        ct::FNUM => Cexpr::Fnum(f64::from_bits(rec.aux)),
-        ct::STR => Cexpr::Str(string(r.bytes, rec.a, rec.b)?),
-        ct::OBJ => Cexpr::Obj(ea(rec.aux)?),
-        ct::VAR => Cexpr::Var(LvarId(rec.a)),
-        ct::SIZEOF => Cexpr::Sizeof(resolve(em, rec.a, "expr")?),
-        ct::HELPER => Cexpr::Helper(string(r.bytes, rec.a, rec.b)?),
-        ct::TYPE => Cexpr::TypeExpr,
-        ct::EMPTY => Cexpr::Empty,
-        // cot_insn (a statement in expression position) and any ctype this build doesn't
-        // model collapse to the one documented marker, not a catch-all variant per kind.
-        _ => Cexpr::Internal,
-    })
-}
-
-fn build_stmt(
-    rec: &StmtRec,
-    em: &[ExprId],
-    sm: &[StmtId],
-    r: &Records,
-) -> Result<Cinsn, ExtractError> {
-    Ok(match rec.tag {
-        ct::BLOCK => Cinsn::Block(resolve_pool(r.nodes, rec.a, rec.b, sm, "block")?),
-        ct::EXPR => Cinsn::Expr(resolve(em, rec.a, "expr")?),
-        ct::IF => Cinsn::If {
-            cond: resolve(em, rec.a, "expr")?,
-            then_: resolve(sm, rec.b, "stmt")?,
-            else_: resolve_opt(sm, rec.c, "stmt")?,
-        },
-        ct::FOR => Cinsn::For {
-            init: resolve_opt(em, rec.a, "expr")?,
-            cond: resolve_opt(em, rec.b, "expr")?,
-            step: resolve_opt(em, rec.c, "expr")?,
-            body: resolve(sm, rec.aux as u32, "stmt")?,
-        },
-        ct::WHILE => Cinsn::While {
-            cond: resolve(em, rec.a, "expr")?,
-            body: resolve(sm, rec.b, "stmt")?,
-        },
-        ct::DO => Cinsn::Do {
-            body: resolve(sm, rec.a, "stmt")?,
-            cond: resolve(em, rec.b, "expr")?,
-        },
-        ct::SWITCH => Cinsn::Switch {
-            expr: resolve(em, rec.a, "expr")?,
-            cases: sub(r.cases, rec.b, rec.c, "switch")?
-                .iter()
-                .map(|cr| build_case(cr, sm, r))
-                .collect::<Result<Vec<_>, _>>()?,
-        },
-        ct::BREAK => Cinsn::Break,
-        ct::CONTINUE => Cinsn::Continue,
-        ct::RETURN => Cinsn::Return(resolve_opt(em, rec.a, "expr")?),
-        ct::GOTO => Cinsn::Goto {
-            label: rec.a as i32,
-        },
-        ct::ASM => Cinsn::Asm(
-            sub(r.longs, rec.a, rec.b, "asm")?
-                .iter()
-                .map(|&v| ea(v))
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        ct::TRY => Cinsn::Try {
-            body: resolve(sm, rec.a, "stmt")?,
-            catches: resolve_pool(r.nodes, rec.b, rec.c, sm, "stmt")?,
-        },
-        ct::THROW => Cinsn::Throw(resolve_opt(em, rec.a, "expr")?),
-        ct::CIT_EMPTY => Cinsn::Empty,
-        tag => return Err(ExtractError::UnknownStmtTag { tag }),
-    })
-}
-
-fn build_case(cr: &CaseRec, sm: &[StmtId], r: &Records) -> Result<Case, ExtractError> {
-    Ok(Case {
-        values: sub(r.longs, cr.values_off, cr.values_len, "case")?.to_vec(),
-        body: resolve(sm, cr.body, "stmt")?,
-    })
+/// Walk a decompiled function's ctree into an owned [`Ctree`]. `cfunc` is a live
+/// `idakit_decompile` handle (see [`Cfunc`](crate::Cfunc)); the walk runs on this (kernel)
+/// thread and copies everything it needs, so the result outlives the handle.
+pub(crate) fn walk(cfunc: *mut c_void) -> Result<Ctree, ExtractError> {
+    let mut cb = CallbackBuilder::new();
+    let mut root: u32 = 0;
+    // SAFETY: `cfunc` is a live handle (caller's invariant); `VTBL` is static; `cb` is a
+    // valid out-context borrowed only during the call; `root` is a valid out-param.
+    let rc = unsafe {
+        idakit_sys::idakit_cfunc_walk_ctree(
+            cfunc,
+            &VTBL,
+            (&mut cb as *mut CallbackBuilder).cast(),
+            &mut root,
+        )
+    };
+    if rc != 0 {
+        return Err(ExtractError::WalkFailed);
+    }
+    cb.finish(root)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ctree::types::TypeData as Td;
 
-    fn int_rec() -> TypeRec {
-        TypeRec {
-            tag: tk::INT,
-            bytes: 4,
-            signed: 1,
-            has_size: 1,
-            size: 4,
-            ..Default::default()
-        }
+    /// `cot_*` discriminants used by the operator tests (from hexrays.hpp).
+    const COT_ASGADD: u32 = 6;
+    const COT_ADD: u32 = 35;
+    const COT_SUB: u32 = 36;
+    const COT_NEG: u32 = 47;
+
+    fn int_ty(cb: &mut CallbackBuilder) -> u32 {
+        cb.scalar(3, 4, 1, 4, 1)
     }
 
-    fn int_ty() -> Td {
-        Td {
-            kind: TypeKind::Int {
-                bytes: 4,
-                signed: true,
-            },
-            size: Some(4),
-        }
-    }
-
-    fn var(idx: u32) -> ExprRec {
-        ExprRec {
-            tag: ct::VAR,
-            ty: 0,
-            a: idx,
-            ..Default::default()
-        }
-    }
-
-    fn ea0() -> Option<Ea> {
-        Ea::try_new(0)
-    }
-
-    /// Assert two trees are node-for-node, type-for-type, root-for-root identical.
-    fn assert_same(a: &Ctree, b: &Ctree) {
-        assert_eq!(a.types().collect::<Vec<_>>(), b.types().collect::<Vec<_>>(),);
-        assert_eq!(a.exprs().collect::<Vec<_>>(), b.exprs().collect::<Vec<_>>());
-        assert_eq!(a.stmts().collect::<Vec<_>>(), b.stmts().collect::<Vec<_>>());
-        assert_eq!(a.root(), b.root());
-    }
-
-    /// `{ return a + b; }` as records → the same tree a hand-driven `CtreeBuilder` makes.
+    /// `{ return a + b; }`: operands then the add, a return, a block.
     #[test]
     fn builds_return_of_a_binary() {
-        // a(0), b(1), a+b(2) ; return(0), block(1)
-        let add = ExprRec {
-            tag: 35, // cot_add
-            ty: 0,
-            a: 0,
-            b: 1,
-            ..Default::default()
-        };
-        let ret = StmtRec {
-            tag: ct::RETURN,
-            a: 2,
-            ..Default::default()
-        };
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 0,
-            b: 1,
-            ..Default::default()
-        };
-        let records = Records {
-            types: &[int_rec()],
-            exprs: &[var(0), var(1), add],
-            stmts: &[ret, block],
-            nodes: &[0],
-            bytes: &[],
-            longs: &[],
-            cases: &[],
-            root: 1,
-        };
-        let got = build(&records).expect("well-formed records");
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let a = cb.var(0, 0, it);
+        let b = cb.var(0, 1, it);
+        let add = cb.op(0, COT_ADD, a, b, IDAKIT_NONE, it);
+        let ret = cb.return_(0, add);
+        let blk = cb.block(0, &[ret]);
+        let tree = cb.finish(blk).expect("well-formed");
 
-        let mut eb = CtreeBuilder::new();
-        let it = eb.intern_type(int_ty());
-        let a = eb.expr(ea0(), it, Cexpr::Var(LvarId(0)));
-        let b = eb.expr(ea0(), it, Cexpr::Var(LvarId(1)));
-        let sum = eb.expr(
-            ea0(),
-            it,
-            Cexpr::Binary {
-                op: BinOp::Add,
-                x: a,
-                y: b,
-            },
-        );
-        let r = eb.stmt(ea0(), Cinsn::Return(Some(sum)));
-        let blk = eb.stmt(ea0(), Cinsn::Block(vec![r]));
-        let expected = eb.finish(blk);
-
-        assert_same(&got, &expected);
+        assert!(matches!(tree.stmt(tree.root()).kind, Cinsn::Block(_)));
+        let kinds: Vec<&Cexpr> = tree.exprs().map(|(_, e)| &e.kind).collect();
+        assert!(matches!(kinds[2], Cexpr::Binary { op: BinOp::Add, .. }));
     }
 
-    /// Operator family dispatch: an assignment, a binary, and a unary ctype each land on
-    /// the right variant. (assignment ctypes overlap the binary numeric range, so the
-    /// order of the `from_raw` probes matters — this pins it.)
+    /// Operator-family dispatch: assignment / binary / unary ctypes land on the right
+    /// variant (assignment ctypes overlap the binary numeric range, so order matters).
     #[test]
     fn dispatches_operator_families() {
-        // Each operator gets its own operands (every node has exactly one parent).
-        let asg = ExprRec {
-            tag: 6, // cot_asgadd
-            a: 0,
-            b: 1,
-            ..Default::default()
-        };
-        let bin = ExprRec {
-            tag: 36, // cot_sub
-            a: 3,
-            b: 4,
-            ..Default::default()
-        };
-        let un = ExprRec {
-            tag: 47, // cot_neg
-            a: 6,
-            ..Default::default()
-        };
-        let stmt = |e: u32| StmtRec {
-            tag: ct::EXPR,
-            a: e,
-            ..Default::default()
-        };
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 0,
-            b: 3,
-            ..Default::default()
-        };
-        let records = Records {
-            types: &[int_rec()],
-            exprs: &[var(0), var(1), asg, var(2), var(3), bin, var(4), un],
-            stmts: &[stmt(2), stmt(5), stmt(7), block],
-            nodes: &[0, 1, 2], // block children: the three expr-statements
-            bytes: &[],
-            longs: &[],
-            cases: &[],
-            root: 3,
-        };
-        let t = build(&records).expect("well-formed");
-        let kinds: Vec<&Cexpr> = t.exprs().map(|(_, e)| &e.kind).collect();
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let v0 = cb.var(0, 0, it);
+        let v1 = cb.var(0, 1, it);
+        let asg = cb.op(0, COT_ASGADD, v0, v1, IDAKIT_NONE, it);
+        let v2 = cb.var(0, 2, it);
+        let v3 = cb.var(0, 3, it);
+        let bin = cb.op(0, COT_SUB, v2, v3, IDAKIT_NONE, it);
+        let v4 = cb.var(0, 4, it);
+        let un = cb.op(0, COT_NEG, v4, IDAKIT_NONE, IDAKIT_NONE, it);
+        let s0 = cb.expr_stmt(0, asg);
+        let s1 = cb.expr_stmt(0, bin);
+        let s2 = cb.expr_stmt(0, un);
+        let blk = cb.block(0, &[s0, s1, s2]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        let kinds: Vec<&Cexpr> = tree.exprs().map(|(_, e)| &e.kind).collect();
         assert!(matches!(
-            kinds[2],
+            kinds[eid(asg).index()],
             Cexpr::Assign {
                 op: AssignOp::AddAssign,
                 ..
             }
         ));
-        assert!(matches!(kinds[5], Cexpr::Binary { op: BinOp::Sub, .. }));
-        assert!(matches!(kinds[7], Cexpr::Unary { op: UnOp::Neg, .. }));
+        assert!(matches!(
+            kinds[eid(bin).index()],
+            Cexpr::Binary { op: BinOp::Sub, .. }
+        ));
+        assert!(matches!(
+            kinds[eid(un).index()],
+            Cexpr::Unary { op: UnOp::Neg, .. }
+        ));
     }
 
-    /// A call with two args (the `nodes` pool), a helper callee and a string literal (the
-    /// `bytes` pool), and an integer literal (`aux`).
+    /// A call with two args, a helper callee, a string literal, and an int literal.
     #[test]
-    fn builds_call_with_pooled_args() {
-        let callee = ExprRec {
-            tag: ct::HELPER,
-            a: 0, // bytes[0..6] = "printf"
-            b: 6,
-            ..Default::default()
-        };
-        let fmt = ExprRec {
-            tag: ct::STR,
-            a: 6, // bytes[6..8] = "%d"
-            b: 2,
-            ..Default::default()
-        };
-        let n = ExprRec {
-            tag: ct::NUM,
-            aux: 42,
-            ..Default::default()
-        };
-        let call = ExprRec {
-            tag: ct::CALL,
-            a: 0, // callee
-            b: 0, // nodes[0..2] = args
-            c: 2,
-            ..Default::default()
-        };
-        let stmt = StmtRec {
-            tag: ct::EXPR,
-            a: 3,
-            ..Default::default()
-        };
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 2, // nodes[2..3] = the one stmt
-            b: 1,
-            ..Default::default()
-        };
-        let records = Records {
-            types: &[int_rec()],
-            exprs: &[callee, fmt, n, call],
-            stmts: &[stmt, block],
-            nodes: &[1, 2, 0], // args = expr 1,2 ; block child = stmt 0
-            bytes: b"printf%d",
-            longs: &[],
-            cases: &[],
-            root: 1,
-        };
-        let t = build(&records).expect("well-formed");
-        let Cexpr::Call { callee, args } = &t.exprs().nth(3).unwrap().1.kind else {
+    fn builds_call_with_args() {
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let callee = cb.helper(0, "printf".into(), it);
+        let fmt = cb.string(0, "%d".into(), it);
+        let n = cb.num(0, 42, it);
+        let call = cb.call(0, callee, &[fmt, n], it);
+        let s = cb.expr_stmt(0, call);
+        let blk = cb.block(0, &[s]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        let Cexpr::Call { callee, args } = &tree.expr(eid(call)).kind else {
             panic!("expected a call");
         };
-        assert!(matches!(t.expr(*callee).kind, Cexpr::Helper(ref h) if h == "printf"));
+        assert!(matches!(tree.expr(*callee).kind, Cexpr::Helper(ref h) if h == "printf"));
         assert_eq!(args.len(), 2);
-        assert!(matches!(t.expr(args[0]).kind, Cexpr::Str(ref s) if s == "%d"));
-        assert!(matches!(t.expr(args[1]).kind, Cexpr::Num(42)));
+        assert!(matches!(tree.expr(args[0]).kind, Cexpr::Str(ref s) if s == "%d"));
+        assert!(matches!(tree.expr(args[1]).kind, Cexpr::Num(42)));
     }
 
     /// `if` with and without an `else` — exercises the optional-child sentinel.
     #[test]
     fn builds_if_with_optional_else() {
-        let cond1 = var(0);
-        let cond2 = var(1);
-        let then1 = StmtRec {
-            tag: ct::BREAK,
-            ..Default::default()
-        };
-        let then2 = StmtRec {
-            tag: ct::CONTINUE,
-            ..Default::default()
-        };
-        let els = StmtRec {
-            tag: ct::BREAK,
-            ..Default::default()
-        };
-        let if_with = StmtRec {
-            tag: ct::IF,
-            a: 0, // cond expr 0
-            b: 0, // then stmt 0 (break)
-            c: 2, // else stmt 2
-            ..Default::default()
-        };
-        let if_without = StmtRec {
-            tag: ct::IF,
-            a: 1,
-            b: 1,    // then stmt 1 (continue)
-            c: NONE, // no else
-            ..Default::default()
-        };
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 0,
-            b: 2,
-            ..Default::default()
-        };
-        let records = Records {
-            types: &[int_rec()],
-            exprs: &[cond1, cond2],
-            stmts: &[then1, then2, els, if_with, if_without, block],
-            nodes: &[3, 4], // block children: the two ifs
-            bytes: &[],
-            longs: &[],
-            cases: &[],
-            root: 5,
-        };
-        let t = build(&records).expect("well-formed");
-        let stmts: Vec<&Cinsn> = t.stmts().map(|(_, s)| &s.kind).collect();
-        assert!(matches!(stmts[3], Cinsn::If { else_: Some(_), .. }));
-        assert!(matches!(stmts[4], Cinsn::If { else_: None, .. }));
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let c0 = cb.var(0, 0, it);
+        let c1 = cb.var(0, 1, it);
+        let t0 = cb.break_(0);
+        let t1 = cb.continue_(0);
+        let els = cb.break_(0);
+        let if_with = cb.if_(0, c0, t0, els);
+        let if_without = cb.if_(0, c1, t1, IDAKIT_NONE);
+        let blk = cb.block(0, &[if_with, if_without]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        let stmts: Vec<&Cinsn> = tree.stmts().map(|(_, s)| &s.kind).collect();
+        assert!(matches!(
+            stmts[sid(if_with).index()],
+            Cinsn::If { else_: Some(_), .. }
+        ));
+        assert!(matches!(
+            stmts[sid(if_without).index()],
+            Cinsn::If { else_: None, .. }
+        ));
     }
 
-    /// Every scalar/pointer/named type kind the facade can emit round-trips through the
-    /// type records, including a `Ptr` that references an earlier type by index.
+    /// `for`, `switch` (with the case-values pool), `try`/catches, and `asm` — the
+    /// variadic statements whose child wiring is easiest to get wrong.
     #[test]
-    fn builds_simple_type_kinds() {
-        let types = [
-            TypeRec {
-                tag: tk::INT,
-                bytes: 4,
-                signed: 1,
-                has_size: 1,
-                size: 4,
-                ..Default::default()
+    fn builds_variadic_statements() {
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+
+        // for (; cond; ) body;  — only the condition present.
+        let cond = cb.var(0, 0, it);
+        let body = cb.break_(0);
+        let for_s = cb.for_(0, IDAKIT_NONE, cond, IDAKIT_NONE, body);
+
+        // switch (sw) { case 1, 2: b1; default: b2; }
+        let sw = cb.var(0, 1, it);
+        let b1 = cb.break_(0);
+        let b2 = cb.continue_(0);
+        let cases = vec![
+            Case {
+                values: vec![1, 2],
+                body: sid(b1),
             },
-            TypeRec {
-                tag: tk::PTR,
-                a: 0, // -> int
-                has_size: 1,
-                size: 8,
-                ..Default::default()
-            },
-            TypeRec {
-                tag: tk::NAMED,
-                a: 0, // bytes[0..4] = "Node"
-                b: 4,
-                ..Default::default()
-            },
-            TypeRec {
-                tag: tk::VOID,
-                ..Default::default()
+            Case {
+                values: vec![],
+                body: sid(b2),
             },
         ];
-        let e = ExprRec {
-            tag: ct::VAR,
-            ty: 1, // typed as the pointer
-            a: 0,
-            ..Default::default()
+        let switch_s = cb.switch(0, sw, cases);
+
+        // try guarded { } catch { }
+        let guard = cb.block(0, &[]);
+        let catch = cb.block(0, &[]);
+        let try_s = cb.try_(0, guard, &[catch]);
+
+        // asm at two addresses
+        let asm_s = cb.asm(0, &[0x1000, 0x1004]);
+
+        let blk = cb.block(0, &[for_s, switch_s, try_s, asm_s]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        let get = |s: u32| tree.stmt(sid(s)).kind.clone();
+        assert!(matches!(
+            get(for_s),
+            Cinsn::For {
+                init: None,
+                cond: Some(_),
+                step: None,
+                ..
+            }
+        ));
+        let Cinsn::Switch { cases, .. } = get(switch_s) else {
+            panic!("expected switch");
         };
-        let stmt = StmtRec {
-            tag: ct::EXPR,
-            a: 0,
-            ..Default::default()
+        assert_eq!(cases.len(), 2);
+        assert_eq!(cases[0].values, vec![1, 2]);
+        assert!(cases[1].values.is_empty());
+        let Cinsn::Try { catches, .. } = get(try_s) else {
+            panic!("expected try");
         };
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 0,
-            b: 1,
-            ..Default::default()
+        assert_eq!(catches.len(), 1);
+        let Cinsn::Asm(addrs) = get(asm_s) else {
+            panic!("expected asm");
         };
-        let records = Records {
-            types: &types,
-            exprs: &[e],
-            stmts: &[stmt, block],
-            nodes: &[0],
-            bytes: b"Node",
-            longs: &[],
-            cases: &[],
-            root: 1,
-        };
-        let t = build(&records).expect("well-formed");
-        let kinds: Vec<&TypeKind> = t.types().map(|(_, d)| &d.kind).collect();
-        assert!(matches!(kinds[1], TypeKind::Ptr(_)));
-        assert!(matches!(kinds[2], TypeKind::Named(n) if n == "Node"));
-        assert!(matches!(kinds[3], TypeKind::Void));
-        // the sole expression's type resolves to the pointer it was tagged with
-        let (_, e) = t.exprs().next().expect("one expression");
-        assert!(matches!(t.type_of(e.ty).kind, TypeKind::Ptr(_)));
+        assert_eq!(addrs.len(), 2);
     }
 
-    fn block_of(stmt_tag: u32) -> (Vec<ExprRec>, Vec<StmtRec>, Vec<u32>) {
-        let s = StmtRec {
-            tag: stmt_tag,
-            a: 0,
-            ..Default::default()
-        };
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 0,
-            b: 1,
-            ..Default::default()
-        };
-        (vec![var(0)], vec![s, block], vec![0])
-    }
-
+    /// A recursive aggregate: `struct Node { Node *next; }`. The placeholder lets the
+    /// member pointer resolve back to the struct before its body is filled.
     #[test]
-    fn rejects_unknown_statement_tag() {
-        let (exprs, mut stmts, nodes) = block_of(200);
-        stmts[0] = StmtRec {
-            tag: 200,
-            ..Default::default()
+    fn builds_recursive_struct() {
+        let mut cb = CallbackBuilder::new();
+        let node = cb.named_ref("Node".into());
+        let ptr = cb.ptr(node, 8, 1);
+        let members = vec![TypeMember {
+            name: "next".into(),
+            bit_offset: 0,
+            ty: tid(ptr),
+            bitfield_width: None,
+        }];
+        cb.fill_struct(node, false, members, 8, 1);
+
+        // a variable typed as the struct, so the tree has a reachable node.
+        let v = cb.var(0, 0, node);
+        let s = cb.expr_stmt(0, v);
+        let blk = cb.block(0, &[s]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        let TypeKind::Struct { name, members } = &tree.type_of(tid(node)).kind else {
+            panic!("expected a struct");
         };
-        let records = Records {
-            types: &[int_rec()],
-            exprs: &exprs,
-            stmts: &stmts,
-            nodes: &nodes,
-            bytes: &[],
-            longs: &[],
-            cases: &[],
-            root: 1,
+        assert_eq!(name.as_deref(), Some("Node"));
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].name, "next");
+        // the member pointer resolves back to the struct itself
+        assert!(matches!(tree.type_of(members[0].ty).kind, TypeKind::Ptr(t) if t == tid(node)));
+    }
+
+    /// A typedef keeps its alias name and points at the (separately interned) underlying.
+    #[test]
+    fn typedef_wraps_its_underlying() {
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let alias = cb.named_ref("size_t".into());
+        cb.fill_typedef(alias, it);
+
+        let v = cb.var(0, 0, alias);
+        let s = cb.expr_stmt(0, v);
+        let blk = cb.block(0, &[s]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        let TypeKind::Typedef { name, underlying } = &tree.type_of(tid(alias)).kind else {
+            panic!("expected a typedef");
         };
+        assert_eq!(name, "size_t");
+        assert!(matches!(
+            tree.type_of(*underlying).kind,
+            TypeKind::Int { bytes: 4, .. }
+        ));
+    }
+
+    /// A second reference to the same named type returns the same handle.
+    #[test]
+    fn named_types_dedup_by_name() {
+        let mut cb = CallbackBuilder::new();
+        let a = cb.named_ref("Foo".into());
+        let b = cb.named_ref("Foo".into());
+        assert_eq!(a, b);
+    }
+
+    /// An unmodeled ctype is a loud error (the `Internal` fallback is reserved for
+    /// `cot_insn`), surfaced at `finish`.
+    #[test]
+    fn rejects_unknown_ctype() {
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let v = cb.var(0, 0, it);
+        let bad = cb.op(0, 999, v, IDAKIT_NONE, IDAKIT_NONE, it);
+        let s = cb.expr_stmt(0, bad);
+        let blk = cb.block(0, &[s]);
         assert_eq!(
-            build(&records).err(),
-            Some(ExtractError::UnknownStmtTag { tag: 200 }),
+            cb.finish(blk).err(),
+            Some(ExtractError::UnknownExprTag { tag: 999 })
         );
     }
 
+    /// `cot_insn` (a statement in expression position) collapses to `Internal`, not an
+    /// error — the one allowance, since a finalized tree never contains it.
     #[test]
-    fn rejects_out_of_range_child() {
-        let bad = ExprRec {
-            tag: 35, // cot_add referencing a missing operand
-            a: 0,
-            b: 9, // out of range
-            ..Default::default()
-        };
-        let stmt = StmtRec {
-            tag: ct::EXPR,
-            a: 1,
-            ..Default::default()
-        };
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 0,
-            b: 1,
-            ..Default::default()
-        };
-        let records = Records {
-            types: &[int_rec()],
-            exprs: &[var(0), bad],
-            stmts: &[stmt, block],
-            nodes: &[0],
-            bytes: &[],
-            longs: &[],
-            cases: &[],
-            root: 1,
-        };
-        assert_eq!(
-            build(&records).err(),
-            Some(ExtractError::BadIndex {
-                kind: "expr",
-                index: 9,
-            }),
-        );
+    fn cot_insn_collapses_to_internal() {
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let insn = cb.op(0, ct::INSN, IDAKIT_NONE, IDAKIT_NONE, IDAKIT_NONE, it);
+        let s = cb.expr_stmt(0, insn);
+        let blk = cb.block(0, &[s]);
+        let tree = cb.finish(blk).expect("internal is not an error");
+        assert!(matches!(tree.expr(eid(insn)).kind, Cexpr::Internal));
     }
 
+    /// A float literal now carries its real value (the old extractor always emitted 0.0).
     #[test]
-    fn rejects_out_of_range_pool() {
-        let block = StmtRec {
-            tag: ct::BLOCK,
-            a: 0,
-            b: 5, // claims 5 children but nodes has 0
-            ..Default::default()
+    fn float_literal_round_trips() {
+        let mut cb = CallbackBuilder::new();
+        let ft = cb.scalar(4, 8, 0, 8, 1);
+        let f = cb.fnum(0, 3.5, ft);
+        let s = cb.expr_stmt(0, f);
+        let blk = cb.block(0, &[s]);
+        let tree = cb.finish(blk).expect("well-formed");
+        assert!(matches!(tree.expr(eid(f)).kind, Cexpr::Fnum(v) if v == 3.5));
+    }
+
+    /// Lvars land in the table in push order and `Var` resolves to them.
+    #[test]
+    fn lvars_resolve_through_the_table() {
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        cb.push_lvar(Lvar {
+            name: "argc".into(),
+            ty: tid(it),
+            is_arg: true,
+            is_result: false,
+            is_byref: false,
+            width: 4,
+            comment: None,
+            location: LvarLocation::Stack(-4),
+        });
+        let v = cb.var(0, 0, it);
+        let s = cb.expr_stmt(0, v);
+        let blk = cb.block(0, &[s]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        let Cexpr::Var(id) = tree.expr(eid(v)).kind else {
+            panic!("expected a var");
         };
-        let records = Records {
-            types: &[int_rec()],
-            exprs: &[],
-            stmts: &[block],
-            nodes: &[],
-            bytes: &[],
-            longs: &[],
-            cases: &[],
-            root: 0,
-        };
-        assert_eq!(
-            build(&records).err(),
-            Some(ExtractError::BadPool {
-                kind: "block",
-                off: 0,
-                len: 5,
-            }),
-        );
+        let lv = tree.lvar(id);
+        assert_eq!(lv.name, "argc");
+        assert!(lv.is_arg);
+        assert_eq!(lv.location, LvarLocation::Stack(-4));
     }
 }

@@ -24,9 +24,41 @@ pub enum NodeRef {
     Stmt(StmtId),
 }
 
-/// Index of a local variable in the decompiled function's lvar table.
+/// Index of a local variable in the decompiled function's lvar table
+/// ([`Ctree::lvar`](super::Ctree::lvar)).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct LvarId(pub u32);
+
+/// Where a local variable lives, as the decompiler placed it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LvarLocation {
+    /// In a register (the microcode register number).
+    Register(u32),
+    /// On the stack, at this frame offset.
+    Stack(i64),
+    /// Scattered or otherwise not a single register/stack slot.
+    Other,
+}
+
+/// One local variable of a decompiled function: its name, resolved type, and role.
+/// [`Cexpr::Var`] indexes the tree's lvar table to one of these.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lvar {
+    pub name: String,
+    /// The variable's type, into the tree's [`TypeTable`](super::TypeTable).
+    pub ty: TypeId,
+    /// A function parameter.
+    pub is_arg: bool,
+    /// The synthesized return-value variable.
+    pub is_result: bool,
+    /// Taken by-reference somewhere in the function.
+    pub is_byref: bool,
+    /// Size in bytes.
+    pub width: u32,
+    /// The user's comment on the variable, if any.
+    pub comment: Option<String>,
+    pub location: LvarLocation,
+}
 
 /// An expression node: its source address, type, parent, and kind.
 ///
@@ -86,8 +118,8 @@ pub enum Cexpr {
     Fnum(f64),
     /// string literal
     Str(String),
-    /// reference to a global/static at this address
-    Obj(Ea),
+    /// reference to a global/static at `ea`, carrying its symbol name when it has one
+    Obj { ea: Ea, name: Option<String> },
     /// reference to a local variable
     Var(LvarId),
     /// an arbitrary decompiler helper name, e.g. `__readfsqword`
@@ -186,7 +218,7 @@ impl Cexpr {
             Self::Num(_)
             | Self::Fnum(_)
             | Self::Str(_)
-            | Self::Obj(_)
+            | Self::Obj { .. }
             | Self::Var(_)
             | Self::Helper(_)
             | Self::TypeExpr

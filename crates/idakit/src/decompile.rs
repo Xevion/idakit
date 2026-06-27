@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use idakit_sys as sys;
 
 use crate::Idb;
-use crate::ctree::{Ctree, ExtractError, Records, build};
+use crate::ctree::{Ctree, ExtractError, walk};
 use crate::ffi::read_string;
 
 /// Statement / expression / call-site counts of a decompiled function's ctree.
@@ -61,49 +61,13 @@ impl<'db> Cfunc<'db> {
         }
     }
 
-    /// Materialize the whole ctree as an owned, `Send` [`Ctree`]: the facade emits a flat
-    /// record image on this (kernel) thread, and [`build`] turns it into arenas that any
-    /// worker can then analyze.
+    /// Materialize the whole ctree as an owned, `Send` [`Ctree`]: the facade streams a
+    /// depth-first walk on this (kernel) thread, minting owned nodes through callbacks
+    /// ([`walk`]) so any worker can then analyze the result.
     pub fn ctree(&self) -> Result<Ctree, ExtractError> {
-        // Zeroed (not uninit) so a null handle leaves an all-empty view that `build`
-        // rejects cleanly rather than reading uninitialized memory.
-        let mut view: sys::CtreeView = unsafe { std::mem::zeroed() };
-        // SAFETY: live handle (see type docs); `view` is a valid out-param.
-        let handle = unsafe { sys::idakit_cfunc_extract_ctree(self.handle, &mut view) };
-
-        // SAFETY: on success the facade filled `view` with arrays it owns until disposed;
-        // `build` copies everything out of these borrows, so the result outlives them.
-        let result = unsafe {
-            build(&Records {
-                types: as_slice(view.types, view.n_types),
-                exprs: as_slice(view.exprs, view.n_exprs),
-                stmts: as_slice(view.stmts, view.n_stmts),
-                nodes: as_slice(view.nodes, view.n_nodes),
-                bytes: as_slice(view.bytes, view.n_bytes),
-                longs: as_slice(view.longs, view.n_longs),
-                cases: as_slice(view.cases, view.n_cases),
-                root: view.root,
-            })
-        };
-
-        // SAFETY: dispose the extraction handle exactly once; a null handle is a no-op.
-        unsafe { sys::idakit_ctree_dispose(handle) };
-        result
-    }
-}
-
-/// Borrow a facade array as a slice; a zero length yields an empty slice without
-/// dereferencing the (possibly null) pointer.
-///
-/// # Safety
-///
-/// For a non-zero `len`, `ptr` must point to `len` initialized `T` valid for the
-/// returned borrow's lifetime.
-unsafe fn as_slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
-    if len == 0 {
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(ptr, len) }
+        // SAFETY: live handle (see type docs); `walk` copies everything it needs out of
+        // the SDK objects, so the result outlives this `cfunc`.
+        walk(self.handle)
     }
 }
 

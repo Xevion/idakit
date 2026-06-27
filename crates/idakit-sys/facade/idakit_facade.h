@@ -49,35 +49,104 @@ void  idakit_cfunc_dispose(void *cfunc);
 int64_t idakit_cfunc_pseudocode(void *cfunc, char *buf, size_t cap); /* tag-stripped text length */
 void  idakit_cfunc_ctree_counts(void *cfunc, int *n_insn, int *n_expr, int *n_calls);
 
-/* Flat ctree extraction. The records mirror idakit-sys's `#[repr(C)]` structs exactly
- * (the static_asserts in the .cpp and the size checks in lib.rs are the tripwire). Field
- * meaning depends on `tag` and is documented in idakit's ctree extract module: `tag` is a
- * `ctype_t` for nodes, references are indices within the matching section, and variadic
- * edges (call args, block bodies, switch cases, asm/case values, strings) point into the
- * side pools. `0xFFFFFFFF` in an optional slot means absent. */
-typedef struct { uint64_t ea, aux; uint32_t ty, a, b, c, tag, flags; } idakit_expr_rec_t;
-typedef struct { uint64_t ea, aux; uint32_t a, b, c, tag, flags; } idakit_stmt_rec_t;
-typedef struct { uint64_t size, aux; uint32_t a, b, tag, bytes, is_signed, has_size; } idakit_type_rec_t;
-typedef struct { uint32_t values_off, values_len, body, flags; } idakit_case_rec_t;
+/* Streaming ctree extraction. The facade is a pure SDK walker: it reads a decompiled
+ * function's ctree depth-first and, per node, calls one Rust callback in `vtbl` to mint
+ * the corresponding owned node. Children are emitted before their parent (post-order),
+ * so each callback receives its children as the `uint32_t` handles their own callbacks
+ * returned; the facade just threads them through the recursion. The facade owns no node
+ * storage and does no interning — all identity, dedup, and meaning live on the Rust side.
+ *
+ * Handles are opaque to the facade. `0xFFFFFFFF` (IDAKIT_NONE) marks an absent optional
+ * child. `ctx` is passed back to every callback untouched. */
+#define IDAKIT_NONE 0xFFFFFFFFu
 
-/* A view over the extraction's facade-owned arrays; valid until idakit_ctree_dispose. */
+/* One struct/union member: `name` (UTF-8, `name_len` bytes, may be empty), `bit_offset`
+ * from the aggregate start, member type `ty`, and `bitfield_width` (0 = not a bitfield). */
 typedef struct
 {
-  const idakit_type_rec_t *types; size_t n_types;
-  const idakit_expr_rec_t *exprs; size_t n_exprs;
-  const idakit_stmt_rec_t *stmts; size_t n_stmts;
-  const uint32_t          *nodes; size_t n_nodes; /* homogeneous index lists */
-  const uint8_t           *bytes; size_t n_bytes; /* string bytes */
-  const uint64_t          *longs; size_t n_longs; /* asm addrs, switch case values */
-  const idakit_case_rec_t *cases; size_t n_cases;
-  uint32_t root;                                  /* statement index of the root block */
-} idakit_ctree_view_t;
+  const char *name; size_t name_len;
+  uint64_t    bit_offset;
+  uint32_t    ty;
+  uint32_t    bitfield_width;
+} idakit_member_t;
 
-/* Extract `cfunc`'s ctree into a fresh handle and fill `out` with views into it. Returns
- * the handle (owns the storage; release with idakit_ctree_dispose), or NULL if cfunc is
- * NULL. */
-void *idakit_cfunc_extract_ctree(void *cfunc, idakit_ctree_view_t *out);
-void  idakit_ctree_dispose(void *h);
+/* One enum constant: `name` and its integer `value`. */
+typedef struct { const char *name; size_t name_len; uint64_t value; } idakit_enum_const_t;
+
+/* One switch case: its `values` (empty = default) and `body` statement handle. */
+typedef struct { const uint64_t *values; size_t nvalues; uint32_t body; } idakit_case_t;
+
+/* The callbacks the facade invokes while walking. Every function returns the handle of
+ * the node/type it minted (except the void ones). Scalar `kind` codes and `ctype` values
+ * are interpreted on the Rust side. `ty` is the node's resolved type handle. */
+typedef struct idakit_emit_vtbl_t
+{
+  /* expressions */
+  uint32_t (*e_num)   (void *ctx, idakit_ea_t ea, uint64_t value, uint32_t ty);
+  uint32_t (*e_fnum)  (void *ctx, idakit_ea_t ea, double value, uint32_t ty);
+  uint32_t (*e_obj)   (void *ctx, idakit_ea_t ea, idakit_ea_t target,
+                       const char *name, size_t name_len, uint32_t ty);
+  uint32_t (*e_var)   (void *ctx, idakit_ea_t ea, uint32_t idx, uint32_t ty);
+  uint32_t (*e_str)   (void *ctx, idakit_ea_t ea, const char *s, size_t len, uint32_t ty);
+  uint32_t (*e_helper)(void *ctx, idakit_ea_t ea, const char *s, size_t len, uint32_t ty);
+  uint32_t (*e_call)  (void *ctx, idakit_ea_t ea, uint32_t callee,
+                       const uint32_t *args, size_t nargs, uint32_t ty);
+  uint32_t (*e_memref)(void *ctx, idakit_ea_t ea, uint32_t obj, uint32_t offset, uint32_t ty);
+  uint32_t (*e_memptr)(void *ctx, idakit_ea_t ea, uint32_t obj, uint32_t offset, uint32_t ty);
+  uint32_t (*e_deref) (void *ctx, idakit_ea_t ea, uint32_t x, uint32_t size, uint32_t ty);
+  /* generic operator node: binary/assign/unary/ternary/cast/index/sizeof/empty/type/insn.
+   * `ctype` is the raw ctype_t; absent operands are IDAKIT_NONE. */
+  uint32_t (*e_op)    (void *ctx, idakit_ea_t ea, uint32_t ctype,
+                       uint32_t x, uint32_t y, uint32_t z, uint32_t ty);
+
+  /* statements */
+  uint32_t (*s_block) (void *ctx, idakit_ea_t ea, const uint32_t *kids, size_t nkids);
+  uint32_t (*s_expr)  (void *ctx, idakit_ea_t ea, uint32_t expr);
+  uint32_t (*s_if)    (void *ctx, idakit_ea_t ea, uint32_t cond, uint32_t then_s, uint32_t else_s);
+  uint32_t (*s_for)   (void *ctx, idakit_ea_t ea, uint32_t init, uint32_t cond,
+                       uint32_t step, uint32_t body);
+  uint32_t (*s_while) (void *ctx, idakit_ea_t ea, uint32_t cond, uint32_t body);
+  uint32_t (*s_do)    (void *ctx, idakit_ea_t ea, uint32_t body, uint32_t cond);
+  uint32_t (*s_switch)(void *ctx, idakit_ea_t ea, uint32_t expr,
+                       const idakit_case_t *cases, size_t ncases);
+  uint32_t (*s_break) (void *ctx, idakit_ea_t ea);
+  uint32_t (*s_continue)(void *ctx, idakit_ea_t ea);
+  uint32_t (*s_return)(void *ctx, idakit_ea_t ea, uint32_t expr /* or IDAKIT_NONE */);
+  uint32_t (*s_goto)  (void *ctx, idakit_ea_t ea, int32_t label);
+  uint32_t (*s_asm)   (void *ctx, idakit_ea_t ea, const uint64_t *addrs, size_t n);
+  uint32_t (*s_try)   (void *ctx, idakit_ea_t ea, uint32_t body,
+                       const uint32_t *catches, size_t n);
+  uint32_t (*s_throw) (void *ctx, idakit_ea_t ea, uint32_t expr /* or IDAKIT_NONE */);
+  uint32_t (*s_empty) (void *ctx, idakit_ea_t ea);
+
+  /* types. kind: 0 unknown, 1 void, 2 bool, 3 int, 4 float. */
+  uint32_t (*t_scalar)(void *ctx, uint32_t kind, uint32_t bytes, uint32_t is_signed,
+                       uint64_t size, uint32_t has_size);
+  uint32_t (*t_ptr)   (void *ctx, uint32_t target, uint64_t size, uint32_t has_size);
+  uint32_t (*t_array) (void *ctx, uint32_t elem, uint64_t nelems, uint64_t size, uint32_t has_size);
+  uint32_t (*t_func)  (void *ctx, uint32_t ret, const uint32_t *params, size_t n, uint32_t vararg);
+  /* Reference a named aggregate/typedef; mints (or returns the existing) placeholder so a
+   * recursive member can point back before the definition is filled. */
+  uint32_t (*t_named_ref)(void *ctx, const char *name, size_t name_len);
+  /* Mint an anonymous (un-deduped) placeholder for an unnamed struct/union/enum. */
+  uint32_t (*t_anon)  (void *ctx);
+  /* Fill a placeholder `id` minted by t_named_ref/t_anon. */
+  void (*t_fill_struct)(void *ctx, uint32_t id, uint32_t is_union,
+                        const idakit_member_t *members, size_t n, uint64_t size, uint32_t has_size);
+  void (*t_fill_enum) (void *ctx, uint32_t id, uint32_t underlying,
+                       const idakit_enum_const_t *consts, size_t n, uint64_t size, uint32_t has_size);
+  void (*t_fill_typedef)(void *ctx, uint32_t id, uint32_t underlying);
+
+  /* locals. Append one lvar; the call order is the lvar index that `e_var.idx` refers to. flags:
+   * bit0 is_arg, bit1 is_result, bit2 is_byref. loc_kind: 0 other, 1 register, 2 stack. */
+  void (*l_lvar)(void *ctx, const char *name, size_t name_len, uint32_t ty, uint32_t flags,
+                 uint32_t width, const char *comment, size_t comment_len,
+                 uint32_t loc_kind, int64_t loc_val);
+} idakit_emit_vtbl_t;
+
+/* Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) and writing the root statement handle
+ * to `*root`. Returns 0 on success, non-zero if `cfunc` is NULL. */
+int idakit_cfunc_walk_ctree(void *cfunc, const idakit_emit_vtbl_t *vtbl, void *ctx, uint32_t *root);
 
 #ifdef __cplusplus
 }

@@ -18,17 +18,11 @@
 #include <hexrays.hpp>
 
 #include <vector>
-#include <map>
+#include <set>
 #include <string>
 #include <cstring>
 
 #include "idakit_facade.h"
-
-// These must match the `#[repr(C)]` structs in idakit-sys and idakit's `tk` codes.
-static_assert(sizeof(idakit_expr_rec_t) == 40, "ExprRec layout");
-static_assert(sizeof(idakit_stmt_rec_t) == 40, "StmtRec layout");
-static_assert(sizeof(idakit_type_rec_t) == 40, "TypeRec layout");
-static_assert(sizeof(idakit_case_rec_t) == 16, "CaseRec layout");
 
 extern "C" size_t idakit_func_qty(void)
 {
@@ -323,271 +317,343 @@ extern "C" void idakit_cfunc_ctree_counts(void *h, int *n_insn, int *n_expr, int
   *n_calls = v.n_calls;
 }
 
-// Flat ctree extraction. One depth-first walk emits records in post-order (each node's
-// children and type precede it), so every reference points backwards. Operators emit
-// their raw `ctype_t` as the tag and fill operands generically via op_uses_x/y/z; only
-// the leaves and variadic kinds need bespoke handling. All meaning is reconstructed on
-// the Rust side -- this side is a dumb transcriber.
+// Streaming ctree walk. The facade reads the SDK ctree depth-first and, per node, calls
+// one Rust callback in `v` to mint the owned node; children are emitted before parents,
+// so each call receives its children as the handles their own callbacks returned. The
+// facade interns nothing: named types are referenced by name (recursion-safe) and filled
+// once, guarded by `defined`. All identity, dedup, and meaning live on the Rust side.
 namespace {
 
-// Type-kind codes, matching idakit's `tk` module.
-enum {
-  TK_UNKNOWN = 0, TK_VOID = 1, TK_BOOL = 2, TK_INT = 3,
-  TK_FLOAT = 4, TK_PTR = 5, TK_ARRAY = 6, TK_NAMED = 7,
-};
-
-const uint32_t NONE = 0xFFFFFFFFu; // absent optional edge
-
-struct image_t
+struct walker_t
 {
-  std::vector<idakit_type_rec_t> types;
-  std::vector<idakit_expr_rec_t> exprs;
-  std::vector<idakit_stmt_rec_t> stmts;
-  std::vector<uint32_t> nodes;
-  std::vector<uint8_t> bytes;
-  std::vector<uint64_t> longs;
-  std::vector<idakit_case_rec_t> cases;
-  std::map<std::string, uint32_t> type_cache;
-  uint32_t root = 0;
+  const idakit_emit_vtbl_t *v;
+  void *ctx;
+  std::set<std::string> defined; // named types already filled (recursion + dedup guard)
 
-  // Append a string to the bytes pool; report its [offset, length).
-  void add_str(const char *s, uint32_t *off, uint32_t *len)
+  // Mint the handle for a type, recursing into its components. Named aggregates resolve
+  // through a by-name placeholder so a recursive member can point back before the body
+  // is filled; structural types (ptr/array/func/scalar) are emitted directly.
+  // A typedef alias resolves all structural predicates through to its target, so it must
+  // be intercepted before them; everything else dispatches on the resolved shape.
+  uint32_t ty(const tinfo_t &t)
   {
-    size_t n = s != nullptr ? strlen(s) : 0;
-    *off = (uint32_t)bytes.size();
-    *len = (uint32_t)n;
-    bytes.insert(bytes.end(), s, s + n);
+    if ( !t.empty() && t.is_typedef() )
+      return ty_typedef(t);
+    return ty_resolved(t);
   }
 
-  // Intern a type, decomposing scalars/pointers/arrays and falling back to a printed
-  // name for aggregates (full struct/enum/func extraction is a later pass). Deduped by
-  // printed form; children are interned first, so they get smaller indices.
-  uint32_t intern_type(const tinfo_t &t)
+  uint32_t ty_resolved(const tinfo_t &t)
   {
-    qstring key;
-    t.print(&key);
-    std::string k(key.c_str(), key.length());
-    auto it = type_cache.find(k);
-    if ( it != type_cache.end() )
-      return it->second;
-
-    idakit_type_rec_t r;
-    memset(&r, 0, sizeof(r));
     size_t sz = t.get_size();
-    if ( sz != BADSIZE && sz != 0 )
+    uint32_t has_size = (sz != BADSIZE && sz != 0) ? 1 : 0;
+    uint64_t size = has_size ? (uint64_t)sz : 0;
+
+    if ( t.empty() )       return v->t_scalar(ctx, 0, 0, 0, size, has_size);
+    if ( t.is_ptr() )      return v->t_ptr(ctx, ty(t.get_pointed_object()), size, has_size);
+    if ( t.is_array() )    return v->t_array(ctx, ty(t.get_array_element()),
+                                             (uint64_t)t.get_array_nelems(), size, has_size);
+    if ( t.is_func() )     return ty_func(t);
+    if ( t.is_udt() )      return ty_udt(t, size, has_size);
+    if ( t.is_enum() )     return ty_enum(t, size, has_size);
+    if ( t.is_bool() )     return v->t_scalar(ctx, 2, 0, 0, size, has_size);
+    if ( t.is_void() )     return v->t_scalar(ctx, 1, 0, 0, size, has_size);
+    if ( t.is_floating() ) return v->t_scalar(ctx, 4, (uint32_t)sz, 0, size, has_size);
+    if ( t.is_integral() ) return v->t_scalar(ctx, 3, (uint32_t)sz, t.is_signed() ? 1 : 0,
+                                              size, has_size);
+    return v->t_scalar(ctx, 0, 0, 0, size, has_size); // unknown
+  }
+
+  // Mint a placeholder: by name (deduped, recursion-safe) for a named aggregate, fresh
+  // for an anonymous one. `*first` reports whether the body still needs filling.
+  uint32_t placeholder(const tinfo_t &t, bool *first)
+  {
+    qstring nm;
+    if ( t.get_type_name(&nm) && !nm.empty() )
     {
-      r.has_size = 1;
-      r.size = sz;
+      uint32_t id = v->t_named_ref(ctx, nm.c_str(), nm.length());
+      *first = defined.insert(std::string(nm.c_str(), nm.length())).second;
+      return id;
     }
-    if ( t.empty() )
-      r.tag = TK_UNKNOWN;
-    else if ( t.is_void() )
-      r.tag = TK_VOID;
-    else if ( t.is_bool() )
-      r.tag = TK_BOOL;
-    else if ( t.is_floating() )
+    *first = true;
+    return v->t_anon(ctx);
+  }
+
+  uint32_t ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_size)
+  {
+    bool first;
+    uint32_t id = placeholder(t, &first);
+    if ( first )
     {
-      r.tag = TK_FLOAT;
-      r.bytes = (uint32_t)sz;
+      udt_type_data_t udt;
+      std::vector<idakit_member_t> ms;
+      if ( t.get_udt_details(&udt) )
+      {
+        ms.reserve(udt.size());
+        for ( const udm_t &m : udt )
+        {
+          idakit_member_t md;
+          md.name = m.name.c_str();
+          md.name_len = m.name.length();
+          md.bit_offset = m.offset;
+          md.ty = ty(m.type);
+          md.bitfield_width = m.is_bitfield() ? (uint32_t)m.size : 0;
+          ms.push_back(md);
+        }
+      }
+      v->t_fill_struct(ctx, id, t.is_union() ? 1 : 0, ms.data(), ms.size(), size, has_size);
     }
-    else if ( t.is_integral() )
+    return id;
+  }
+
+  uint32_t ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_size)
+  {
+    bool first;
+    uint32_t id = placeholder(t, &first);
+    if ( first )
     {
-      r.tag = TK_INT;
-      r.bytes = (uint32_t)sz;
-      r.is_signed = t.is_signed() ? 1 : 0;
+      enum_type_data_t ed;
+      std::vector<idakit_enum_const_t> cs;
+      bool sgn = false;
+      if ( t.get_enum_details(&ed) )
+      {
+        sgn = ed.is_number_signed();
+        cs.reserve(ed.size());
+        for ( const edm_t &m : ed )
+          cs.push_back({ m.name.c_str(), m.name.length(), m.value });
+      }
+      uint32_t base_bytes = has_size ? (uint32_t)size : 4;
+      uint32_t underlying = v->t_scalar(ctx, 3, base_bytes, sgn ? 1 : 0, size, has_size);
+      v->t_fill_enum(ctx, id, underlying, cs.data(), cs.size(), size, has_size);
     }
-    else if ( t.is_ptr() )
+    return id;
+  }
+
+  // A typedef link (`typedef T alias;`). Keep the alias name and peel exactly one level to
+  // its target, so a chain (alias -> alias -> base) unwinds link by link. A named target
+  // (another typedef, a struct/enum) is reached by name; an unnamed structural target has
+  // no name to conflate with the alias, so it resolves straight off this same tinfo.
+  uint32_t ty_typedef(const tinfo_t &t)
+  {
+    bool first;
+    uint32_t id = placeholder(t, &first); // keyed by the alias name
+    if ( first )
     {
-      uint32_t target = intern_type(t.get_pointed_object());
-      r.tag = TK_PTR;
-      r.a = target;
+      qstring next;
+      tinfo_t und;
+      uint32_t under;
+      if ( t.get_next_type_name(&next)
+        && und.get_named_type(get_idati(), next.c_str(), BTF_TYPEDEF, false) )
+        under = ty(und);
+      else
+        under = ty_resolved(t);
+      v->t_fill_typedef(ctx, id, under);
     }
-    else if ( t.is_array() )
+    return id;
+  }
+
+  uint32_t ty_func(const tinfo_t &t)
+  {
+    func_type_data_t fd;
+    std::vector<uint32_t> params;
+    uint32_t ret;
+    uint32_t vararg = 0;
+    if ( t.get_func_details(&fd) )
     {
-      uint32_t elem = intern_type(t.get_array_element());
-      r.tag = TK_ARRAY;
-      r.a = elem;
-      r.aux = (uint64_t)t.get_array_nelems();
+      ret = ty(fd.rettype);
+      params.reserve(fd.size());
+      for ( const funcarg_t &a : fd )
+        params.push_back(ty(a.type));
+      vararg = fd.is_vararg_cc() ? 1 : 0;
     }
     else
     {
-      r.tag = TK_NAMED;
-      add_str(key.c_str(), &r.a, &r.b);
+      ret = v->t_scalar(ctx, 0, 0, 0, 0, 0);
     }
-
-    uint32_t idx = (uint32_t)types.size();
-    types.push_back(r);
-    type_cache[k] = idx;
-    return idx;
+    return v->t_func(ctx, ret, params.data(), params.size(), vararg);
   }
 
-  uint32_t emit_expr(const cexpr_t *e)
+  uint32_t expr(const cexpr_t *e)
   {
-    idakit_expr_rec_t r;
-    memset(&r, 0, sizeof(r));
-    r.ea = (uint64_t)e->ea;
-    r.tag = (uint32_t)e->op;
-    r.ty = intern_type(e->type);
+    ea_t ea = e->ea;
+    uint32_t t = ty(e->type);
     switch ( e->op )
     {
-      case cot_num:    r.aux = e->n->value(e->type); break;
-      case cot_fnum:   r.aux = 0; break; // TODO: decode fnumber_t -> f64 bits
-      case cot_obj:    r.aux = (uint64_t)e->obj_ea; break;
-      case cot_var:    r.a = (uint32_t)e->v.idx; break;
-      case cot_str:    add_str(e->string, &r.a, &r.b); break;
-      case cot_helper: add_str(e->helper, &r.a, &r.b); break;
-      case cot_ptr:    r.a = emit_expr(e->x); r.b = (uint32_t)e->ptrsize; break;
-      case cot_memref:
-      case cot_memptr: r.a = emit_expr(e->x); r.b = e->m; break;
+      case cot_num: return v->e_num(ctx, ea, e->n->value(e->type), t);
+      case cot_fnum:
+      {
+        double d = 0.0;
+        e->fpc->fnum.to_double(&d);
+        return v->e_fnum(ctx, ea, d, t);
+      }
+      case cot_obj:
+      {
+        qstring nm;
+        get_name(&nm, e->obj_ea);
+        return v->e_obj(ctx, ea, (uint64_t)e->obj_ea, nm.c_str(), nm.length(), t);
+      }
+      case cot_var:    return v->e_var(ctx, ea, (uint32_t)e->v.idx, t);
+      case cot_str:    return v->e_str(ctx, ea, e->string,
+                                       e->string != nullptr ? strlen(e->string) : 0, t);
+      case cot_helper: return v->e_helper(ctx, ea, e->helper,
+                                          e->helper != nullptr ? strlen(e->helper) : 0, t);
+      case cot_ptr:    return v->e_deref(ctx, ea, expr(e->x), (uint32_t)e->ptrsize, t);
+      case cot_memref: return v->e_memref(ctx, ea, expr(e->x), e->m, t);
+      case cot_memptr: return v->e_memptr(ctx, ea, expr(e->x), e->m, t);
       case cot_call:
       {
-        r.a = emit_expr(e->x);
+        uint32_t callee = expr(e->x);
         std::vector<uint32_t> args;
         if ( e->a != nullptr )
+        {
+          args.reserve(e->a->size());
           for ( const carg_t &arg : *e->a )
-            args.push_back(emit_expr(&arg));
-        r.b = (uint32_t)nodes.size();
-        r.c = (uint32_t)args.size();
-        nodes.insert(nodes.end(), args.begin(), args.end());
+            args.push_back(expr(&arg));
+        }
+        return v->e_call(ctx, ea, callee, args.data(), args.size(), t);
       }
-      break;
       default:
-        // Binary/unary/ternary/index/cast/sizeof: operands by the SDK's own predicates.
-        if ( op_uses_x(e->op) ) r.a = emit_expr(e->x);
-        if ( op_uses_y(e->op) ) r.b = emit_expr(e->y);
-        if ( op_uses_z(e->op) ) r.c = emit_expr(e->z);
-        break;
+      {
+        // Binary/assign/unary/ternary/cast/index/sizeof/empty/type/insn: operands by the
+        // SDK's own predicates, ctype passed raw for the Rust side to classify.
+        uint32_t x = op_uses_x(e->op) ? expr(e->x) : IDAKIT_NONE;
+        uint32_t y = op_uses_y(e->op) ? expr(e->y) : IDAKIT_NONE;
+        uint32_t z = op_uses_z(e->op) ? expr(e->z) : IDAKIT_NONE;
+        return v->e_op(ctx, ea, (uint32_t)e->op, x, y, z, t);
+      }
     }
-    uint32_t idx = (uint32_t)exprs.size();
-    exprs.push_back(r);
-    return idx;
   }
 
-  uint32_t emit_opt_expr(const cexpr_t *e)
+  uint32_t opt_expr(const cexpr_t *e)
   {
-    return (e == nullptr || e->op == cot_empty) ? NONE : emit_expr(e);
+    return (e == nullptr || e->op == cot_empty) ? IDAKIT_NONE : expr(e);
   }
 
-  // Emit a statement list as a `cit_block` record (children first).
-  uint32_t emit_block(const cinsn_list_t &list, ea_t ea)
+  uint32_t block(const cinsn_list_t &list, ea_t ea)
   {
     std::vector<uint32_t> kids;
+    kids.reserve(list.size());
     for ( const cinsn_t &child : list )
-      kids.push_back(emit_stmt(&child));
-    idakit_stmt_rec_t r;
-    memset(&r, 0, sizeof(r));
-    r.ea = (uint64_t)ea;
-    r.tag = cit_block;
-    r.a = (uint32_t)nodes.size();
-    r.b = (uint32_t)kids.size();
-    nodes.insert(nodes.end(), kids.begin(), kids.end());
-    uint32_t idx = (uint32_t)stmts.size();
-    stmts.push_back(r);
-    return idx;
+      kids.push_back(stmt(&child));
+    return v->s_block(ctx, ea, kids.data(), kids.size());
   }
 
-  uint32_t emit_stmt(const cinsn_t *i)
+  uint32_t stmt(const cinsn_t *i)
   {
-    if ( i->op == cit_block )
-      return emit_block(*i->cblock, i->ea);
-
-    idakit_stmt_rec_t r;
-    memset(&r, 0, sizeof(r));
-    r.ea = (uint64_t)i->ea;
-    r.tag = (uint32_t)i->op;
+    ea_t ea = i->ea;
     switch ( i->op )
     {
-      case cit_expr: r.a = emit_expr(i->cexpr); break;
+      case cit_block: return block(*i->cblock, ea);
+      case cit_expr:  return v->s_expr(ctx, ea, expr(i->cexpr));
       case cit_if:
-        r.a = emit_expr(&i->cif->expr);
-        r.b = emit_stmt(i->cif->ithen);
-        r.c = i->cif->ielse != nullptr ? emit_stmt(i->cif->ielse) : NONE;
-        break;
+      {
+        uint32_t c = expr(&i->cif->expr);
+        uint32_t th = stmt(i->cif->ithen);
+        uint32_t el = i->cif->ielse != nullptr ? stmt(i->cif->ielse) : IDAKIT_NONE;
+        return v->s_if(ctx, ea, c, th, el);
+      }
       case cit_for:
-        r.a = emit_opt_expr(&i->cfor->init);
-        r.b = emit_opt_expr(&i->cfor->expr);
-        r.c = emit_opt_expr(&i->cfor->step);
-        r.aux = emit_stmt(i->cfor->body);
-        break;
+      {
+        uint32_t in = opt_expr(&i->cfor->init);
+        uint32_t co = opt_expr(&i->cfor->expr);
+        uint32_t st = opt_expr(&i->cfor->step);
+        return v->s_for(ctx, ea, in, co, st, stmt(i->cfor->body));
+      }
       case cit_while:
-        r.a = emit_expr(&i->cwhile->expr);
-        r.b = emit_stmt(i->cwhile->body);
-        break;
+      {
+        uint32_t c = expr(&i->cwhile->expr);
+        return v->s_while(ctx, ea, c, stmt(i->cwhile->body));
+      }
       case cit_do:
-        r.a = emit_stmt(i->cdo->body);
-        r.b = emit_expr(&i->cdo->expr);
-        break;
+      {
+        uint32_t b = stmt(i->cdo->body);
+        return v->s_do(ctx, ea, b, expr(&i->cdo->expr));
+      }
       case cit_switch:
       {
-        r.a = emit_expr(&i->cswitch->expr);
-        std::vector<idakit_case_rec_t> crs;
+        uint32_t ex = expr(&i->cswitch->expr);
+        // Reserve so element addresses stay stable while `cs` references into `vals`.
+        std::vector<std::vector<uint64_t>> vals;
+        std::vector<idakit_case_t> cs;
+        vals.reserve(i->cswitch->cases.size());
+        cs.reserve(i->cswitch->cases.size());
         for ( const ccase_t &c : i->cswitch->cases )
         {
-          idakit_case_rec_t cr;
-          memset(&cr, 0, sizeof(cr));
-          cr.values_off = (uint32_t)longs.size();
-          cr.values_len = (uint32_t)c.values.size();
-          for ( uint64 v : c.values )
-            longs.push_back(v);
-          cr.body = emit_stmt(&c); // ccase_t is-a cinsn_t
-          crs.push_back(cr);
+          std::vector<uint64_t> vv;
+          vv.reserve(c.values.size());
+          for ( uint64 val : c.values )
+            vv.push_back(val);
+          uint32_t body = stmt(&c); // ccase_t is-a cinsn_t
+          vals.push_back(std::move(vv));
+          idakit_case_t cd;
+          cd.values = vals.back().data();
+          cd.nvalues = vals.back().size();
+          cd.body = body;
+          cs.push_back(cd);
         }
-        r.b = (uint32_t)cases.size();
-        r.c = (uint32_t)crs.size();
-        cases.insert(cases.end(), crs.begin(), crs.end());
+        return v->s_switch(ctx, ea, ex, cs.data(), cs.size());
       }
-      break;
-      case cit_return: r.a = emit_opt_expr(&i->creturn->expr); break;
-      case cit_goto:   r.a = (uint32_t)i->cgoto->label_num; break;
+      case cit_return:   return v->s_return(ctx, ea, opt_expr(&i->creturn->expr));
+      case cit_goto:     return v->s_goto(ctx, ea, (int32_t)i->cgoto->label_num);
       case cit_asm:
-        r.a = (uint32_t)longs.size();
-        r.b = (uint32_t)i->casm->size();
+      {
+        std::vector<uint64_t> addrs;
+        addrs.reserve(i->casm->size());
         for ( ea_t a : *i->casm )
-          longs.push_back((uint64_t)a);
-        break;
-      case cit_throw: r.a = emit_opt_expr(&i->cthrow->expr); break;
+          addrs.push_back((uint64_t)a);
+        return v->s_asm(ctx, ea, addrs.data(), addrs.size());
+      }
+      case cit_throw:    return v->s_throw(ctx, ea, opt_expr(&i->cthrow->expr));
       case cit_try:
       {
         // ctry is-a cblock (the guarded body); each catch is a cblock too.
-        r.a = emit_block(*i->ctry, i->ea);
-        std::vector<uint32_t> kids;
+        uint32_t body = block(*i->ctry, ea);
+        std::vector<uint32_t> catches;
+        catches.reserve(i->ctry->catchs.size());
         for ( const ccatch_t &cat : i->ctry->catchs )
-          kids.push_back(emit_block(cat, i->ea));
-        r.b = (uint32_t)nodes.size();
-        r.c = (uint32_t)kids.size();
-        nodes.insert(nodes.end(), kids.begin(), kids.end());
+          catches.push_back(block(cat, ea));
+        return v->s_try(ctx, ea, body, catches.data(), catches.size());
       }
-      break;
-      default: break; // cit_break / cit_continue / cit_empty carry nothing
+      case cit_break:    return v->s_break(ctx, ea);
+      case cit_continue: return v->s_continue(ctx, ea);
+      case cit_empty:    return v->s_empty(ctx, ea);
+      default:           return v->s_empty(ctx, ea);
     }
-    uint32_t idx = (uint32_t)stmts.size();
-    stmts.push_back(r);
-    return idx;
+  }
+
+  // Emit the lvar table in index order, so `e_var.idx` resolves against it.
+  void lvars(cfunc_t *cf)
+  {
+    lvars_t *lv = cf->get_lvars();
+    if ( lv == nullptr )
+      return;
+    for ( const lvar_t &l : *lv )
+    {
+      uint32_t flags = (l.is_arg_var() ? 1u : 0u)
+                     | (l.is_result_var() ? 2u : 0u)
+                     | (l.is_used_byref() ? 4u : 0u);
+      uint32_t loc_kind = 0;
+      int64_t loc_val = 0;
+      if ( l.is_stk_var() )      { loc_kind = 2; loc_val = (int64_t)l.get_stkoff(); }
+      else if ( l.is_reg_var() ) { loc_kind = 1; loc_val = (int64_t)l.get_reg1(); }
+      v->l_lvar(ctx, l.name.c_str(), l.name.length(), ty(l.tif), flags, (uint32_t)l.width,
+                l.cmt.c_str(), l.cmt.length(), loc_kind, loc_val);
+    }
   }
 };
 
 } // namespace
 
-extern "C" void *idakit_cfunc_extract_ctree(void *h, idakit_ctree_view_t *out)
+extern "C" int idakit_cfunc_walk_ctree(void *h, const idakit_emit_vtbl_t *v, void *ctx,
+                                       uint32_t *root)
 {
-  if ( h == nullptr )
-    return nullptr;
+  if ( h == nullptr || v == nullptr )
+    return 1;
   cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
-  image_t *img = new image_t;
-  img->root = img->emit_stmt(&cf->body);
 
-  out->types = img->types.data(); out->n_types = img->types.size();
-  out->exprs = img->exprs.data(); out->n_exprs = img->exprs.size();
-  out->stmts = img->stmts.data(); out->n_stmts = img->stmts.size();
-  out->nodes = img->nodes.data(); out->n_nodes = img->nodes.size();
-  out->bytes = img->bytes.data(); out->n_bytes = img->bytes.size();
-  out->longs = img->longs.data(); out->n_longs = img->longs.size();
-  out->cases = img->cases.data(); out->n_cases = img->cases.size();
-  out->root = img->root;
-  return img;
-}
-
-extern "C" void idakit_ctree_dispose(void *h)
-{
-  delete reinterpret_cast<image_t *>(h);
+  walker_t w;
+  w.v = v;
+  w.ctx = ctx;
+  w.lvars(cf);
+  *root = w.stmt(&cf->body);
+  return 0;
 }
