@@ -15,6 +15,7 @@ use std::thread;
 use idakit_sys as sys;
 
 mod claim;
+mod ctree;
 mod decompile;
 mod ea;
 mod error;
@@ -25,6 +26,7 @@ mod segment;
 mod ty;
 mod xref;
 
+pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{Cfunc, CtreeCounts};
 pub use ea::{BADADDR, Ea, Offset};
 pub use error::{CallError, Error, InitError, Qerrno, Result};
