@@ -78,7 +78,14 @@ typedef struct { const uint64_t *values; size_t nvalues; uint32_t body; } idakit
 
 /* The callbacks the facade invokes while walking. Every function returns the handle of
  * the node/type it minted (except the void ones). Scalar `kind` codes and `ctype` values
- * are interpreted on the Rust side. `ty` is the node's resolved type handle. */
+ * are interpreted on the Rust side. `ty` is the node's resolved type handle.
+ *
+ * Pointer lifetime: every `const char*`/byte span passed to a callback (names, string
+ * literals, member/enum-constant names, comments, value arrays) points into a C++ stack
+ * temporary owned by the walk -- a local `qstring`, `udt_type_data_t`, `enum_type_data_t`,
+ * or `std::vector`. It is borrowed for that single callback invocation only and is
+ * invalidated as soon as the callback returns; a callback that needs it longer must copy
+ * it before returning. */
 typedef struct idakit_emit_vtbl_t
 {
   /* expressions */

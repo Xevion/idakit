@@ -122,6 +122,11 @@ pub struct CaseDesc {
 /// builds owned nodes inside each callback and returns the handle the parent will
 /// reference; children are emitted before parents. `#[repr(C)]` and field order mirror
 /// `idakit_emit_vtbl_t` exactly — the facade indexes by offset.
+///
+/// Every `*const c_char`/byte-slice pointer passed to a callback (names, string literals,
+/// member and enum-constant names, comments, value arrays) borrows a C++ stack temporary
+/// owned by the walk. It is valid for that single callback invocation only and dangles once
+/// the callback returns, so a callback must copy any data it needs to outlive the call.
 #[repr(C)]
 pub struct EmitVtbl {
     pub e_num: unsafe extern "C" fn(*mut c_void, Ea, u64, u32) -> u32,

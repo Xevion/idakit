@@ -21,6 +21,7 @@
 #include <set>
 #include <string>
 #include <cstring>
+#include <cstdlib>  // std::abort
 
 #include "idakit_facade.h"
 
@@ -37,16 +38,26 @@ extern "C" idakit_ea_t idakit_func_ea(size_t n)
 
 extern "C" int64_t idakit_func_name(idakit_ea_t ea, char *buf, size_t cap)
 {
-  qstring out;
-  ssize_t r = get_func_name(&out, (ea_t)ea);
-  if ( r <= 0 )
+  // A C++ exception (e.g. std::bad_alloc from qstring/STL growth) must never unwind across
+  // an extern "C" boundary into Rust frames -- that is undefined behavior. Every facade
+  // body that can allocate traps it here and aborts rather than letting it escape.
+  try
   {
-    if ( cap > 0 )
-      buf[0] = 0;
-    return r;
+    qstring out;
+    ssize_t r = get_func_name(&out, (ea_t)ea);
+    if ( r <= 0 )
+    {
+      if ( cap > 0 )
+        buf[0] = 0;
+      return r;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
   }
-  qstrncpy(buf, out.c_str(), cap);
-  return (int64_t)out.length();
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 extern "C" int idakit_seg_qty(void)
@@ -56,17 +67,24 @@ extern "C" int idakit_seg_qty(void)
 
 extern "C" int64_t idakit_seg_name(int n, char *buf, size_t cap)
 {
-  segment_t *s = getnseg(n);
-  if ( s == nullptr )
+  try
   {
-    if ( cap > 0 )
-      buf[0] = 0;
-    return -1;
+    segment_t *s = getnseg(n);
+    if ( s == nullptr )
+    {
+      if ( cap > 0 )
+        buf[0] = 0;
+      return -1;
+    }
+    qstring out;
+    get_visible_segm_name(&out, s);
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
   }
-  qstring out;
-  get_visible_segm_name(&out, s);
-  qstrncpy(buf, out.c_str(), cap);
-  return (int64_t)out.length();
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 extern "C" idakit_ea_t idakit_seg_start(int n)
@@ -106,15 +124,22 @@ extern "C" size_t idakit_xrefs_to(idakit_ea_t ea, idakit_ea_t *from, uint8_t *ty
 
 extern "C" int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap)
 {
-  qstring out;
-  if ( !print_type(&out, (ea_t)ea, PRTYPE_1LINE | PRTYPE_SEMI) )
+  try
   {
-    if ( cap > 0 )
-      buf[0] = 0;
-    return -1;
+    qstring out;
+    if ( !print_type(&out, (ea_t)ea, PRTYPE_1LINE | PRTYPE_SEMI) )
+    {
+      if ( cap > 0 )
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
   }
-  qstrncpy(buf, out.c_str(), cap);
-  return (int64_t)out.length();
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 // A resolved named type plus its expanded member layout (if it is a struct/union).
@@ -127,14 +152,21 @@ struct idakit_type_t
 
 extern "C" void *idakit_type_open(const char *name)
 {
-  idakit_type_t *t = new idakit_type_t;
-  if ( !t->tif.get_named_type(get_idati(), name) )
+  try
   {
-    delete t;
-    return nullptr;
+    idakit_type_t *t = new idakit_type_t;
+    if ( !t->tif.get_named_type(get_idati(), name) )
+    {
+      delete t;
+      return nullptr;
+    }
+    t->is_udt = t->tif.get_udt_details(&t->udt);
+    return t;
   }
-  t->is_udt = t->tif.get_udt_details(&t->udt);
-  return t;
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 extern "C" void idakit_type_dispose(void *h)
@@ -150,15 +182,22 @@ extern "C" int64_t idakit_type_size(void *h)
 
 extern "C" int64_t idakit_type_print(void *h, char *buf, size_t cap)
 {
-  qstring out;
-  if ( !reinterpret_cast<idakit_type_t *>(h)->tif.print(&out) )
+  try
   {
-    if ( cap > 0 )
-      buf[0] = 0;
-    return -1;
+    qstring out;
+    if ( !reinterpret_cast<idakit_type_t *>(h)->tif.print(&out) )
+    {
+      if ( cap > 0 )
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
   }
-  qstrncpy(buf, out.c_str(), cap);
-  return (int64_t)out.length();
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 extern "C" size_t idakit_type_nmembers(void *h)
@@ -196,17 +235,24 @@ extern "C" int64_t idakit_type_member_name(void *h, size_t i, char *buf, size_t 
 
 extern "C" int64_t idakit_type_member_type(void *h, size_t i, char *buf, size_t cap)
 {
-  idakit_type_t *t = reinterpret_cast<idakit_type_t *>(h);
-  if ( !t->is_udt || i >= t->udt.size() )
+  try
   {
-    if ( cap > 0 )
-      buf[0] = 0;
-    return -1;
+    idakit_type_t *t = reinterpret_cast<idakit_type_t *>(h);
+    if ( !t->is_udt || i >= t->udt.size() )
+    {
+      if ( cap > 0 )
+        buf[0] = 0;
+      return -1;
+    }
+    qstring ts;
+    t->udt[i].type.print(&ts);
+    qstrncpy(buf, ts.c_str(), cap);
+    return (int64_t)ts.length();
   }
-  qstring ts;
-  t->udt[i].type.print(&ts);
-  qstrncpy(buf, ts.c_str(), cap);
-  return (int64_t)ts.length();
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 extern "C" size_t idakit_type_ordinal_count(void)
@@ -242,24 +288,31 @@ extern "C" int idakit_hexrays_init(void)
 // thread-local `qerrno` is not set on this path).
 extern "C" void *idakit_decompile(idakit_ea_t ea, char *errbuf, size_t cap)
 {
-  if ( cap > 0 )
-    errbuf[0] = 0;
-  func_t *pfn = get_func((ea_t)ea);
-  if ( pfn == nullptr )
+  try
   {
-    qstrncpy(errbuf, "no function at address", cap);
-    return nullptr;
+    if ( cap > 0 )
+      errbuf[0] = 0;
+    func_t *pfn = get_func((ea_t)ea);
+    if ( pfn == nullptr )
+    {
+      qstrncpy(errbuf, "no function at address", cap);
+      return nullptr;
+    }
+    hexrays_failure_t hf;
+    cfuncptr_t cf = decompile_func(pfn, &hf, 0);
+    if ( cf == nullptr )
+    {
+      qstring desc = hf.desc();
+      qstrncpy(errbuf, desc.c_str(), cap);
+      return nullptr;
+    }
+    // Own a ref on the heap so the result survives past this call.
+    return new cfuncptr_t(cf);
   }
-  hexrays_failure_t hf;
-  cfuncptr_t cf = decompile_func(pfn, &hf, 0);
-  if ( cf == nullptr )
+  catch ( ... )
   {
-    qstring desc = hf.desc();
-    qstrncpy(errbuf, desc.c_str(), cap);
-    return nullptr;
+    std::abort();
   }
-  // Own a ref on the heap so the result survives past this call.
-  return new cfuncptr_t(cf);
 }
 
 extern "C" void idakit_cfunc_dispose(void *h)
@@ -271,18 +324,25 @@ extern "C" int64_t idakit_cfunc_pseudocode(void *h, char *buf, size_t cap)
 {
   if ( h == nullptr )
     return -1;
-  cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
-  const strvec_t &sv = cf->get_pseudocode();
-  qstring out;
-  for ( size_t i = 0; i < sv.size(); ++i )
+  try
   {
-    qstring line;
-    tag_remove(&line, sv[i].line);
-    out.append(line);
-    out.append('\n');
+    cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
+    const strvec_t &sv = cf->get_pseudocode();
+    qstring out;
+    for ( size_t i = 0; i < sv.size(); ++i )
+    {
+      qstring line;
+      tag_remove(&line, sv[i].line);
+      out.append(line);
+      out.append('\n');
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
   }
-  qstrncpy(buf, out.c_str(), cap);
-  return (int64_t)out.length();
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 // Read-only ctree traversal: count statements, expressions, and call sites.
@@ -309,12 +369,24 @@ struct ctree_counter_t : public ctree_visitor_t
 
 extern "C" void idakit_cfunc_ctree_counts(void *h, int *n_insn, int *n_expr, int *n_calls)
 {
-  cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
-  ctree_counter_t v;
-  v.apply_to(&cf->body, nullptr);
-  *n_insn = v.n_insn;
-  *n_expr = v.n_expr;
-  *n_calls = v.n_calls;
+  if ( h == nullptr )
+  {
+    *n_insn = *n_expr = *n_calls = 0;
+    return;
+  }
+  try
+  {
+    cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
+    ctree_counter_t v;
+    v.apply_to(&cf->body, nullptr);
+    *n_insn = v.n_insn;
+    *n_expr = v.n_expr;
+    *n_calls = v.n_calls;
+  }
+  catch ( ... )
+  {
+    std::abort();
+  }
 }
 
 // Streaming ctree walk. The facade reads the SDK ctree depth-first and, per node, calls
@@ -492,9 +564,11 @@ struct walker_t
         return v->e_obj(ctx, ea, (uint64_t)e->obj_ea, nm.c_str(), nm.length(), t);
       }
       case cot_var:    return v->e_var(ctx, ea, (uint32_t)e->v.idx, t);
-      case cot_str:    return v->e_str(ctx, ea, e->string,
+      case cot_str:    return v->e_str(ctx, ea,
+                                       e->string != nullptr ? e->string : "",
                                        e->string != nullptr ? strlen(e->string) : 0, t);
-      case cot_helper: return v->e_helper(ctx, ea, e->helper,
+      case cot_helper: return v->e_helper(ctx, ea,
+                                          e->helper != nullptr ? e->helper : "",
                                           e->helper != nullptr ? strlen(e->helper) : 0, t);
       case cot_ptr:    return v->e_deref(ctx, ea, expr(e->x), (uint32_t)e->ptrsize, t);
       case cot_memref: return v->e_memref(ctx, ea, expr(e->x), e->m, t);
@@ -646,14 +720,21 @@ struct walker_t
 extern "C" int idakit_cfunc_walk_ctree(void *h, const idakit_emit_vtbl_t *v, void *ctx,
                                        uint32_t *root)
 {
-  if ( h == nullptr || v == nullptr )
+  if ( h == nullptr || v == nullptr || root == nullptr )
     return 1;
-  cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
+  try
+  {
+    cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
 
-  walker_t w;
-  w.v = v;
-  w.ctx = ctx;
-  w.lvars(cf);
-  *root = w.stmt(&cf->body);
-  return 0;
+    walker_t w;
+    w.v = v;
+    w.ctx = ctx;
+    w.lvars(cf);
+    *root = w.stmt(&cf->body);
+    return 0;
+  }
+  catch ( ... )
+  {
+    std::abort();
+  }
 }

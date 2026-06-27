@@ -490,15 +490,16 @@ impl CallbackBuilder {
 }
 
 /// Borrow a facade array as a slice; a zero length yields an empty slice without
-/// dereferencing the (possibly null) pointer.
+/// dereferencing the (possibly null) pointer. The pointer is taken by reference so the
+/// returned lifetime is tied to its (stack) holder and cannot be chosen as `'static`.
 ///
 /// # Safety
-/// For a non-zero `len`, `ptr` must point to `len` initialized `T` valid for the borrow.
-unsafe fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+/// For a non-zero `len`, `*ptr` must point to `len` initialized `T` valid for the borrow.
+unsafe fn slice<'a, T>(ptr: &'a *const T, len: usize) -> &'a [T] {
     if len == 0 {
         &[]
     } else {
-        unsafe { std::slice::from_raw_parts(ptr, len) }
+        unsafe { std::slice::from_raw_parts(*ptr, len) }
     }
 }
 
@@ -515,20 +516,22 @@ unsafe fn lossy(ptr: *const c_char, len: usize) -> Option<String> {
     Some(String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// Reborrow the opaque context as the builder the walk threads through every callback.
+/// Reborrow the opaque context as the builder the walk threads through every callback. The
+/// raw pointer is taken by reference so the returned lifetime is tied to its (stack) holder
+/// and cannot be chosen as `'static`.
 ///
 /// # Safety
-/// `ctx` must be the `*mut CallbackBuilder` passed to `idakit_cfunc_walk_ctree`, unaliased
+/// `*ctx` must be the `*mut CallbackBuilder` passed to `idakit_cfunc_walk_ctree`, unaliased
 /// for the call (the walk is single-threaded and never re-enters a callback).
-unsafe fn builder<'a>(ctx: *mut c_void) -> &'a mut CallbackBuilder {
-    unsafe { &mut *(ctx as *mut CallbackBuilder) }
+unsafe fn builder<'a>(ctx: &'a *mut c_void) -> &'a mut CallbackBuilder {
+    unsafe { &mut *(*ctx as *mut CallbackBuilder) }
 }
 
 unsafe extern "C" fn cb_num(ctx: *mut c_void, ea: u64, value: u64, ty: u32) -> u32 {
-    unsafe { builder(ctx) }.num(ea, value, ty)
+    unsafe { builder(&ctx) }.num(ea, value, ty)
 }
 unsafe extern "C" fn cb_fnum(ctx: *mut c_void, ea: u64, value: f64, ty: u32) -> u32 {
-    unsafe { builder(ctx) }.fnum(ea, value, ty)
+    unsafe { builder(&ctx) }.fnum(ea, value, ty)
 }
 unsafe extern "C" fn cb_obj(
     ctx: *mut c_void,
@@ -539,10 +542,10 @@ unsafe extern "C" fn cb_obj(
     ty: u32,
 ) -> u32 {
     let name = unsafe { lossy(name, name_len) };
-    unsafe { builder(ctx) }.obj(ea, target, name, ty)
+    unsafe { builder(&ctx) }.obj(ea, target, name, ty)
 }
 unsafe extern "C" fn cb_var(ctx: *mut c_void, ea: u64, idx: u32, ty: u32) -> u32 {
-    unsafe { builder(ctx) }.var(ea, idx, ty)
+    unsafe { builder(&ctx) }.var(ea, idx, ty)
 }
 unsafe extern "C" fn cb_str(
     ctx: *mut c_void,
@@ -552,7 +555,7 @@ unsafe extern "C" fn cb_str(
     ty: u32,
 ) -> u32 {
     let s = unsafe { lossy(s, len) }.unwrap_or_default();
-    unsafe { builder(ctx) }.string(ea, s, ty)
+    unsafe { builder(&ctx) }.string(ea, s, ty)
 }
 unsafe extern "C" fn cb_helper(
     ctx: *mut c_void,
@@ -562,7 +565,7 @@ unsafe extern "C" fn cb_helper(
     ty: u32,
 ) -> u32 {
     let s = unsafe { lossy(s, len) }.unwrap_or_default();
-    unsafe { builder(ctx) }.helper(ea, s, ty)
+    unsafe { builder(&ctx) }.helper(ea, s, ty)
 }
 unsafe extern "C" fn cb_call(
     ctx: *mut c_void,
@@ -572,17 +575,17 @@ unsafe extern "C" fn cb_call(
     nargs: usize,
     ty: u32,
 ) -> u32 {
-    let args = unsafe { slice(args, nargs) };
-    unsafe { builder(ctx) }.call(ea, callee, args, ty)
+    let args = unsafe { slice(&args, nargs) };
+    unsafe { builder(&ctx) }.call(ea, callee, args, ty)
 }
 unsafe extern "C" fn cb_memref(ctx: *mut c_void, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
-    unsafe { builder(ctx) }.memref(ea, obj, offset, ty)
+    unsafe { builder(&ctx) }.memref(ea, obj, offset, ty)
 }
 unsafe extern "C" fn cb_memptr(ctx: *mut c_void, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
-    unsafe { builder(ctx) }.memptr(ea, obj, offset, ty)
+    unsafe { builder(&ctx) }.memptr(ea, obj, offset, ty)
 }
 unsafe extern "C" fn cb_deref(ctx: *mut c_void, ea: u64, x: u32, size: u32, ty: u32) -> u32 {
-    unsafe { builder(ctx) }.deref(ea, x, size, ty)
+    unsafe { builder(&ctx) }.deref(ea, x, size, ty)
 }
 unsafe extern "C" fn cb_op(
     ctx: *mut c_void,
@@ -593,18 +596,18 @@ unsafe extern "C" fn cb_op(
     z: u32,
     ty: u32,
 ) -> u32 {
-    unsafe { builder(ctx) }.op(ea, ctype, x, y, z, ty)
+    unsafe { builder(&ctx) }.op(ea, ctype, x, y, z, ty)
 }
 
 unsafe extern "C" fn cb_block(ctx: *mut c_void, ea: u64, kids: *const u32, nkids: usize) -> u32 {
-    let kids = unsafe { slice(kids, nkids) };
-    unsafe { builder(ctx) }.block(ea, kids)
+    let kids = unsafe { slice(&kids, nkids) };
+    unsafe { builder(&ctx) }.block(ea, kids)
 }
 unsafe extern "C" fn cb_expr(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
-    unsafe { builder(ctx) }.expr_stmt(ea, e)
+    unsafe { builder(&ctx) }.expr_stmt(ea, e)
 }
 unsafe extern "C" fn cb_if(ctx: *mut c_void, ea: u64, cond: u32, then_s: u32, else_s: u32) -> u32 {
-    unsafe { builder(ctx) }.if_(ea, cond, then_s, else_s)
+    unsafe { builder(&ctx) }.if_(ea, cond, then_s, else_s)
 }
 unsafe extern "C" fn cb_for(
     ctx: *mut c_void,
@@ -614,13 +617,13 @@ unsafe extern "C" fn cb_for(
     step: u32,
     body: u32,
 ) -> u32 {
-    unsafe { builder(ctx) }.for_(ea, init, cond, step, body)
+    unsafe { builder(&ctx) }.for_(ea, init, cond, step, body)
 }
 unsafe extern "C" fn cb_while(ctx: *mut c_void, ea: u64, cond: u32, body: u32) -> u32 {
-    unsafe { builder(ctx) }.while_(ea, cond, body)
+    unsafe { builder(&ctx) }.while_(ea, cond, body)
 }
 unsafe extern "C" fn cb_do(ctx: *mut c_void, ea: u64, body: u32, cond: u32) -> u32 {
-    unsafe { builder(ctx) }.do_(ea, body, cond)
+    unsafe { builder(&ctx) }.do_(ea, body, cond)
 }
 unsafe extern "C" fn cb_switch(
     ctx: *mut c_void,
@@ -629,31 +632,31 @@ unsafe extern "C" fn cb_switch(
     cases: *const CaseDesc,
     ncases: usize,
 ) -> u32 {
-    let cds = unsafe { slice(cases, ncases) };
+    let cds = unsafe { slice(&cases, ncases) };
     let cases = cds
         .iter()
         .map(|cd| Case {
-            values: unsafe { slice(cd.values, cd.nvalues) }.to_vec(),
+            values: unsafe { slice(&cd.values, cd.nvalues) }.to_vec(),
             body: sid(cd.body),
         })
         .collect();
-    unsafe { builder(ctx) }.switch(ea, expr, cases)
+    unsafe { builder(&ctx) }.switch(ea, expr, cases)
 }
 unsafe extern "C" fn cb_break(ctx: *mut c_void, ea: u64) -> u32 {
-    unsafe { builder(ctx) }.break_(ea)
+    unsafe { builder(&ctx) }.break_(ea)
 }
 unsafe extern "C" fn cb_continue(ctx: *mut c_void, ea: u64) -> u32 {
-    unsafe { builder(ctx) }.continue_(ea)
+    unsafe { builder(&ctx) }.continue_(ea)
 }
 unsafe extern "C" fn cb_return(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
-    unsafe { builder(ctx) }.return_(ea, e)
+    unsafe { builder(&ctx) }.return_(ea, e)
 }
 unsafe extern "C" fn cb_goto(ctx: *mut c_void, ea: u64, label: i32) -> u32 {
-    unsafe { builder(ctx) }.goto(ea, label)
+    unsafe { builder(&ctx) }.goto(ea, label)
 }
 unsafe extern "C" fn cb_asm(ctx: *mut c_void, ea: u64, addrs: *const u64, n: usize) -> u32 {
-    let addrs = unsafe { slice(addrs, n) };
-    unsafe { builder(ctx) }.asm(ea, addrs)
+    let addrs = unsafe { slice(&addrs, n) };
+    unsafe { builder(&ctx) }.asm(ea, addrs)
 }
 unsafe extern "C" fn cb_try(
     ctx: *mut c_void,
@@ -662,14 +665,14 @@ unsafe extern "C" fn cb_try(
     catches: *const u32,
     n: usize,
 ) -> u32 {
-    let catches = unsafe { slice(catches, n) };
-    unsafe { builder(ctx) }.try_(ea, body, catches)
+    let catches = unsafe { slice(&catches, n) };
+    unsafe { builder(&ctx) }.try_(ea, body, catches)
 }
 unsafe extern "C" fn cb_throw(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
-    unsafe { builder(ctx) }.throw(ea, e)
+    unsafe { builder(&ctx) }.throw(ea, e)
 }
 unsafe extern "C" fn cb_empty(ctx: *mut c_void, ea: u64) -> u32 {
-    unsafe { builder(ctx) }.empty_stmt(ea)
+    unsafe { builder(&ctx) }.empty_stmt(ea)
 }
 
 unsafe extern "C" fn cb_scalar(
@@ -680,10 +683,10 @@ unsafe extern "C" fn cb_scalar(
     size: u64,
     has_size: u32,
 ) -> u32 {
-    unsafe { builder(ctx) }.scalar(kind, bytes, signed, size, has_size)
+    unsafe { builder(&ctx) }.scalar(kind, bytes, signed, size, has_size)
 }
 unsafe extern "C" fn cb_ptr(ctx: *mut c_void, target: u32, size: u64, has_size: u32) -> u32 {
-    unsafe { builder(ctx) }.ptr(target, size, has_size)
+    unsafe { builder(&ctx) }.ptr(target, size, has_size)
 }
 unsafe extern "C" fn cb_array(
     ctx: *mut c_void,
@@ -692,7 +695,7 @@ unsafe extern "C" fn cb_array(
     size: u64,
     has_size: u32,
 ) -> u32 {
-    unsafe { builder(ctx) }.array(elem, nelems, size, has_size)
+    unsafe { builder(&ctx) }.array(elem, nelems, size, has_size)
 }
 unsafe extern "C" fn cb_func(
     ctx: *mut c_void,
@@ -701,15 +704,15 @@ unsafe extern "C" fn cb_func(
     n: usize,
     vararg: u32,
 ) -> u32 {
-    let params = unsafe { slice(params, n) };
-    unsafe { builder(ctx) }.func(ret, params, vararg)
+    let params = unsafe { slice(&params, n) };
+    unsafe { builder(&ctx) }.func(ret, params, vararg)
 }
 unsafe extern "C" fn cb_named_ref(ctx: *mut c_void, name: *const c_char, name_len: usize) -> u32 {
     let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
-    unsafe { builder(ctx) }.named_ref(name)
+    unsafe { builder(&ctx) }.named_ref(name)
 }
 unsafe extern "C" fn cb_anon(ctx: *mut c_void) -> u32 {
-    unsafe { builder(ctx) }.anon()
+    unsafe { builder(&ctx) }.anon()
 }
 unsafe extern "C" fn cb_fill_struct(
     ctx: *mut c_void,
@@ -720,7 +723,7 @@ unsafe extern "C" fn cb_fill_struct(
     size: u64,
     has_size: u32,
 ) {
-    let members = unsafe { slice(members, n) }
+    let members = unsafe { slice(&members, n) }
         .iter()
         .map(|m| TypeMember {
             name: unsafe { lossy(m.name, m.name_len) }.unwrap_or_default(),
@@ -729,7 +732,7 @@ unsafe extern "C" fn cb_fill_struct(
             bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
         })
         .collect();
-    unsafe { builder(ctx) }.fill_struct(id, is_union != 0, members, size, has_size);
+    unsafe { builder(&ctx) }.fill_struct(id, is_union != 0, members, size, has_size);
 }
 unsafe extern "C" fn cb_fill_enum(
     ctx: *mut c_void,
@@ -740,17 +743,17 @@ unsafe extern "C" fn cb_fill_enum(
     size: u64,
     has_size: u32,
 ) {
-    let members = unsafe { slice(consts, n) }
+    let members = unsafe { slice(&consts, n) }
         .iter()
         .map(|c| EnumMember {
             name: unsafe { lossy(c.name, c.name_len) }.unwrap_or_default(),
             value: c.value,
         })
         .collect();
-    unsafe { builder(ctx) }.fill_enum(id, underlying, members, size, has_size);
+    unsafe { builder(&ctx) }.fill_enum(id, underlying, members, size, has_size);
 }
 unsafe extern "C" fn cb_fill_typedef(ctx: *mut c_void, id: u32, underlying: u32) {
-    unsafe { builder(ctx) }.fill_typedef(id, underlying);
+    unsafe { builder(&ctx) }.fill_typedef(id, underlying);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -781,7 +784,7 @@ unsafe extern "C" fn cb_lvar(
         comment: unsafe { lossy(comment, comment_len) },
         location,
     };
-    unsafe { builder(ctx) }.push_lvar(lvar);
+    unsafe { builder(&ctx) }.push_lvar(lvar);
 }
 
 /// The callback table handed to the facade. Field order matches `idakit_emit_vtbl_t`.
