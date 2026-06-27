@@ -7,8 +7,10 @@ mod arena;
 mod node;
 mod ops;
 mod tree;
+mod types;
 
 pub use arena::{Arena, Idx};
 pub use node::{Case, Cexpr, Cinsn, ExprId, ExprNode, LvarId, NodeRef, StmtId, StmtNode};
 pub use ops::{AssignOp, BinOp, UnOp};
 pub use tree::{Ctree, CtreeBuilder, Descendants};
+pub use types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
