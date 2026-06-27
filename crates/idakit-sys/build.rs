@@ -41,6 +41,7 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=ida");
     println!("cargo:rustc-link-lib=dylib=idalib");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{idadir}");
+    println!("cargo:lib_dir={idadir}"); // -> DEP_IDA_LIB_DIR for dependents' rpath
     println!("cargo:rerun-if-changed=facade/idakit_facade.cpp");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-env-changed=IDADIR");

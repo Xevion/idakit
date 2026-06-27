@@ -62,16 +62,14 @@ unsafe extern "C" {
     pub fn idakit_type_size(h: *mut c_void) -> i64;
     pub fn idakit_type_print(h: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_type_nmembers(h: *mut c_void) -> usize;
-    pub fn idakit_type_member(
+    pub fn idakit_type_member_info(
         h: *mut c_void,
         i: usize,
-        namebuf: *mut c_char,
-        namecap: usize,
         offset: *mut u64,
         size: *mut u64,
-        typebuf: *mut c_char,
-        typecap: usize,
     ) -> c_int;
+    pub fn idakit_type_member_name(h: *mut c_void, i: usize, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_type_member_type(h: *mut c_void, i: usize, buf: *mut c_char, cap: usize) -> i64;
 }
 
 // hex-rays decompiler

@@ -38,9 +38,10 @@ void    idakit_type_dispose(void *h);
 int64_t idakit_type_size(void *h);                                 /* byte size, <0 if unknown */
 int64_t idakit_type_print(void *h, char *buf, size_t cap);         /* full type decl text */
 size_t  idakit_type_nmembers(void *h);                             /* 0 if not a struct/union */
-int     idakit_type_member(void *h, size_t i, char *namebuf, size_t namecap,
-                           uint64_t *offset, uint64_t *size,       /* both in BYTES */
-                           char *typebuf, size_t typecap);
+int     idakit_type_member_info(void *h, size_t i,
+                                uint64_t *offset, uint64_t *size); /* 1 if member i exists; offset/size in BYTES */
+int64_t idakit_type_member_name(void *h, size_t i, char *buf, size_t cap); /* name length, <0 if absent */
+int64_t idakit_type_member_type(void *h, size_t i, char *buf, size_t cap); /* type repr length, <0 if absent */
 
 int   idakit_hexrays_init(void);                       /* 1 = decompiler ready, 0 = unavailable */
 void *idakit_decompile(idakit_ea_t ea);                /* opaque cfunc handle (owns a ref), NULL on fail */

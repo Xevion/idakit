@@ -7,7 +7,20 @@ publish = false
 [dependencies]
 idakit-sys = { path = "../idakit-sys" }
 libc = "0.2"
+num_enum = "0.7.6"
+snafu = "0.9.1"
 
 [[example]]
 name = "actor"
 path = "examples/actor.rs"
+
+# No libtest harness: `run_on_main` requires the OS main thread, which libtest's
+# worker threads are not. The test owns `fn main()` and runs on the real main thread.
+[[test]]
+name = "roundtrip"
+harness = false
+
+[dev-dependencies]
+assert2 = "0.4.0"
+proptest = "1.11.0"
+rstest = "0.26.1"

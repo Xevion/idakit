@@ -80,21 +80,13 @@ fn main() {
                 let dl = idakit_type_print(h, decl.as_mut_ptr(), decl.len());
                 println!("\nstruct {name}  (size={size} bytes, {nm} members, decl {dl} chars):");
                 for i in 0..nm {
-                    let (mut namebuf, mut typebuf) = ([0 as c_char; 256], [0 as c_char; 256]);
                     let (mut off, mut sz): (u64, u64) = (0, 0);
-                    let ok = idakit_type_member(
-                        h,
-                        i,
-                        namebuf.as_mut_ptr(),
-                        namebuf.len(),
-                        &mut off,
-                        &mut sz,
-                        typebuf.as_mut_ptr(),
-                        typebuf.len(),
-                    );
-                    if ok == 0 {
+                    if idakit_type_member_info(h, i, &mut off, &mut sz) == 0 {
                         continue;
                     }
+                    let (mut namebuf, mut typebuf) = ([0 as c_char; 256], [0 as c_char; 1024]);
+                    idakit_type_member_name(h, i, namebuf.as_mut_ptr(), namebuf.len());
+                    idakit_type_member_type(h, i, typebuf.as_mut_ptr(), typebuf.len());
                     println!(
                         "  +{:#06x}  {:<28} {:>4}B  {}",
                         off,

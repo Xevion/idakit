@@ -7,15 +7,15 @@ use std::thread;
 fn main() {
     let db = std::env::args().nth(1).expect("usage: actor <db.i64>");
 
-    idakit::run_on_main(move |ida| {
+    idakit::Ida::run_on_main(move |ida| {
         // Open on the kernel thread via a marshaled call.
         {
             let db = db.clone();
             ida.call(move |idb| idb.open(&db).expect("open failed"));
         }
 
-        let n = ida.call(|idb| idb.func_count());
-        let segs = ida.call(|idb| idb.segment_count());
+        let n = ida.call(|idb| idb.functions().count());
+        let segs = ida.call(|idb| idb.segments().count());
         println!("[app] func_count={n}  segments={segs}");
 
         // Sub-workers each hold a handle clone; their calls serialize onto main.
@@ -25,10 +25,15 @@ fn main() {
             hs.push(thread::spawn(move || {
                 let idx = t * 1000;
                 let (ea, name) = ida.call(move |idb| {
-                    let ea = idb.func_ea(idx);
-                    (ea, idb.func_name(ea))
+                    let f = idb.functions().nth(idx);
+                    match f {
+                        Some(f) => (Some(f.ea()), f.name()),
+                        None => (None, None),
+                    }
                 });
-                println!("[worker {t}] func[{idx}] @ {ea:#012x}  {name}");
+                let ea = ea.map_or_else(|| "<none>".into(), |e| format!("{e:#012x}"));
+                let name = name.unwrap_or_else(|| "<unnamed>".into());
+                println!("[worker {t}] func[{idx}] @ {ea}  {name}");
             }));
         }
         for h in hs {
