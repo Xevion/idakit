@@ -119,6 +119,11 @@ impl TypeTable {
         &self.arena[id]
     }
 
+    /// Iterate every `(handle, type)` in interning order.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeData)> {
+        self.arena.iter()
+    }
+
     /// Number of distinct interned types.
     #[inline]
     #[must_use]

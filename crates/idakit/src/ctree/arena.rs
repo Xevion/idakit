@@ -102,7 +102,7 @@ impl<T> Arena<T> {
     }
 
     /// Iterate every `(handle, value)` in allocation order.
-    pub fn iter(&self) -> impl Iterator<Item = (Idx<T>, &T)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (Idx<T>, &T)> {
         self.data
             .iter()
             .enumerate()

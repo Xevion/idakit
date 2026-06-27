@@ -64,6 +64,22 @@ impl Ctree {
         self.types.get(id)
     }
 
+    /// Every expression node, flat, in allocation order — for whole-tree scans like
+    /// "find all calls" that don't need the tree shape.
+    pub fn exprs(&self) -> impl ExactSizeIterator<Item = (ExprId, &ExprNode)> {
+        self.exprs.iter()
+    }
+
+    /// Every statement node, flat, in allocation order.
+    pub fn stmts(&self) -> impl ExactSizeIterator<Item = (StmtId, &StmtNode)> {
+        self.stmts.iter()
+    }
+
+    /// Every interned type, flat.
+    pub fn types(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeData)> {
+        self.types.iter()
+    }
+
     /// This node's parent, or `None` for the root.
     #[inline]
     #[must_use]
@@ -274,6 +290,20 @@ mod tests {
     fn children_of_a_leaf_are_empty() {
         let (tree, _block, _ret, _add, va, _vb) = sample();
         assert!(tree.children(NodeRef::Expr(va)).is_empty());
+    }
+
+    #[test]
+    fn flat_iteration_covers_every_node() {
+        let (tree, _block, _ret, _add, _va, _vb) = sample();
+        // 3 exprs (va, vb, add), 2 stmts (ret, block), 1 type (int, deduped across exprs).
+        assert_eq!(tree.exprs().count(), 3);
+        assert_eq!(tree.stmts().count(), 2);
+        assert_eq!(tree.types().count(), 1);
+        let binaries = tree
+            .exprs()
+            .filter(|(_, e)| matches!(e.kind, Cexpr::Binary { .. }))
+            .count();
+        assert_eq!(binaries, 1);
     }
 
     #[test]
