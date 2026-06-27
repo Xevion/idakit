@@ -1,7 +1,5 @@
 //! [`Func`]: a borrowed view of one function, keyed by its entry [`Ea`].
 
-use idakit_sys as sys;
-
 use crate::Idb;
 use crate::decompile::Cfunc;
 use crate::ea::Ea;
@@ -32,13 +30,13 @@ impl<'db> Func<'db> {
     /// The function's display name, or `None` if unavailable.
     #[must_use]
     pub fn name(&self) -> Option<String> {
-        read_string(|buf, cap| unsafe { sys::idakit_func_name(self.ea.get(), buf, cap) })
+        read_string(|buf, cap| self.db.func_name(self.ea, buf, cap))
     }
 
     /// The one-line C prototype, or `None` if the kernel has no type info.
     #[must_use]
     pub fn prototype(&self) -> Option<String> {
-        read_string(|buf, cap| unsafe { sys::idakit_func_type(self.ea.get(), buf, cap) })
+        read_string(|buf, cap| self.db.func_type(self.ea, buf, cap))
     }
 
     /// All cross-references targeting this function's entry.
@@ -75,7 +73,7 @@ impl<'db> Functions<'db> {
         Self {
             db,
             next: 0,
-            count: unsafe { sys::idakit_func_qty() },
+            count: db.func_qty(),
         }
     }
 }
@@ -86,7 +84,7 @@ impl<'db> Iterator for Functions<'db> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         while self.next < self.count {
-            let raw = unsafe { sys::idakit_func_ea(self.next) };
+            let raw = self.db.func_ea(self.next);
             self.next += 1;
             if let Some(ea) = Ea::try_new(raw) {
                 return Some(Func::new(ea, self.db));

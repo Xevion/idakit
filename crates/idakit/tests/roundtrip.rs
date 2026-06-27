@@ -1,7 +1,7 @@
 //! End-to-end cycle against a real database: open, read, write, re-read.
 //!
-//! `harness = false` (so it runs on the OS main thread that `run_on_main` needs).
-//! Set `IDAKIT_TEST_DB` to an `.i64`; skips (exits 0) when unset.
+//! `harness = false` so the test owns `fn main()` and the process lifetime around
+//! the kernel thread. Set `IDAKIT_TEST_DB` to an `.i64`; skips (exits 0) when unset.
 
 fn main() {
     let Ok(db) = std::env::var("IDAKIT_TEST_DB") else {
@@ -9,7 +9,7 @@ fn main() {
         return;
     };
 
-    idakit::Ida::run_on_main(move |ida| {
+    idakit::Ida::run(move |ida| {
         ida.call(move |idb| {
             idb.open(&db).expect("open failed");
 

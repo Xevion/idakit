@@ -29,6 +29,12 @@ unsafe extern "C" {
     pub fn enable_console_messages(enable: bool);
 }
 
+// kernel thread-affinity (plain C ABI from libida.so). `is_main_thread` reads
+// libida's nullable `g_main`: non-null -> compares to caller; null -> claims caller.
+unsafe extern "C" {
+    pub fn is_main_thread() -> bool;
+}
+
 // idakit facade functions (C++ SDK wrapped behind a clean C ABI)
 unsafe extern "C" {
     pub fn idakit_func_qty() -> usize;

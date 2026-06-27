@@ -1,23 +1,26 @@
 //! Idiomatic core over the IDA kernel.
 //!
-//! All work funnels to the thread that claimed the kernel ([`Ida::run_on_main`]);
-//! other threads marshal closures to it via an [`Ida`] handle. `Idb` exists only
-//! inside a job there, so `&Idb`/`&mut Idb` gives borrow-checked read/write
-//! separation. See `design.md` §4.1 for the threading model.
+//! [`Ida::run`] spawns the kernel thread, claims the kernel on it, and runs the
+//! caller's app on the current (typically OS main) thread; any thread marshals
+//! closures to the kernel via an [`Ida`] handle. `Idb` lives only inside a job on
+//! the kernel thread, so `&Idb`/`&mut Idb` gives borrow-checked read/write separation.
 
 use std::cell::Cell;
 use std::marker::PhantomData;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
 
 use idakit_sys as sys;
 
+mod claim;
 mod decompile;
 mod ea;
 mod error;
 mod ffi;
 mod func;
+mod raw;
 mod segment;
 mod ty;
 mod xref;
@@ -49,9 +52,7 @@ impl Idb {
 
     /// Open a database file. Re-opening after [`close`](Self::close) works.
     pub fn open(&mut self, path: &str) -> Result<()> {
-        let rc = ffi::with_cstr(path, "path", |p| unsafe {
-            sys::open_database(p, false, ptr::null())
-        })?;
+        let rc = ffi::with_cstr(path, "path", |p| self.open_database(p))?;
         if rc == 0 {
             Ok(())
         } else {
@@ -64,7 +65,7 @@ impl Idb {
 
     /// Close the current database, optionally saving analysis back to the `.i64`.
     pub fn close(&mut self, save: bool) {
-        unsafe { sys::close_database(save) }
+        self.close_database(save);
     }
 
     /// A typed cursor at `ea`; does not verify a function lives there (absence
@@ -92,7 +93,7 @@ impl Idb {
     /// Read bytes at `ea` into `buf`, returning how many were supplied. Zero-alloc;
     /// reuse one buffer on hot loops. [`bytes`](Self::bytes) is the owning shortcut.
     pub fn read_into(&self, ea: Ea, buf: &mut [u8]) -> usize {
-        let got = unsafe { sys::idakit_get_bytes(ea.get(), buf.as_mut_ptr().cast(), buf.len()) };
+        let got = self.get_bytes(ea, buf.as_mut_ptr().cast(), buf.len());
         (got.max(0) as usize).min(buf.len())
     }
 
@@ -110,30 +111,20 @@ impl Idb {
     #[must_use]
     pub fn xrefs_to(&self, ea: Ea) -> Vec<Xref> {
         // Count (cap 0 writes nothing), then fill exact buffers.
-        let n = unsafe {
-            sys::idakit_xrefs_to(
-                ea.get(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                0,
-            )
-        };
+        let n = self.xrefs_to_raw(ea, ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), 0);
         if n == 0 {
             return Vec::new();
         }
         let mut from = vec![0u64; n];
         let mut types = vec![0u8; n];
         let mut iscode = vec![0u8; n];
-        let written = unsafe {
-            sys::idakit_xrefs_to(
-                ea.get(),
-                from.as_mut_ptr(),
-                types.as_mut_ptr(),
-                iscode.as_mut_ptr(),
-                n,
-            )
-        };
+        let written = self.xrefs_to_raw(
+            ea,
+            from.as_mut_ptr(),
+            types.as_mut_ptr(),
+            iscode.as_mut_ptr(),
+            n,
+        );
         let written = written.min(n);
         (0..written)
             .filter_map(|i| Xref::from_raw(from[i], types[i], iscode[i]))
@@ -142,7 +133,7 @@ impl Idb {
 
     /// Resolve a named type and its member layout. `Err` if no such type exists.
     pub fn type_named(&self, name: &str) -> Result<TypeInfo<'_>> {
-        let handle = ffi::with_cstr(name, "name", |p| unsafe { sys::idakit_type_open(p) })?;
+        let handle = ffi::with_cstr(name, "name", |p| self.type_open(p))?;
         if handle.is_null() {
             return Err(Error::TypeNotFound {
                 name: name.to_owned(),
@@ -154,13 +145,13 @@ impl Idb {
     /// Decompile the function containing `ea` (inits Hex-Rays on first use).
     pub fn decompile(&self, ea: Ea) -> Result<Cfunc<'_>> {
         if !self.hexrays_ready.get() {
-            let rc = unsafe { sys::idakit_hexrays_init() };
+            let rc = self.hexrays_init();
             if rc != 1 {
                 return Err(Error::HexRaysInit { code: rc });
             }
             self.hexrays_ready.set(true);
         }
-        let handle = unsafe { sys::idakit_decompile(ea.get()) };
+        let handle = self.decompile_at(ea);
         if handle.is_null() {
             return Err(Error::Decompile { ea: ea.get() });
         }
@@ -169,7 +160,7 @@ impl Idb {
 
     /// Rename the item at `ea`.
     pub fn rename(&mut self, ea: Ea, name: &str) -> Result<()> {
-        let ok = ffi::with_cstr(name, "name", |p| unsafe { sys::set_name(ea.get(), p, 0) })?;
+        let ok = ffi::with_cstr(name, "name", |p| self.set_name(ea, p))?;
         if ok {
             Ok(())
         } else {
@@ -182,9 +173,7 @@ impl Idb {
 
     /// Set the comment at `ea`. `repeatable` repeats it at every reference.
     pub fn set_comment(&mut self, ea: Ea, text: &str, repeatable: bool) -> Result<()> {
-        let ok = ffi::with_cstr(text, "comment", |p| unsafe {
-            sys::set_cmt(ea.get(), p, repeatable)
-        })?;
+        let ok = ffi::with_cstr(text, "comment", |p| self.set_cmt(ea, p, repeatable))?;
         if ok {
             Ok(())
         } else {
@@ -204,61 +193,66 @@ pub struct Ida {
     tx: Sender<Job>,
 }
 
+/// Kernel-thread stack. `init_library` recurses deep through `init_kernel`, and a
+/// spawned thread's stack is fixed (no autogrow), so reserve generously; the
+/// reservation is committed lazily.
+const KERNEL_STACK: usize = 256 << 20;
+
 impl Ida {
-    /// Claim and drive the kernel on the current thread, running `app` on a
-    /// spawned thread with an [`Ida`] handle. Must be called from the OS main
-    /// thread (`tid == pid`) — a constraint of the current direct-link layout,
-    /// not the kernel; see `design.md` §4.1.
-    pub fn run_on_main<R, F>(app: F) -> R
+    /// Spawn the kernel thread, claim the kernel on it, and run `app` on the current
+    /// thread with an [`Ida`] handle. Returns once `app` returns; the kernel thread
+    /// then shuts down after every handle is dropped. Call once, typically from the
+    /// OS main thread so the host keeps it for its own runtime.
+    pub fn run<R, F>(app: F) -> R
     where
-        F: FnOnce(Ida) -> R + Send + 'static,
-        R: Send + 'static,
+        F: FnOnce(Ida) -> R,
     {
-        let (tid, pid) = (os_tid(), std::process::id() as i64);
-        assert_eq!(
-            tid, pid,
-            "Ida::run_on_main must run on the OS main thread (tid={tid} != pid={pid}); \
-             the kernel was claimed there at load and any other thread deadlocks"
-        );
-
-        unsafe {
-            sys::init_library(0, ptr::null_mut());
-        }
-
         let (tx, rx) = channel::<Job>();
-        let (rtx, rrx) = channel::<R>();
-        let app_thread = thread::Builder::new()
-            .name("idakit-app".into())
-            .spawn(move || {
-                let r = app(Ida { tx });
-                let _ = rtx.send(r);
-            })
-            .expect("spawn app thread");
 
-        let mut idb = Idb::new();
-        while let Ok(job) = rx.recv() {
-            job(&mut idb);
-        }
-        let _ = app_thread.join();
-        rrx.recv().expect("app thread panicked before returning")
+        let kernel = thread::Builder::new()
+            .name("idakit-kernel".into())
+            .stack_size(KERNEL_STACK)
+            .spawn(move || {
+                claim::steal_main();
+                // SAFETY: on the kernel thread, once, before any other kernel call.
+                unsafe { sys::init_library(0, ptr::null_mut()) };
+
+                let mut idb = Idb::new();
+                while let Ok(job) = rx.recv() {
+                    // Jobs catch their own closure's panic (see `call`); guard the
+                    // pump too so no stray panic can unwind and kill the kernel.
+                    let _ = catch_unwind(AssertUnwindSafe(|| job(&mut idb)));
+                }
+            })
+            .expect("spawn kernel thread");
+
+        let result = app(Ida { tx });
+        // `app` has returned, so its handle and any clones it joined are dropped and
+        // the pump has exited; join to surface a kernel-thread panic.
+        kernel.join().expect("kernel thread panicked");
+        result
     }
 
-    /// Run a closure against the open database on the kernel thread. Any thread.
+    /// Run a closure against the open database on the kernel thread, from any thread.
+    /// A panic in `f` is caught and resumed here, leaving the kernel thread alive.
     pub fn call<R, F>(&self, f: F) -> R
     where
         F: FnOnce(&mut Idb) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let (rtx, rrx) = channel();
+        let (rtx, rrx) = channel::<thread::Result<R>>();
         self.tx
             .send(Box::new(move |idb| {
-                let _ = rtx.send(f(idb));
+                // AssertUnwindSafe: `&mut Idb` isn't UnwindSafe. A panic mid-write
+                // may leave kernel state inconsistent; we keep the actor alive and
+                // resume the panic on the caller rather than swallow it.
+                let _ = rtx.send(catch_unwind(AssertUnwindSafe(|| f(idb))));
             }))
             .expect("kernel pump gone");
-        rrx.recv().expect("kernel dropped the job")
+        match rrx.recv() {
+            Ok(Ok(value)) => value,
+            Ok(Err(panic)) => std::panic::resume_unwind(panic),
+            Err(_) => panic!("kernel dropped the job"),
+        }
     }
-}
-
-fn os_tid() -> i64 {
-    unsafe { libc::syscall(libc::SYS_gettid) }
 }

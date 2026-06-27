@@ -18,6 +18,10 @@ pub struct CtreeCounts {
 }
 
 /// An owned decompiled function. Disposes its kernel handle on drop.
+///
+/// `handle` is the safety invariant for every call below: non-null (checked at
+/// construction), from `idakit_decompile`, disposed exactly once on [`Drop`]. The
+/// raw pointer makes `Cfunc` `!Send`, so it lives only on the kernel thread.
 pub struct Cfunc<'db> {
     handle: *mut c_void,
     _db: PhantomData<&'db Idb>,
@@ -37,6 +41,7 @@ impl<'db> Cfunc<'db> {
     /// The rendered pseudocode, tags stripped.
     #[must_use]
     pub fn pseudocode(&self) -> Option<String> {
+        // SAFETY: live handle (see type docs).
         read_string(|buf, cap| unsafe { sys::idakit_cfunc_pseudocode(self.handle, buf, cap) })
     }
 
@@ -44,6 +49,7 @@ impl<'db> Cfunc<'db> {
     #[must_use]
     pub fn counts(&self) -> CtreeCounts {
         let (mut insns, mut exprs, mut calls) = (0, 0, 0);
+        // SAFETY: live handle (see type docs); out-params are valid locals.
         unsafe {
             sys::idakit_cfunc_ctree_counts(self.handle, &mut insns, &mut exprs, &mut calls);
         }
@@ -58,6 +64,7 @@ impl<'db> Cfunc<'db> {
 impl Drop for Cfunc<'_> {
     #[inline]
     fn drop(&mut self) {
+        // SAFETY: live handle (see type docs); disposed exactly once, here.
         unsafe { sys::idakit_cfunc_dispose(self.handle) };
     }
 }

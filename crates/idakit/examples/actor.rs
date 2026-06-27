@@ -1,5 +1,5 @@
-//! Main-thread executor proof from the idiomatic API: kernel on main, app logic on a
-//! spawned thread, calls (including from sub-workers) marshaled to main.
+//! Executor proof from the idiomatic API: kernel on its own thread, app on the
+//! caller, calls (including from sub-workers) marshaled to the kernel.
 //! Run: cargo run -p idakit --example actor -- scratch/bf4-smoke.i64
 
 use std::thread;
@@ -7,7 +7,7 @@ use std::thread;
 fn main() {
     let db = std::env::args().nth(1).expect("usage: actor <db.i64>");
 
-    idakit::Ida::run_on_main(move |ida| {
+    idakit::Ida::run(move |ida| {
         // Open on the kernel thread via a marshaled call.
         {
             let db = db.clone();
@@ -43,5 +43,5 @@ fn main() {
         ida.call(|idb| idb.close(false));
     });
 
-    println!("\nACTOR OK (kernel on main; calls marshaled from app + 4 workers)");
+    println!("\nACTOR OK (kernel on its own thread; calls marshaled from app + 4 workers)");
 }

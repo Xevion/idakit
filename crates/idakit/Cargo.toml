@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 idakit-sys = { path = "../idakit-sys" }
-libc = "0.2"
 num_enum = "0.7.6"
 snafu = "0.9.1"
 
@@ -14,8 +13,8 @@ snafu = "0.9.1"
 name = "actor"
 path = "examples/actor.rs"
 
-# No libtest harness: `run_on_main` requires the OS main thread, which libtest's
-# worker threads are not. The test owns `fn main()` and runs on the real main thread.
+# No libtest harness: the test owns `fn main()` so it controls the process lifetime
+# around the kernel thread that `Ida::run` spawns.
 [[test]]
 name = "roundtrip"
 harness = false

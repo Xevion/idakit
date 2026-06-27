@@ -22,6 +22,10 @@ pub struct Member {
 }
 
 /// An owned resolved type. Disposes its kernel handle on drop.
+///
+/// `handle` is the safety invariant for every call below: non-null (checked at
+/// construction), from `idakit_type_open`, disposed exactly once on [`Drop`]. The
+/// raw pointer makes `TypeInfo` `!Send`, so it lives only on the kernel thread.
 pub struct TypeInfo<'db> {
     handle: *mut c_void,
     _db: PhantomData<&'db Idb>,
@@ -42,6 +46,7 @@ impl<'db> TypeInfo<'db> {
     #[inline]
     #[must_use]
     pub fn size(&self) -> Option<u64> {
+        // SAFETY: live handle (see type docs).
         let s = unsafe { sys::idakit_type_size(self.handle) };
         (s >= 0).then_some(s as u64)
     }
@@ -49,6 +54,7 @@ impl<'db> TypeInfo<'db> {
     /// The full declaration, as IDA would print it.
     #[must_use]
     pub fn declaration(&self) -> Option<String> {
+        // SAFETY: live handle (see type docs).
         read_string(|buf, cap| unsafe { sys::idakit_type_print(self.handle, buf, cap) })
     }
 
@@ -56,6 +62,7 @@ impl<'db> TypeInfo<'db> {
     #[inline]
     #[must_use]
     pub fn member_count(&self) -> usize {
+        // SAFETY: live handle (see type docs).
         unsafe { sys::idakit_type_nmembers(self.handle) }
     }
 
@@ -73,18 +80,21 @@ impl<'db> TypeInfo<'db> {
     /// Read member `i`, or `None` past the end / on rejection.
     fn member(&self, i: usize) -> Option<Member> {
         let (mut offset, mut size) = (0u64, 0u64);
+        // SAFETY: live handle (see type docs); out-params are valid locals.
         let exists =
             unsafe { sys::idakit_type_member_info(self.handle, i, &mut offset, &mut size) };
         if exists == 0 {
             return None;
         }
         Some(Member {
+            // SAFETY: live handle (see type docs).
             name: read_string(|buf, cap| unsafe {
                 sys::idakit_type_member_name(self.handle, i, buf, cap)
             })
             .unwrap_or_default(),
             offset,
             size,
+            // SAFETY: live handle (see type docs).
             type_repr: read_string(|buf, cap| unsafe {
                 sys::idakit_type_member_type(self.handle, i, buf, cap)
             })
@@ -123,6 +133,7 @@ impl Iterator for Members<'_> {
 impl Drop for TypeInfo<'_> {
     #[inline]
     fn drop(&mut self) {
+        // SAFETY: live handle (see type docs); disposed exactly once, here.
         unsafe { sys::idakit_type_dispose(self.handle) };
     }
 }

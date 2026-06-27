@@ -1,7 +1,5 @@
 //! [`Segment`]: a borrowed view of one segment, keyed by kernel index.
 
-use idakit_sys as sys;
-
 use crate::Idb;
 use crate::ea::Ea;
 use crate::ffi::read_string;
@@ -29,21 +27,21 @@ impl<'db> Segment<'db> {
     /// The segment's name (e.g. `.text`), or `None` if unavailable.
     #[must_use]
     pub fn name(&self) -> Option<String> {
-        read_string(|buf, cap| unsafe { sys::idakit_seg_name(self.index, buf, cap) })
+        read_string(|buf, cap| self.db.seg_name(self.index, buf, cap))
     }
 
     /// First address of the segment.
     #[inline]
     #[must_use]
     pub fn start(&self) -> Option<Ea> {
-        Ea::try_new(unsafe { sys::idakit_seg_start(self.index) })
+        Ea::try_new(self.db.seg_start(self.index))
     }
 
     /// One-past-the-last address of the segment.
     #[inline]
     #[must_use]
     pub fn end(&self) -> Option<Ea> {
-        Ea::try_new(unsafe { sys::idakit_seg_end(self.index) })
+        Ea::try_new(self.db.seg_end(self.index))
     }
 
     /// The whole segment's bytes (`[start, end)`), or `None` if bounds are absent.
@@ -79,7 +77,7 @@ impl<'db> Segments<'db> {
         Self {
             db,
             next: 0,
-            count: unsafe { sys::idakit_seg_qty() },
+            count: db.seg_qty(),
         }
     }
 }
