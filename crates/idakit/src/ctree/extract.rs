@@ -464,15 +464,15 @@ impl CallbackBuilder {
 
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
         let id = tid(id);
+        let underlying = tid(underlying);
         let name = self.take_name(id).unwrap_or_default();
+        // A typedef is a transparent alias, so it adopts its target's size.
+        let size = self.b.type_size(underlying);
         self.b.fill_type(
             id,
             TypeData {
-                kind: TypeKind::Typedef {
-                    name,
-                    underlying: tid(underlying),
-                },
-                size: None,
+                kind: TypeKind::Typedef { name, underlying },
+                size,
             },
         );
     }
@@ -1072,7 +1072,8 @@ mod tests {
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        let TypeKind::Typedef { name, underlying } = &tree.type_of(tid(alias)).kind else {
+        let alias_ty = tree.type_of(tid(alias));
+        let TypeKind::Typedef { name, underlying } = &alias_ty.kind else {
             panic!("expected a typedef");
         };
         assert_eq!(name, "size_t");
@@ -1080,6 +1081,8 @@ mod tests {
             tree.type_of(*underlying).kind,
             TypeKind::Int { bytes: 4, .. }
         ));
+        // the alias adopts its target's size, so the node is self-describing
+        assert_eq!(alias_ty.size, Some(4));
     }
 
     /// A second reference to the same named type returns the same handle.

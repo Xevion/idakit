@@ -181,6 +181,13 @@ impl CtreeBuilder {
         self.types.fill(id, data);
     }
 
+    /// The byte size of an already-interned type, if known. Lets a typedef adopt its
+    /// target's size so the alias node is self-describing.
+    #[must_use]
+    pub fn type_size(&self, id: TypeId) -> Option<u64> {
+        self.types.get(id).size
+    }
+
     /// Append a local variable; the returned [`LvarId`] (its index) is what
     /// [`Cexpr::Var`] carries.
     pub fn push_lvar(&mut self, lvar: Lvar) -> LvarId {
