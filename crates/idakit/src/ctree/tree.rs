@@ -191,7 +191,7 @@ impl CtreeBuilder {
     /// Append a local variable; the returned [`LvarId`] (its index) is what
     /// [`Cexpr::Var`] carries.
     pub fn push_lvar(&mut self, lvar: Lvar) -> LvarId {
-        let id = LvarId(self.lvars.len() as u32);
+        let id = LvarId(u32::try_from(self.lvars.len()).expect("ctree exceeded u32 lvars"));
         self.lvars.push(lvar);
         id
     }

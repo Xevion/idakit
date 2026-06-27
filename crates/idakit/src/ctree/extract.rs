@@ -50,6 +50,12 @@ pub enum ExtractError {
 
     #[snafu(display("a node carries the BADADDR sentinel as a required address"))]
     BadEa,
+
+    #[snafu(display("a scalar reports {bytes} bytes, wider than any real scalar"))]
+    ScalarTooWide { bytes: u32 },
+
+    #[snafu(display("{count} type placeholder(s) were referenced but never filled"))]
+    UnfilledType { count: usize },
 }
 
 /// A node's own source address: `None` for a synthetic node (the BADADDR sentinel).
@@ -349,14 +355,21 @@ impl CallbackBuilder {
     }
 
     fn scalar(&mut self, kind: u32, bytes: u32, signed: u32, size: u64, has_size: u32) -> u32 {
+        let width = match u8::try_from(bytes) {
+            Ok(w) => w,
+            Err(_) => {
+                self.fail(ExtractError::ScalarTooWide { bytes });
+                0
+            }
+        };
         let kind = match kind {
             1 => TypeKind::Void,
             2 => TypeKind::Bool,
             3 => TypeKind::Int {
-                bytes: bytes as u8,
+                bytes: width,
                 signed: signed != 0,
             },
-            4 => TypeKind::Float { bytes: bytes as u8 },
+            4 => TypeKind::Float { bytes: width },
             _ => TypeKind::Unknown,
         };
         raw(self.b.intern_type(TypeData {
@@ -484,6 +497,13 @@ impl CallbackBuilder {
     fn finish(mut self, root: u32) -> Result<Ctree, ExtractError> {
         if let Some(e) = self.error.take() {
             return Err(e);
+        }
+        // A placeholder left in `pending` was referenced but never filled, so it would
+        // stay `TypeKind::Unknown` in the tree — surface it rather than ship a silent gap.
+        if !self.pending.is_empty() {
+            return Err(ExtractError::UnfilledType {
+                count: self.pending.len(),
+            });
         }
         Ok(self.b.finish(sid(root)))
     }

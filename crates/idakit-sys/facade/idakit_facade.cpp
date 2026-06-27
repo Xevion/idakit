@@ -419,6 +419,8 @@ struct walker_t
     size_t sz = t.get_size();
     uint32_t has_size = (sz != BADSIZE && sz != 0) ? 1 : 0;
     uint64_t size = has_size ? (uint64_t)sz : 0;
+    // BADSIZE is (size_t)-1; without has_size, report 0 bytes rather than the sentinel.
+    uint32_t bytes = has_size ? (uint32_t)sz : 0;
 
     if ( t.empty() )       return v->t_scalar(ctx, 0, 0, 0, size, has_size);
     if ( t.is_ptr() )      return v->t_ptr(ctx, ty(t.get_pointed_object()), size, has_size);
@@ -429,8 +431,8 @@ struct walker_t
     if ( t.is_enum() )     return ty_enum(t, size, has_size);
     if ( t.is_bool() )     return v->t_scalar(ctx, 2, 0, 0, size, has_size);
     if ( t.is_void() )     return v->t_scalar(ctx, 1, 0, 0, size, has_size);
-    if ( t.is_floating() ) return v->t_scalar(ctx, 4, (uint32_t)sz, 0, size, has_size);
-    if ( t.is_integral() ) return v->t_scalar(ctx, 3, (uint32_t)sz, t.is_signed() ? 1 : 0,
+    if ( t.is_floating() ) return v->t_scalar(ctx, 4, bytes, 0, size, has_size);
+    if ( t.is_integral() ) return v->t_scalar(ctx, 3, bytes, t.is_signed() ? 1 : 0,
                                               size, has_size);
     return v->t_scalar(ctx, 0, 0, 0, size, has_size); // unknown
   }
