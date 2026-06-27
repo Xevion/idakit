@@ -75,6 +75,7 @@ impl<T> fmt::Debug for Idx<T> {
 }
 
 /// An append-only arena of `T`, addressed by [`Idx<T>`].
+#[derive(Debug)]
 pub struct Arena<T> {
     data: Vec<T>,
 }

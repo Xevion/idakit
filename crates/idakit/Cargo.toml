@@ -9,6 +9,7 @@ idakit-sys = { path = "../idakit-sys" }
 num_enum = "0.7.6"
 snafu = "0.9.1"
 strum = { version = "0.28.0", features = ["derive"] }
+tracing = "0.1.44"
 
 [[example]]
 name = "actor"

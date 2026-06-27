@@ -29,6 +29,7 @@ fn for_each_child(
 /// read-only analysis snapshot — there is no in-place mutation, and it does not track
 /// the live database, so it goes stale if the function is re-decompiled. Writing back to
 /// IDA is a separate concern, not routed through these handles.
+#[derive(Debug)]
 pub struct Ctree {
     exprs: Arena<ExprNode>,
     stmts: Arena<StmtNode>,
@@ -152,6 +153,7 @@ impl Iterator for Descendants<'_> {
 
 /// Builds a [`Ctree`]: allocate nodes (children first, since a parent references its
 /// children's handles), then [`finish`](CtreeBuilder::finish) to wire parent links.
+#[derive(Debug)]
 pub struct CtreeBuilder {
     exprs: Arena<ExprNode>,
     stmts: Arena<StmtNode>,

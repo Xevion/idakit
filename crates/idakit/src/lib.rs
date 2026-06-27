@@ -268,7 +268,7 @@ impl Ida {
         if let Err(payload) = kernel.join() {
             let reason =
                 error::panic_payload_str(&*payload).unwrap_or("<non-string panic payload>");
-            eprintln!("idakit: kernel thread panicked after init: {reason}");
+            tracing::error!("idakit: kernel thread panicked after init: {reason}");
         }
         Ok(result)
     }

@@ -40,6 +40,9 @@ unsafe extern "C" {
 // (folding in the C `errno` text for the `eOS` code).
 unsafe extern "C" {
     pub fn get_qerrno() -> c_int;
+    /// Describe an `error_t`. The returned pointer borrows IDA's static/thread-local
+    /// storage: it must not be freed, and a later `qstrerror` call on the same thread may
+    /// overwrite it. Copy it into a `CStr`/`String` before the next IDA call.
     pub fn qstrerror(code: c_int) -> *const c_char;
 }
 

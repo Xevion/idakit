@@ -39,6 +39,15 @@ mod ct {
     pub const TYPE: u32 = 69;
 }
 
+/// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeKind`]; `0` is
+/// the catch-all that maps to [`TypeKind::Unknown`](super::TypeKind::Unknown).
+mod scalar_kind {
+    pub const VOID: u32 = 1;
+    pub const BOOL: u32 = 2;
+    pub const INT: u32 = 3;
+    pub const FLOAT: u32 = 4;
+}
+
 /// Why a ctree walk could not be turned into a [`Ctree`].
 #[derive(Debug, Snafu, PartialEq, Eq)]
 pub enum ExtractError {
@@ -114,6 +123,9 @@ impl CallbackBuilder {
         }
     }
 
+    /// Record a deferred failure. Only the first error is kept — later failures in the
+    /// same walk are dropped — so callers must not assume every problem surfaces at
+    /// [`finish`](Self::finish), only that a failed walk reports *some* error.
     fn fail(&mut self, e: ExtractError) {
         if self.error.is_none() {
             self.error = Some(e);
@@ -176,7 +188,7 @@ impl CallbackBuilder {
             ty,
             Cexpr::MemberRef {
                 obj: eid(obj),
-                offset,
+                byte_offset: offset,
             },
         )
     }
@@ -187,7 +199,7 @@ impl CallbackBuilder {
             ty,
             Cexpr::MemberPtr {
                 obj: eid(obj),
-                offset,
+                byte_offset: offset,
             },
         )
     }
@@ -363,13 +375,13 @@ impl CallbackBuilder {
             }
         };
         let kind = match kind {
-            1 => TypeKind::Void,
-            2 => TypeKind::Bool,
-            3 => TypeKind::Int {
+            scalar_kind::VOID => TypeKind::Void,
+            scalar_kind::BOOL => TypeKind::Bool,
+            scalar_kind::INT => TypeKind::Int {
                 bytes: width,
                 signed: signed != 0,
             },
-            4 => TypeKind::Float { bytes: width },
+            scalar_kind::FLOAT => TypeKind::Float { bytes: width },
             _ => TypeKind::Unknown,
         };
         raw(self.b.intern_type(TypeData {

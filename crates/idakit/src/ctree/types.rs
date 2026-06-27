@@ -89,6 +89,7 @@ pub enum TypeKind {
 
 /// An interned arena of [`TypeData`]: structurally identical types collapse to one
 /// [`TypeId`].
+#[derive(Debug)]
 pub struct TypeTable {
     arena: Arena<TypeData>,
     dedup: HashMap<TypeData, TypeId>,

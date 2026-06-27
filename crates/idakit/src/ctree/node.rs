@@ -102,10 +102,20 @@ pub enum Cexpr {
     Call { callee: ExprId, args: Vec<ExprId> },
     /// `array[index]`
     Index { array: ExprId, index: ExprId },
-    /// `obj.field`, the member at byte `offset`
-    MemberRef { obj: ExprId, offset: u32 },
-    /// `obj->field`, the member at byte `offset`
-    MemberPtr { obj: ExprId, offset: u32 },
+    /// `obj.field`, the member at `byte_offset`
+    MemberRef {
+        obj: ExprId,
+        /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
+        /// `cot_memref.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
+        byte_offset: u32,
+    },
+    /// `obj->field`, the member at `byte_offset`
+    MemberPtr {
+        obj: ExprId,
+        /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
+        /// `cot_memptr.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
+        byte_offset: u32,
+    },
     /// `(T)x` — the target type is carried on the node (added with the type arena).
     Cast { x: ExprId },
     /// `*x`, dereferencing `size` bytes
@@ -114,7 +124,11 @@ pub enum Cexpr {
     Sizeof(ExprId),
     /// integer literal (raw bits; signedness comes from the node's type)
     Num(u64),
-    /// floating-point literal
+    /// floating-point literal.
+    ///
+    /// `PartialEq` on `Cexpr` is structural, so `Fnum(NaN)` does not compare equal to
+    /// itself (IEEE-754 `NaN != NaN`). Accepted as a known caveat: IDA does not emit NaN
+    /// float literals, so no real node trips it.
     Fnum(f64),
     /// string literal
     Str(String),
