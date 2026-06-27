@@ -4,6 +4,7 @@
 
 use super::arena::Arena;
 use super::node::{Cexpr, Cinsn, ExprId, ExprNode, NodeRef, StmtId, StmtNode};
+use super::types::{TypeData, TypeId, TypeTable};
 use crate::Ea;
 
 /// Visit `node`'s children, dispatching to the right arena. Shared by every navigation
@@ -30,6 +31,7 @@ fn for_each_child(
 pub struct Ctree {
     exprs: Arena<ExprNode>,
     stmts: Arena<StmtNode>,
+    types: TypeTable,
     root: StmtId,
 }
 
@@ -53,6 +55,13 @@ impl Ctree {
     #[must_use]
     pub fn stmt(&self, id: StmtId) -> &StmtNode {
         &self.stmts[id]
+    }
+
+    /// The type behind a handle (e.g. an [`ExprNode::ty`]).
+    #[inline]
+    #[must_use]
+    pub fn type_of(&self, id: TypeId) -> &TypeData {
+        self.types.get(id)
     }
 
     /// This node's parent, or `None` for the root.
@@ -110,6 +119,7 @@ impl Iterator for Descendants<'_> {
 pub struct CtreeBuilder {
     exprs: Arena<ExprNode>,
     stmts: Arena<StmtNode>,
+    types: TypeTable,
 }
 
 impl CtreeBuilder {
@@ -118,13 +128,21 @@ impl CtreeBuilder {
         Self {
             exprs: Arena::new(),
             stmts: Arena::new(),
+            types: TypeTable::new(),
         }
     }
 
-    /// Allocate an expression node (parent set later by [`finish`](Self::finish)).
-    pub fn expr(&mut self, ea: Ea, kind: Cexpr) -> ExprId {
+    /// Intern a type, returning a shared handle to pass to [`expr`](Self::expr).
+    pub fn intern_type(&mut self, data: TypeData) -> TypeId {
+        self.types.intern(data)
+    }
+
+    /// Allocate an expression node of type `ty` (parent set later by
+    /// [`finish`](Self::finish)).
+    pub fn expr(&mut self, ea: Ea, ty: TypeId, kind: Cexpr) -> ExprId {
         self.exprs.alloc(ExprNode {
             ea,
+            ty,
             parent: None,
             kind,
         })
@@ -174,6 +192,7 @@ impl CtreeBuilder {
         Ctree {
             exprs: self.exprs,
             stmts: self.stmts,
+            types: self.types,
             root,
         }
     }
@@ -190,15 +209,28 @@ mod tests {
     use super::*;
     use crate::ctree::node::LvarId;
     use crate::ctree::ops::BinOp;
+    use crate::ctree::types::TypeKind;
+
+    fn int32() -> TypeData {
+        TypeData {
+            kind: TypeKind::Int {
+                bytes: 4,
+                signed: true,
+            },
+            size: Some(4),
+        }
+    }
 
     /// Build `{ return a + b; }` and return the tree plus its handles.
     fn sample() -> (Ctree, StmtId, StmtId, ExprId, ExprId, ExprId) {
         let ea = Ea::new_const(0x1000);
         let mut b = CtreeBuilder::new();
-        let va = b.expr(ea, Cexpr::Var(LvarId(0)));
-        let vb = b.expr(ea, Cexpr::Var(LvarId(1)));
+        let int = b.intern_type(int32());
+        let va = b.expr(ea, int, Cexpr::Var(LvarId(0)));
+        let vb = b.expr(ea, int, Cexpr::Var(LvarId(1)));
         let add = b.expr(
             ea,
+            int,
             Cexpr::Binary {
                 op: BinOp::Add,
                 x: va,
@@ -242,6 +274,19 @@ mod tests {
     fn children_of_a_leaf_are_empty() {
         let (tree, _block, _ret, _add, va, _vb) = sample();
         assert!(tree.children(NodeRef::Expr(va)).is_empty());
+    }
+
+    #[test]
+    fn expr_carries_its_resolved_type() {
+        let (tree, _block, _ret, add, _va, _vb) = sample();
+        let ty = tree.expr(add).ty;
+        assert_eq!(
+            tree.type_of(ty).kind,
+            TypeKind::Int {
+                bytes: 4,
+                signed: true
+            }
+        );
     }
 
     /// The marquee invariant (design §4.5): a materialized ctree is `Send + Sync`, so

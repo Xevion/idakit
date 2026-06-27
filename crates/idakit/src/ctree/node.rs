@@ -8,6 +8,7 @@
 
 use super::arena::Idx;
 use super::ops::{AssignOp, BinOp, UnOp};
+use super::types::TypeId;
 use crate::Ea;
 
 /// Handle to an [`ExprNode`].
@@ -27,10 +28,12 @@ pub enum NodeRef {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct LvarId(pub u32);
 
-/// An expression node: its source address, parent, and kind.
+/// An expression node: its source address, type, parent, and kind.
 #[derive(Clone, Debug)]
 pub struct ExprNode {
     pub ea: Ea,
+    /// The expression's resolved type, into the tree's [`TypeTable`](super::TypeTable).
+    pub ty: TypeId,
     pub parent: Option<NodeRef>,
     pub kind: Cexpr,
 }
