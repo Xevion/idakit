@@ -4,7 +4,11 @@
 //! nodes and types, then handed back as a `Send` value any worker thread can analyze.
 
 mod arena;
+mod node;
 mod ops;
+mod tree;
 
 pub use arena::{Arena, Idx};
+pub use node::{Case, Cexpr, Cinsn, ExprId, ExprNode, LvarId, NodeRef, StmtId, StmtNode};
 pub use ops::{AssignOp, BinOp, UnOp};
+pub use tree::{Ctree, CtreeBuilder, Descendants};

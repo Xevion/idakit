@@ -1,0 +1,255 @@
+//! [`Ctree`]: a decompiled function's ctree, as owned interned arenas plus the root
+//! statement. Built through [`CtreeBuilder`], which wires every node's `parent` link
+//! once the tree is complete.
+
+use super::arena::Arena;
+use super::node::{Cexpr, Cinsn, ExprId, ExprNode, NodeRef, StmtId, StmtNode};
+use crate::Ea;
+
+/// Visit `node`'s children, dispatching to the right arena. Shared by every navigation
+/// path (read-only walks and the build-time parent pass) so the expr/stmt split lives
+/// in one place.
+#[inline]
+fn for_each_child(
+    exprs: &Arena<ExprNode>,
+    stmts: &Arena<StmtNode>,
+    node: NodeRef,
+    f: impl FnMut(NodeRef),
+) {
+    match node {
+        NodeRef::Expr(id) => exprs[id].kind.for_each_child(f),
+        NodeRef::Stmt(id) => stmts[id].kind.for_each_child(f),
+    }
+}
+
+/// A decompiled function's ctree. The root is always a block statement.
+///
+/// Owned and `Send`: materialized on the kernel thread, then analyzed anywhere. Reads
+/// borrow `&Ctree`; there is no in-place mutation (edits go through `&mut Idb`, keyed
+/// by each node's `ea` — see design §4.5).
+pub struct Ctree {
+    exprs: Arena<ExprNode>,
+    stmts: Arena<StmtNode>,
+    root: StmtId,
+}
+
+impl Ctree {
+    /// The root statement (a block).
+    #[inline]
+    #[must_use]
+    pub fn root(&self) -> StmtId {
+        self.root
+    }
+
+    /// The expression node behind a handle.
+    #[inline]
+    #[must_use]
+    pub fn expr(&self, id: ExprId) -> &ExprNode {
+        &self.exprs[id]
+    }
+
+    /// The statement node behind a handle.
+    #[inline]
+    #[must_use]
+    pub fn stmt(&self, id: StmtId) -> &StmtNode {
+        &self.stmts[id]
+    }
+
+    /// This node's parent, or `None` for the root.
+    #[inline]
+    #[must_use]
+    pub fn parent(&self, node: NodeRef) -> Option<NodeRef> {
+        match node {
+            NodeRef::Expr(id) => self.exprs[id].parent,
+            NodeRef::Stmt(id) => self.stmts[id].parent,
+        }
+    }
+
+    /// This node's direct children, in source order.
+    #[must_use]
+    pub fn children(&self, node: NodeRef) -> Vec<NodeRef> {
+        let mut v = Vec::new();
+        for_each_child(&self.exprs, &self.stmts, node, |c| v.push(c));
+        v
+    }
+
+    /// A pre-order walk of `node` and all its descendants (the node itself first).
+    #[must_use]
+    pub fn descendants(&self, node: NodeRef) -> Descendants<'_> {
+        Descendants {
+            tree: self,
+            stack: vec![node],
+        }
+    }
+}
+
+/// Pre-order depth-first iterator over a subtree; see [`Ctree::descendants`].
+pub struct Descendants<'a> {
+    tree: &'a Ctree,
+    stack: Vec<NodeRef>,
+}
+
+impl Iterator for Descendants<'_> {
+    type Item = NodeRef;
+
+    fn next(&mut self) -> Option<NodeRef> {
+        let node = self.stack.pop()?;
+        // Push children straight onto the stack (no intermediate child list), then
+        // reverse just that suffix so the first child is popped — and visited — next.
+        let base = self.stack.len();
+        for_each_child(&self.tree.exprs, &self.tree.stmts, node, |c| {
+            self.stack.push(c);
+        });
+        self.stack[base..].reverse();
+        Some(node)
+    }
+}
+
+/// Builds a [`Ctree`]: allocate nodes (children first, since a parent references its
+/// children's handles), then [`finish`](CtreeBuilder::finish) to wire parent links.
+pub struct CtreeBuilder {
+    exprs: Arena<ExprNode>,
+    stmts: Arena<StmtNode>,
+}
+
+impl CtreeBuilder {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            exprs: Arena::new(),
+            stmts: Arena::new(),
+        }
+    }
+
+    /// Allocate an expression node (parent set later by [`finish`](Self::finish)).
+    pub fn expr(&mut self, ea: Ea, kind: Cexpr) -> ExprId {
+        self.exprs.alloc(ExprNode {
+            ea,
+            parent: None,
+            kind,
+        })
+    }
+
+    /// Allocate a statement node (parent set later by [`finish`](Self::finish)).
+    pub fn stmt(&mut self, ea: Ea, kind: Cinsn) -> StmtId {
+        self.stmts.alloc(StmtNode {
+            ea,
+            parent: None,
+            kind,
+        })
+    }
+
+    /// Finalize the tree rooted at `root`, wiring every node's `parent` link by one
+    /// pre-order pass from the root.
+    #[must_use]
+    pub fn finish(mut self, root: StmtId) -> Ctree {
+        // Reading a node's children borrows an arena while writing the children's
+        // `parent` needs `&mut` to the same arena, so the two phases can't share one
+        // borrow. `kids` decouples them; reused across the walk, it allocates once
+        // (growing to the largest fan-out) rather than per node.
+        let mut stack = vec![NodeRef::Stmt(root)];
+        let mut kids: Vec<NodeRef> = Vec::new();
+        let mut visited = 0usize;
+        while let Some(node) = stack.pop() {
+            visited += 1;
+            kids.clear();
+            for_each_child(&self.exprs, &self.stmts, node, |c| kids.push(c));
+            for &child in &kids {
+                match child {
+                    NodeRef::Expr(id) => self.exprs[id].parent = Some(node),
+                    NodeRef::Stmt(id) => self.stmts[id].parent = Some(node),
+                }
+                stack.push(child);
+            }
+        }
+        // Every allocated node must be reachable from the root: a node left unattached
+        // is a builder bug. The walk can't loop, since a child's arena index is always
+        // smaller than its parent's (the handle must exist to construct the parent), so
+        // no node is reached twice and `visited` is an exact count.
+        debug_assert_eq!(
+            visited,
+            self.exprs.len() + self.stmts.len(),
+            "ctree has nodes unreachable from the root"
+        );
+        Ctree {
+            exprs: self.exprs,
+            stmts: self.stmts,
+            root,
+        }
+    }
+}
+
+impl Default for CtreeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ctree::node::LvarId;
+    use crate::ctree::ops::BinOp;
+
+    /// Build `{ return a + b; }` and return the tree plus its handles.
+    fn sample() -> (Ctree, StmtId, StmtId, ExprId, ExprId, ExprId) {
+        let ea = Ea::new_const(0x1000);
+        let mut b = CtreeBuilder::new();
+        let va = b.expr(ea, Cexpr::Var(LvarId(0)));
+        let vb = b.expr(ea, Cexpr::Var(LvarId(1)));
+        let add = b.expr(
+            ea,
+            Cexpr::Binary {
+                op: BinOp::Add,
+                x: va,
+                y: vb,
+            },
+        );
+        let ret = b.stmt(ea, Cinsn::Return(Some(add)));
+        let block = b.stmt(ea, Cinsn::Block(vec![ret]));
+        let tree = b.finish(block);
+        (tree, block, ret, add, va, vb)
+    }
+
+    #[test]
+    fn finish_wires_parent_links() {
+        let (tree, block, ret, add, va, vb) = sample();
+        assert_eq!(tree.root(), block);
+        assert_eq!(tree.parent(NodeRef::Stmt(block)), None);
+        assert_eq!(tree.parent(NodeRef::Stmt(ret)), Some(NodeRef::Stmt(block)));
+        assert_eq!(tree.parent(NodeRef::Expr(add)), Some(NodeRef::Stmt(ret)));
+        assert_eq!(tree.parent(NodeRef::Expr(va)), Some(NodeRef::Expr(add)));
+        assert_eq!(tree.parent(NodeRef::Expr(vb)), Some(NodeRef::Expr(add)));
+    }
+
+    #[test]
+    fn descendants_are_pre_order() {
+        let (tree, block, ret, add, va, vb) = sample();
+        let walk: Vec<NodeRef> = tree.descendants(NodeRef::Stmt(block)).collect();
+        assert_eq!(
+            walk,
+            vec![
+                NodeRef::Stmt(block),
+                NodeRef::Stmt(ret),
+                NodeRef::Expr(add),
+                NodeRef::Expr(va),
+                NodeRef::Expr(vb),
+            ]
+        );
+    }
+
+    #[test]
+    fn children_of_a_leaf_are_empty() {
+        let (tree, _block, _ret, _add, va, _vb) = sample();
+        assert!(tree.children(NodeRef::Expr(va)).is_empty());
+    }
+
+    /// The marquee invariant (design §4.5): a materialized ctree is `Send + Sync`, so
+    /// it can be shipped off the kernel thread to a worker for analysis. Fails to
+    /// compile if a non-`Send` field is ever added.
+    #[test]
+    fn ctree_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Ctree>();
+    }
+}

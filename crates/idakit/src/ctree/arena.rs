@@ -9,7 +9,7 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 /// A typed handle into an [`Arena<T>`]. Cheap (`Copy`), `Send`/`Sync` regardless of
 /// `T`, and stable for the life of the arena.
@@ -123,6 +123,13 @@ impl<T> Index<Idx<T>> for Arena<T> {
     #[inline]
     fn index(&self, idx: Idx<T>) -> &T {
         &self.data[idx.index()]
+    }
+}
+
+impl<T> IndexMut<Idx<T>> for Arena<T> {
+    #[inline]
+    fn index_mut(&mut self, idx: Idx<T>) -> &mut T {
+        &mut self.data[idx.index()]
     }
 }
 
