@@ -154,8 +154,8 @@ impl CtreeBuilder {
     }
 
     /// Allocate an expression node of type `ty` (parent set later by
-    /// [`finish`](Self::finish)).
-    pub fn expr(&mut self, ea: Ea, ty: TypeId, kind: Cexpr) -> ExprId {
+    /// [`finish`](Self::finish)). `ea` is `None` for a synthetic node.
+    pub fn expr(&mut self, ea: Option<Ea>, ty: TypeId, kind: Cexpr) -> ExprId {
         self.exprs.alloc(ExprNode {
             ea,
             ty,
@@ -164,8 +164,9 @@ impl CtreeBuilder {
         })
     }
 
-    /// Allocate a statement node (parent set later by [`finish`](Self::finish)).
-    pub fn stmt(&mut self, ea: Ea, kind: Cinsn) -> StmtId {
+    /// Allocate a statement node (parent set later by [`finish`](Self::finish)). `ea` is
+    /// `None` for a synthetic node.
+    pub fn stmt(&mut self, ea: Option<Ea>, kind: Cinsn) -> StmtId {
         self.stmts.alloc(StmtNode {
             ea,
             parent: None,
@@ -239,7 +240,7 @@ mod tests {
 
     /// Build `{ return a + b; }` and return the tree plus its handles.
     fn sample() -> (Ctree, StmtId, StmtId, ExprId, ExprId, ExprId) {
-        let ea = Ea::new_const(0x1000);
+        let ea = Some(Ea::new_const(0x1000));
         let mut b = CtreeBuilder::new();
         let int = b.intern_type(int32());
         let va = b.expr(ea, int, Cexpr::Var(LvarId(0)));

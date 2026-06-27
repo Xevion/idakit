@@ -17,7 +17,18 @@
 #include <idp.hpp>     // HEXDSP / get_hexdsp
 #include <hexrays.hpp>
 
+#include <vector>
+#include <map>
+#include <string>
+#include <cstring>
+
 #include "idakit_facade.h"
+
+// These must match the `#[repr(C)]` structs in idakit-sys and idakit's `tk` codes.
+static_assert(sizeof(idakit_expr_rec_t) == 40, "ExprRec layout");
+static_assert(sizeof(idakit_stmt_rec_t) == 40, "StmtRec layout");
+static_assert(sizeof(idakit_type_rec_t) == 40, "TypeRec layout");
+static_assert(sizeof(idakit_case_rec_t) == 16, "CaseRec layout");
 
 extern "C" size_t idakit_func_qty(void)
 {
@@ -310,4 +321,273 @@ extern "C" void idakit_cfunc_ctree_counts(void *h, int *n_insn, int *n_expr, int
   *n_insn = v.n_insn;
   *n_expr = v.n_expr;
   *n_calls = v.n_calls;
+}
+
+// Flat ctree extraction. One depth-first walk emits records in post-order (each node's
+// children and type precede it), so every reference points backwards. Operators emit
+// their raw `ctype_t` as the tag and fill operands generically via op_uses_x/y/z; only
+// the leaves and variadic kinds need bespoke handling. All meaning is reconstructed on
+// the Rust side -- this side is a dumb transcriber.
+namespace {
+
+// Type-kind codes, matching idakit's `tk` module.
+enum {
+  TK_UNKNOWN = 0, TK_VOID = 1, TK_BOOL = 2, TK_INT = 3,
+  TK_FLOAT = 4, TK_PTR = 5, TK_ARRAY = 6, TK_NAMED = 7,
+};
+
+const uint32_t NONE = 0xFFFFFFFFu; // absent optional edge
+
+struct image_t
+{
+  std::vector<idakit_type_rec_t> types;
+  std::vector<idakit_expr_rec_t> exprs;
+  std::vector<idakit_stmt_rec_t> stmts;
+  std::vector<uint32_t> nodes;
+  std::vector<uint8_t> bytes;
+  std::vector<uint64_t> longs;
+  std::vector<idakit_case_rec_t> cases;
+  std::map<std::string, uint32_t> type_cache;
+  uint32_t root = 0;
+
+  // Append a string to the bytes pool; report its [offset, length).
+  void add_str(const char *s, uint32_t *off, uint32_t *len)
+  {
+    size_t n = s != nullptr ? strlen(s) : 0;
+    *off = (uint32_t)bytes.size();
+    *len = (uint32_t)n;
+    bytes.insert(bytes.end(), s, s + n);
+  }
+
+  // Intern a type, decomposing scalars/pointers/arrays and falling back to a printed
+  // name for aggregates (full struct/enum/func extraction is a later pass). Deduped by
+  // printed form; children are interned first, so they get smaller indices.
+  uint32_t intern_type(const tinfo_t &t)
+  {
+    qstring key;
+    t.print(&key);
+    std::string k(key.c_str(), key.length());
+    auto it = type_cache.find(k);
+    if ( it != type_cache.end() )
+      return it->second;
+
+    idakit_type_rec_t r;
+    memset(&r, 0, sizeof(r));
+    size_t sz = t.get_size();
+    if ( sz != BADSIZE && sz != 0 )
+    {
+      r.has_size = 1;
+      r.size = sz;
+    }
+    if ( t.empty() )
+      r.tag = TK_UNKNOWN;
+    else if ( t.is_void() )
+      r.tag = TK_VOID;
+    else if ( t.is_bool() )
+      r.tag = TK_BOOL;
+    else if ( t.is_floating() )
+    {
+      r.tag = TK_FLOAT;
+      r.bytes = (uint32_t)sz;
+    }
+    else if ( t.is_integral() )
+    {
+      r.tag = TK_INT;
+      r.bytes = (uint32_t)sz;
+      r.is_signed = t.is_signed() ? 1 : 0;
+    }
+    else if ( t.is_ptr() )
+    {
+      uint32_t target = intern_type(t.get_pointed_object());
+      r.tag = TK_PTR;
+      r.a = target;
+    }
+    else if ( t.is_array() )
+    {
+      uint32_t elem = intern_type(t.get_array_element());
+      r.tag = TK_ARRAY;
+      r.a = elem;
+      r.aux = (uint64_t)t.get_array_nelems();
+    }
+    else
+    {
+      r.tag = TK_NAMED;
+      add_str(key.c_str(), &r.a, &r.b);
+    }
+
+    uint32_t idx = (uint32_t)types.size();
+    types.push_back(r);
+    type_cache[k] = idx;
+    return idx;
+  }
+
+  uint32_t emit_expr(const cexpr_t *e)
+  {
+    idakit_expr_rec_t r;
+    memset(&r, 0, sizeof(r));
+    r.ea = (uint64_t)e->ea;
+    r.tag = (uint32_t)e->op;
+    r.ty = intern_type(e->type);
+    switch ( e->op )
+    {
+      case cot_num:    r.aux = e->n->value(e->type); break;
+      case cot_fnum:   r.aux = 0; break; // TODO: decode fnumber_t -> f64 bits
+      case cot_obj:    r.aux = (uint64_t)e->obj_ea; break;
+      case cot_var:    r.a = (uint32_t)e->v.idx; break;
+      case cot_str:    add_str(e->string, &r.a, &r.b); break;
+      case cot_helper: add_str(e->helper, &r.a, &r.b); break;
+      case cot_ptr:    r.a = emit_expr(e->x); r.b = (uint32_t)e->ptrsize; break;
+      case cot_memref:
+      case cot_memptr: r.a = emit_expr(e->x); r.b = e->m; break;
+      case cot_call:
+      {
+        r.a = emit_expr(e->x);
+        std::vector<uint32_t> args;
+        if ( e->a != nullptr )
+          for ( const carg_t &arg : *e->a )
+            args.push_back(emit_expr(&arg));
+        r.b = (uint32_t)nodes.size();
+        r.c = (uint32_t)args.size();
+        nodes.insert(nodes.end(), args.begin(), args.end());
+      }
+      break;
+      default:
+        // Binary/unary/ternary/index/cast/sizeof: operands by the SDK's own predicates.
+        if ( op_uses_x(e->op) ) r.a = emit_expr(e->x);
+        if ( op_uses_y(e->op) ) r.b = emit_expr(e->y);
+        if ( op_uses_z(e->op) ) r.c = emit_expr(e->z);
+        break;
+    }
+    uint32_t idx = (uint32_t)exprs.size();
+    exprs.push_back(r);
+    return idx;
+  }
+
+  uint32_t emit_opt_expr(const cexpr_t *e)
+  {
+    return (e == nullptr || e->op == cot_empty) ? NONE : emit_expr(e);
+  }
+
+  // Emit a statement list as a `cit_block` record (children first).
+  uint32_t emit_block(const cinsn_list_t &list, ea_t ea)
+  {
+    std::vector<uint32_t> kids;
+    for ( const cinsn_t &child : list )
+      kids.push_back(emit_stmt(&child));
+    idakit_stmt_rec_t r;
+    memset(&r, 0, sizeof(r));
+    r.ea = (uint64_t)ea;
+    r.tag = cit_block;
+    r.a = (uint32_t)nodes.size();
+    r.b = (uint32_t)kids.size();
+    nodes.insert(nodes.end(), kids.begin(), kids.end());
+    uint32_t idx = (uint32_t)stmts.size();
+    stmts.push_back(r);
+    return idx;
+  }
+
+  uint32_t emit_stmt(const cinsn_t *i)
+  {
+    if ( i->op == cit_block )
+      return emit_block(*i->cblock, i->ea);
+
+    idakit_stmt_rec_t r;
+    memset(&r, 0, sizeof(r));
+    r.ea = (uint64_t)i->ea;
+    r.tag = (uint32_t)i->op;
+    switch ( i->op )
+    {
+      case cit_expr: r.a = emit_expr(i->cexpr); break;
+      case cit_if:
+        r.a = emit_expr(&i->cif->expr);
+        r.b = emit_stmt(i->cif->ithen);
+        r.c = i->cif->ielse != nullptr ? emit_stmt(i->cif->ielse) : NONE;
+        break;
+      case cit_for:
+        r.a = emit_opt_expr(&i->cfor->init);
+        r.b = emit_opt_expr(&i->cfor->expr);
+        r.c = emit_opt_expr(&i->cfor->step);
+        r.aux = emit_stmt(i->cfor->body);
+        break;
+      case cit_while:
+        r.a = emit_expr(&i->cwhile->expr);
+        r.b = emit_stmt(i->cwhile->body);
+        break;
+      case cit_do:
+        r.a = emit_stmt(i->cdo->body);
+        r.b = emit_expr(&i->cdo->expr);
+        break;
+      case cit_switch:
+      {
+        r.a = emit_expr(&i->cswitch->expr);
+        std::vector<idakit_case_rec_t> crs;
+        for ( const ccase_t &c : i->cswitch->cases )
+        {
+          idakit_case_rec_t cr;
+          memset(&cr, 0, sizeof(cr));
+          cr.values_off = (uint32_t)longs.size();
+          cr.values_len = (uint32_t)c.values.size();
+          for ( uint64 v : c.values )
+            longs.push_back(v);
+          cr.body = emit_stmt(&c); // ccase_t is-a cinsn_t
+          crs.push_back(cr);
+        }
+        r.b = (uint32_t)cases.size();
+        r.c = (uint32_t)crs.size();
+        cases.insert(cases.end(), crs.begin(), crs.end());
+      }
+      break;
+      case cit_return: r.a = emit_opt_expr(&i->creturn->expr); break;
+      case cit_goto:   r.a = (uint32_t)i->cgoto->label_num; break;
+      case cit_asm:
+        r.a = (uint32_t)longs.size();
+        r.b = (uint32_t)i->casm->size();
+        for ( ea_t a : *i->casm )
+          longs.push_back((uint64_t)a);
+        break;
+      case cit_throw: r.a = emit_opt_expr(&i->cthrow->expr); break;
+      case cit_try:
+      {
+        // ctry is-a cblock (the guarded body); each catch is a cblock too.
+        r.a = emit_block(*i->ctry, i->ea);
+        std::vector<uint32_t> kids;
+        for ( const ccatch_t &cat : i->ctry->catchs )
+          kids.push_back(emit_block(cat, i->ea));
+        r.b = (uint32_t)nodes.size();
+        r.c = (uint32_t)kids.size();
+        nodes.insert(nodes.end(), kids.begin(), kids.end());
+      }
+      break;
+      default: break; // cit_break / cit_continue / cit_empty carry nothing
+    }
+    uint32_t idx = (uint32_t)stmts.size();
+    stmts.push_back(r);
+    return idx;
+  }
+};
+
+} // namespace
+
+extern "C" void *idakit_cfunc_extract_ctree(void *h, idakit_ctree_view_t *out)
+{
+  if ( h == nullptr )
+    return nullptr;
+  cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
+  image_t *img = new image_t;
+  img->root = img->emit_stmt(&cf->body);
+
+  out->types = img->types.data(); out->n_types = img->types.size();
+  out->exprs = img->exprs.data(); out->n_exprs = img->exprs.size();
+  out->stmts = img->stmts.data(); out->n_stmts = img->stmts.size();
+  out->nodes = img->nodes.data(); out->n_nodes = img->nodes.size();
+  out->bytes = img->bytes.data(); out->n_bytes = img->bytes.size();
+  out->longs = img->longs.data(); out->n_longs = img->longs.size();
+  out->cases = img->cases.data(); out->n_cases = img->cases.size();
+  out->root = img->root;
+  return img;
+}
+
+extern "C" void idakit_ctree_dispose(void *h)
+{
+  delete reinterpret_cast<image_t *>(h);
 }

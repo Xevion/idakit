@@ -40,6 +40,41 @@ fn main() {
                         "decompiled first fn: {} insns, {} exprs, {} calls",
                         c.insns, c.exprs, c.calls
                     );
+
+                    // Materialize the whole ctree and cross-check it against the
+                    // independent visitor counts: two separate traversals of the same
+                    // cfunc must agree, node-for-node.
+                    use idakit::ctree::{Cinsn, NodeRef};
+                    let tree = cf.ctree().expect("ctree extraction");
+                    let root = tree.root();
+                    assert!(
+                        matches!(tree.stmt(root).kind, Cinsn::Block(_)),
+                        "ctree root should be a block"
+                    );
+                    assert_eq!(
+                        tree.exprs().count(),
+                        c.exprs as usize,
+                        "extracted expr count should match the visitor"
+                    );
+                    assert_eq!(
+                        tree.stmts().count(),
+                        c.insns as usize,
+                        "extracted stmt count should match the visitor"
+                    );
+                    // Every allocated node is reachable from the root: confirms the
+                    // post-order image and parent wiring are sound.
+                    let reachable = tree.descendants(NodeRef::Stmt(root)).count();
+                    assert_eq!(
+                        reachable,
+                        tree.exprs().count() + tree.stmts().count(),
+                        "every node should be reachable from the root"
+                    );
+                    println!(
+                        "ctree extracted: {} exprs, {} stmts, {} types; root is a block",
+                        tree.exprs().count(),
+                        tree.stmts().count(),
+                        tree.types().count()
+                    );
                 }
                 Err(e) => println!("decompile unavailable ({e})"),
             }

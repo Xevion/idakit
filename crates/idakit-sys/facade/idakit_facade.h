@@ -49,6 +49,36 @@ void  idakit_cfunc_dispose(void *cfunc);
 int64_t idakit_cfunc_pseudocode(void *cfunc, char *buf, size_t cap); /* tag-stripped text length */
 void  idakit_cfunc_ctree_counts(void *cfunc, int *n_insn, int *n_expr, int *n_calls);
 
+/* Flat ctree extraction. The records mirror idakit-sys's `#[repr(C)]` structs exactly
+ * (the static_asserts in the .cpp and the size checks in lib.rs are the tripwire). Field
+ * meaning depends on `tag` and is documented in idakit's ctree extract module: `tag` is a
+ * `ctype_t` for nodes, references are indices within the matching section, and variadic
+ * edges (call args, block bodies, switch cases, asm/case values, strings) point into the
+ * side pools. `0xFFFFFFFF` in an optional slot means absent. */
+typedef struct { uint64_t ea, aux; uint32_t ty, a, b, c, tag, flags; } idakit_expr_rec_t;
+typedef struct { uint64_t ea, aux; uint32_t a, b, c, tag, flags; } idakit_stmt_rec_t;
+typedef struct { uint64_t size, aux; uint32_t a, b, tag, bytes, is_signed, has_size; } idakit_type_rec_t;
+typedef struct { uint32_t values_off, values_len, body, flags; } idakit_case_rec_t;
+
+/* A view over the extraction's facade-owned arrays; valid until idakit_ctree_dispose. */
+typedef struct
+{
+  const idakit_type_rec_t *types; size_t n_types;
+  const idakit_expr_rec_t *exprs; size_t n_exprs;
+  const idakit_stmt_rec_t *stmts; size_t n_stmts;
+  const uint32_t          *nodes; size_t n_nodes; /* homogeneous index lists */
+  const uint8_t           *bytes; size_t n_bytes; /* string bytes */
+  const uint64_t          *longs; size_t n_longs; /* asm addrs, switch case values */
+  const idakit_case_rec_t *cases; size_t n_cases;
+  uint32_t root;                                  /* statement index of the root block */
+} idakit_ctree_view_t;
+
+/* Extract `cfunc`'s ctree into a fresh handle and fill `out` with views into it. Returns
+ * the handle (owns the storage; release with idakit_ctree_dispose), or NULL if cfunc is
+ * NULL. */
+void *idakit_cfunc_extract_ctree(void *cfunc, idakit_ctree_view_t *out);
+void  idakit_ctree_dispose(void *h);
+
 #ifdef __cplusplus
 }
 #endif

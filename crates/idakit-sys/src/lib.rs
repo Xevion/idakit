@@ -86,6 +86,96 @@ unsafe extern "C" {
     pub fn idakit_type_member_type(h: *mut c_void, i: usize, buf: *mut c_char, cap: usize) -> i64;
 }
 
+// ctree extraction records: the flat, POD image of a decompiled function's ctree that
+// the facade fills (one DFS) and idakit's ctree builder reads. Field meaning depends on
+// `tag` and is interpreted there — these are layout only. `#[repr(C)]` so the layout
+// matches the facade's identical structs byte-for-byte (the `static_assert`s on the C++
+// side and the size checks below are the tripwire if either drifts).
+
+/// One expression node. `tag` is a `ctype_t` (`cot_*`) value; `a`/`b`/`c` are child or
+/// pool references, `aux` carries a wide literal (`cot_num`/`cot_obj`/`cot_fnum`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ExprRec {
+    pub ea: Ea,
+    pub aux: u64,
+    pub ty: u32,
+    pub a: u32,
+    pub b: u32,
+    pub c: u32,
+    pub tag: u32,
+    pub flags: u32,
+}
+
+/// One statement node. `tag` is a `ctype_t` (`cit_*`) value; otherwise like [`ExprRec`]
+/// without a type (`aux` holds a `body` statement reference for `cit_for`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StmtRec {
+    pub ea: Ea,
+    pub aux: u64,
+    pub a: u32,
+    pub b: u32,
+    pub c: u32,
+    pub tag: u32,
+    pub flags: u32,
+}
+
+/// One resolved type. `tag` is a small type-kind code (not a `ctype_t`); `a`/`b` are a
+/// child type or a `bytes`-pool string slice (named types).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TypeRec {
+    pub size: u64,
+    pub aux: u64,
+    pub a: u32,
+    pub b: u32,
+    pub tag: u32,
+    pub bytes: u32,
+    pub signed: u32,
+    pub has_size: u32,
+}
+
+/// One `switch` case: a slice of `longs` (the case values) and a `body` statement.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CaseRec {
+    pub values_off: u32,
+    pub values_len: u32,
+    pub body: u32,
+    pub flags: u32,
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<ExprRec>() == 40);
+    assert!(core::mem::size_of::<StmtRec>() == 40);
+    assert!(core::mem::size_of::<TypeRec>() == 40);
+    assert!(core::mem::size_of::<CaseRec>() == 16);
+};
+
+/// A view over a facade-owned ctree extraction (see [`idakit_cfunc_extract_ctree`]). All
+/// pointers are valid until the extraction handle is disposed; lengths are element
+/// counts (and the pointer may be null when the count is zero).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct CtreeView {
+    pub types: *const TypeRec,
+    pub n_types: usize,
+    pub exprs: *const ExprRec,
+    pub n_exprs: usize,
+    pub stmts: *const StmtRec,
+    pub n_stmts: usize,
+    pub nodes: *const u32,
+    pub n_nodes: usize,
+    pub bytes: *const u8,
+    pub n_bytes: usize,
+    pub longs: *const u64,
+    pub n_longs: usize,
+    pub cases: *const CaseRec,
+    pub n_cases: usize,
+    pub root: u32,
+}
+
 // hex-rays decompiler
 unsafe extern "C" {
     pub fn idakit_hexrays_init() -> c_int;
@@ -98,6 +188,10 @@ unsafe extern "C" {
         n_expr: *mut c_int,
         n_calls: *mut c_int,
     );
+    /// Extract `cfunc`'s ctree, returning a handle that owns the storage `out` points
+    /// into. Release with [`idakit_ctree_dispose`]. Returns null if `cfunc` is null.
+    pub fn idakit_cfunc_extract_ctree(cfunc: *mut c_void, out: *mut CtreeView) -> *mut c_void;
+    pub fn idakit_ctree_dispose(h: *mut c_void);
 }
 
 // libida kernel writes

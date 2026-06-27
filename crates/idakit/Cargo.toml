@@ -14,6 +14,10 @@ strum = { version = "0.28.0", features = ["derive"] }
 name = "actor"
 path = "examples/actor.rs"
 
+[[example]]
+name = "taint"
+path = "examples/taint.rs"
+
 # No libtest harness: the test owns `fn main()` so it controls the process lifetime
 # around the kernel thread that `Ida::run` spawns.
 [[test]]

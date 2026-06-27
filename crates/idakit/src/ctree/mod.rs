@@ -4,12 +4,15 @@
 //! nodes and types, then handed back as a `Send` value any worker thread can analyze.
 
 mod arena;
+mod extract;
 mod node;
 mod ops;
 mod tree;
 mod types;
 
 pub use arena::{Arena, Idx};
+pub use extract::ExtractError;
+pub(crate) use extract::{Records, build};
 pub use node::{Case, Cexpr, Cinsn, ExprId, ExprNode, LvarId, NodeRef, StmtId, StmtNode};
 pub use ops::{AssignOp, BinOp, UnOp};
 pub use tree::{Ctree, CtreeBuilder, Descendants};

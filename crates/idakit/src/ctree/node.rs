@@ -29,25 +29,29 @@ pub enum NodeRef {
 pub struct LvarId(pub u32);
 
 /// An expression node: its source address, type, parent, and kind.
-#[derive(Clone, Debug)]
+///
+/// `ea` is `None` for synthetic nodes the decompiler introduces with no backing
+/// instruction (`Option<Ea>` is niche-optimized to a bare `u64`; see [`Ea`]).
+#[derive(Clone, Debug, PartialEq)]
 pub struct ExprNode {
-    pub ea: Ea,
+    pub ea: Option<Ea>,
     /// The expression's resolved type, into the tree's [`TypeTable`](super::TypeTable).
     pub ty: TypeId,
     pub parent: Option<NodeRef>,
     pub kind: Cexpr,
 }
 
-/// A statement node: its source address, parent, and kind.
-#[derive(Clone, Debug)]
+/// A statement node: its source address, parent, and kind. `ea` is `None` for synthetic
+/// nodes with no backing instruction.
+#[derive(Clone, Debug, PartialEq)]
 pub struct StmtNode {
-    pub ea: Ea,
+    pub ea: Option<Ea>,
     pub parent: Option<NodeRef>,
     pub kind: Cinsn,
 }
 
 /// An expression kind. Child links are arena handles; leaves carry their value.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Cexpr {
     /// `x OP y`
@@ -99,14 +103,14 @@ pub enum Cexpr {
 }
 
 /// One `case` of a `switch`: its values (empty = `default`) and body.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Case {
     pub values: Vec<u64>,
     pub body: StmtId,
 }
 
 /// A statement kind. Child links are arena handles.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Cinsn {
     /// `{ ... }`
