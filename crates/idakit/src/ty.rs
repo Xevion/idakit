@@ -69,7 +69,7 @@ impl<'db> TypeInfo<'db> {
     /// Lazily iterate the members, in declaration order.
     #[inline]
     #[must_use]
-    pub fn members(&self) -> Members<'_> {
+    pub fn members(&self) -> Members<'_, 'db> {
         Members {
             ty: self,
             next: 0,
@@ -104,13 +104,17 @@ impl<'db> TypeInfo<'db> {
 }
 
 /// Lazy iterator over a [`TypeInfo`]'s members; see [`TypeInfo::members`].
-pub struct Members<'t> {
-    ty: &'t TypeInfo<'t>,
+///
+/// `'t` is the borrow of the [`TypeInfo`]; `'db` is the database that type belongs
+/// to. Keeping them distinct lets the iterator borrow a `TypeInfo` for less than the
+/// full `'db` — conflating them (`&'t TypeInfo<'t>`) over-constrains the caller.
+pub struct Members<'t, 'db> {
+    ty: &'t TypeInfo<'db>,
     next: usize,
     count: usize,
 }
 
-impl Iterator for Members<'_> {
+impl Iterator for Members<'_, '_> {
     type Item = Member;
 
     fn next(&mut self) -> Option<Self::Item> {
