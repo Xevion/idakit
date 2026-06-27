@@ -1,7 +1,8 @@
 //! End-to-end cycle against a real database: open, read, write, re-read.
 //!
 //! `harness = false` so the test owns `fn main()` and the process lifetime around
-//! the kernel thread. Set `IDAKIT_TEST_DB` to an `.i64`; skips (exits 0) when unset.
+//! the kernel thread. Set `IDAKIT_TEST_DB` to an `.i64` (use an absolute path:
+//! `cargo test` runs from the crate dir, not the workspace root); skips when unset.
 
 fn main() {
     let Ok(db) = std::env::var("IDAKIT_TEST_DB") else {
@@ -43,6 +44,22 @@ fn main() {
                 Err(e) => println!("decompile unavailable ({e})"),
             }
 
+            // Decompile-failure path: an unmapped address has no function, so the
+            // kernel returns null and the facade reports the reason. Confirm a real
+            // reason (sourced from the facade buffer, not a stale qerrno) propagates.
+            let nowhere = idakit::Ea::new_const(0xffff_ffff_f000);
+            match idb.decompile(nowhere) {
+                Ok(_) => panic!("expected decompile to fail at unmapped {nowhere:#x}"),
+                Err(e) => {
+                    let msg = e.to_string();
+                    assert!(
+                        msg.contains("no function at address"),
+                        "decompile failure should carry the facade reason, got: {msg}"
+                    );
+                    println!("decompile-failure reason propagated: {msg}");
+                }
+            }
+
             // Rename via &mut (first's borrow has ended), then confirm.
             let renamed = "idakit_roundtrip_probe";
             idb.rename(ea, renamed).expect("rename failed");
@@ -58,6 +75,8 @@ fn main() {
             idb.close(false);
 
             println!("roundtrip OK: {func_count} funcs, {seg_count} segs, rename/comment verified");
-        });
-    });
+        })
+        .expect("kernel call panicked");
+    })
+    .expect("kernel init failed");
 }

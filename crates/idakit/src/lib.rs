@@ -27,7 +27,7 @@ mod xref;
 
 pub use decompile::{Cfunc, CtreeCounts};
 pub use ea::{BADADDR, Ea, Offset};
-pub use error::{Error, Result};
+pub use error::{CallError, Error, InitError, Qerrno, Result};
 pub use func::{Func, Functions};
 pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
@@ -56,9 +56,12 @@ impl Idb {
         if rc == 0 {
             Ok(())
         } else {
+            // The return value IS the error_t (eOS=1 means "see errno", e.g. ENOENT).
+            let qerrno = Qerrno::from_code(rc);
             Err(Error::Open {
                 path: path.to_owned(),
-                code: rc,
+                reason: self.error_reason(qerrno),
+                qerrno,
             })
         }
     }
@@ -151,9 +154,12 @@ impl Idb {
             }
             self.hexrays_ready.set(true);
         }
-        let handle = self.decompile_at(ea);
+        let (handle, reason) = self.decompile_at(ea);
         if handle.is_null() {
-            return Err(Error::Decompile { ea: ea.get() });
+            return Err(Error::Decompile {
+                ea: ea.get(),
+                reason,
+            });
         }
         Ok(Cfunc::from_handle(handle, self))
     }
@@ -164,9 +170,12 @@ impl Idb {
         if ok {
             Ok(())
         } else {
+            let (qerrno, reason) = self.last_reason();
             Err(Error::WriteRejected {
                 op: "rename",
                 ea: ea.get(),
+                qerrno,
+                reason,
             })
         }
     }
@@ -177,9 +186,12 @@ impl Idb {
         if ok {
             Ok(())
         } else {
+            let (qerrno, reason) = self.last_reason();
             Err(Error::WriteRejected {
                 op: "set_comment",
                 ea: ea.get(),
+                qerrno,
+                reason,
             })
         }
     }
@@ -203,19 +215,26 @@ impl Ida {
     /// thread with an [`Ida`] handle. Returns once `app` returns; the kernel thread
     /// then shuts down after every handle is dropped. Call once, typically from the
     /// OS main thread so the host keeps it for its own runtime.
-    pub fn run<R, F>(app: F) -> R
+    ///
+    /// `Err` only on kernel *setup* failure ([`InitError`]); a panic in `app` itself
+    /// propagates inline, since `app` runs on the caller's own thread.
+    pub fn run<R, F>(app: F) -> Result<R, InitError>
     where
         F: FnOnce(Ida) -> R,
     {
         let (tx, rx) = channel::<Job>();
+        let (setup_tx, setup_rx) = channel::<Result<(), InitError>>();
 
         let kernel = thread::Builder::new()
             .name("idakit-kernel".into())
             .stack_size(KERNEL_STACK)
             .spawn(move || {
-                claim::steal_main();
-                // SAFETY: on the kernel thread, once, before any other kernel call.
-                unsafe { sys::init_library(0, ptr::null_mut()) };
+                let setup = bring_up_kernel();
+                let ok = setup.is_ok();
+                let _ = setup_tx.send(setup);
+                if !ok {
+                    return;
+                }
 
                 let mut idb = Idb::new();
                 while let Ok(job) = rx.recv() {
@@ -226,33 +245,69 @@ impl Ida {
             })
             .expect("spawn kernel thread");
 
+        // Don't hand out a handle until the kernel is up.
+        match setup_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                let _ = kernel.join();
+                return Err(e);
+            }
+            Err(_) => {
+                let _ = kernel.join();
+                return Err(InitError::KernelGone);
+            }
+        }
+
         let result = app(Ida { tx });
         // `app` has returned, so its handle and any clones it joined are dropped and
-        // the pump has exited; join to surface a kernel-thread panic.
-        kernel.join().expect("kernel thread panicked");
-        result
+        // the pump has exited; join to reap the kernel thread. The pump guards every
+        // job, so a panic here is an unexpected kernel-setup failure — surface it
+        // rather than let it vanish, but don't poison the app's own result.
+        if let Err(payload) = kernel.join() {
+            let reason =
+                error::panic_payload_str(&*payload).unwrap_or("<non-string panic payload>");
+            eprintln!("idakit: kernel thread panicked after init: {reason}");
+        }
+        Ok(result)
     }
 
     /// Run a closure against the open database on the kernel thread, from any thread.
-    /// A panic in `f` is caught and resumed here, leaving the kernel thread alive.
-    pub fn call<R, F>(&self, f: F) -> R
+    /// A panic in `f` is caught on the kernel thread and returned as
+    /// [`CallError::Panicked`], leaving the kernel alive for later calls.
+    pub fn call<R, F>(&self, f: F) -> Result<R, CallError>
     where
         F: FnOnce(&mut Idb) -> R + Send + 'static,
         R: Send + 'static,
     {
         let (rtx, rrx) = channel::<thread::Result<R>>();
-        self.tx
+        if self
+            .tx
             .send(Box::new(move |idb| {
                 // AssertUnwindSafe: `&mut Idb` isn't UnwindSafe. A panic mid-write
                 // may leave kernel state inconsistent; we keep the actor alive and
-                // resume the panic on the caller rather than swallow it.
+                // hand the panic back as an error rather than unwind the kernel.
                 let _ = rtx.send(catch_unwind(AssertUnwindSafe(|| f(idb))));
             }))
-            .expect("kernel pump gone");
-        match rrx.recv() {
-            Ok(Ok(value)) => value,
-            Ok(Err(panic)) => std::panic::resume_unwind(panic),
-            Err(_) => panic!("kernel dropped the job"),
+            .is_err()
+        {
+            return Err(CallError::Disconnected);
         }
+        match rrx.recv() {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(payload)) => Err(CallError::Panicked(payload)),
+            Err(_) => Err(CallError::Disconnected),
+        }
+    }
+}
+
+/// Claim the kernel "main" thread and initialize the library, on the kernel thread.
+fn bring_up_kernel() -> Result<(), InitError> {
+    claim::steal_main().map_err(|reason| InitError::Claim { reason })?;
+    // SAFETY: on the (now) kernel thread, once, before any other kernel call.
+    let rc = unsafe { sys::init_library(0, ptr::null_mut()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(InitError::InitLibrary { code: rc })
     }
 }

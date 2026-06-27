@@ -9,7 +9,7 @@
 //! Every method below is sound by one invariant, discharged here once: an [`Idb`]
 //! is `!Send` and constructed only inside the kernel-thread pump of
 //! [`Ida::run`](crate::Ida::run), so holding `&self` proves we are on the kernel
-//! thread with the library initialized and a database open — exactly the
+//! thread with the library initialized and a database open: exactly the
 //! thread-affinity and live-database preconditions the kernel demands. `&mut self`
 //! adds exclusivity for writes. Raw buffer pointers are valid for the call;
 //! string getters fill `(buf, cap)` and return the value's full length.
@@ -21,8 +21,41 @@ use idakit_sys as sys;
 
 use crate::Idb;
 use crate::ea::Ea;
+use crate::error::Qerrno;
+use crate::ffi::cstr;
 
 impl Idb {
+    // The three error helpers below read *thread-local* kernel state; `&self` is the
+    // kernel-thread token (see module note), not a source of instance state.
+
+    /// IDA's thread-local last error code.
+    pub(crate) fn qerrno(&self) -> Qerrno {
+        Qerrno::from_code(unsafe { sys::get_qerrno() })
+    }
+
+    /// Human-readable reason for `code` (`qstrerror` already folds in the C `errno`
+    /// text for `eOS`). Never empty: falls back to the raw `error_t`.
+    pub(crate) fn error_reason(&self, code: Qerrno) -> String {
+        // SAFETY: qstrerror returns a borrowed thread-local string; copied now.
+        let reason = unsafe { cstr(sys::qstrerror(code.code())) };
+        if reason.is_empty() {
+            format!("error_t {}", code.code())
+        } else {
+            reason
+        }
+    }
+
+    /// The current `qerrno` plus its reason, but `None` reason when it is `eOk`: a
+    /// failing path that set no code would otherwise borrow a stale, misleading one.
+    pub(crate) fn last_reason(&self) -> (Qerrno, Option<String>) {
+        let qerrno = self.qerrno();
+        let reason = match qerrno {
+            Qerrno::Ok => None,
+            code => Some(self.error_reason(code)),
+        };
+        (qerrno, reason)
+    }
+
     pub(crate) fn open_database(&mut self, path: *const c_char) -> c_int {
         unsafe { sys::open_database(path, false, ptr::null()) }
     }
@@ -54,8 +87,16 @@ impl Idb {
         unsafe { sys::idakit_hexrays_init() }
     }
 
-    pub(crate) fn decompile_at(&self, ea: Ea) -> *mut c_void {
-        unsafe { sys::idakit_decompile(ea.get()) }
+    /// Decompile the function at `ea`. On failure the handle is null and the second
+    /// element carries the Hex-Rays failure reason copied out of the facade buffer.
+    pub(crate) fn decompile_at(&self, ea: Ea) -> (*mut c_void, String) {
+        let mut err = [0u8; 256];
+        // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates
+        // within it and reports the reason there when it returns null.
+        let handle = unsafe { sys::idakit_decompile(ea.get(), err.as_mut_ptr().cast(), err.len()) };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        let reason = unsafe { cstr(err.as_ptr().cast()) };
+        (handle, reason)
     }
 
     pub(crate) fn set_name(&mut self, ea: Ea, name: *const c_char) -> bool {

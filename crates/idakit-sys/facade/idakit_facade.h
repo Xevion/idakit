@@ -44,7 +44,7 @@ int64_t idakit_type_member_name(void *h, size_t i, char *buf, size_t cap); /* na
 int64_t idakit_type_member_type(void *h, size_t i, char *buf, size_t cap); /* type repr length, <0 if absent */
 
 int   idakit_hexrays_init(void);                       /* 1 = decompiler ready, 0 = unavailable */
-void *idakit_decompile(idakit_ea_t ea);                /* opaque cfunc handle (owns a ref), NULL on fail */
+void *idakit_decompile(idakit_ea_t ea, char *errbuf, size_t cap); /* cfunc handle (owns a ref); NULL on fail, reason in errbuf */
 void  idakit_cfunc_dispose(void *cfunc);
 int64_t idakit_cfunc_pseudocode(void *cfunc, char *buf, size_t cap); /* tag-stripped text length */
 void  idakit_cfunc_ctree_counts(void *cfunc, int *n_insn, int *n_expr, int *n_calls);

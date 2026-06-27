@@ -35,6 +35,14 @@ unsafe extern "C" {
     pub fn is_main_thread() -> bool;
 }
 
+// IDA's thread-safe error reporting (plain C ABI from libida.so). `error_t` is an
+// `int`; `get_qerrno` reads the thread's last code and `qstrerror` describes one
+// (folding in the C `errno` text for the `eOS` code).
+unsafe extern "C" {
+    pub fn get_qerrno() -> c_int;
+    pub fn qstrerror(code: c_int) -> *const c_char;
+}
+
 // idakit facade functions (C++ SDK wrapped behind a clean C ABI)
 unsafe extern "C" {
     pub fn idakit_func_qty() -> usize;
@@ -81,7 +89,7 @@ unsafe extern "C" {
 // hex-rays decompiler
 unsafe extern "C" {
     pub fn idakit_hexrays_init() -> c_int;
-    pub fn idakit_decompile(ea: Ea) -> *mut c_void;
+    pub fn idakit_decompile(ea: Ea, errbuf: *mut c_char, cap: usize) -> *mut c_void;
     pub fn idakit_cfunc_dispose(cfunc: *mut c_void);
     pub fn idakit_cfunc_pseudocode(cfunc: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_cfunc_ctree_counts(

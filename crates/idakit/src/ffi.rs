@@ -2,11 +2,24 @@
 //! return the value's full length (`<0` = absent); [`read_string`] drives the
 //! size-then-fill retry, [`with_cstr`] is the send direction.
 
-use std::ffi::{CString, c_char};
+use std::ffi::{CStr, CString, c_char};
 
 use crate::error::{Error, Result};
 
 const STACK_CAP: usize = 256;
+
+/// Copy a borrowed, kernel-owned C string into an owned [`String`] (empty if null;
+/// lossy UTF-8).
+///
+/// # Safety
+/// `p` must be null or a valid NUL-terminated string that stays alive for this call.
+pub(crate) unsafe fn cstr(p: *const c_char) -> String {
+    if p.is_null() {
+        return String::new();
+    }
+    // SAFETY: non-null and valid per the caller's contract.
+    unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+}
 
 /// Read a facade string getter into a [`String`] (`None` if absent; lossy UTF-8).
 pub(crate) fn read_string(f: impl Fn(*mut c_char, usize) -> i64) -> Option<String> {

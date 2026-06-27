@@ -232,15 +232,27 @@ extern "C" int idakit_hexrays_init(void)
   return init_hexrays_plugin() ? 1 : 0;
 }
 
-extern "C" void *idakit_decompile(idakit_ea_t ea)
+// On failure returns NULL and copies the reason into errbuf (the Hex-Rays
+// `hexrays_failure_t`, which is the real channel for decompile errors -- IDA's
+// thread-local `qerrno` is not set on this path).
+extern "C" void *idakit_decompile(idakit_ea_t ea, char *errbuf, size_t cap)
 {
+  if ( cap > 0 )
+    errbuf[0] = 0;
   func_t *pfn = get_func((ea_t)ea);
   if ( pfn == nullptr )
+  {
+    qstrncpy(errbuf, "no function at address", cap);
     return nullptr;
+  }
   hexrays_failure_t hf;
   cfuncptr_t cf = decompile_func(pfn, &hf, 0);
   if ( cf == nullptr )
+  {
+    qstring desc = hf.desc();
+    qstrncpy(errbuf, desc.c_str(), cap);
     return nullptr;
+  }
   // Own a ref on the heap so the result survives past this call.
   return new cfuncptr_t(cf);
 }

@@ -38,7 +38,8 @@ fn main() {
         let ea = idakit_func_ea(idx);
         println!("decompiling func[{idx}] @ {ea:#x} ...\n");
 
-        let cf = idakit_decompile(ea);
+        let mut err = [0i8; 256];
+        let cf = idakit_decompile(ea, err.as_mut_ptr(), err.len());
         assert!(!cf.is_null(), "decompile returned null");
 
         let (mut ni, mut ne, mut nc): (c_int, c_int, c_int) = (0, 0, 0);
