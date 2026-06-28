@@ -1,4 +1,6 @@
 /target
+# Optional local IDA SDK checkout used via IDA_SDK_DIR (the build otherwise fetches).
+/vendor
 **/*.i64
 **/*.id0
 **/*.id1
