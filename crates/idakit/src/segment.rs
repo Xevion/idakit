@@ -51,6 +51,8 @@ impl<'db> Segment<'db> {
         let len = (end - start).max(0) as usize;
         Some(self.db.bytes(start, len))
     }
+
+    // TODO: attributes — permissions, class, and bitness.
 }
 
 impl std::fmt::Debug for Segment<'_> {

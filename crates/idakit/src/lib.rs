@@ -149,12 +149,18 @@ impl Idb {
         Segments::new(self)
     }
 
+    // TODO: instruction layer — decode at an ea, mnemonic/operands, basic blocks and CFG.
+    // TODO: enumerate strings, names, imports/exports, entry points; name->ea lookup and demangling.
+    // TODO: database metadata — input path, processor, bitness, image base, file format, IDA version.
+
     /// Read bytes at `ea` into `buf`, returning how many were supplied. Zero-alloc;
     /// reuse one buffer on hot loops. [`bytes`](Self::bytes) is the owning shortcut.
     pub fn read_into(&self, ea: Ea, buf: &mut [u8]) -> usize {
         let got = self.get_bytes(ea, buf.as_mut_ptr().cast(), buf.len());
         (got.max(0) as usize).min(buf.len())
     }
+
+    // TODO: patch_bytes (the write half of read_into) and binary/pattern search over the image.
 
     /// Read up to `len` bytes at `ea` into a fresh vector (empty on failure).
     #[must_use]
@@ -232,6 +238,8 @@ impl Idb {
             })
         }
     }
+
+    // TODO: read comments back (the read half of set_comment).
 
     /// Set the comment at `ea`. `repeatable` repeats it at every reference.
     pub fn set_comment(&mut self, ea: Ea, text: &str, repeatable: bool) -> Result<()> {
