@@ -45,14 +45,6 @@ pub struct ThisCall {
     pub this_offset: i64,
 }
 
-/// The function's `this` pointer: the first argument local. `None` for a free function.
-pub fn this_lvar(tree: &Ctree) -> Option<LvarId> {
-    tree.lvars()
-        .enumerate()
-        .find(|(_, lv)| lv.is_arg)
-        .map(|(i, _)| LvarId(i as u32))
-}
-
 /// Follow `e` through place/address wrappers (`MemberRef`/`MemberPtr`/`Deref`/`&`/`Cast`)
 /// down to the root [`Cexpr::Var`], accumulating member byte offsets. Returns the local
 /// and the total offset from its base, or `None` if the expression isn't rooted at a
@@ -86,7 +78,7 @@ pub fn global_target(tree: &Ctree, e: ExprId) -> Option<GlobalRef> {
 /// Every vtable install in the tree: a plain assignment of a global's address into a
 /// `this`-relative slot.
 pub fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
-    let Some(this) = this_lvar(tree) else {
+    let Some(this) = tree.this_lvar() else {
         return Vec::new();
     };
     tree.exprs()
@@ -116,7 +108,7 @@ pub fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
 /// Every direct call whose first argument is `this`-relative — base/subobject constructor
 /// calls and other `this`-threading calls.
 pub fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
-    let Some(this) = this_lvar(tree) else {
+    let Some(this) = tree.this_lvar() else {
         return Vec::new();
     };
     tree.exprs()
@@ -144,6 +136,7 @@ mod tests {
     use crate::ctree::node::{Cinsn, Lvar, LvarLocation};
     use crate::ctree::tree::CtreeBuilder;
     use crate::ctree::types::{TypeData, TypeKind};
+    use assert2::assert;
 
     fn ty(b: &mut CtreeBuilder) -> crate::ctree::TypeId {
         b.intern_type(TypeData {
@@ -347,7 +340,7 @@ mod tests {
     #[test]
     fn this_lvar_is_the_first_arg() {
         let tree = ctor_tree();
-        assert_eq!(this_lvar(&tree), Some(LvarId(0)));
+        assert!(tree.this_lvar() == Some(LvarId(0)));
     }
 
     #[test]
@@ -361,10 +354,8 @@ mod tests {
                     if matches!(&tree.expr(*callee).kind, Cexpr::Obj { name: Some(n), .. } if n == "OtherCtor"))
             })
             .expect("OtherCtor call");
-        let Cexpr::Call { args, .. } = &call.kind else {
-            unreachable!()
-        };
-        assert_eq!(base_var(&tree, args[0]), Some((LvarId(0), 16)));
+        assert!(let Cexpr::Call { args, .. } = &call.kind);
+        assert!(base_var(&tree, args[0]) == Some((LvarId(0), 16)));
     }
 
     #[test]
@@ -372,20 +363,20 @@ mod tests {
         let tree = ctor_tree();
         let mut installs = vtable_installs(&tree);
         installs.sort_by_key(|i| i.this_offset);
-        assert_eq!(
-            installs,
-            vec![
-                VtableInstall {
-                    this_offset: 0,
-                    vtable: Ea::new_const(0x1000),
-                    vtable_name: Some("vtbl_primary".into()),
-                },
-                VtableInstall {
-                    this_offset: 16,
-                    vtable: Ea::new_const(0x2000),
-                    vtable_name: Some("vtbl_sub".into()),
-                },
-            ],
+        assert!(
+            installs
+                == vec![
+                    VtableInstall {
+                        this_offset: 0,
+                        vtable: Ea::new_const(0x1000),
+                        vtable_name: Some("vtbl_primary".into()),
+                    },
+                    VtableInstall {
+                        this_offset: 16,
+                        vtable: Ea::new_const(0x2000),
+                        vtable_name: Some("vtbl_sub".into()),
+                    },
+                ]
         );
     }
 
@@ -394,20 +385,20 @@ mod tests {
         let tree = ctor_tree();
         let mut calls = this_arg_calls(&tree);
         calls.sort_by_key(|c| c.this_offset);
-        assert_eq!(
-            calls,
-            vec![
-                ThisCall {
-                    callee: Ea::new_const(0x3000),
-                    callee_name: Some("BaseCtor".into()),
-                    this_offset: 0,
-                },
-                ThisCall {
-                    callee: Ea::new_const(0x4000),
-                    callee_name: Some("OtherCtor".into()),
-                    this_offset: 16,
-                },
-            ],
+        assert!(
+            calls
+                == vec![
+                    ThisCall {
+                        callee: Ea::new_const(0x3000),
+                        callee_name: Some("BaseCtor".into()),
+                        this_offset: 0,
+                    },
+                    ThisCall {
+                        callee: Ea::new_const(0x4000),
+                        callee_name: Some("OtherCtor".into()),
+                        this_offset: 16,
+                    },
+                ]
         );
     }
 }

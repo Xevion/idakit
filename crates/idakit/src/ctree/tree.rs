@@ -79,6 +79,18 @@ impl Ctree {
         self.lvars.iter()
     }
 
+    /// The first argument local — the implicit `this` in a member function, or simply the
+    /// first parameter otherwise. `None` for a function that takes no arguments. A pure
+    /// structural accessor: it reads the lvar table's argument flags and makes no
+    /// assumption about calling convention.
+    #[must_use]
+    pub fn this_lvar(&self) -> Option<LvarId> {
+        self.lvars
+            .iter()
+            .position(|lv| lv.is_arg)
+            .map(|i| LvarId(i as u32))
+    }
+
     /// Every expression node, flat, in allocation order — for whole-tree scans like
     /// "find all calls" that don't need the tree shape.
     pub fn exprs(&self) -> impl ExactSizeIterator<Item = (ExprId, &ExprNode)> {
@@ -276,9 +288,10 @@ impl Default for CtreeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ctree::node::LvarId;
+    use crate::ctree::node::{Lvar, LvarId, LvarLocation};
     use crate::ctree::ops::BinOp;
     use crate::ctree::types::TypeKind;
+    use assert2::assert;
 
     fn int32() -> TypeData {
         TypeData {
@@ -287,6 +300,19 @@ mod tests {
                 signed: true,
             },
             size: Some(4),
+        }
+    }
+
+    fn lvar(name: &str, ty: TypeId, is_arg: bool) -> Lvar {
+        Lvar {
+            name: name.into(),
+            ty,
+            is_arg,
+            is_result: false,
+            is_byref: false,
+            width: 4,
+            comment: None,
+            location: LvarLocation::Other,
         }
     }
 
@@ -315,21 +341,20 @@ mod tests {
     #[test]
     fn finish_wires_parent_links() {
         let (tree, block, ret, add, va, vb) = sample();
-        assert_eq!(tree.root(), block);
-        assert_eq!(tree.parent(NodeRef::Stmt(block)), None);
-        assert_eq!(tree.parent(NodeRef::Stmt(ret)), Some(NodeRef::Stmt(block)));
-        assert_eq!(tree.parent(NodeRef::Expr(add)), Some(NodeRef::Stmt(ret)));
-        assert_eq!(tree.parent(NodeRef::Expr(va)), Some(NodeRef::Expr(add)));
-        assert_eq!(tree.parent(NodeRef::Expr(vb)), Some(NodeRef::Expr(add)));
+        assert!(tree.root() == block);
+        assert!(let None = tree.parent(NodeRef::Stmt(block)));
+        assert!(tree.parent(NodeRef::Stmt(ret)) == Some(NodeRef::Stmt(block)));
+        assert!(tree.parent(NodeRef::Expr(add)) == Some(NodeRef::Stmt(ret)));
+        assert!(tree.parent(NodeRef::Expr(va)) == Some(NodeRef::Expr(add)));
+        assert!(tree.parent(NodeRef::Expr(vb)) == Some(NodeRef::Expr(add)));
     }
 
     #[test]
     fn descendants_are_pre_order() {
         let (tree, block, ret, add, va, vb) = sample();
         let walk: Vec<NodeRef> = tree.descendants(NodeRef::Stmt(block)).collect();
-        assert_eq!(
-            walk,
-            vec![
+        assert!(
+            walk == vec![
                 NodeRef::Stmt(block),
                 NodeRef::Stmt(ret),
                 NodeRef::Expr(add),
@@ -349,27 +374,54 @@ mod tests {
     fn flat_iteration_covers_every_node() {
         let (tree, _block, _ret, _add, _va, _vb) = sample();
         // 3 exprs (va, vb, add), 2 stmts (ret, block), 1 type (int, deduped across exprs).
-        assert_eq!(tree.exprs().count(), 3);
-        assert_eq!(tree.stmts().count(), 2);
-        assert_eq!(tree.types().count(), 1);
+        assert!(tree.exprs().count() == 3);
+        assert!(tree.stmts().count() == 2);
+        assert!(tree.types().count() == 1);
         let binaries = tree
             .exprs()
             .filter(|(_, e)| matches!(e.kind, Cexpr::Binary { .. }))
             .count();
-        assert_eq!(binaries, 1);
+        assert!(binaries == 1);
     }
 
     #[test]
     fn expr_carries_its_resolved_type() {
         let (tree, _block, _ret, add, _va, _vb) = sample();
         let ty = tree.expr(add).ty;
-        assert_eq!(
-            tree.type_of(ty).kind,
-            TypeKind::Int {
-                bytes: 4,
-                signed: true
-            }
+        assert!(
+            tree.type_of(ty).kind
+                == TypeKind::Int {
+                    bytes: 4,
+                    signed: true
+                }
         );
+    }
+
+    /// `this_lvar` returns the first argument local — the implicit receiver — and `None`
+    /// when the function takes no arguments.
+    #[test]
+    fn this_lvar_is_the_first_argument() {
+        let mut b = CtreeBuilder::new();
+        let int = b.intern_type(int32());
+        // A leading non-arg local must not be mistaken for the receiver.
+        b.push_lvar(lvar("local", int, false));
+        let this = b.push_lvar(lvar("this", int, true));
+        b.push_lvar(lvar("arg2", int, true));
+        let v = b.expr(None, int, Cexpr::Var(this));
+        let st = b.stmt(None, Cinsn::Expr(v));
+        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let tree = b.finish(block);
+        assert!(tree.this_lvar() == Some(this));
+    }
+
+    #[test]
+    fn this_lvar_is_none_without_arguments() {
+        let mut b = CtreeBuilder::new();
+        let int = b.intern_type(int32());
+        b.push_lvar(lvar("local", int, false));
+        let block = b.stmt(None, Cinsn::Block(vec![]));
+        let tree = b.finish(block);
+        assert!(let None = tree.this_lvar());
     }
 
     /// The marquee invariant: a materialized ctree is `Send + Sync`, so

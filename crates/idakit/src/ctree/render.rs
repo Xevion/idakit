@@ -12,7 +12,7 @@
 use std::fmt::Write;
 
 use super::node::{Case, Cexpr, Cinsn, ExprId, LvarId, StmtId};
-use super::ops::{AssignOp, BinOp, UnOp};
+use super::ops::{BinOp, UnOp};
 use super::tree::Ctree;
 use super::types::{TypeId, TypeKind};
 
@@ -235,14 +235,14 @@ impl Printer<'_> {
                 } else {
                     let p = bin_prec(op);
                     self.expr(x, p);
-                    write!(self.out, " {} ", bin_sym(op)).unwrap();
+                    write!(self.out, " {} ", op.symbol()).unwrap();
                     self.expr(y, p + 1);
                 }
             }
             Cexpr::Assign { op, x, y } => {
                 let (op, x, y) = (*op, *x, *y);
                 self.expr(x, P_ASSIGN + 1);
-                write!(self.out, " {} ", assign_sym(op)).unwrap();
+                write!(self.out, " {} ", op.symbol()).unwrap();
                 self.expr(y, P_ASSIGN);
             }
             Cexpr::Unary { op, x } => {
@@ -250,10 +250,10 @@ impl Printer<'_> {
                 match op {
                     UnOp::PostInc | UnOp::PostDec => {
                         self.expr(x, P_POSTFIX);
-                        self.out.push_str(un_sym(op));
+                        self.out.push_str(op.symbol());
                     }
                     _ => {
-                        self.out.push_str(un_sym(op));
+                        self.out.push_str(op.symbol());
                         self.expr(x, P_UNARY);
                     }
                 }
@@ -480,64 +480,16 @@ fn bin_prec(op: BinOp) -> u8 {
     }
 }
 
-fn bin_sym(op: BinOp) -> &'static str {
-    match op {
-        BinOp::Comma => ",",
-        BinOp::LogOr => "||",
-        BinOp::LogAnd => "&&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::BitAnd => "&",
-        BinOp::Eq => "==",
-        BinOp::Ne => "!=",
-        BinOp::Sge | BinOp::Uge => ">=",
-        BinOp::Sle | BinOp::Ule => "<=",
-        BinOp::Sgt | BinOp::Ugt => ">",
-        BinOp::Slt | BinOp::Ult => "<",
-        BinOp::Sshr | BinOp::Ushr => ">>",
-        BinOp::Shl => "<<",
-        BinOp::Add | BinOp::Fadd => "+",
-        BinOp::Sub | BinOp::Fsub => "-",
-        BinOp::Mul | BinOp::Fmul => "*",
-        BinOp::Sdiv | BinOp::Udiv | BinOp::Fdiv => "/",
-        BinOp::Smod | BinOp::Umod => "%",
-    }
-}
-
-fn assign_sym(op: AssignOp) -> &'static str {
-    match op {
-        AssignOp::Assign => "=",
-        AssignOp::BitOrAssign => "|=",
-        AssignOp::BitXorAssign => "^=",
-        AssignOp::BitAndAssign => "&=",
-        AssignOp::AddAssign => "+=",
-        AssignOp::SubAssign => "-=",
-        AssignOp::MulAssign => "*=",
-        AssignOp::SshrAssign | AssignOp::UshrAssign => ">>=",
-        AssignOp::ShlAssign => "<<=",
-        AssignOp::SdivAssign | AssignOp::UdivAssign => "/=",
-        AssignOp::SmodAssign | AssignOp::UmodAssign => "%=",
-    }
-}
-
-fn un_sym(op: UnOp) -> &'static str {
-    match op {
-        UnOp::FNeg | UnOp::Neg => "-",
-        UnOp::LogNot => "!",
-        UnOp::BitNot => "~",
-        UnOp::Ref => "&",
-        UnOp::PreInc | UnOp::PostInc => "++",
-        UnOp::PreDec | UnOp::PostDec => "--",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Ea;
     use crate::ctree::node::{Lvar, LvarLocation};
+    use crate::ctree::ops::AssignOp;
     use crate::ctree::tree::CtreeBuilder;
     use crate::ctree::types::{TypeData, TypeKind, TypeMember};
+    use assert2::assert;
+    use rstest::rstest;
 
     fn ea() -> Option<Ea> {
         Some(Ea::new_const(0x1000))
@@ -632,7 +584,30 @@ mod tests {
         let ret = b.stmt(ea(), Cinsn::Return(Some(add)));
         let block = b.stmt(ea(), Cinsn::Block(vec![ret]));
         let tree = b.finish(block);
-        assert_eq!(tree.to_pseudocode(), "{\n  return a + b;\n}\n");
+        assert!(tree.to_pseudocode() == "{\n  return a + b;\n}\n");
+    }
+
+    /// The printer spells each binary operator via [`BinOp::symbol`]; render `a OP b` and
+    /// confirm the glyph lands. Guards the render→ops delegation across the table.
+    #[rstest]
+    #[case(BinOp::Add, "a + b")]
+    #[case(BinOp::BitAnd, "a & b")]
+    #[case(BinOp::Shl, "a << b")]
+    #[case(BinOp::LogOr, "a || b")]
+    #[case(BinOp::Eq, "a == b")]
+    fn binary_operator_renders_with_its_symbol(#[case] op: BinOp, #[case] expect: &str) {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let a = b.push_lvar(lvar("a", int));
+        let bb = b.push_lvar(lvar("b", int));
+        let va = b.expr(ea(), int, Cexpr::Var(a));
+        let vb = b.expr(ea(), int, Cexpr::Var(bb));
+        let bin = b.expr(ea(), int, Cexpr::Binary { op, x: va, y: vb });
+        let st = b.stmt(ea(), Cinsn::Expr(bin));
+        let block = b.stmt(ea(), Cinsn::Block(vec![st]));
+        let tree = b.finish(block);
+        let out = tree.to_pseudocode();
+        assert!(out.contains(expect), "got: {out}");
     }
 
     /// A lower-precedence right operand must be parenthesized.
