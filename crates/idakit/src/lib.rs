@@ -2,18 +2,25 @@
 //!
 //! # The kernel thread
 //!
-//! The IDA kernel is single-threaded and thread-affine: it must be driven from the one
-//! thread that initialized it. [`Ida::run`] spawns a dedicated *kernel thread*, claims
-//! the kernel on it, then runs your application on the calling thread (typically the OS
-//! main thread, so the host keeps it for its own runtime). Any thread holding an
-//! [`Ida`] handle marshals work onto the kernel thread with [`Ida::call`].
+//! The IDA kernel is single-threaded and thread-affine. [`Ida::here`] brings it up *on
+//! the current thread* and hands back the open [`Idb`] — no kernel thread, no closure —
+//! for programs that own their thread (scripts, tests, CLIs):
 //!
-//! # Read/write separation
+//! ```no_run
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut idb = idakit::Ida::here()?;
+//! idb.open("/path/to/db.i64").call()?;
+//! for func in idb.functions() {
+//!     println!("{:#x} {}", func.ea().get(), func.name().unwrap_or_default());
+//! }
+//! idb.close(false);
+//! # Ok(())
+//! # }
+//! ```
 //!
-//! The open database is an [`Idb`]. It is `!Send + !Sync`, so it exists only inside a
-//! kernel-thread job — it never crosses a thread boundary. Reads borrow `&Idb` and hand
-//! back lightweight views ([`Func`], [`Segment`], …); writes take `&mut Idb`. The borrow
-//! checker therefore stops a read view from being held across a mutation.
+//! When the current thread must stay free (GUI/async) or many threads drive the kernel,
+//! [`Ida::run`] hosts it on a dedicated thread and runs your app on the caller; any
+//! thread marshals work onto the kernel with [`Ida::call`]:
 //!
 //! ```no_run
 //! use idakit::{Ida, Idb};
@@ -22,9 +29,6 @@
 //! Ida::run(|ida| {
 //!     ida.call(|idb: &mut Idb| -> idakit::Result<()> {
 //!         idb.open("/path/to/db.i64").call()?;
-//!         for func in idb.functions() {
-//!             println!("{:#x} {}", func.ea().get(), func.name().unwrap_or_default());
-//!         }
 //!         idb.close(false);
 //!         Ok(())
 //!     })?
@@ -32,6 +36,15 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! The kernel is a process global: only one `Idb` is live at a time (a second
+//! [`here`](Ida::here)/[`run`](Ida::run) yields [`InitError::AlreadyRunning`]).
+//!
+//! # Read/write separation
+//!
+//! [`Idb`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Idb` and
+//! return lightweight views ([`Func`], [`Segment`], …); writes take `&mut Idb`, so a read
+//! view can't be held across a mutation.
 //!
 //! # Building
 //!
@@ -45,6 +58,7 @@ use std::cell::Cell;
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
 
@@ -71,12 +85,38 @@ pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
 pub use xref::{CodeRef, DataRef, Xref, XrefKind, Xrefs};
 
-/// The open database. `!Send + !Sync`, so it exists only on the kernel thread.
-/// Reads borrow `&Idb` (returning [`Func`]/[`Segment`] views); writes take
-/// `&mut Idb`, so a read view can't be held across a write.
+/// At most one [`Idb`] may be live: the kernel is a process global.
+static KERNEL_LIVE: AtomicBool = AtomicBool::new(false);
+/// `init_library` runs once ever; later claims only re-steal `g_main`.
+static KERNEL_INITED: AtomicBool = AtomicBool::new(false);
+
+/// Exclusive hold on the kernel; dropping frees it for the next claim.
+struct KernelClaim;
+
+impl KernelClaim {
+    fn acquire() -> Result<Self, InitError> {
+        if KERNEL_LIVE.swap(true, Ordering::AcqRel) {
+            Err(InitError::AlreadyRunning)
+        } else {
+            Ok(Self)
+        }
+    }
+}
+
+impl Drop for KernelClaim {
+    fn drop(&mut self) {
+        KERNEL_LIVE.store(false, Ordering::Release);
+    }
+}
+
+/// The open database. `!Send + !Sync`, so it stays on the kernel thread. Reads borrow
+/// `&Idb` (returning [`Func`]/[`Segment`] views); writes take `&mut Idb`, so a read
+/// view can't be held across a write.
 pub struct Idb {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.
     hexrays_ready: Cell<bool>,
+    /// `Some` for an in-place `Idb`; `None` for the actor's, whose claim `run` holds.
+    _claim: Option<KernelClaim>,
     _not_send: PhantomData<*const ()>,
 }
 
@@ -115,9 +155,20 @@ impl Idb {
 }
 
 impl Idb {
+    /// The actor's `Idb`; `run` holds its claim.
     fn new() -> Self {
         Self {
             hexrays_ready: Cell::new(false),
+            _claim: None,
+            _not_send: PhantomData,
+        }
+    }
+
+    /// An in-place `Idb` that releases the kernel when dropped.
+    fn owned(claim: KernelClaim) -> Self {
+        Self {
+            hexrays_ready: Cell::new(false),
+            _claim: Some(claim),
             _not_send: PhantomData,
         }
     }
@@ -266,29 +317,48 @@ pub struct Ida {
     tx: Sender<Job>,
 }
 
-/// Kernel-thread stack. `init_library` recurses deep through `init_kernel`, and a
-/// spawned thread's stack is fixed (no autogrow), so reserve generously; the
-/// reservation is committed lazily.
-const KERNEL_STACK: usize = 256 << 20;
+/// Default kernel-thread stack: the OS main thread's 8 MiB, idalib's native habitat.
+/// (`init_library` alone overflows below ~3 MiB; spawned stacks don't autogrow.)
+const KERNEL_STACK_DEFAULT: usize = 8 << 20;
 
 impl Ida {
-    /// Spawn the kernel thread, claim the kernel on it, and run `app` on the current
-    /// thread with an [`Ida`] handle. Returns once `app` returns; the kernel thread
-    /// then shuts down after every handle is dropped. Call once, typically from the
-    /// OS main thread so the host keeps it for its own runtime.
+    /// Bring the kernel up *on the current thread* and return the open database — no
+    /// kernel thread, no closure. The `!Send` [`Idb`] lives here; dropping it releases
+    /// the kernel. For scripts, tests, and CLIs that own their thread. Prefer
+    /// [`run`](Self::run) when the current thread must stay free or many threads drive
+    /// the kernel.
+    pub fn here() -> Result<Idb, InitError> {
+        let claim = KernelClaim::acquire()?;
+        bring_up_kernel()?;
+        Ok(Idb::owned(claim))
+    }
+
+    /// Spawn the kernel thread and run `app` on the current thread with an [`Ida`]
+    /// handle, marshaling work onto the kernel via [`call`](Self::call). Returns once
+    /// `app` does. 8 MiB kernel stack; size it with [`run_with_stack`](Self::run_with_stack).
     ///
-    /// `Err` only on kernel *setup* failure ([`InitError`]); a panic in `app` itself
-    /// propagates inline, since `app` runs on the caller's own thread.
+    /// `Err` only on kernel setup; a panic in `app` propagates inline (it runs here).
     pub fn run<R, F>(app: F) -> Result<R, InitError>
     where
         F: FnOnce(Ida) -> R,
     {
+        Self::run_with_stack(KERNEL_STACK_DEFAULT, app)
+    }
+
+    /// [`run`](Self::run) with an explicit kernel-stack size. Raise it above 8 MiB only
+    /// for unusually deep decompilation; the reservation commits lazily.
+    pub fn run_with_stack<R, F>(stack_size: usize, app: F) -> Result<R, InitError>
+    where
+        F: FnOnce(Ida) -> R,
+    {
+        let _claim = KernelClaim::acquire()?;
+
         let (tx, rx) = channel::<Job>();
         let (setup_tx, setup_rx) = channel::<Result<(), InitError>>();
 
         let kernel = thread::Builder::new()
             .name("idakit-kernel".into())
-            .stack_size(KERNEL_STACK)
+            .stack_size(stack_size)
             .spawn(move || {
                 let setup = bring_up_kernel();
                 let ok = setup.is_ok();
@@ -361,14 +431,19 @@ impl Ida {
     }
 }
 
-/// Claim the kernel "main" thread and initialize the library, on the kernel thread.
+/// Steal `g_main` for the calling thread, then initialize the library. The steal is
+/// correct on any thread (OS-main or spawned); init runs at most once per process.
 fn bring_up_kernel() -> Result<(), InitError> {
     claim::steal_main().map_err(|reason| InitError::Claim { reason })?;
+    if KERNEL_INITED.swap(true, Ordering::AcqRel) {
+        return Ok(());
+    }
     // SAFETY: on the (now) kernel thread, once, before any other kernel call.
     let rc = unsafe { sys::init_library(0, ptr::null_mut()) };
     if rc == 0 {
         Ok(())
     } else {
+        KERNEL_INITED.store(false, Ordering::Release); // let a retry re-init
         Err(InitError::InitLibrary { code: rc })
     }
 }

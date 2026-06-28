@@ -250,6 +250,11 @@ pub enum InitError {
     /// The kernel thread exited before reporting setup status.
     #[snafu(display("the kernel thread exited before initializing"))]
     KernelGone,
+
+    /// A kernel is already live; the kernel is a process global, so drop the existing
+    /// [`Idb`](crate::Idb) before [`here`](crate::Ida::here)/[`run`](crate::Ida::run) again.
+    #[snafu(display("a kernel is already live in this process"))]
+    AlreadyRunning,
 }
 
 #[cfg(test)]
