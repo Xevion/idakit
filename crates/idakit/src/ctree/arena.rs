@@ -138,6 +138,8 @@ impl<T> IndexMut<Idx<T>> for Arena<T> {
 
 #[cfg(test)]
 mod tests {
+    use assert2::assert;
+
     use super::*;
 
     #[test]
@@ -149,12 +151,12 @@ mod tests {
 
         // Each handle indexes back to the value it was allocated for, and stays valid
         // after later allocations.
-        assert_eq!(arena[a], "a");
-        assert_eq!(arena[b], "b");
-        assert_eq!(arena[c], "c");
-        assert_ne!(a, b);
-        assert_ne!(b, c);
-        assert_eq!(arena.len(), 3);
+        assert!(arena[a] == "a");
+        assert!(arena[b] == "b");
+        assert!(arena[c] == "c");
+        assert!(a != b);
+        assert!(b != c);
+        assert!(arena.len() == 3);
     }
 
     #[test]
@@ -163,10 +165,10 @@ mod tests {
         let ids: Vec<_> = [10, 20, 30].into_iter().map(|v| arena.alloc(v)).collect();
         let seen: Vec<_> = arena.iter().collect();
 
-        assert_eq!(seen.len(), 3);
+        assert!(seen.len() == 3);
         for (expected_id, (got_id, &got_val)) in ids.iter().zip(seen) {
-            assert_eq!(*expected_id, got_id);
-            assert_eq!(arena[got_id], got_val);
+            assert!(*expected_id == got_id);
+            assert!(arena[got_id] == got_val);
         }
     }
 

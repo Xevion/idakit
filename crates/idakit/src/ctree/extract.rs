@@ -887,6 +887,8 @@ pub(crate) fn walk(cfunc: *mut c_void) -> Result<Ctree, ExtractError> {
 
 #[cfg(test)]
 mod tests {
+    use assert2::assert;
+
     use super::*;
 
     /// `cot_*` discriminants used by the operator tests (from hexrays.hpp).
@@ -967,11 +969,9 @@ mod tests {
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        let Cexpr::Call { callee, args } = &tree.expr(eid(call)).kind else {
-            panic!("expected a call");
-        };
+        assert!(let Cexpr::Call { callee, args } = &tree.expr(eid(call)).kind);
         assert!(matches!(tree.expr(*callee).kind, Cexpr::Helper(ref h) if h == "printf"));
-        assert_eq!(args.len(), 2);
+        assert!(args.len() == 2);
         assert!(matches!(tree.expr(args[0]).kind, Cexpr::Str(ref s) if s == "%d"));
         assert!(matches!(tree.expr(args[1]).kind, Cexpr::Num(42)));
     }
@@ -1051,20 +1051,14 @@ mod tests {
                 ..
             }
         ));
-        let Cinsn::Switch { cases, .. } = get(switch_s) else {
-            panic!("expected switch");
-        };
-        assert_eq!(cases.len(), 2);
-        assert_eq!(cases[0].values, vec![1, 2]);
+        assert!(let Cinsn::Switch { cases, .. } = get(switch_s));
+        assert!(cases.len() == 2);
+        assert!(cases[0].values == vec![1, 2]);
         assert!(cases[1].values.is_empty());
-        let Cinsn::Try { catches, .. } = get(try_s) else {
-            panic!("expected try");
-        };
-        assert_eq!(catches.len(), 1);
-        let Cinsn::Asm(addrs) = get(asm_s) else {
-            panic!("expected asm");
-        };
-        assert_eq!(addrs.len(), 2);
+        assert!(let Cinsn::Try { catches, .. } = get(try_s));
+        assert!(catches.len() == 1);
+        assert!(let Cinsn::Asm(addrs) = get(asm_s));
+        assert!(addrs.len() == 2);
     }
 
     /// A recursive aggregate: `struct Node { Node *next; }`. The placeholder lets the
@@ -1088,12 +1082,10 @@ mod tests {
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        let TypeKind::Struct { name, members } = &tree.type_of(tid(node)).kind else {
-            panic!("expected a struct");
-        };
-        assert_eq!(name.as_deref(), Some("Node"));
-        assert_eq!(members.len(), 1);
-        assert_eq!(members[0].name, "next");
+        assert!(let TypeKind::Struct { name, members } = &tree.type_of(tid(node)).kind);
+        assert!(name.as_deref() == Some("Node"));
+        assert!(members.len() == 1);
+        assert!(members[0].name == "next");
         // the member pointer resolves back to the struct itself
         assert!(matches!(tree.type_of(members[0].ty).kind, TypeKind::Ptr(t) if t == tid(node)));
     }
@@ -1112,16 +1104,14 @@ mod tests {
         let tree = cb.finish(blk).expect("well-formed");
 
         let alias_ty = tree.type_of(tid(alias));
-        let TypeKind::Typedef { name, underlying } = &alias_ty.kind else {
-            panic!("expected a typedef");
-        };
-        assert_eq!(name, "size_t");
+        assert!(let TypeKind::Typedef { name, underlying } = &alias_ty.kind);
+        assert!(name == "size_t");
         assert!(matches!(
             tree.type_of(*underlying).kind,
             TypeKind::Int { bytes: 4, .. }
         ));
         // the alias adopts its target's size, so the node is self-describing
-        assert_eq!(alias_ty.size, Some(4));
+        assert!(alias_ty.size == Some(4));
     }
 
     /// A second reference to the same named type returns the same handle.
@@ -1130,7 +1120,7 @@ mod tests {
         let mut cb = CallbackBuilder::new();
         let a = cb.named_ref("Foo".into());
         let b = cb.named_ref("Foo".into());
-        assert_eq!(a, b);
+        assert!(a == b);
     }
 
     /// An unmodeled ctype is a loud error (the `Internal` fallback is reserved for
@@ -1143,10 +1133,7 @@ mod tests {
         let bad = cb.op(0, 999, v, IDAKIT_NONE, IDAKIT_NONE, it);
         let s = cb.expr_stmt(0, bad);
         let blk = cb.block(0, &[s]);
-        assert_eq!(
-            cb.finish(blk).err(),
-            Some(ExtractError::UnknownExprTag { tag: 999 })
-        );
+        assert!(cb.finish(blk).err() == Some(ExtractError::UnknownExprTag { tag: 999 }));
     }
 
     /// `cot_insn` (a statement in expression position) collapses to `Internal`, not an
@@ -1194,12 +1181,10 @@ mod tests {
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        let Cexpr::Var(id) = tree.expr(eid(v)).kind else {
-            panic!("expected a var");
-        };
-        let lv = tree.lvar(id);
-        assert_eq!(lv.name, "argc");
+        assert!(let Cexpr::Var(id) = &tree.expr(eid(v)).kind);
+        let lv = tree.lvar(*id);
+        assert!(lv.name == "argc");
         assert!(lv.is_arg);
-        assert_eq!(lv.location, LvarLocation::Stack(-4));
+        assert!(lv.location == LvarLocation::Stack(-4));
     }
 }

@@ -72,28 +72,25 @@ pub enum DataRef {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn code_byte_classifies_as_call() {
-        let x = Xref::from_raw(0x1000, 17, 1).unwrap();
-        assert!(x.kind == XrefKind::Code(CodeRef::CallNear));
-        assert!(x.is_code());
+    /// The `(type, iscode)` byte pair classifies into the right space and variant, and an
+    /// unrecognized byte degrades to that space's `Unknown` rather than crossing over.
+    #[rstest]
+    #[case::call_near(17, 1, XrefKind::Code(CodeRef::CallNear))]
+    #[case::jump_near(19, 1, XrefKind::Code(CodeRef::JumpNear))]
+    #[case::flow(21, 1, XrefKind::Code(CodeRef::Flow))]
+    #[case::data_write(2, 0, XrefKind::Data(DataRef::Write))]
+    #[case::data_read(3, 0, XrefKind::Data(DataRef::Read))]
+    #[case::unknown_in_code_space(99, 1, XrefKind::Code(CodeRef::Unknown))]
+    #[case::unknown_in_data_space(99, 0, XrefKind::Data(DataRef::Unknown))]
+    fn classifies_by_type_byte(#[case] ty: u8, #[case] iscode: u8, #[case] expect: XrefKind) {
+        let x = Xref::from_raw(0x1000, ty, iscode).expect("valid source");
+        assert!(x.kind == expect);
+        assert!(x.is_code() == matches!(expect, XrefKind::Code(_)));
         assert!(x.from.get() == 0x1000);
-    }
-
-    #[test]
-    fn data_byte_classifies_as_read() {
-        let x = Xref::from_raw(0x2000, 3, 0).unwrap();
-        assert!(x.kind == XrefKind::Data(DataRef::Read));
-        assert!(!x.is_code());
-    }
-
-    #[test]
-    fn unknown_byte_degrades_per_space() {
-        assert!(Xref::from_raw(0x1, 99, 1).unwrap().kind == XrefKind::Code(CodeRef::Unknown));
-        assert!(Xref::from_raw(0x1, 99, 0).unwrap().kind == XrefKind::Data(DataRef::Unknown));
     }
 
     #[test]

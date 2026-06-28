@@ -166,12 +166,14 @@ impl Default for TypeTable {
 
 #[cfg(test)]
 mod tests {
+    use assert2::assert;
+
     use super::*;
 
     fn int(bytes: u8, signed: bool) -> TypeData {
         TypeData {
             kind: TypeKind::Int { bytes, signed },
-            size: Some(bytes as u64),
+            size: Some(u64::from(bytes)),
         }
     }
 
@@ -180,8 +182,8 @@ mod tests {
         let mut table = TypeTable::new();
         let a = table.intern(int(4, true));
         let b = table.intern(int(4, true));
-        assert_eq!(a, b);
-        assert_eq!(table.len(), 1);
+        assert!(a == b);
+        assert!(table.len() == 1);
     }
 
     #[test]
@@ -189,8 +191,8 @@ mod tests {
         let mut table = TypeTable::new();
         let i = table.intern(int(4, true));
         let u = table.intern(int(4, false));
-        assert_ne!(i, u);
-        assert_eq!(table.len(), 2);
+        assert!(i != u);
+        assert!(table.len() == 2);
     }
 
     #[test]
@@ -219,11 +221,9 @@ mod tests {
             },
         );
 
-        let TypeKind::Struct { members, .. } = &table.get(node).kind else {
-            panic!("expected a struct");
-        };
+        assert!(let TypeKind::Struct { members, .. } = &table.get(node).kind);
         // the member pointer resolves back to the struct itself
-        assert_eq!(table.get(members[0].ty).kind, TypeKind::Ptr(node));
+        assert!(table.get(members[0].ty).kind == TypeKind::Ptr(node));
     }
 
     #[test]

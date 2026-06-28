@@ -193,57 +193,53 @@ pub enum InitError {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn displays_hex_addresses() {
-        let e = Error::Decompile {
-            ea: 0x1400_1000,
-            reason: "no function".to_owned(),
-        };
-        assert!(e.to_string() == "decompilation failed at 0x14001000: no function");
-    }
-
-    #[test]
-    fn write_rejected_renders_op_and_reason() {
-        let e = Error::WriteRejected {
+    /// Each error variant renders its operation, hex address, and reason — and omits the
+    /// reason clause when there is none.
+    #[rstest]
+    #[case::decompile(
+        Error::Decompile { ea: 0x1400_1000, reason: "no function".to_owned() },
+        "decompilation failed at 0x14001000: no function",
+    )]
+    #[case::write_rejected_with_reason(
+        Error::WriteRejected {
             op: "set_comment",
             ea: 0x40_1000,
             qerrno: Qerrno::Os,
             reason: Some("permission denied".to_owned()),
-        };
-        assert!(e.to_string() == "set_comment failed at 0x401000: permission denied");
-    }
-
-    #[test]
-    fn write_rejected_omits_absent_reason() {
-        let e = Error::WriteRejected {
-            op: "rename",
-            ea: 0x40_1000,
-            qerrno: Qerrno::Ok,
-            reason: None,
-        };
-        assert!(e.to_string() == "rename failed at 0x401000");
-    }
-
-    #[test]
-    fn open_renders_path_and_reason() {
-        let e = Error::Open {
+        },
+        "set_comment failed at 0x401000: permission denied",
+    )]
+    #[case::write_rejected_no_reason(
+        Error::WriteRejected { op: "rename", ea: 0x40_1000, qerrno: Qerrno::Ok, reason: None },
+        "rename failed at 0x401000",
+    )]
+    #[case::open(
+        Error::Open {
             path: "/tmp/x.i64".into(),
             qerrno: Qerrno::Os,
             reason: "No such file or directory".to_owned(),
-        };
-        assert!(
-            e.to_string() == "failed to open database \"/tmp/x.i64\": No such file or directory"
-        );
+        },
+        "failed to open database \"/tmp/x.i64\": No such file or directory",
+    )]
+    fn error_displays(#[case] err: Error, #[case] expect: &str) {
+        assert!(err.to_string() == expect);
     }
 
-    #[test]
-    fn qerrno_round_trips_codes() {
-        assert!(Qerrno::from_code(1) == Qerrno::Os);
-        assert!(Qerrno::Os.code() == 1);
-        assert!(Qerrno::from_code(7) == Qerrno::Other(7));
-        assert!(Qerrno::Other(7).code() == 7);
+    /// `Qerrno` round-trips its raw code, with the named codes mapping by value and any
+    /// other code preserved through `Other`.
+    #[rstest]
+    #[case(0, Qerrno::Ok)]
+    #[case(1, Qerrno::Os)]
+    #[case(2, Qerrno::DiskFull)]
+    #[case(3, Qerrno::ReadError)]
+    #[case(4, Qerrno::FileTooLarge)]
+    #[case(7, Qerrno::Other(7))]
+    fn qerrno_round_trips_codes(#[case] code: i32, #[case] expect: Qerrno) {
+        assert!(Qerrno::from_code(code) == expect);
+        assert!(expect.code() == code);
     }
 }
