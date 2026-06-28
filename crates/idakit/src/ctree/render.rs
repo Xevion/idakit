@@ -378,10 +378,29 @@ impl Printer<'_> {
         if let Some(members) = members {
             let bit = u64::from(byte_off) * 8;
             if let Some(m) = members.iter().find(|m| m.bit_offset == bit) {
-                return m.name.clone();
+                if !m.name.is_empty() {
+                    return m.name.clone();
+                }
+                // Base-class subobjects come through with an empty member name; show the
+                // subobject's type name instead (IDA renders `this->Base`).
+                if let Some(tag) = self.type_tag_name(m.ty) {
+                    return tag;
+                }
             }
         }
         format!("field_{byte_off:#x}")
+    }
+
+    /// The bare name of a named aggregate/typedef, used to label an unnamed base
+    /// subobject member by its type.
+    fn type_tag_name(&self, id: TypeId) -> Option<String> {
+        match &self.tree.type_of(id).kind {
+            TypeKind::Struct { name, .. }
+            | TypeKind::Union { name, .. }
+            | TypeKind::Enum { name, .. } => name.clone(),
+            TypeKind::Typedef { name, .. } => Some(name.clone()),
+            _ => None,
+        }
     }
 
     fn lvar_name(&self, v: LvarId) -> String {
@@ -518,7 +537,7 @@ mod tests {
     use crate::Ea;
     use crate::ctree::node::{Lvar, LvarLocation};
     use crate::ctree::tree::CtreeBuilder;
-    use crate::ctree::types::{TypeData, TypeKind};
+    use crate::ctree::types::{TypeData, TypeKind, TypeMember};
 
     fn ea() -> Option<Ea> {
         Some(Ea::new_const(0x1000))
@@ -545,6 +564,51 @@ mod tests {
             comment: None,
             location: LvarLocation::Other,
         }
+    }
+
+    /// A base-class subobject member arrives with an empty name; it should render as the
+    /// subobject's type name (what IDA shows for `this->Base`), never blank.
+    #[test]
+    fn empty_member_name_falls_back_to_type_name() {
+        let mut b = CtreeBuilder::new();
+        let base = b.intern_type(TypeData {
+            kind: TypeKind::Struct {
+                name: Some("Base".into()),
+                members: vec![],
+            },
+            size: Some(8),
+        });
+        let derived = b.intern_type(TypeData {
+            kind: TypeKind::Struct {
+                name: Some("Derived".into()),
+                members: vec![TypeMember {
+                    name: String::new(),
+                    bit_offset: 0,
+                    ty: base,
+                    bitfield_width: None,
+                }],
+            },
+            size: Some(8),
+        });
+        let pderived = b.intern_type(TypeData {
+            kind: TypeKind::Ptr(derived),
+            size: Some(8),
+        });
+        let this = b.push_lvar(lvar("this", pderived));
+        let v = b.expr(ea(), pderived, Cexpr::Var(this));
+        let mp = b.expr(
+            ea(),
+            base,
+            Cexpr::MemberPtr {
+                obj: v,
+                byte_offset: 0,
+            },
+        );
+        let st = b.stmt(ea(), Cinsn::Expr(mp));
+        let block = b.stmt(ea(), Cinsn::Block(vec![st]));
+        let tree = b.finish(block);
+        let out = tree.to_pseudocode();
+        assert!(out.contains("this->Base"), "got: {out}");
     }
 
     /// `{ return a + b; }` — the canonical small tree, rendered exactly.
