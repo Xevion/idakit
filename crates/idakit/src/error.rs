@@ -7,6 +7,8 @@ use std::fmt;
 
 use snafu::Snafu;
 
+use crate::ctree::ExtractError;
+
 /// IDA's `error_t` code, with the documented generic values named. Carried by the
 /// operational errors below; the raw integer is available via [`Qerrno::code`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +84,10 @@ pub enum Error {
     #[snafu(display("decompilation failed at {ea:#x}: {reason}"))]
     Decompile { ea: u64, reason: String },
 
+    /// Decompiled, but the ctree could not be materialized; carries the [`ExtractError`].
+    #[snafu(display("ctree extraction failed at {ea:#x}: {source}"))]
+    Extract { ea: u64, source: ExtractError },
+
     #[snafu(display("hex-rays decompiler unavailable (init returned {code})"))]
     HexRaysInit { code: i32 },
 
@@ -101,10 +107,27 @@ pub enum Error {
 
     #[snafu(display("argument {arg} contains an interior NUL byte"))]
     InteriorNul { arg: &'static str },
+
+    /// A marshaled [`call`](crate::Ida::call) did not return: the kernel closure panicked or
+    /// the thread is gone. `?` converts a [`CallError`] into this via [`From`], flattening
+    /// the call boundary into one [`Result`]; the panic payload is reduced to its message.
+    /// Handle [`CallError`] directly to inspect or [`resume`](CallError::resume) it.
+    #[snafu(display("kernel call did not return: {reason}"))]
+    Kernel { reason: String },
 }
 
 /// `Result` specialised to this crate's [`Error`].
 pub type Result<T, E = Error> = core::result::Result<T, E>;
+
+/// Lets `ida.call(...)?` flatten `Result<Result<T, Error>, CallError>` to `Result<T, Error>`.
+/// Lossy: a [`CallError::Panicked`] payload is reduced to its message (see [`Error::Kernel`]).
+impl From<CallError> for Error {
+    fn from(e: CallError) -> Self {
+        Error::Kernel {
+            reason: e.to_string(),
+        }
+    }
+}
 
 /// Why a marshaled [`call`](crate::Ida::call) did not return a value.
 pub enum CallError {
@@ -225,8 +248,24 @@ mod tests {
         },
         "failed to open database \"/tmp/x.i64\": No such file or directory",
     )]
+    #[case::extract(
+        Error::Extract { ea: 0x1400_1000, source: ExtractError::WalkFailed },
+        "ctree extraction failed at 0x14001000: the facade could not walk the ctree (null cfunc)",
+    )]
+    #[case::kernel(
+        Error::Kernel { reason: "the kernel thread is gone".to_owned() },
+        "kernel call did not return: the kernel thread is gone",
+    )]
     fn error_displays(#[case] err: Error, #[case] expect: &str) {
         assert!(err.to_string() == expect);
+    }
+
+    /// `?` on a `call` result flattens through this `From` into [`Error::Kernel`].
+    #[test]
+    fn call_error_flattens_into_error() {
+        let err: Error = CallError::Disconnected.into();
+        assert!(err.to_string() == "kernel call did not return: the kernel thread is gone");
+        assert!(let Error::Kernel { .. } = err);
     }
 
     /// `Qerrno` round-trips its raw code, with the named codes mapping by value and any

@@ -45,6 +45,19 @@ pub struct ThisCall {
     pub this_offset: i64,
 }
 
+/// Peel cast `(T)x` and address-of `&x` wrappers, which rename nothing, down to the first
+/// expression that is neither. Does not look through a dereference `*x`, which names the
+/// pointee: whether to follow that is the matcher's call. Shared by [`base_var`] and
+/// [`global_target`], and public so custom matchers peel the same way.
+pub fn strip_casts(tree: &Ctree, mut e: ExprId) -> ExprId {
+    loop {
+        match &tree.expr(e).kind {
+            Cexpr::Cast { x } | Cexpr::Unary { op: UnOp::Ref, x } => e = *x,
+            _ => return e,
+        }
+    }
+}
+
 /// Follow `e` through place/address wrappers (`MemberRef`/`MemberPtr`/`Deref`/`&`/`Cast`)
 /// and pointer arithmetic down to the root [`Cexpr::Var`], accumulating the byte offset.
 /// Returns the local and the total offset from its base, or `None` if the expression isn't
@@ -55,15 +68,15 @@ pub struct ThisCall {
 /// pointer arithmetic — resolve to the same `(this, 16)`. The untyped form is what shows up
 /// in stripped binaries, so threading it is what makes these matchers useful there.
 pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
+    // Casts and `&` rename nothing; peel them first so the match below sees the place node.
+    let e = strip_casts(tree, e);
     match &tree.expr(e).kind {
         Cexpr::Var(v) => Some((*v, 0)),
         Cexpr::MemberRef { obj, byte_offset } | Cexpr::MemberPtr { obj, byte_offset } => {
             base_var(tree, *obj).map(|(v, off)| (v, off + i64::from(*byte_offset)))
         }
-        // `*p`, `&p`, and `(T)p` keep the same root and offset — they're not navigation.
-        Cexpr::Deref { x, .. } | Cexpr::Cast { x } | Cexpr::Unary { op: UnOp::Ref, x } => {
-            base_var(tree, *x)
-        }
+        // `*p` keeps the same root and offset; the load itself is not navigation.
+        Cexpr::Deref { x, .. } => base_var(tree, *x),
         // Pointer arithmetic `base + k`: the byte delta is the constant index scaled by the
         // pointee size of `base`, exactly as C scales it — so a `_QWORD*` index of 2 and a
         // `char*` index of 16 both advance 16 bytes. The `pointee_size` guard means plain
@@ -94,14 +107,11 @@ fn pointee_size(tree: &Ctree, e: ExprId) -> Option<i64> {
 
 /// Follow `e` through `Cast`/`&` down to a [`Cexpr::Obj`], returning the global it names.
 pub fn global_target(tree: &Ctree, e: ExprId) -> Option<GlobalRef> {
-    match &tree.expr(e).kind {
-        Cexpr::Obj { ea, name } => Some(GlobalRef {
-            ea: *ea,
-            name: name.clone(),
-        }),
-        Cexpr::Cast { x } | Cexpr::Unary { op: UnOp::Ref, x } => global_target(tree, *x),
-        _ => None,
-    }
+    let (ea, name) = tree.expr(strip_casts(tree, e)).kind.as_obj()?;
+    Some(GlobalRef {
+        ea,
+        name: name.map(str::to_owned),
+    })
 }
 
 /// Every vtable install in the tree: a plain assignment of a global's address into a
@@ -112,19 +122,15 @@ pub fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
     };
     tree.exprs()
         .filter_map(|(_, node)| {
-            let Cexpr::Assign {
-                op: AssignOp::Assign,
-                x,
-                y,
-            } = &node.kind
-            else {
+            let (op, x, y) = node.kind.as_assign()?;
+            if op != AssignOp::Assign {
                 return None;
-            };
-            let (v, off) = base_var(tree, *x)?;
+            }
+            let (v, off) = base_var(tree, x)?;
             if v != this {
                 return None;
             }
-            let g = global_target(tree, *y)?;
+            let g = global_target(tree, y)?;
             Some(VtableInstall {
                 this_offset: off,
                 vtable: g.ea,
@@ -142,10 +148,8 @@ pub fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
     };
     tree.exprs()
         .filter_map(|(_, node)| {
-            let Cexpr::Call { callee, args } = &node.kind else {
-                return None;
-            };
-            let g = global_target(tree, *callee)?;
+            let (callee, args) = node.kind.as_call()?;
+            let g = global_target(tree, callee)?;
             let (v, off) = base_var(tree, *args.first()?)?;
             if v != this {
                 return None;
@@ -371,6 +375,30 @@ mod tests {
     fn this_lvar_is_the_first_arg() {
         let tree = ctor_tree();
         assert!(tree.this_lvar() == Some(LvarId(0)));
+    }
+
+    /// Peels `(T)x` and `&x`, but stops at a dereference (a load names a different object).
+    #[test]
+    fn strip_casts_peels_cast_and_ref_but_stops_at_deref() {
+        let mut b = CtreeBuilder::new();
+        let t = ty(&mut b);
+        let obj = b.expr(
+            None,
+            t,
+            Cexpr::Obj {
+                ea: Ea::new_const(0x10),
+                name: None,
+            },
+        );
+        let deref = b.expr(None, t, Cexpr::Deref { x: obj, size: 8 });
+        let cast = b.expr(None, t, Cexpr::Cast { x: deref });
+        let st = b.stmt(None, Cinsn::Expr(cast));
+        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let tree = b.finish(block);
+        // `(T)(*obj)`: the cast peels, the deref does not.
+        assert!(strip_casts(&tree, cast) == deref);
+        // A bare leaf has nothing to peel.
+        assert!(strip_casts(&tree, obj) == obj);
     }
 
     #[test]

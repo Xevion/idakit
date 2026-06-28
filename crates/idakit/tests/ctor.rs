@@ -59,8 +59,8 @@ fn main() {
             let eas: Vec<_> = idb.functions().map(|f| (f.ea(), f.name())).collect();
             let mut analyzed = Vec::new();
             for (ea, name) in eas {
-                let Ok(cf) = idb.decompile(ea) else { continue };
-                let Ok(tree) = cf.ctree() else { continue };
+                // One-shot decompile + extract: this test only wants the owned tree.
+                let Ok(tree) = idb.ctree(ea) else { continue };
                 let installs = query::vtable_installs(&tree);
                 if installs.is_empty() {
                     continue;

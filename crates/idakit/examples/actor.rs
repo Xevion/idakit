@@ -1,6 +1,6 @@
 //! Executor proof from the idiomatic API: kernel on its own thread, app on the
 //! caller, calls (including from sub-workers) marshaled to the kernel.
-//! Run: cargo run -p idakit --example actor -- scratch/bf4-smoke.i64
+//! Run: cargo run -p idakit --example actor -- path/to/database.i64
 
 use std::thread;
 
@@ -9,17 +9,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // `run` -> Err on kernel setup; the app closure -> Err on an operational failure.
     idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
-        // `.expect` discharges the call boundary (panicked/gone kernel); `?` an open error.
         {
             let db = db.clone();
-            ida.call(move |idb| idb.open(&db).call())
-                .expect("kernel call")?;
+            ida.call(move |idb| idb.open(&db).call())??;
         }
 
-        let n = ida
-            .call(|idb| idb.functions().count())
-            .expect("kernel call");
-        let segs = ida.call(|idb| idb.segments().count()).expect("kernel call");
+        let n = ida.call(|idb| idb.functions().count())?;
+        let segs = ida.call(|idb| idb.segments().count())?;
         println!("[app] func_count={n}  segments={segs}");
 
         // Sub-workers each hold a handle clone; their calls serialize onto the kernel.
@@ -44,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             h.join().unwrap();
         }
 
-        ida.call(|idb| idb.close(false)).expect("kernel call");
+        ida.call(|idb| idb.close(false))?;
         Ok(())
     })??;
 

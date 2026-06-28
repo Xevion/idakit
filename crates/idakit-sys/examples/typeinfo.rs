@@ -1,5 +1,5 @@
 //! typeinf through the facade: a function prototype + a struct's full member layout.
-//! Run: cargo run -p idakit-sys --example typeinfo -- scratch/bf4-smoke.i64 [StructName]
+//! Run: cargo run -p idakit-sys --example typeinfo -- path/to/database.i64 [StructName]
 
 use std::env;
 use std::ffi::{CStr, CString, c_char, c_void};

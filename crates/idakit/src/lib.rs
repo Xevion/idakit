@@ -165,6 +165,12 @@ impl Idb {
         Ok(TypeInfo::from_handle(handle, self))
     }
 
+    /// Decompile the function at `ea` and materialize its ctree. Sugar for
+    /// [`func(ea)`](Self::func)`.`[`ctree()`](Func::ctree).
+    pub fn ctree(&self, ea: Ea) -> Result<ctree::Ctree> {
+        self.func(ea).ctree()
+    }
+
     /// Decompile the function containing `ea` (inits Hex-Rays on first use).
     pub fn decompile(&self, ea: Ea) -> Result<Cfunc<'_>> {
         if !self.hexrays_ready.get() {

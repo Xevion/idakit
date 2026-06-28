@@ -24,6 +24,42 @@ pub enum NodeRef {
     Stmt(StmtId),
 }
 
+impl NodeRef {
+    /// The expression handle, or `None` if this refers to a statement.
+    #[inline]
+    #[must_use]
+    pub fn as_expr(self) -> Option<ExprId> {
+        match self {
+            NodeRef::Expr(e) => Some(e),
+            NodeRef::Stmt(_) => None,
+        }
+    }
+
+    /// The statement handle, or `None` if this refers to an expression.
+    #[inline]
+    #[must_use]
+    pub fn as_stmt(self) -> Option<StmtId> {
+        match self {
+            NodeRef::Stmt(s) => Some(s),
+            NodeRef::Expr(_) => None,
+        }
+    }
+
+    /// Whether this refers to an expression.
+    #[inline]
+    #[must_use]
+    pub fn is_expr(self) -> bool {
+        matches!(self, NodeRef::Expr(_))
+    }
+
+    /// Whether this refers to a statement.
+    #[inline]
+    #[must_use]
+    pub fn is_stmt(self) -> bool {
+        matches!(self, NodeRef::Stmt(_))
+    }
+}
+
 /// Index of a local variable in the decompiled function's lvar table
 /// ([`Ctree::lvar`](super::Ctree::lvar)).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -146,6 +182,65 @@ pub enum Cexpr {
     /// present in a finalized (`CMAT_FINAL`) tree. Carried so materialization is
     /// total rather than lossy (the one allowance instead of a catch-all).
     Internal,
+}
+
+/// Generate `as_*` accessors that match one [`Cexpr`] variant and project its payload,
+/// returning `None` otherwise. Each line gives the method, variant pattern, return type, and
+/// how to build it; the macro adds only the `if let`/`Some`/`None` scaffolding.
+macro_rules! expr_accessors {
+    ( $( $(#[$m:meta])* $fn:ident : $variant:ident $pat:tt => $ret:ty = $build:expr ; )* ) => {
+        impl Cexpr {
+            $(
+                $(#[$m])*
+                #[inline]
+                #[must_use]
+                pub fn $fn(&self) -> Option<$ret> {
+                    if let Cexpr::$variant $pat = self {
+                        Some($build)
+                    } else {
+                        None
+                    }
+                }
+            )*
+        }
+    };
+}
+
+expr_accessors! {
+    /// `x OP y`: the operator and both operands.
+    as_binary: Binary { op, x, y } => (BinOp, ExprId, ExprId) = (*op, *x, *y);
+    /// `x OP= y`: the compound-assignment operator and both sides.
+    as_assign: Assign { op, x, y } => (AssignOp, ExprId, ExprId) = (*op, *x, *y);
+    /// `OP x`: the unary operator and its operand.
+    as_unary: Unary { op, x } => (UnOp, ExprId) = (*op, *x);
+    /// A ternary's condition and both branches, in order.
+    as_ternary: Ternary { cond, then_, else_ } => (ExprId, ExprId, ExprId) = (*cond, *then_, *else_);
+    /// `callee(args...)`: the callee and its argument slice.
+    as_call: Call { callee, args } => (ExprId, &[ExprId]) = (*callee, args.as_slice());
+    /// `array[index]`.
+    as_index: Index { array, index } => (ExprId, ExprId) = (*array, *index);
+    /// `obj.field`: the object and the member's byte offset.
+    as_member_ref: MemberRef { obj, byte_offset } => (ExprId, u32) = (*obj, *byte_offset);
+    /// `obj->field`: the object and the member's byte offset.
+    as_member_ptr: MemberPtr { obj, byte_offset } => (ExprId, u32) = (*obj, *byte_offset);
+    /// `(T)x`: the operand (the target type rides on the node).
+    as_cast: Cast { x } => ExprId = *x;
+    /// `*x`: the operand and the access size in bytes.
+    as_deref: Deref { x, size } => (ExprId, u32) = (*x, *size);
+    /// `sizeof(x)`: the operand.
+    as_sizeof: Sizeof(x) => ExprId = *x;
+    /// An integer literal's raw bits.
+    as_num: Num(v) => u64 = *v;
+    /// A floating-point literal's value.
+    as_fnum: Fnum(v) => f64 = *v;
+    /// The local variable a `Var` names.
+    as_var: Var(v) => LvarId = *v;
+    /// A string literal's text.
+    as_str: Str(s) => &str = s.as_str();
+    /// A global/static reference: its address and symbol name (if it has one).
+    as_obj: Obj { ea, name } => (Ea, Option<&str>) = (*ea, name.as_deref());
+    /// A decompiler helper's name, e.g. `__readfsqword`.
+    as_helper: Helper(s) => &str = s.as_str();
 }
 
 /// One `case` of a `switch`: its values (empty = `default`) and body.
@@ -286,5 +381,111 @@ impl Cinsn {
             // No child handles.
             Self::Break | Self::Continue | Self::Goto { .. } | Self::Asm(_) | Self::Empty => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    fn e(n: u32) -> ExprId {
+        Idx::from_raw(n)
+    }
+
+    /// Each accessor projects its own variant and yields `None` for any other.
+    #[test]
+    fn expr_accessors_project_their_variant() {
+        let (a, b, c) = (e(0), e(1), e(2));
+
+        assert!(
+            Cexpr::Binary {
+                op: BinOp::Add,
+                x: a,
+                y: b
+            }
+            .as_binary()
+                == Some((BinOp::Add, a, b))
+        );
+        assert!(
+            Cexpr::Assign {
+                op: AssignOp::Assign,
+                x: a,
+                y: b
+            }
+            .as_assign()
+                == Some((AssignOp::Assign, a, b))
+        );
+        assert!(
+            Cexpr::Unary {
+                op: UnOp::Neg,
+                x: a
+            }
+            .as_unary()
+                == Some((UnOp::Neg, a))
+        );
+        assert!(
+            Cexpr::Ternary {
+                cond: a,
+                then_: b,
+                else_: c
+            }
+            .as_ternary()
+                == Some((a, b, c))
+        );
+        assert!(Cexpr::Index { array: a, index: b }.as_index() == Some((a, b)));
+        assert!(
+            Cexpr::MemberRef {
+                obj: a,
+                byte_offset: 8
+            }
+            .as_member_ref()
+                == Some((a, 8))
+        );
+        assert!(
+            Cexpr::MemberPtr {
+                obj: a,
+                byte_offset: 8
+            }
+            .as_member_ptr()
+                == Some((a, 8))
+        );
+        assert!(Cexpr::Cast { x: a }.as_cast() == Some(a));
+        assert!(Cexpr::Deref { x: a, size: 4 }.as_deref() == Some((a, 4)));
+        assert!(Cexpr::Sizeof(a).as_sizeof() == Some(a));
+        assert!(Cexpr::Num(7).as_num() == Some(7));
+        assert!(Cexpr::Fnum(3.5).as_fnum() == Some(3.5));
+        assert!(Cexpr::Var(LvarId(3)).as_var() == Some(LvarId(3)));
+        assert!(Cexpr::Str("hi".into()).as_str() == Some("hi"));
+        assert!(Cexpr::Helper("h".into()).as_helper() == Some("h"));
+
+        let call = Cexpr::Call {
+            callee: a,
+            args: vec![b, c],
+        };
+        assert!(let Some((callee, args)) = call.as_call());
+        assert!(callee == a && args.len() == 2 && args[0] == b && args[1] == c);
+
+        let obj = Cexpr::Obj {
+            ea: Ea::new_const(0x10),
+            name: Some("g".into()),
+        };
+        assert!(obj.as_obj() == Some((Ea::new_const(0x10), Some("g"))));
+
+        // A wrong-variant query is `None`, not a panic.
+        assert!(let None = Cexpr::Num(1).as_binary());
+    }
+
+    /// `NodeRef` projects to one handle kind and rejects the other.
+    #[test]
+    fn node_ref_projections() {
+        let expr = NodeRef::Expr(e(0));
+        let stmt = NodeRef::Stmt(Idx::from_raw(0));
+        assert!(expr.as_expr() == Some(e(0)));
+        assert!(let None = expr.as_stmt());
+        assert!(expr.is_expr() && !expr.is_stmt());
+        assert!(stmt.as_stmt() == Some(Idx::from_raw(0)));
+        assert!(stmt.is_stmt() && !stmt.is_expr());
     }
 }

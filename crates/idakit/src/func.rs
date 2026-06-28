@@ -1,9 +1,10 @@
 //! [`Func`]: a borrowed view of one function, keyed by its entry [`Ea`].
 
 use crate::Idb;
+use crate::ctree::Ctree;
 use crate::decompile::Cfunc;
 use crate::ea::Ea;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::ffi::read_string;
 use crate::xref::Xref;
 
@@ -48,6 +49,16 @@ impl<'db> Func<'db> {
     /// Decompile this function.
     pub fn decompile(&self) -> Result<Cfunc<'db>> {
         self.db.decompile(self.ea)
+    }
+
+    /// Decompile and materialize the ctree in one step ([`decompile`](Self::decompile) then
+    /// [`Cfunc::ctree`]). Use the two-step form when you also need the [`Cfunc`] itself.
+    pub fn ctree(&self) -> Result<Ctree> {
+        let cfunc = self.decompile()?;
+        cfunc.ctree().map_err(|source| Error::Extract {
+            ea: self.ea.get(),
+            source,
+        })
     }
 }
 

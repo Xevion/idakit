@@ -21,7 +21,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use idakit::ctree::{Cexpr, Ctree, ExprId, LvarId, NodeRef};
+use idakit::ctree::{Ctree, ExprId, LvarId, NodeRef};
 use idakit::{Ea, Idb};
 
 /// Calls whose return value introduces taint (matched as a substring of the name).
@@ -49,11 +49,11 @@ struct FuncImage {
 /// Indirect calls (through a variable or computed pointer) stay unresolved. Enrichment
 /// win: the symbol name now rides on the `Obj` node, so this no longer needs the kernel.
 fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
-    match &tree.expr(callee).kind {
-        Cexpr::Obj { name, .. } => name.clone(),
-        Cexpr::Helper(h) => Some(h.clone()),
-        _ => None,
+    let kind = &tree.expr(callee).kind;
+    if let Some((_, name)) = kind.as_obj() {
+        return name.map(str::to_owned);
     }
+    kind.as_helper().map(str::to_owned)
 }
 
 /// Build the callee-name map for a tree. Now that the tree carries callee names, this is
@@ -61,8 +61,8 @@ fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
 fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
     let mut map = HashMap::new();
     for (id, node) in tree.exprs() {
-        if let Cexpr::Call { callee, .. } = &node.kind
-            && let Some(name) = callee_name(tree, *callee)
+        if let Some((callee, _)) = node.kind.as_call()
+            && let Some(name) = callee_name(tree, callee)
         {
             map.insert(id, name);
         }
@@ -74,13 +74,10 @@ fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
 /// and deliberately crude — the point is to do real work proportional to tree size.
 fn expr_tainted(img: &FuncImage, e: ExprId, tainted: &HashSet<u32>) -> bool {
     img.tree
-        .descendants(NodeRef::Expr(e))
-        .any(|node| match node {
-            NodeRef::Expr(id) => match img.tree.expr(id).kind {
-                Cexpr::Var(LvarId(i)) => tainted.contains(&i),
-                _ => img.callees.get(&id).is_some_and(|n| matches(n, SOURCES)),
-            },
-            NodeRef::Stmt(_) => false,
+        .expr_descendants(NodeRef::Expr(e))
+        .any(|id| match img.tree.expr(id).kind.as_var() {
+            Some(LvarId(i)) => tainted.contains(&i),
+            None => img.callees.get(&id).is_some_and(|n| matches(n, SOURCES)),
         })
 }
 
@@ -91,12 +88,10 @@ fn analyze(img: &FuncImage) -> usize {
     let defs: Vec<(u32, ExprId)> = img
         .tree
         .exprs()
-        .filter_map(|(_, node)| match &node.kind {
-            Cexpr::Assign { x, y, .. } => match img.tree.expr(*x).kind {
-                Cexpr::Var(LvarId(i)) => Some((i, *y)),
-                _ => None,
-            },
-            _ => None,
+        .filter_map(|(_, node)| {
+            let (_, x, y) = node.kind.as_assign()?;
+            let LvarId(i) = img.tree.expr(x).kind.as_var()?;
+            Some((i, y))
         })
         .collect();
 
@@ -118,7 +113,7 @@ fn analyze(img: &FuncImage) -> usize {
     img.tree
         .exprs()
         .filter(|(id, node)| {
-            let Cexpr::Call { args, .. } = &node.kind else {
+            let Some((_, args)) = node.kind.as_call() else {
                 return false;
             };
             img.callees.get(id).is_some_and(|n| matches(n, SINKS))
@@ -252,7 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("usage: taint <db.i64>  (set TAINT_LIMIT to cap the sweep)");
 
     idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
-        ida.call(move |idb| run(idb, &db)).expect("kernel call")
+        ida.call(move |idb| run(idb, &db))?
     })??;
 
     Ok(())

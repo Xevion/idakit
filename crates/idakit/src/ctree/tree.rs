@@ -139,6 +139,12 @@ impl Ctree {
             stack: vec![node],
         }
     }
+
+    /// Like [`descendants`](Self::descendants) but yielding only the expression handles,
+    /// skipping statements.
+    pub fn expr_descendants(&self, node: NodeRef) -> impl Iterator<Item = ExprId> + '_ {
+        self.descendants(node).filter_map(NodeRef::as_expr)
+    }
 }
 
 /// Pre-order depth-first iterator over a subtree; see [`Ctree::descendants`].
@@ -368,6 +374,14 @@ mod tests {
     fn children_of_a_leaf_are_empty() {
         let (tree, _block, _ret, _add, va, _vb) = sample();
         assert!(tree.children(NodeRef::Expr(va)).is_empty());
+    }
+
+    #[test]
+    fn expr_descendants_skips_statements() {
+        let (tree, block, _ret, add, va, vb) = sample();
+        // Statements (block, return) are filtered out; the three exprs survive in pre-order.
+        let exprs: Vec<ExprId> = tree.expr_descendants(NodeRef::Stmt(block)).collect();
+        assert!(exprs == vec![add, va, vb]);
     }
 
     #[test]

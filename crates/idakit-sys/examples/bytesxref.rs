@@ -1,5 +1,5 @@
 //! Bytes + xrefs through the facade: hex-dump a function's head, then list who calls it.
-//! Run: cargo run -p idakit-sys --example bytesxref -- scratch/bf4-smoke.i64
+//! Run: cargo run -p idakit-sys --example bytesxref -- path/to/database.i64
 
 use std::env;
 use std::ffi::{CStr, CString, c_char, c_void};

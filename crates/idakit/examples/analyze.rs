@@ -21,8 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             idb.close(false);
             Ok(())
-        })
-        .expect("kernel call")
+        })?
     })??;
 
     Ok(())

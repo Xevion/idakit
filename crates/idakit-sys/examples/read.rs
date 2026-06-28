@@ -1,5 +1,5 @@
 //! Core-read through the facade: open a DB copy, list functions + segments.
-//! Run: cargo run -p idakit-sys --example read -- scratch/bf4-smoke.i64
+//! Run: cargo run -p idakit-sys --example read -- path/to/database.i64
 
 use std::env;
 use std::ffi::{CStr, CString, c_char};

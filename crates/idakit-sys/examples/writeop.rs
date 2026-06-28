@@ -1,6 +1,6 @@
 //! Write path: rename + comment a function, SAVE, reopen, verify it persisted.
 //! Proves the &mut path and that close_database(save=true) round-trips.
-//! Run: cargo run -p idakit-sys --example writeop -- scratch/bf4-write.i64
+//! Run: cargo run -p idakit-sys --example writeop -- path/to/database.i64
 
 use std::env;
 use std::ffi::{CStr, CString, c_char};
