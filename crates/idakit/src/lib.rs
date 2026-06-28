@@ -66,7 +66,7 @@ pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{Cfunc, CtreeCounts};
 pub use ea::{BADADDR, Ea, Offset};
 pub use error::{CallError, Error, InitError, Qerrno, Result};
-pub use func::{Func, Functions};
+pub use func::{Func, FuncImage, Functions};
 pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
 pub use xref::{CodeRef, DataRef, Xref, XrefKind, Xrefs};

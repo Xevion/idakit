@@ -66,6 +66,30 @@ impl<'db> Func<'db> {
             source,
         })
     }
+
+    /// Snapshot this view's scalar facts into an owned [`FuncImage`] that can leave the
+    /// kernel thread.
+    #[must_use]
+    pub fn image(&self) -> FuncImage {
+        FuncImage {
+            ea: self.ea,
+            name: self.name(),
+            prototype: self.prototype(),
+        }
+    }
+}
+
+/// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
+/// `Func` borrows a `!Send` [`Idb`]; collect images inside an [`Ida::call`](crate::Ida::call)
+/// job to carry results back out.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FuncImage {
+    /// Entry address.
+    pub ea: Ea,
+    /// Display name, if the kernel had one.
+    pub name: Option<String>,
+    /// One-line C prototype, if the kernel had type info.
+    pub prototype: Option<String>,
 }
 
 impl std::fmt::Debug for Func<'_> {
@@ -138,4 +162,14 @@ impl<'db> Iterator for Functions<'db> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, Some(self.count - self.next))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FuncImage;
+
+    const fn assert_send<T: Send>() {}
+
+    // The reason FuncImage exists: unlike Func, it can cross the kernel-thread boundary.
+    const _: () = assert_send::<FuncImage>();
 }
