@@ -1,20 +1,92 @@
 //! Deterministic constructor-analysis check against real decompiler output.
 //!
-//! Compiles `tests/fixtures/vtbl.cpp` with g++, lets IDA auto-analyze it headlessly, then
-//! asserts the ctree query matchers recover the multiple-inheritance constructor pattern:
-//! the `Derived` ctor installs two vtables — the primary at offset 0 and the `Other`
-//! subobject at a nonzero offset — and calls both base constructors with the matching
-//! `this`-relative arguments. This pins `query::vtable_installs`/`query::this_arg_calls`
-//! to ground truth, complementing the synthetic trees in the unit tests.
+//! The C++ constructor matchers (`vtable_installs` / `this_arg_calls`) live here as
+//! test-local helpers composed from the public `idakit::ctree::query` primitives — they
+//! are specific to C++ reverse engineering, so they are not part of the crate's API. This
+//! test pins them to ground truth: it compiles `tests/fixtures/vtbl.cpp` with g++, lets
+//! IDA auto-analyze it headlessly, then asserts the multiple-inheritance constructor
+//! pattern is recovered — the `Derived` ctor installs two vtables (the primary at offset 0
+//! and the `Other` subobject at a nonzero offset) and calls both base constructors with
+//! the matching `this`-relative arguments.
 //!
 //! `harness = false`: the test owns `fn main()` to control process lifetime around the
-//! kernel thread `Ida::run` spawns. Skips (exit 0) when `g++` is unavailable.
+//! kernel thread `Ida::run` spawns. Skips (exit 0) when `g++` is unavailable. It needs a
+//! working IDA install, so it does not run in CI — run it locally.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use assert2::assert;
-use idakit::ctree::query;
+use idakit::ctree::Ctree;
+use idakit::ctree::query::{base_var, global_target};
+use idakit::{AssignOp, Ea};
+
+/// A store of a global's address into a `this`-relative slot — a vtable install in a
+/// constructor (`this->__vftable = &vtbl`). `this_offset` is the byte offset within the
+/// object (0 = primary base, non-zero = a multiple-inheritance subobject).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct VtableInstall {
+    this_offset: i64,
+    vtable: Ea,
+    vtable_name: Option<String>,
+}
+
+/// A direct call whose first argument is `this`-relative — a base or subobject
+/// constructor call. `this_offset` is the byte offset of the subobject it applies to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ThisCall {
+    callee: Ea,
+    callee_name: Option<String>,
+    this_offset: i64,
+}
+
+/// Every vtable install in the tree: a plain assignment of a global's address into a
+/// `this`-relative slot. Composes the tolerant look-through primitives `base_var`
+/// (resolve a place expression to `(lvar, byte-offset)`) and `global_target`.
+fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
+    let Some(this) = tree.this_lvar() else {
+        return Vec::new();
+    };
+    tree.assigns()
+        .filter_map(|(_, op, x, y)| {
+            if op != AssignOp::Assign {
+                return None;
+            }
+            let (v, off) = base_var(tree, x)?;
+            if v != this {
+                return None;
+            }
+            let g = global_target(tree, y)?;
+            Some(VtableInstall {
+                this_offset: off,
+                vtable: g.ea,
+                vtable_name: g.name,
+            })
+        })
+        .collect()
+}
+
+/// Every direct call whose first argument is `this`-relative — base/subobject constructor
+/// calls and other `this`-threading calls.
+fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
+    let Some(this) = tree.this_lvar() else {
+        return Vec::new();
+    };
+    tree.calls()
+        .filter_map(|(_, callee, args)| {
+            let g = global_target(tree, callee)?;
+            let (v, off) = base_var(tree, *args.first()?)?;
+            if v != this {
+                return None;
+            }
+            Some(ThisCall {
+                callee: g.ea,
+                callee_name: g.name,
+                this_offset: off,
+            })
+        })
+        .collect()
+}
 
 fn gxx_available() -> bool {
     Command::new("g++")
@@ -61,11 +133,11 @@ fn main() {
             for (ea, name) in eas {
                 // One-shot decompile + extract: this test only wants the owned tree.
                 let Ok(tree) = idb.ctree(ea) else { continue };
-                let installs = query::vtable_installs(&tree);
+                let installs = vtable_installs(&tree);
                 if installs.is_empty() {
                     continue;
                 }
-                let calls = query::this_arg_calls(&tree);
+                let calls = this_arg_calls(&tree);
                 analyzed.push((name.unwrap_or_default(), installs, calls));
             }
 

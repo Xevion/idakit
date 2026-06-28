@@ -40,12 +40,13 @@ path = "examples/analyze.rs"
 name = "ctree_dump"
 path = "examples/ctree_dump.rs"
 
-# No libtest harness: the test owns `fn main()` so it controls the process lifetime
-# around the kernel thread that `Ida::run` spawns.
+# No libtest harness: these own `fn main()` to control the process lifetime around the
+# kernel thread that `Ida::run` spawns.
 [[test]]
 name = "roundtrip"
 harness = false
 
+# Live constructor-matcher check; needs g++ + IDA (skips without g++, can't run in CI).
 [[test]]
 name = "ctor"
 harness = false

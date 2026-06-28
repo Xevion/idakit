@@ -1,20 +1,18 @@
-//! Structural queries over a [`Ctree`] — the analysis layer above the bare node arenas.
+//! Structural primitives for querying a [`Ctree`] — the composable layer above the bare
+//! node arenas.
 //!
-//! These exist because the patterns that matter for C++ reverse engineering — a
-//! constructor installing a vtable, a base/subobject constructor call — are awkward to
-//! spell out by hand against raw nodes, and IDA's own decompiler already resolved the
-//! register dataflow a disassembly-level pass would have to reconstruct. The matchers
-//! here are deliberately *tolerant*: they look **through** the address/place wrapper
-//! nodes the decompiler emits (`Cast`, `&`, `*`, member access) rather than matching one
-//! exact shape, because the exact shape varies with optimization level and whether IDA
-//! has typed the `this` pointer.
+//! Decompiled expressions wrap the interesting node in address/place nodes (`Cast`, `&`,
+//! `*`, member access) whose exact shape varies with optimization level and whether IDA
+//! has typed a pointer. [`strip_casts`], [`base_var`], and [`global_target`] look
+//! **through** those wrappers so callers can match patterns *tolerantly* rather than
+//! against one exact shape.
 //!
-//! The two primitives, [`base_var`] and [`global_target`], do that look-through and are
-//! public so callers can compose their own matchers; [`vtable_installs`] and
-//! [`this_arg_calls`] are the constructor-analysis matchers built from them.
+//! These are deliberately general. The crate's constructor-analysis test (`tests/ctor.rs`)
+//! composes them into higher-level matchers — recovering C++ vtable installs and base-ctor
+//! calls from real decompiler output — as a worked example.
 
 use super::node::{Cexpr, ExprId, LvarId};
-use super::ops::{AssignOp, BinOp, UnOp};
+use super::ops::{BinOp, UnOp};
 use super::tree::Ctree;
 use crate::Ea;
 
@@ -23,26 +21,6 @@ use crate::Ea;
 pub struct GlobalRef {
     pub ea: Ea,
     pub name: Option<String>,
-}
-
-/// A store of a global's address into a `this`-relative slot — a vtable install in a
-/// constructor (`this->__vftable = &vtbl`). `this_offset` is the byte offset within the
-/// object (0 = primary base, non-zero = a multiple-inheritance subobject).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VtableInstall {
-    pub this_offset: i64,
-    pub vtable: Ea,
-    pub vtable_name: Option<String>,
-}
-
-/// A direct call whose first argument is `this`-relative — a base or subobject
-/// constructor call (`Base::Base(this)`, `Other::Other(&this->Other)`). `this_offset` is
-/// the byte offset of the subobject the call applies to.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ThisCall {
-    pub callee: Ea,
-    pub callee_name: Option<String>,
-    pub this_offset: i64,
 }
 
 /// Peel cast `(T)x` and address-of `&x` wrappers, which rename nothing, down to the first
@@ -114,56 +92,10 @@ pub fn global_target(tree: &Ctree, e: ExprId) -> Option<GlobalRef> {
     })
 }
 
-/// Every vtable install in the tree: a plain assignment of a global's address into a
-/// `this`-relative slot.
-pub fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
-    let Some(this) = tree.this_lvar() else {
-        return Vec::new();
-    };
-    tree.assigns()
-        .filter_map(|(_, op, x, y)| {
-            if op != AssignOp::Assign {
-                return None;
-            }
-            let (v, off) = base_var(tree, x)?;
-            if v != this {
-                return None;
-            }
-            let g = global_target(tree, y)?;
-            Some(VtableInstall {
-                this_offset: off,
-                vtable: g.ea,
-                vtable_name: g.name,
-            })
-        })
-        .collect()
-}
-
-/// Every direct call whose first argument is `this`-relative — base/subobject constructor
-/// calls and other `this`-threading calls.
-pub fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
-    let Some(this) = tree.this_lvar() else {
-        return Vec::new();
-    };
-    tree.calls()
-        .filter_map(|(_, callee, args)| {
-            let g = global_target(tree, callee)?;
-            let (v, off) = base_var(tree, *args.first()?)?;
-            if v != this {
-                return None;
-            }
-            Some(ThisCall {
-                callee: g.ea,
-                callee_name: g.name,
-                this_offset: off,
-            })
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ctree::AssignOp;
     use crate::ctree::node::{Lvar, LvarLocation};
     use crate::ctree::tree::CtreeBuilder;
     use crate::ctree::types::{TypeData, TypeKind};
@@ -339,49 +271,5 @@ mod tests {
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(let None = base_var(&tree, add));
-    }
-
-    #[test]
-    fn vtable_installs_finds_both_and_skips_field_init() {
-        let tree = ctor_tree();
-        let mut installs = vtable_installs(&tree);
-        installs.sort_by_key(|i| i.this_offset);
-        assert!(
-            installs
-                == vec![
-                    VtableInstall {
-                        this_offset: 0,
-                        vtable: Ea::new_const(0x1000),
-                        vtable_name: Some("vtbl_primary".into()),
-                    },
-                    VtableInstall {
-                        this_offset: 16,
-                        vtable: Ea::new_const(0x2000),
-                        vtable_name: Some("vtbl_sub".into()),
-                    },
-                ]
-        );
-    }
-
-    #[test]
-    fn this_arg_calls_finds_base_and_subobject_ctors() {
-        let tree = ctor_tree();
-        let mut calls = this_arg_calls(&tree);
-        calls.sort_by_key(|c| c.this_offset);
-        assert!(
-            calls
-                == vec![
-                    ThisCall {
-                        callee: Ea::new_const(0x3000),
-                        callee_name: Some("BaseCtor".into()),
-                        this_offset: 0,
-                    },
-                    ThisCall {
-                        callee: Ea::new_const(0x4000),
-                        callee_name: Some("OtherCtor".into()),
-                        this_offset: 16,
-                    },
-                ]
-        );
     }
 }

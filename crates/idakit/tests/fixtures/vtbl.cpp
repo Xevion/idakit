@@ -2,8 +2,8 @@
 //
 // Multiple inheritance forces the Derived constructor to install two vtables: the primary
 // at [this+0] and the Other subobject at [this+offset]. It then calls both base
-// constructors with the matching this-relative arguments. That is exactly the shape
-// query::vtable_installs / query::this_arg_calls recover from the decompiled ctree.
+// constructors with the matching this-relative arguments. That is exactly the shape the
+// vtable_installs / this_arg_calls matchers recover from the decompiled ctree.
 
 struct Base {
     virtual int foo() { return b; }

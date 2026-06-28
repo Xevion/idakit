@@ -54,29 +54,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("--- idakit ---\n{}", tree.to_pseudocode());
                 println!("--- structure ---");
                 dump(&tree, idakit::ctree::NodeRef::Stmt(tree.root()), 0);
-
-                use idakit::ctree::query;
-                let installs = query::vtable_installs(&tree);
-                let calls = query::this_arg_calls(&tree);
-                if !installs.is_empty() || !calls.is_empty() {
-                    println!("--- query ---");
-                    for vi in &installs {
-                        println!(
-                            "  vtable_install  this+{:#x} <- {} ({:#x})",
-                            vi.this_offset,
-                            vi.vtable_name.as_deref().unwrap_or("?"),
-                            vi.vtable
-                        );
-                    }
-                    for c in &calls {
-                        println!(
-                            "  this_call       this+{:#x} -> {} ({:#x})",
-                            c.this_offset,
-                            c.callee_name.as_deref().unwrap_or("?"),
-                            c.callee
-                        );
-                    }
-                }
             }
             println!("\n[ctree_dump] {matched} function(s) matched filter {filter:?}");
 
