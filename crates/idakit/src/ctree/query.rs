@@ -14,8 +14,9 @@
 //! [`this_arg_calls`] are the constructor-analysis matchers built from them.
 
 use super::node::{Cexpr, ExprId, LvarId};
-use super::ops::{AssignOp, UnOp};
+use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::Ctree;
+use super::types::TypeKind;
 use crate::Ea;
 
 /// A reference to a global/static the decompiler named, as surfaced by [`global_target`].
@@ -46,9 +47,14 @@ pub struct ThisCall {
 }
 
 /// Follow `e` through place/address wrappers (`MemberRef`/`MemberPtr`/`Deref`/`&`/`Cast`)
-/// down to the root [`Cexpr::Var`], accumulating member byte offsets. Returns the local
-/// and the total offset from its base, or `None` if the expression isn't rooted at a
-/// variable.
+/// and pointer arithmetic down to the root [`Cexpr::Var`], accumulating the byte offset.
+/// Returns the local and the total offset from its base, or `None` if the expression isn't
+/// rooted at a variable.
+///
+/// Both the typed shape — `this->Other` as `MemberRef`/`MemberPtr` once IDA has the struct
+/// layout — and the untyped shape — `*((_QWORD *)this + 2)` or `(char *)this + 16` as raw
+/// pointer arithmetic — resolve to the same `(this, 16)`. The untyped form is what shows up
+/// in stripped binaries, so threading it is what makes these matchers useful there.
 pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
     match &tree.expr(e).kind {
         Cexpr::Var(v) => Some((*v, 0)),
@@ -59,8 +65,34 @@ pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
         Cexpr::Deref { x, .. } | Cexpr::Cast { x } | Cexpr::Unary { op: UnOp::Ref, x } => {
             base_var(tree, *x)
         }
+        // Pointer arithmetic `base + k`: the byte delta is the constant index scaled by the
+        // pointee size of `base`, exactly as C scales it — so a `_QWORD*` index of 2 and a
+        // `char*` index of 16 both advance 16 bytes. The `pointee_size` guard means plain
+        // integer addition (no pointer type) is not mistaken for navigation.
+        Cexpr::Binary {
+            op: BinOp::Add,
+            x,
+            y,
+        } => {
+            let (base, k) = match (&tree.expr(*x).kind, &tree.expr(*y).kind) {
+                (_, Cexpr::Num(k)) => (*x, *k),
+                (Cexpr::Num(k), _) => (*y, *k),
+                _ => return None,
+            };
+            let elem = pointee_size(tree, base)?;
+            base_var(tree, base).map(|(v, off)| (v, off + k as i64 * elem))
+        }
         _ => None,
     }
+}
+
+/// The byte size of what `e`'s pointer type addresses, used to scale pointer arithmetic.
+/// `None` unless `e` is a pointer whose element size is known.
+fn pointee_size(tree: &Ctree, e: ExprId) -> Option<i64> {
+    let TypeKind::Ptr(elem) = &tree.type_of(tree.expr(e).ty).kind else {
+        return None;
+    };
+    tree.type_of(*elem).size.map(|s| s as i64)
 }
 
 /// Follow `e` through `Cast`/`&` down to a [`Cexpr::Obj`], returning the global it names.
@@ -137,6 +169,7 @@ mod tests {
     use crate::ctree::tree::CtreeBuilder;
     use crate::ctree::types::{TypeData, TypeKind};
     use assert2::assert;
+    use rstest::rstest;
 
     fn ty(b: &mut CtreeBuilder) -> crate::ctree::TypeId {
         b.intern_type(TypeData {
@@ -356,6 +389,88 @@ mod tests {
             .expect("OtherCtor call");
         assert!(let Cexpr::Call { args, .. } = &call.kind);
         assert!(base_var(&tree, args[0]) == Some((LvarId(0), 16)));
+    }
+
+    /// Untyped pointer arithmetic threads to the same offset a member access would: the
+    /// constant index is scaled by the pointee size, so `(_QWORD *)this + 2`,
+    /// `(_DWORD *)this + 7`, and `(char *)this + 16` resolve to bytes 16, 28, and 16.
+    #[rstest]
+    #[case(8, 2, 16)]
+    #[case(4, 7, 28)]
+    #[case(1, 16, 16)]
+    fn base_var_threads_scaled_pointer_arithmetic(
+        #[case] elem_bytes: u8,
+        #[case] index: u64,
+        #[case] expect: i64,
+    ) {
+        let mut b = CtreeBuilder::new();
+        let elem = b.intern_type(TypeData {
+            kind: TypeKind::Int {
+                bytes: elem_bytes,
+                signed: false,
+            },
+            size: Some(u64::from(elem_bytes)),
+        });
+        let ptr = b.intern_type(TypeData {
+            kind: TypeKind::Ptr(elem),
+            size: Some(8),
+        });
+        let this = b.push_lvar(this_lvar_def("this", ptr));
+        let v = b.expr(None, ptr, Cexpr::Var(this));
+        let cast = b.expr(None, ptr, Cexpr::Cast { x: v });
+        let num = b.expr(None, elem, Cexpr::Num(index));
+        let add = b.expr(
+            None,
+            ptr,
+            Cexpr::Binary {
+                op: BinOp::Add,
+                x: cast,
+                y: num,
+            },
+        );
+        // The install/arg shapes wrap the arithmetic in a `*(...)` or `(T)(...)`; resolving
+        // through that wrapper is the whole point.
+        let deref = b.expr(
+            None,
+            elem,
+            Cexpr::Deref {
+                x: add,
+                size: u32::from(elem_bytes),
+            },
+        );
+        let st = b.stmt(None, Cinsn::Expr(deref));
+        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let tree = b.finish(block);
+        assert!(base_var(&tree, deref) == Some((this, expect)));
+    }
+
+    /// The `pointee_size` guard: integer addition with no pointer type is not navigation.
+    #[test]
+    fn base_var_rejects_non_pointer_addition() {
+        let mut b = CtreeBuilder::new();
+        let int = b.intern_type(TypeData {
+            kind: TypeKind::Int {
+                bytes: 4,
+                signed: true,
+            },
+            size: Some(4),
+        });
+        let this = b.push_lvar(this_lvar_def("this", int));
+        let v = b.expr(None, int, Cexpr::Var(this));
+        let num = b.expr(None, int, Cexpr::Num(4));
+        let add = b.expr(
+            None,
+            int,
+            Cexpr::Binary {
+                op: BinOp::Add,
+                x: v,
+                y: num,
+            },
+        );
+        let st = b.stmt(None, Cinsn::Expr(add));
+        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let tree = b.finish(block);
+        assert!(let None = base_var(&tree, add));
     }
 
     #[test]
