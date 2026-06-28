@@ -1,8 +1,20 @@
 [package]
 name = "idakit"
 version = "0.0.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
+description = "Idiomatic Rust bindings for IDA Pro's idalib kernel"
+keywords = ["ida", "ida-pro", "reverse-engineering", "decompiler", "disassembler"]
+categories = ["api-bindings", "development-tools"]
+readme = "../../README.md"
+
+# build.rs detects DOCS_RS and skips the native compile/link (no IDA on docs.rs).
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+targets = []
 
 [dependencies]
 bon = "3.9.3"

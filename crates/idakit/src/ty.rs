@@ -14,8 +14,11 @@ use crate::ffi::read_string;
 /// One field of a struct/union type. Offset and size are in bytes.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Member {
+    /// Field name.
     pub name: String,
+    /// Byte offset from the start of the containing type.
     pub offset: u64,
+    /// Field size in bytes.
     pub size: u64,
     /// Rendered field type, e.g. `char *`.
     pub type_repr: String,

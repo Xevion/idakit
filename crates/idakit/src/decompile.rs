@@ -13,8 +13,11 @@ use crate::ffi::read_string;
 /// Statement / expression / call-site counts of a decompiled function's ctree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CtreeCounts {
+    /// Number of statement nodes (`Cinsn`).
     pub insns: i32,
+    /// Number of expression nodes (`Cexpr`).
     pub exprs: i32,
+    /// Number of call sites.
     pub calls: i32,
 }
 
@@ -63,7 +66,7 @@ impl<'db> Cfunc<'db> {
 
     /// Materialize the whole ctree as an owned, `Send` [`Ctree`]: the facade streams a
     /// depth-first walk on this (kernel) thread, minting owned nodes through callbacks
-    /// ([`walk`]) so any worker can then analyze the result.
+    /// so any worker can then analyze the result.
     pub fn ctree(&self) -> Result<Ctree, ExtractError> {
         // SAFETY: live handle (see type docs); `walk` copies everything it needs out of
         // the SDK objects, so the result outlives this `cfunc`.

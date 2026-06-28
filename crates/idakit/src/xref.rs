@@ -11,6 +11,7 @@ use crate::ea::Ea;
 pub struct Xref {
     /// Where the reference originates.
     pub from: Ea,
+    /// How the reference is classified — code vs data, and its specific type.
     pub kind: XrefKind,
 }
 
@@ -39,7 +40,9 @@ impl Xref {
 /// A reference classified into the code or data type space.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum XrefKind {
+    /// A code reference (call, jump, or ordinary flow).
     Code(CodeRef),
+    /// A data reference (read, write, offset, …).
     Data(DataRef),
 }
 
@@ -47,11 +50,17 @@ pub enum XrefKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, FromPrimitive)]
 #[repr(u8)]
 pub enum CodeRef {
+    /// A far call.
     CallFar = 16,
+    /// A near call.
     CallNear = 17,
+    /// A far jump.
     JumpFar = 18,
+    /// A near jump.
     JumpNear = 19,
+    /// Ordinary sequential flow into the next instruction.
     Flow = 21,
+    /// An unrecognized code-xref type byte.
     #[num_enum(default)]
     Unknown = 0,
 }
@@ -60,11 +69,17 @@ pub enum CodeRef {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, FromPrimitive)]
 #[repr(u8)]
 pub enum DataRef {
+    /// An offset (address-of) reference.
     Offset = 1,
+    /// A write access.
     Write = 2,
+    /// A read access.
     Read = 3,
+    /// A textual reference.
     Text = 4,
+    /// An informational reference.
     Informational = 5,
+    /// An unrecognized data-xref type byte.
     #[num_enum(default)]
     Unknown = 0,
 }

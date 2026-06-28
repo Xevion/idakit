@@ -87,12 +87,14 @@ impl From<Ea> for u64 {
 pub struct Offset(i64);
 
 impl Offset {
+    /// Wrap a raw signed byte delta.
     #[inline]
     #[must_use]
     pub const fn new(v: i64) -> Self {
         Self(v)
     }
 
+    /// The raw signed byte delta.
     #[inline]
     #[must_use]
     pub const fn get(self) -> i64 {

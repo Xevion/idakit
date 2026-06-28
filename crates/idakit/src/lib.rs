@@ -1,9 +1,45 @@
-//! Idiomatic core over the IDA kernel.
+//! Idiomatic Rust bindings for IDA Pro's `idalib` (9.x).
 //!
-//! [`Ida::run`] spawns the kernel thread, claims the kernel on it, and runs the
-//! caller's app on the current (typically OS main) thread; any thread marshals
-//! closures to the kernel via an [`Ida`] handle. `Idb` lives only inside a job on
-//! the kernel thread, so `&Idb`/`&mut Idb` gives borrow-checked read/write separation.
+//! # The kernel thread
+//!
+//! The IDA kernel is single-threaded and thread-affine: it must be driven from the one
+//! thread that initialized it. [`Ida::run`] spawns a dedicated *kernel thread*, claims
+//! the kernel on it, then runs your application on the calling thread (typically the OS
+//! main thread, so the host keeps it for its own runtime). Any thread holding an
+//! [`Ida`] handle marshals work onto the kernel thread with [`Ida::call`].
+//!
+//! # Read/write separation
+//!
+//! The open database is an [`Idb`]. It is `!Send + !Sync`, so it exists only inside a
+//! kernel-thread job — it never crosses a thread boundary. Reads borrow `&Idb` and hand
+//! back lightweight views ([`Func`], [`Segment`], …); writes take `&mut Idb`. The borrow
+//! checker therefore stops a read view from being held across a mutation.
+//!
+//! ```no_run
+//! use idakit::{Ida, Idb};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! Ida::run(|ida| {
+//!     ida.call(|idb: &mut Idb| -> idakit::Result<()> {
+//!         idb.open("/path/to/db.i64").call()?;
+//!         for func in idb.functions() {
+//!             println!("{:#x} {}", func.ea().get(), func.name().unwrap_or_default());
+//!         }
+//!         idb.close(false);
+//!         Ok(())
+//!     })?
+//! })??;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Building
+//!
+//! Linking needs a real IDA install (`IDADIR`, holding `libida.so`); the build compiles
+//! a small C++ facade against the IDA SDK headers, fetched to match the installed IDA
+//! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64` — the facade
+//! is compiled `__EA64__`.
+#![deny(missing_docs)]
 
 use std::cell::Cell;
 use std::marker::PhantomData;

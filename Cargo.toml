@@ -5,3 +5,7 @@ members = ["crates/idakit-sys", "crates/idakit"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/Xevion/idakit"
+# Verified with `cargo msrv` (0.19.3): dep-driven (darling 0.23, libloading 0.9
+# both need 1.88); our own source compiles on the 2024 edition floor of 1.85.
+rust-version = "1.88"

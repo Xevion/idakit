@@ -58,6 +58,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=IDADIR");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");
     println!("cargo:rerun-if-env-changed=IDA_SDK_CACHE_DIR");
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
 }
 
 fn resolve_idadir() -> PathBuf {

@@ -1,10 +1,21 @@
 [package]
 name = "idakit-sys"
 version = "0.0.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
+description = "Raw FFI bindings to IDA Pro's idalib runtime and the idakit C++ facade"
+keywords = ["ida", "ida-pro", "ffi", "bindings", "reverse-engineering"]
+categories = ["external-ffi-bindings", "development-tools"]
 # Sole linker of native `ida`; lets build.rs publish DEP_IDA_* to dependents.
 links = "ida"
+
+# build.rs detects DOCS_RS and skips the native compile/link (no IDA on docs.rs).
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+targets = []
 
 [build-dependencies]
 cc = "1"

@@ -72,48 +72,81 @@ impl fmt::Display for ReasonTail<'_> {
 #[derive(Debug, Snafu, PartialEq, Eq)]
 #[snafu(visibility(pub(crate)))]
 pub enum Error {
+    /// The database file could not be opened.
     #[snafu(display("failed to open database {path:?}: {reason}"))]
     Open {
+        /// The database path that failed to open.
         path: String,
+        /// IDA's `error_t` for the failure.
         qerrno: Qerrno,
+        /// Human-readable failure reason.
         reason: String,
     },
 
     /// `reason` comes from Hex-Rays' `hexrays_failure_t` (the real decompile-error
     /// channel; the kernel's `qerrno` is not set on this path).
     #[snafu(display("decompilation failed at {ea:#x}: {reason}"))]
-    Decompile { ea: u64, reason: String },
+    Decompile {
+        /// Address that failed to decompile.
+        ea: u64,
+        /// Hex-Rays failure description.
+        reason: String,
+    },
 
     /// Decompiled, but the ctree could not be materialized; carries the [`ExtractError`].
     #[snafu(display("ctree extraction failed at {ea:#x}: {source}"))]
-    Extract { ea: u64, source: ExtractError },
+    Extract {
+        /// Address whose ctree failed to materialize.
+        ea: u64,
+        /// The underlying extraction error.
+        source: ExtractError,
+    },
 
+    /// The Hex-Rays decompiler could not be initialized.
     #[snafu(display("hex-rays decompiler unavailable (init returned {code})"))]
-    HexRaysInit { code: i32 },
+    HexRaysInit {
+        /// The initializer's return code.
+        code: i32,
+    },
 
+    /// No type with the requested name exists in the database.
     #[snafu(display("no type named {name:?} in the database"))]
-    TypeNotFound { name: String },
+    TypeNotFound {
+        /// The type name that was not found.
+        name: String,
+    },
 
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is
     /// present only when the kernel left a usable `error_t` — best-effort, since not
     /// every rejection path sets one.
     #[snafu(display("{op} failed at {ea:#x}{}", ReasonTail(reason)))]
     WriteRejected {
+        /// The kernel operation that was rejected (e.g. `"rename"`).
         op: &'static str,
+        /// Address the write targeted.
         ea: u64,
+        /// IDA's `error_t`, when one was set.
         qerrno: Qerrno,
+        /// Human-readable reason, when the kernel left one.
         reason: Option<String>,
     },
 
+    /// A string argument contained an interior NUL byte.
     #[snafu(display("argument {arg} contains an interior NUL byte"))]
-    InteriorNul { arg: &'static str },
+    InteriorNul {
+        /// The argument name that contained the NUL.
+        arg: &'static str,
+    },
 
     /// A marshaled [`call`](crate::Ida::call) did not return: the kernel closure panicked or
     /// the thread is gone. `?` converts a [`CallError`] into this via [`From`], flattening
     /// the call boundary into one [`Result`]; the panic payload is reduced to its message.
     /// Handle [`CallError`] directly to inspect or [`resume`](CallError::resume) it.
     #[snafu(display("kernel call did not return: {reason}"))]
-    Kernel { reason: String },
+    Kernel {
+        /// Why the call did not return.
+        reason: String,
+    },
 }
 
 /// `Result` specialised to this crate's [`Error`].
@@ -202,11 +235,17 @@ pub enum InitError {
     /// The kernel "main" thread could not be re-claimed (unrecognized
     /// `is_main_thread` prologue, or the re-claim did not take).
     #[snafu(display("could not claim the kernel thread: {reason}"))]
-    Claim { reason: String },
+    Claim {
+        /// Why the kernel thread could not be claimed.
+        reason: String,
+    },
 
     /// `init_library` returned a non-zero code.
     #[snafu(display("init_library failed (code {code})"))]
-    InitLibrary { code: i32 },
+    InitLibrary {
+        /// `init_library`'s non-zero return code.
+        code: i32,
+    },
 
     /// The kernel thread exited before reporting setup status.
     #[snafu(display("the kernel thread exited before initializing"))]
