@@ -69,7 +69,7 @@ pub use error::{CallError, Error, InitError, Qerrno, Result};
 pub use func::{Func, Functions};
 pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
-pub use xref::{CodeRef, DataRef, Xref, XrefKind};
+pub use xref::{CodeRef, DataRef, Xref, XrefKind, Xrefs};
 
 /// The open database. `!Send + !Sync`, so it exists only on the kernel thread.
 /// Reads borrow `&Idb` (returning [`Func`]/[`Segment`] views); writes take
@@ -165,29 +165,20 @@ impl Idb {
         buf
     }
 
-    /// All cross-references targeting `ea`. Owned `Vec`: the facade is a bulk
-    /// count-then-fill API, not a cursor.
+    /// Lazily iterate every cross-reference targeting `ea` — its callers and the data
+    /// that points at it (ordinary sequential flow excluded).
+    #[inline]
     #[must_use]
-    pub fn xrefs_to(&self, ea: Ea) -> Vec<Xref> {
-        // Count (cap 0 writes nothing), then fill exact buffers.
-        let n = self.xrefs_to_raw(ea, ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), 0);
-        if n == 0 {
-            return Vec::new();
-        }
-        let mut from = vec![0u64; n];
-        let mut types = vec![0u8; n];
-        let mut iscode = vec![0u8; n];
-        let written = self.xrefs_to_raw(
-            ea,
-            from.as_mut_ptr(),
-            types.as_mut_ptr(),
-            iscode.as_mut_ptr(),
-            n,
-        );
-        let written = written.min(n);
-        (0..written)
-            .filter_map(|i| Xref::from_raw(from[i], types[i], iscode[i]))
-            .collect()
+    pub fn xrefs_to(&self, ea: Ea) -> Xrefs<'_> {
+        Xrefs::new(self.xref_open(ea, true))
+    }
+
+    /// Lazily iterate every cross-reference originating at `ea` — what the code there
+    /// calls, jumps to, or reads (ordinary sequential flow excluded).
+    #[inline]
+    #[must_use]
+    pub fn xrefs_from(&self, ea: Ea) -> Xrefs<'_> {
+        Xrefs::new(self.xref_open(ea, false))
     }
 
     /// Resolve a named type and its member layout. `Err` if no such type exists.

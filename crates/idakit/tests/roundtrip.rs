@@ -27,8 +27,9 @@ fn main() {
             let bytes = idb.bytes(ea, 16);
             assert!(!bytes.is_empty(), "expected readable bytes at the entry");
 
-            // Best-effort; just exercise the paths.
-            let _ = first.xrefs_to();
+            // Best-effort; just exercise the paths (consume the lazy xref cursors).
+            let _ = first.xrefs_to().count();
+            let _ = first.xrefs_from().count();
             let _ = first.prototype();
 
             // Exercise the RAII owned-handle path (best-effort).

@@ -12,8 +12,9 @@
 //!
 //! `idakit_decompile` and `idakit_type_open` return opaque `*mut c_void` handles
 //! that are owned by the caller. Each must be released with its matching
-//! `*_dispose` function (`idakit_cfunc_dispose` / `idakit_type_dispose`).
-//! Passing a handle to any other function after disposal is undefined behaviour.
+//! `*_dispose` function (`idakit_cfunc_dispose` / `idakit_type_dispose`); the xref
+//! cursor from `idakit_xref_open` is released with `idakit_xref_close` instead.
+//! Passing a handle to any other function after release is undefined behaviour.
 
 pub type Ea = u64;
 pub const BADADDR: Ea = u64::MAX;
@@ -64,16 +65,24 @@ unsafe extern "C" {
     pub fn idakit_seg_end(n: c_int) -> Ea;
 }
 
-// raw bytes + cross-references
+// raw bytes
 unsafe extern "C" {
     pub fn idakit_get_bytes(ea: Ea, buf: *mut c_void, size: usize) -> i64;
-    pub fn idakit_xrefs_to(
-        ea: Ea,
+}
+
+// cross-reference cursor. `idakit_xref_open` returns an owned handle the caller must
+// release with `idakit_xref_close`; `is_to` selects xrefs *to* `ea` (1) or *from* it
+// (0). `idakit_xref_next` writes the edge endpoints and returns 1 until exhausted.
+unsafe extern "C" {
+    pub fn idakit_xref_open(ea: Ea, is_to: u8) -> *mut c_void;
+    pub fn idakit_xref_next(
+        cursor: *mut c_void,
         from: *mut Ea,
+        to: *mut Ea,
         type_: *mut u8,
         iscode: *mut u8,
-        cap: usize,
-    ) -> usize;
+    ) -> u8;
+    pub fn idakit_xref_close(cursor: *mut c_void);
 }
 
 // type information

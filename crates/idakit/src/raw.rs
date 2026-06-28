@@ -74,15 +74,13 @@ impl Idb {
         unsafe { sys::idakit_get_bytes(ea.get(), buf, size) }
     }
 
-    pub(crate) fn xrefs_to_raw(
-        &self,
-        ea: Ea,
-        from: *mut sys::Ea,
-        kind: *mut u8,
-        iscode: *mut u8,
-        cap: usize,
-    ) -> usize {
-        unsafe { sys::idakit_xrefs_to(ea.get(), from, kind, iscode, cap) }
+    /// Open an xref cursor over the current database; `is_to` selects xrefs targeting
+    /// `ea` vs originating at it. The returned handle is owned by the [`Xrefs`] iterator,
+    /// which closes it on drop.
+    ///
+    /// [`Xrefs`]: crate::Xrefs
+    pub(crate) fn xref_open(&self, ea: Ea, is_to: bool) -> *mut c_void {
+        unsafe { sys::idakit_xref_open(ea.get(), is_to as u8) }
     }
 
     pub(crate) fn type_open(&self, name: *const c_char) -> *mut c_void {

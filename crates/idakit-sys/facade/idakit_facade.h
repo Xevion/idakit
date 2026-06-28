@@ -24,10 +24,14 @@ idakit_ea_t idakit_seg_end(int n);
 
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size);  /* bytes read, <0 on fail */
 
-/* Explicit xrefs TO ea (ordinary flow excluded). Returns the total count and fills the
- * parallel from/type/iscode arrays up to cap. type is the cref_t/dref_t byte. */
-size_t idakit_xrefs_to(idakit_ea_t ea, idakit_ea_t *from, uint8_t *type,
-                       uint8_t *iscode, size_t cap);
+/* Cross-reference cursor (ordinary flow excluded). `is_to` selects xrefs TO ea (callers
+ * of ea) vs FROM ea (what ea references). Open returns an opaque cursor; step it with
+ * next (writes from/to/type/iscode, returns 1 until exhausted, then 0); release with
+ * close. type is the cref_t/dref_t byte. */
+void   *idakit_xref_open(idakit_ea_t ea, uint8_t is_to);
+uint8_t idakit_xref_next(void *cursor, idakit_ea_t *from, idakit_ea_t *to,
+                         uint8_t *type, uint8_t *iscode);
+void    idakit_xref_close(void *cursor);
 
 int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap);   /* prototype text, <0 on miss */
 

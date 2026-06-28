@@ -104,22 +104,52 @@ extern "C" int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size)
   return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);
 }
 
-extern "C" size_t idakit_xrefs_to(idakit_ea_t ea, idakit_ea_t *from, uint8_t *type,
-                                  uint8_t *iscode, size_t cap)
+// Cursor state for a streaming xref walk. `started` distinguishes the first_* call
+// (which seeds the block) from subsequent next_* steps.
+struct idakit_xref_cursor
 {
   xrefblk_t xb;
-  size_t n = 0;
-  for ( bool ok = xb.first_to((ea_t)ea, XREF_NOFLOW); ok; ok = xb.next_to() )
+  ea_t ea;
+  bool is_to;
+  bool started;
+};
+
+extern "C" void *idakit_xref_open(idakit_ea_t ea, uint8_t is_to)
+{
+  auto *c = new idakit_xref_cursor;
+  c->ea = (ea_t)ea;
+  c->is_to = is_to != 0;
+  c->started = false;
+  return c;
+}
+
+extern "C" uint8_t idakit_xref_next(void *cursor, idakit_ea_t *from, idakit_ea_t *to,
+                                    uint8_t *type, uint8_t *iscode)
+{
+  auto *c = (idakit_xref_cursor *)cursor;
+  bool ok;
+  if ( !c->started )
   {
-    if ( n < cap )
-    {
-      from[n] = (idakit_ea_t)xb.from;
-      type[n] = xb.type;
-      iscode[n] = xb.iscode;
-    }
-    ++n;
+    c->started = true;
+    ok = c->is_to ? c->xb.first_to(c->ea, XREF_NOFLOW)
+                  : c->xb.first_from(c->ea, XREF_NOFLOW);
   }
-  return n;
+  else
+  {
+    ok = c->is_to ? c->xb.next_to() : c->xb.next_from();
+  }
+  if ( !ok )
+    return 0;
+  *from = (idakit_ea_t)c->xb.from;
+  *to = (idakit_ea_t)c->xb.to;
+  *type = c->xb.type;
+  *iscode = c->xb.iscode;
+  return 1;
+}
+
+extern "C" void idakit_xref_close(void *cursor)
+{
+  delete (idakit_xref_cursor *)cursor;
 }
 
 extern "C" int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap)

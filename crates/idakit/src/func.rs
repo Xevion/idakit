@@ -6,7 +6,7 @@ use crate::decompile::Cfunc;
 use crate::ea::Ea;
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
-use crate::xref::Xref;
+use crate::xref::Xrefs;
 
 /// A borrowed view of one function, valid while the database stays open.
 #[derive(Clone, Copy)]
@@ -40,10 +40,16 @@ impl<'db> Func<'db> {
         read_string(|buf, cap| self.db.func_type(self.ea, buf, cap))
     }
 
-    /// All cross-references targeting this function's entry.
+    /// Lazily iterate cross-references targeting this function's entry.
     #[must_use]
-    pub fn xrefs_to(&self) -> Vec<Xref> {
+    pub fn xrefs_to(&self) -> Xrefs<'db> {
         self.db.xrefs_to(self.ea)
+    }
+
+    /// Lazily iterate cross-references originating at this function's entry.
+    #[must_use]
+    pub fn xrefs_from(&self) -> Xrefs<'db> {
+        self.db.xrefs_from(self.ea)
     }
 
     /// Decompile this function.

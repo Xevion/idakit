@@ -18,6 +18,20 @@ fn func_name(ea: Ea) -> String {
         .into_owned()
 }
 
+/// Walk the xref cursor for every reference targeting `ea`, collecting `(from, type, iscode)`.
+fn xrefs_to(ea: Ea) -> Vec<(Ea, u8, u8)> {
+    let mut out = Vec::new();
+    unsafe {
+        let cursor = idakit_xref_open(ea, 1);
+        let (mut from, mut to, mut ty, mut iscode) = (0u64, 0u64, 0u8, 0u8);
+        while idakit_xref_next(cursor, &mut from, &mut to, &mut ty, &mut iscode) != 0 {
+            out.push((from, ty, iscode));
+        }
+        idakit_xref_close(cursor);
+    }
+    out
+}
+
 fn main() {
     let db = env::args()
         .nth(1)
@@ -48,44 +62,30 @@ fn main() {
 
         // xrefs: who references func[7]? If it has no callers, scan forward for a function
         // that does, so the demo always shows real cross-references.
-        let mut from = [0u64; 64];
-        let mut typ = [0u8; 64];
-        let mut iscode = [0u8; 64];
-        let dump = |ea: Ea, from: &mut [u64], typ: &mut [u8], iscode: &mut [u8]| -> usize {
-            idakit_xrefs_to(
-                ea,
-                from.as_mut_ptr(),
-                typ.as_mut_ptr(),
-                iscode.as_mut_ptr(),
-                from.len(),
-            )
-        };
-
         let mut target = ea;
-        let mut count = dump(target, &mut from, &mut typ, &mut iscode);
-        if count == 0 {
+        let mut refs = xrefs_to(target);
+        if refs.is_empty() {
             for i in 0..nf {
                 let e = idakit_func_ea(i);
-                let c = dump(e, &mut from, &mut typ, &mut iscode);
-                if c > 0 {
+                let r = xrefs_to(e);
+                if !r.is_empty() {
                     target = e;
-                    count = c;
+                    refs = r;
                     break;
                 }
             }
         }
 
         println!(
-            "\nxrefs_to {target:#012x}  {}   (total {count})",
-            func_name(target)
+            "\nxrefs_to {target:#012x}  {}   (total {})",
+            func_name(target),
+            refs.len()
         );
-        for k in 0..count.min(from.len()) {
-            let kind = if iscode[k] != 0 { "code" } else { "data" };
+        for (from, ty, iscode) in &refs {
+            let kind = if *iscode != 0 { "code" } else { "data" };
             println!(
-                "  from {:#012x}  {kind} type={:<2}  in {}",
-                from[k],
-                typ[k],
-                func_name(from[k])
+                "  from {from:#012x}  {kind} type={ty:<2}  in {}",
+                func_name(*from)
             );
         }
 
