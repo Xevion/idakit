@@ -35,6 +35,13 @@ unsafe extern "C" {
     pub fn is_main_thread() -> bool;
 }
 
+// auto-analysis (plain C ABI from libida.so). `open_database(run_auto=true)` only
+// *enables* the analysis queue; `auto_wait` blocks until it drains, so a caller that
+// wants a fully analyzed database calls it after opening (mirrors idalib).
+unsafe extern "C" {
+    pub fn auto_wait() -> bool;
+}
+
 // IDA's thread-safe error reporting (plain C ABI from libida.so). `error_t` is an
 // `int`; `get_qerrno` reads the thread's last code and `qstrerror` describes one
 // (folding in the C `errno` text for the `eOS` code).

@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+bon = "3.9.3"
 idakit-sys = { path = "../idakit-sys" }
 num_enum = "0.7.6"
 snafu = "0.9.1"
@@ -18,6 +19,10 @@ path = "examples/actor.rs"
 [[example]]
 name = "taint"
 path = "examples/taint.rs"
+
+[[example]]
+name = "analyze"
+path = "examples/analyze.rs"
 
 # No libtest harness: the test owns `fn main()` so it controls the process lifetime
 # around the kernel thread that `Ida::run` spawns.

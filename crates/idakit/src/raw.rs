@@ -56,8 +56,14 @@ impl Idb {
         (qerrno, reason)
     }
 
-    pub(crate) fn open_database(&mut self, path: *const c_char) -> c_int {
-        unsafe { sys::open_database(path, false, ptr::null()) }
+    pub(crate) fn open_database(&mut self, path: *const c_char, run_auto: bool) -> c_int {
+        unsafe { sys::open_database(path, run_auto, ptr::null()) }
+    }
+
+    /// Block until the auto-analysis queue drains. Only meaningful after an
+    /// `open_database(run_auto = true)`, which enables but does not await analysis.
+    pub(crate) fn auto_wait(&self) -> bool {
+        unsafe { sys::auto_wait() }
     }
 
     pub(crate) fn close_database(&mut self, save: bool) {

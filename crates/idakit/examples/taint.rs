@@ -141,7 +141,7 @@ struct Totals {
 }
 
 fn run(idb: &mut Idb, db: &str) -> Result<(), idakit::Error> {
-    idb.open(db)?;
+    idb.open(db).call()?;
 
     let limit = std::env::var("TAINT_LIMIT")
         .ok()

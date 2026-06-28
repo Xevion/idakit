@@ -44,27 +44,45 @@ pub struct Idb {
     _not_send: PhantomData<*const ()>,
 }
 
+/// Database-open builder: `idb.open(path).run_auto(true).call()`. `path` stays a
+/// positional argument; options chain before the terminal `.call()`.
+#[bon::bon]
+impl Idb {
+    /// Open a database file. Re-opening after [`close`](Self::close) works.
+    ///
+    /// With `run_auto` set, IDA's auto-analysis runs and this blocks until it drains,
+    /// turning a raw binary into a fully analyzed database; it defaults to `false`,
+    /// which opens an already-analyzed `.i64` as-is.
+    #[builder]
+    pub fn open(
+        &mut self,
+        #[builder(start_fn)] path: &str,
+        #[builder(default)] run_auto: bool,
+    ) -> Result<()> {
+        let rc = ffi::with_cstr(path, "path", |p| self.open_database(p, run_auto))?;
+        if rc != 0 {
+            // The return value IS the error_t (eOS=1 means "see errno", e.g. ENOENT).
+            let qerrno = Qerrno::from_code(rc);
+            return Err(Error::Open {
+                path: path.to_owned(),
+                reason: self.error_reason(qerrno),
+                qerrno,
+            });
+        }
+        // run_auto only enables the analysis queue; block until it drains so callers
+        // observe a fully analyzed database.
+        if run_auto {
+            self.auto_wait();
+        }
+        Ok(())
+    }
+}
+
 impl Idb {
     fn new() -> Self {
         Self {
             hexrays_ready: Cell::new(false),
             _not_send: PhantomData,
-        }
-    }
-
-    /// Open a database file. Re-opening after [`close`](Self::close) works.
-    pub fn open(&mut self, path: &str) -> Result<()> {
-        let rc = ffi::with_cstr(path, "path", |p| self.open_database(p))?;
-        if rc == 0 {
-            Ok(())
-        } else {
-            // The return value IS the error_t (eOS=1 means "see errno", e.g. ENOENT).
-            let qerrno = Qerrno::from_code(rc);
-            Err(Error::Open {
-                path: path.to_owned(),
-                reason: self.error_reason(qerrno),
-                qerrno,
-            })
         }
     }
 

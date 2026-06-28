@@ -12,7 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // `.expect` discharges the call boundary (panicked/gone kernel); `?` an open error.
         {
             let db = db.clone();
-            ida.call(move |idb| idb.open(&db)).expect("kernel call")?;
+            ida.call(move |idb| idb.open(&db).call())
+                .expect("kernel call")?;
         }
 
         let n = ida

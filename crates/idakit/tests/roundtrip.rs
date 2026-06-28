@@ -12,7 +12,7 @@ fn main() {
 
     idakit::Ida::run(move |ida| {
         ida.call(move |idb| {
-            idb.open(&db).expect("open failed");
+            idb.open(&db).call().expect("open failed");
 
             let func_count = idb.functions().count();
             let seg_count = idb.segments().count();
