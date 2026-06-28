@@ -3,21 +3,14 @@ use std::ffi::c_int;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-// Compile the C++ facade against the IDA SDK headers and link the kernel.
-//
-// __EA64__  -> ea_t is 64-bit (bf4 / any 64-bit target).
-// __LINUX__ -> platform (pro.h auto-detects from __linux__, set explicitly anyway).
-//
-// The SDK headers are resolved in order: an explicit `IDA_SDK_DIR` checkout, else a
-// version-matched checkout fetched from the public SDK repo into a persistent cache.
-// The installed IDA tells us its own version (dlopen + get_library_version), so the
-// fetched headers always match the runtime we link against.
+// Compile the C++ facade against the IDA SDK headers and link the kernel. __EA64__ makes
+// ea_t 64-bit; __LINUX__ sets the platform. SDK headers: `IDA_SDK_DIR`, else fetched to
+// match the installed IDA's version.
 
 const SDK_REPO: &str = "https://github.com/HexRaysSA/ida-sdk.git";
 
 fn main() {
-    // docs.rs has no IDA runtime and no network. Emit nothing native and bail; the
-    // FFI items still render (rustdoc documents `extern` blocks without linking).
+    // docs.rs has no IDA and no network: skip the native build (rustdoc still renders).
     if env::var_os("DOCS_RS").is_some() {
         return;
     }
@@ -61,11 +54,72 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DOCS_RS");
 }
 
+/// The IDA install holding `libida.so`: `IDADIR`, else `idat64`/`idat` on `PATH`, else the
+/// known install locations. Any valid install will do — its version is read at link time.
 fn resolve_idadir() -> PathBuf {
-    env::var_os("IDADIR").map(PathBuf::from).unwrap_or_else(|| {
-        let home = env::var_os("HOME").expect("HOME unset");
-        Path::new(&home).join("ida-pro-9.3")
-    })
+    if let Some(dir) = env::var_os("IDADIR") {
+        return PathBuf::from(dir);
+    }
+    idadir_from_path()
+        .or_else(idadir_from_known_locations)
+        .unwrap_or_else(|| {
+            panic!(
+                "could not locate an IDA install; set IDADIR to your IDA directory \
+                 (the one holding libida.so)"
+            )
+        })
+}
+
+fn has_runtime(dir: &Path) -> bool {
+    dir.join("libida.so").exists()
+}
+
+/// The install dir of `idat64`/`idat` if on `PATH` (canonicalized, so a wrapper symlink
+/// resolves to the real root).
+fn idadir_from_path() -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    for dir in env::split_paths(&path) {
+        for exe in ["idat64", "idat"] {
+            let bin = dir.join(exe);
+            if !bin.is_file() {
+                continue;
+            }
+            let real = std::fs::canonicalize(&bin).unwrap_or(bin);
+            if let Some(parent) = real.parent()
+                && has_runtime(parent)
+            {
+                return Some(parent.to_path_buf());
+            }
+        }
+    }
+    None
+}
+
+/// Scan `$HOME` and `/opt` for an `ida-pro-*` / `idapro-*` install holding `libida.so`,
+/// preferring the highest-named (newest) one.
+fn idadir_from_known_locations() -> Option<PathBuf> {
+    let roots = env::var_os("HOME")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain([PathBuf::from("/opt")]);
+
+    let mut found: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if (name.starts_with("ida-pro-") || name.starts_with("idapro-"))
+                && has_runtime(&entry.path())
+            {
+                found.push(entry.path());
+            }
+        }
+    }
+    found.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    found.pop()
 }
 
 /// Locate the SDK `include` directory holding `idalib.hpp`: an explicit
@@ -97,17 +151,15 @@ fn find_include(root: &Path) -> Option<PathBuf> {
         .find(|dir| dir.join("idalib.hpp").exists())
 }
 
-/// dlopen the installed `libidalib.so` and read its `(major, minor)` version. A
-/// `dlsym` needs no SDK headers, so this runs before the headers exist — it is how
-/// the fetch path learns which SDK tag to pull.
+/// The installed IDA's `(major, minor)`, via dlopen of `libidalib.so` (no headers needed,
+/// so it runs before the fetch that uses the tag).
 fn library_version(idadir: &Path) -> (i32, i32) {
     use libloading::os::unix::{Library, RTLD_GLOBAL, RTLD_LAZY, Symbol};
 
     let hint = "set IDA_SDK_DIR to a local SDK checkout to skip version auto-detection";
     let idalib = idadir.join("libidalib.so");
     unsafe {
-        // libidalib depends on libida; preload it with global visibility (and leak it,
-        // so it stays resident) in case libidalib's own runpath doesn't resolve it.
+        // Preload libida globally (and leak it) in case libidalib's runpath misses it.
         if let Ok(ida) = Library::open(Some(idadir.join("libida.so")), RTLD_LAZY | RTLD_GLOBAL) {
             std::mem::forget(ida);
         }
@@ -127,9 +179,8 @@ fn library_version(idadir: &Path) -> (i32, i32) {
     }
 }
 
-/// The newest `vMAJOR.MINOR.PATCH-release` tag in the SDK repo. IDA's build number is
-/// a datestamp, not the SDK patch level, so we match major.minor and take the highest
-/// patch.
+/// The newest `vMAJOR.MINOR.*-release` tag — match major.minor (IDA's build number isn't
+/// the SDK patch level) and take the highest patch.
 fn newest_release_tag(major: i32, minor: i32) -> String {
     let prefix = format!("v{major}.{minor}.");
     let out = Command::new("git")
@@ -166,9 +217,8 @@ fn newest_release_tag(major: i32, minor: i32) -> String {
         })
 }
 
-/// Fetch the SDK at `tag` into a persistent cache and return its root. Only the
-/// `src/include/` subtree is materialized (partial + sparse checkout). Re-runs are a
-/// no-op once the completion marker is present.
+/// Fetch the SDK at `tag` into the cache and return its root (partial + sparse checkout of
+/// `src/include` only). A no-op once the completion marker exists.
 fn fetch_sdk(tag: &str) -> PathBuf {
     let dir = cache_dir(tag);
     let marker = dir.join(MARKER);
@@ -181,8 +231,8 @@ fn fetch_sdk(tag: &str) -> PathBuf {
             .unwrap_or_else(|e| panic!("could not create cache dir {}: {e}", parent.display()));
     }
 
-    // Clone into a unique staging dir, then atomically rename into place, so two
-    // concurrent builds racing on the shared cache can't observe a half-written tree.
+    // Stage in a unique dir then rename into place, so concurrent builds never see a
+    // half-written cache.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
@@ -225,8 +275,7 @@ fn fetch_sdk(tag: &str) -> PathBuf {
     dir
 }
 
-/// Marker file written inside a finished checkout; its presence means the cache entry
-/// is complete (an interrupted clone leaves only a `.staging-*` dir).
+/// Written inside a finished checkout; its presence means the cache entry is complete.
 const MARKER: &str = ".idakit-sdk-complete";
 
 fn cache_dir(tag: &str) -> PathBuf {
