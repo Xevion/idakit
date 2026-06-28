@@ -7,6 +7,7 @@ mod arena;
 mod extract;
 mod node;
 mod ops;
+pub mod query;
 mod render;
 mod tree;
 mod types;

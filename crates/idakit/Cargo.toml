@@ -24,6 +24,10 @@ path = "examples/taint.rs"
 name = "analyze"
 path = "examples/analyze.rs"
 
+[[example]]
+name = "ctree_dump"
+path = "examples/ctree_dump.rs"
+
 # No libtest harness: the test owns `fn main()` so it controls the process lifetime
 # around the kernel thread that `Ida::run` spawns.
 [[test]]
