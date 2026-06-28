@@ -16,7 +16,6 @@
 use super::node::{Cexpr, ExprId, LvarId};
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::Ctree;
-use super::types::TypeKind;
 use crate::Ea;
 
 /// A reference to a global/static the decompiler named, as surfaced by [`global_target`].
@@ -89,10 +88,8 @@ pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
 /// The byte size of what `e`'s pointer type addresses, used to scale pointer arithmetic.
 /// `None` unless `e` is a pointer whose element size is known.
 fn pointee_size(tree: &Ctree, e: ExprId) -> Option<i64> {
-    let TypeKind::Ptr(elem) = &tree.type_of(tree.expr(e).ty).kind else {
-        return None;
-    };
-    tree.type_of(*elem).size.map(|s| s as i64)
+    let elem = tree.type_of(tree.expr(e).ty).kind.pointee()?;
+    tree.type_of(elem).size.map(|s| s as i64)
 }
 
 /// Follow `e` through `Cast`/`&` down to a [`Cexpr::Obj`], returning the global it names.

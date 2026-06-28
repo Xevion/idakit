@@ -87,6 +87,20 @@ pub enum TypeKind {
     Unknown,
 }
 
+impl TypeKind {
+    /// The type a pointer addresses, or `None` for a non-pointer. A structural accessor —
+    /// the pointer analogue of reading a struct's members — so callers needn't re-match
+    /// the [`Ptr`](TypeKind::Ptr) variant by hand.
+    #[inline]
+    #[must_use]
+    pub fn pointee(&self) -> Option<TypeId> {
+        match self {
+            TypeKind::Ptr(elem) => Some(*elem),
+            _ => None,
+        }
+    }
+}
+
 /// An interned arena of [`TypeData`]: structurally identical types collapse to one
 /// [`TypeId`].
 #[derive(Debug)]
@@ -224,6 +238,20 @@ mod tests {
         assert!(let TypeKind::Struct { members, .. } = &table.get(node).kind);
         // the member pointer resolves back to the struct itself
         assert!(table.get(members[0].ty).kind == TypeKind::Ptr(node));
+    }
+
+    /// `pointee` unwraps a pointer's element type and is `None` for everything else.
+    #[test]
+    fn pointee_unwraps_only_pointers() {
+        let mut table = TypeTable::new();
+        let elem = table.intern(int(4, true));
+        let ptr = table.intern(TypeData {
+            kind: TypeKind::Ptr(elem),
+            size: Some(8),
+        });
+        assert!(table.get(ptr).kind.pointee() == Some(elem));
+        assert!(let None = table.get(elem).kind.pointee());
+        assert!(let None = TypeKind::Void.pointee());
     }
 
     #[test]
