@@ -4,6 +4,7 @@
 
 use super::arena::Arena;
 use super::node::{Cexpr, Cinsn, ExprId, ExprNode, Lvar, LvarId, NodeRef, StmtId, StmtNode};
+use super::ops::{AssignOp, BinOp, UnOp};
 use super::types::{TypeData, TypeId, TypeTable};
 use crate::Ea;
 
@@ -60,6 +61,21 @@ impl Ctree {
         &self.stmts[id]
     }
 
+    /// The expression *kind* behind a handle: shorthand for [`expr(id)`](Self::expr)`.kind`,
+    /// the form matchers want when projecting with the [`Cexpr`] `as_*` accessors.
+    #[inline]
+    #[must_use]
+    pub fn kind(&self, id: ExprId) -> &Cexpr {
+        &self.exprs[id].kind
+    }
+
+    /// The statement *kind* behind a handle: shorthand for [`stmt(id)`](Self::stmt)`.kind`.
+    #[inline]
+    #[must_use]
+    pub fn stmt_kind(&self, id: StmtId) -> &Cinsn {
+        &self.stmts[id].kind
+    }
+
     /// The type behind a handle (e.g. an [`ExprNode::ty`]).
     #[inline]
     #[must_use]
@@ -100,6 +116,25 @@ impl Ctree {
     /// Every statement node, flat, in allocation order.
     pub fn stmts(&self) -> impl ExactSizeIterator<Item = (StmtId, &StmtNode)> {
         self.stmts.iter()
+    }
+
+    /// Every call in the tree as `(node, callee, args)` — the whole-tree scan behind
+    /// "find every call" without re-spelling the [`as_call`](Cexpr::as_call) filter.
+    pub fn calls(&self) -> impl Iterator<Item = (ExprId, ExprId, &[ExprId])> {
+        self.exprs()
+            .filter_map(|(id, node)| node.kind.as_call().map(|(callee, args)| (id, callee, args)))
+    }
+
+    /// Every assignment in the tree as `(node, op, lhs, rhs)`.
+    pub fn assigns(&self) -> impl Iterator<Item = (ExprId, AssignOp, ExprId, ExprId)> {
+        self.exprs()
+            .filter_map(|(id, node)| node.kind.as_assign().map(|(op, x, y)| (id, op, x, y)))
+    }
+
+    /// Every local-variable reference in the tree as `(node, lvar)`.
+    pub fn vars(&self) -> impl Iterator<Item = (ExprId, LvarId)> {
+        self.exprs()
+            .filter_map(|(id, node)| node.kind.as_var().map(|v| (id, v)))
     }
 
     /// Every interned type, flat.
@@ -222,25 +257,111 @@ impl CtreeBuilder {
         id
     }
 
-    /// Allocate an expression node of type `ty` (parent set later by
-    /// [`finish`](Self::finish)). `ea` is `None` for a synthetic node.
-    pub fn expr(&mut self, ea: Option<Ea>, ty: TypeId, kind: Cexpr) -> ExprId {
-        self.exprs.alloc(ExprNode {
-            ea,
-            ty,
-            parent: None,
-            kind,
-        })
+    /// `Var(lvar)`.
+    pub fn var(&mut self, ty: TypeId, lvar: LvarId) -> ExprId {
+        self.expr(ty, Cexpr::Var(lvar)).call()
     }
 
-    /// Allocate a statement node (parent set later by [`finish`](Self::finish)). `ea` is
-    /// `None` for a synthetic node.
-    pub fn stmt(&mut self, ea: Option<Ea>, kind: Cinsn) -> StmtId {
-        self.stmts.alloc(StmtNode {
-            ea,
-            parent: None,
-            kind,
-        })
+    /// An integer literal (raw bits; signedness rides on `ty`).
+    pub fn num(&mut self, ty: TypeId, value: u64) -> ExprId {
+        self.expr(ty, Cexpr::Num(value)).call()
+    }
+
+    /// A floating-point literal.
+    pub fn fnum(&mut self, ty: TypeId, value: f64) -> ExprId {
+        self.expr(ty, Cexpr::Fnum(value)).call()
+    }
+
+    /// A global/static reference at `ea`, with its symbol name when it has one.
+    pub fn obj(&mut self, ty: TypeId, ea: Ea, name: Option<&str>) -> ExprId {
+        self.expr(
+            ty,
+            Cexpr::Obj {
+                ea,
+                name: name.map(str::to_owned),
+            },
+        )
+        .call()
+    }
+
+    /// A string literal.
+    pub fn string(&mut self, ty: TypeId, s: impl Into<String>) -> ExprId {
+        self.expr(ty, Cexpr::Str(s.into())).call()
+    }
+
+    /// A decompiler helper name, e.g. `__readfsqword`.
+    pub fn helper(&mut self, ty: TypeId, s: impl Into<String>) -> ExprId {
+        self.expr(ty, Cexpr::Helper(s.into())).call()
+    }
+
+    /// `(ty)x`.
+    pub fn cast(&mut self, ty: TypeId, x: ExprId) -> ExprId {
+        self.expr(ty, Cexpr::Cast { x }).call()
+    }
+
+    /// `*x`, reading `size` bytes.
+    pub fn deref(&mut self, ty: TypeId, x: ExprId, size: u32) -> ExprId {
+        self.expr(ty, Cexpr::Deref { x, size }).call()
+    }
+
+    /// `OP x`.
+    pub fn unary(&mut self, ty: TypeId, op: UnOp, x: ExprId) -> ExprId {
+        self.expr(ty, Cexpr::Unary { op, x }).call()
+    }
+
+    /// `x OP y`.
+    pub fn binary(&mut self, ty: TypeId, op: BinOp, x: ExprId, y: ExprId) -> ExprId {
+        self.expr(ty, Cexpr::Binary { op, x, y }).call()
+    }
+
+    /// `x OP= y`.
+    pub fn assign(&mut self, ty: TypeId, op: AssignOp, x: ExprId, y: ExprId) -> ExprId {
+        self.expr(ty, Cexpr::Assign { op, x, y }).call()
+    }
+
+    /// `cond ? then_ : else_`.
+    pub fn ternary(&mut self, ty: TypeId, cond: ExprId, then_: ExprId, else_: ExprId) -> ExprId {
+        self.expr(ty, Cexpr::Ternary { cond, then_, else_ }).call()
+    }
+
+    /// `array[index]`.
+    pub fn index(&mut self, ty: TypeId, array: ExprId, index: ExprId) -> ExprId {
+        self.expr(ty, Cexpr::Index { array, index }).call()
+    }
+
+    /// `obj.field` at `byte_offset`.
+    pub fn member_ref(&mut self, ty: TypeId, obj: ExprId, byte_offset: u32) -> ExprId {
+        self.expr(ty, Cexpr::MemberRef { obj, byte_offset }).call()
+    }
+
+    /// `obj->field` at `byte_offset`.
+    pub fn member_ptr(&mut self, ty: TypeId, obj: ExprId, byte_offset: u32) -> ExprId {
+        self.expr(ty, Cexpr::MemberPtr { obj, byte_offset }).call()
+    }
+
+    /// `callee(args...)`.
+    pub fn call_expr(&mut self, ty: TypeId, callee: ExprId, args: Vec<ExprId>) -> ExprId {
+        self.expr(ty, Cexpr::Call { callee, args }).call()
+    }
+
+    /// `sizeof(x)`.
+    pub fn sizeof(&mut self, ty: TypeId, x: ExprId) -> ExprId {
+        self.expr(ty, Cexpr::Sizeof(x)).call()
+    }
+
+    /// `e;` — an expression in statement position.
+    pub fn expr_stmt(&mut self, e: ExprId) -> StmtId {
+        self.stmt(Cinsn::Expr(e)).call()
+    }
+
+    /// `{ ... }`.
+    pub fn block(&mut self, stmts: Vec<StmtId>) -> StmtId {
+        self.stmt(Cinsn::Block(stmts)).call()
+    }
+
+    /// `return [value];`.
+    pub fn ret(&mut self, value: Option<ExprId>) -> StmtId {
+        self.stmt(Cinsn::Return(value)).call()
     }
 
     /// Finalize the tree rooted at `root`, wiring every node's `parent` link by one
@@ -285,6 +406,40 @@ impl CtreeBuilder {
     }
 }
 
+#[bon::bon]
+impl CtreeBuilder {
+    /// Allocate an expression node (parent set later by [`finish`](Self::finish)). `ty` and
+    /// `kind` are positional; `ea` defaults to `None` (a synthetic node) and is set with
+    /// `.ea(addr)` for a node with a backing instruction. The per-variant constructors
+    /// (e.g. [`var`](Self::var), [`assign`](Self::assign)) are sugar over this for the
+    /// common `ea`-less case.
+    #[builder]
+    pub fn expr(
+        &mut self,
+        #[builder(start_fn)] ty: TypeId,
+        #[builder(start_fn)] kind: Cexpr,
+        ea: Option<Ea>,
+    ) -> ExprId {
+        self.exprs.alloc(ExprNode {
+            ea,
+            ty,
+            parent: None,
+            kind,
+        })
+    }
+
+    /// Allocate a statement node (parent set later by [`finish`](Self::finish)). `ea`
+    /// defaults to `None`; set it with `.ea(addr)` for a node with a backing instruction.
+    #[builder]
+    pub fn stmt(&mut self, #[builder(start_fn)] kind: Cinsn, ea: Option<Ea>) -> StmtId {
+        self.stmts.alloc(StmtNode {
+            ea,
+            parent: None,
+            kind,
+        })
+    }
+}
+
 impl Default for CtreeBuilder {
     fn default() -> Self {
         Self::new()
@@ -295,7 +450,7 @@ impl Default for CtreeBuilder {
 mod tests {
     use super::*;
     use crate::ctree::node::{Lvar, LvarId, LvarLocation};
-    use crate::ctree::ops::BinOp;
+    use crate::ctree::ops::{AssignOp, BinOp};
     use crate::ctree::types::TypeKind;
     use assert2::assert;
 
@@ -324,22 +479,13 @@ mod tests {
 
     /// Build `{ return a + b; }` and return the tree plus its handles.
     fn sample() -> (Ctree, StmtId, StmtId, ExprId, ExprId, ExprId) {
-        let ea = Some(Ea::new_const(0x1000));
         let mut b = CtreeBuilder::new();
         let int = b.intern_type(int32());
-        let va = b.expr(ea, int, Cexpr::Var(LvarId(0)));
-        let vb = b.expr(ea, int, Cexpr::Var(LvarId(1)));
-        let add = b.expr(
-            ea,
-            int,
-            Cexpr::Binary {
-                op: BinOp::Add,
-                x: va,
-                y: vb,
-            },
-        );
-        let ret = b.stmt(ea, Cinsn::Return(Some(add)));
-        let block = b.stmt(ea, Cinsn::Block(vec![ret]));
+        let va = b.var(int, LvarId(0));
+        let vb = b.var(int, LvarId(1));
+        let add = b.binary(int, BinOp::Add, va, vb);
+        let ret = b.ret(Some(add));
+        let block = b.block(vec![ret]);
         let tree = b.finish(block);
         (tree, block, ret, add, va, vb)
     }
@@ -384,6 +530,39 @@ mod tests {
         assert!(exprs == vec![add, va, vb]);
     }
 
+    /// `kind`/`stmt_kind` resolve a handle straight to its node kind — the shorthand the
+    /// matchers project from.
+    #[test]
+    fn kind_resolves_handles_to_their_node_kind() {
+        let (tree, block, ret, add, va, _vb) = sample();
+        assert!(let Cexpr::Binary { .. } = tree.kind(add));
+        assert!(let Cexpr::Var(_) = tree.kind(va));
+        assert!(let Cinsn::Block(_) = tree.stmt_kind(block));
+        assert!(let Cinsn::Return(_) = tree.stmt_kind(ret));
+    }
+
+    /// The semantic iterators enumerate every call/assign/var in the tree; building the
+    /// sample with the per-variant sugar actuates that side too.
+    #[test]
+    fn semantic_iterators_enumerate_their_kind() {
+        let mut b = CtreeBuilder::new();
+        let int = b.intern_type(int32());
+        let x = b.var(int, LvarId(0));
+        let a = b.var(int, LvarId(1));
+        let f = b.obj(int, Ea::new_const(0x40), Some("f"));
+        let call = b.call_expr(int, f, vec![a]);
+        let asg = b.assign(int, AssignOp::Assign, x, call);
+        let st = b.expr_stmt(asg);
+        let block = b.block(vec![st]);
+        let tree = b.finish(block);
+
+        let calls: Vec<_> = tree.calls().collect();
+        assert!(calls == vec![(call, f, [a].as_slice())]);
+        assert!(tree.assigns().collect::<Vec<_>>() == vec![(asg, AssignOp::Assign, x, call)]);
+        // Both `Var` references surface, in allocation order.
+        assert!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>() == vec![LvarId(0), LvarId(1)]);
+    }
+
     #[test]
     fn flat_iteration_covers_every_node() {
         let (tree, _block, _ret, _add, _va, _vb) = sample();
@@ -421,9 +600,9 @@ mod tests {
         b.push_lvar(lvar("local", int, false));
         let this = b.push_lvar(lvar("this", int, true));
         b.push_lvar(lvar("arg2", int, true));
-        let v = b.expr(None, int, Cexpr::Var(this));
-        let st = b.stmt(None, Cinsn::Expr(v));
-        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let v = b.var(int, this);
+        let st = b.expr_stmt(v);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(tree.this_lvar() == Some(this));
     }
@@ -433,7 +612,7 @@ mod tests {
         let mut b = CtreeBuilder::new();
         let int = b.intern_type(int32());
         b.push_lvar(lvar("local", int, false));
-        let block = b.stmt(None, Cinsn::Block(vec![]));
+        let block = b.block(vec![]);
         let tree = b.finish(block);
         assert!(let None = tree.this_lvar());
     }

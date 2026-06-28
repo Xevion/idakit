@@ -133,11 +133,11 @@ impl CallbackBuilder {
     }
 
     fn push_expr(&mut self, ea: u64, ty: u32, kind: Cexpr) -> u32 {
-        raw(self.b.expr(node_ea(ea), tid(ty), kind))
+        raw(self.b.expr(tid(ty), kind).maybe_ea(node_ea(ea)).call())
     }
 
     fn push_stmt(&mut self, ea: u64, kind: Cinsn) -> u32 {
-        raw(self.b.stmt(node_ea(ea), kind))
+        raw(self.b.stmt(kind).maybe_ea(node_ea(ea)).call())
     }
 
     fn num(&mut self, ea: u64, value: u64, ty: u32) -> u32 {

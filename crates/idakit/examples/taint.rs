@@ -49,7 +49,7 @@ struct FuncImage {
 /// Indirect calls (through a variable or computed pointer) stay unresolved. Enrichment
 /// win: the symbol name now rides on the `Obj` node, so this no longer needs the kernel.
 fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
-    let kind = &tree.expr(callee).kind;
+    let kind = tree.kind(callee);
     if let Some((_, name)) = kind.as_obj() {
         return name.map(str::to_owned);
     }
@@ -60,10 +60,8 @@ fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
 /// pure (no `Idb`) — the kernel-thread name resolution that used to dominate is gone.
 fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
     let mut map = HashMap::new();
-    for (id, node) in tree.exprs() {
-        if let Some((callee, _)) = node.kind.as_call()
-            && let Some(name) = callee_name(tree, callee)
-        {
+    for (id, callee, _) in tree.calls() {
+        if let Some(name) = callee_name(tree, callee) {
             map.insert(id, name);
         }
     }
@@ -75,7 +73,7 @@ fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
 fn expr_tainted(img: &FuncImage, e: ExprId, tainted: &HashSet<u32>) -> bool {
     img.tree
         .expr_descendants(NodeRef::Expr(e))
-        .any(|id| match img.tree.expr(id).kind.as_var() {
+        .any(|id| match img.tree.kind(id).as_var() {
             Some(LvarId(i)) => tainted.contains(&i),
             None => img.callees.get(&id).is_some_and(|n| matches(n, SOURCES)),
         })
@@ -87,10 +85,9 @@ fn analyze(img: &FuncImage) -> usize {
     // Collect `Var(i) = rhs` definitions once.
     let defs: Vec<(u32, ExprId)> = img
         .tree
-        .exprs()
-        .filter_map(|(_, node)| {
-            let (_, x, y) = node.kind.as_assign()?;
-            let LvarId(i) = img.tree.expr(x).kind.as_var()?;
+        .assigns()
+        .filter_map(|(_, _, x, y)| {
+            let LvarId(i) = img.tree.kind(x).as_var()?;
             Some((i, y))
         })
         .collect();
@@ -111,11 +108,8 @@ fn analyze(img: &FuncImage) -> usize {
 
     // Sinks: a tainted argument to a dangerous call is a flow.
     img.tree
-        .exprs()
-        .filter(|(id, node)| {
-            let Some((_, args)) = node.kind.as_call() else {
-                return false;
-            };
+        .calls()
+        .filter(|(id, _, args)| {
             img.callees.get(id).is_some_and(|n| matches(n, SINKS))
                 && args.iter().any(|a| expr_tainted(img, *a, &tainted))
         })

@@ -225,7 +225,7 @@ impl Printer<'_> {
 
     fn expr_inner(&mut self, id: ExprId) {
         let tree = self.tree;
-        match &tree.expr(id).kind {
+        match tree.kind(id) {
             Cexpr::Binary { op, x, y } => {
                 let (op, x, y) = (*op, *x, *y);
                 if op == BinOp::Comma {
@@ -347,7 +347,7 @@ impl Printer<'_> {
 
     /// The precedence of the operator at the root of `id` (primary for leaves).
     fn prec(&self, id: ExprId) -> u8 {
-        match &self.tree.expr(id).kind {
+        match self.tree.kind(id) {
             Cexpr::Binary { op, .. } => bin_prec(*op),
             Cexpr::Assign { .. } => P_ASSIGN,
             Cexpr::Ternary { .. } => P_TERNARY,
@@ -491,10 +491,6 @@ mod tests {
     use assert2::assert;
     use rstest::rstest;
 
-    fn ea() -> Option<Ea> {
-        Some(Ea::new_const(0x1000))
-    }
-
     fn int32(b: &mut CtreeBuilder) -> TypeId {
         b.intern_type(TypeData {
             kind: TypeKind::Int {
@@ -547,17 +543,10 @@ mod tests {
             size: Some(8),
         });
         let this = b.push_lvar(lvar("this", pderived));
-        let v = b.expr(ea(), pderived, Cexpr::Var(this));
-        let mp = b.expr(
-            ea(),
-            base,
-            Cexpr::MemberPtr {
-                obj: v,
-                byte_offset: 0,
-            },
-        );
-        let st = b.stmt(ea(), Cinsn::Expr(mp));
-        let block = b.stmt(ea(), Cinsn::Block(vec![st]));
+        let v = b.var(pderived, this);
+        let mp = b.member_ptr(base, v, 0);
+        let st = b.expr_stmt(mp);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
         assert!(out.contains("this->Base"), "got: {out}");
@@ -570,19 +559,11 @@ mod tests {
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
         let bb = b.push_lvar(lvar("b", int));
-        let va = b.expr(ea(), int, Cexpr::Var(a));
-        let vb = b.expr(ea(), int, Cexpr::Var(bb));
-        let add = b.expr(
-            ea(),
-            int,
-            Cexpr::Binary {
-                op: BinOp::Add,
-                x: va,
-                y: vb,
-            },
-        );
-        let ret = b.stmt(ea(), Cinsn::Return(Some(add)));
-        let block = b.stmt(ea(), Cinsn::Block(vec![ret]));
+        let va = b.var(int, a);
+        let vb = b.var(int, bb);
+        let add = b.binary(int, BinOp::Add, va, vb);
+        let ret = b.ret(Some(add));
+        let block = b.block(vec![ret]);
         let tree = b.finish(block);
         assert!(tree.to_pseudocode() == "{\n  return a + b;\n}\n");
     }
@@ -600,11 +581,11 @@ mod tests {
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
         let bb = b.push_lvar(lvar("b", int));
-        let va = b.expr(ea(), int, Cexpr::Var(a));
-        let vb = b.expr(ea(), int, Cexpr::Var(bb));
-        let bin = b.expr(ea(), int, Cexpr::Binary { op, x: va, y: vb });
-        let st = b.stmt(ea(), Cinsn::Expr(bin));
-        let block = b.stmt(ea(), Cinsn::Block(vec![st]));
+        let va = b.var(int, a);
+        let vb = b.var(int, bb);
+        let bin = b.binary(int, op, va, vb);
+        let st = b.expr_stmt(bin);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
         assert!(out.contains(expect), "got: {out}");
@@ -618,29 +599,13 @@ mod tests {
         let a = b.push_lvar(lvar("a", int));
         let c = b.push_lvar(lvar("b", int));
         let d = b.push_lvar(lvar("c", int));
-        let va = b.expr(ea(), int, Cexpr::Var(a));
-        let vb = b.expr(ea(), int, Cexpr::Var(c));
-        let vc = b.expr(ea(), int, Cexpr::Var(d));
-        let add = b.expr(
-            ea(),
-            int,
-            Cexpr::Binary {
-                op: BinOp::Add,
-                x: vb,
-                y: vc,
-            },
-        );
-        let mul = b.expr(
-            ea(),
-            int,
-            Cexpr::Binary {
-                op: BinOp::Mul,
-                x: va,
-                y: add,
-            },
-        );
-        let ret = b.stmt(ea(), Cinsn::Return(Some(mul)));
-        let block = b.stmt(ea(), Cinsn::Block(vec![ret]));
+        let va = b.var(int, a);
+        let vb = b.var(int, c);
+        let vc = b.var(int, d);
+        let add = b.binary(int, BinOp::Add, vb, vc);
+        let mul = b.binary(int, BinOp::Mul, va, add);
+        let ret = b.ret(Some(mul));
+        let block = b.block(vec![ret]);
         let tree = b.finish(block);
         assert!(
             tree.to_pseudocode().contains("a * (b + c)"),
@@ -657,29 +622,13 @@ mod tests {
         let a = b.push_lvar(lvar("a", int));
         let c = b.push_lvar(lvar("b", int));
         let d = b.push_lvar(lvar("c", int));
-        let va = b.expr(ea(), int, Cexpr::Var(a));
-        let vb = b.expr(ea(), int, Cexpr::Var(c));
-        let vc = b.expr(ea(), int, Cexpr::Var(d));
-        let inner = b.expr(
-            ea(),
-            int,
-            Cexpr::Binary {
-                op: BinOp::Sub,
-                x: va,
-                y: vb,
-            },
-        );
-        let outer = b.expr(
-            ea(),
-            int,
-            Cexpr::Binary {
-                op: BinOp::Sub,
-                x: inner,
-                y: vc,
-            },
-        );
-        let ret = b.stmt(ea(), Cinsn::Return(Some(outer)));
-        let block = b.stmt(ea(), Cinsn::Block(vec![ret]));
+        let va = b.var(int, a);
+        let vb = b.var(int, c);
+        let vc = b.var(int, d);
+        let inner = b.binary(int, BinOp::Sub, va, vb);
+        let outer = b.binary(int, BinOp::Sub, inner, vc);
+        let ret = b.ret(Some(outer));
+        let block = b.block(vec![ret]);
         let tree = b.finish(block);
         let s = tree.to_pseudocode();
         assert!(s.contains("a - b - c"), "got: {s}");
@@ -692,26 +641,12 @@ mod tests {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
-        let va = b.expr(ea(), int, Cexpr::Var(a));
-        let callee = b.expr(
-            ea(),
-            int,
-            Cexpr::Obj {
-                ea: Ea::new_const(0x2000),
-                name: Some("foo".into()),
-            },
-        );
-        let n = b.expr(ea(), int, Cexpr::Num(3));
-        let call = b.expr(
-            ea(),
-            int,
-            Cexpr::Call {
-                callee,
-                args: vec![va, n],
-            },
-        );
-        let st = b.stmt(ea(), Cinsn::Expr(call));
-        let block = b.stmt(ea(), Cinsn::Block(vec![st]));
+        let va = b.var(int, a);
+        let callee = b.obj(int, Ea::new_const(0x2000), Some("foo"));
+        let n = b.num(int, 3);
+        let call = b.call_expr(int, callee, vec![va, n]);
+        let st = b.expr_stmt(call);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(
             tree.to_pseudocode().contains("foo(a, 3)"),
@@ -726,28 +661,13 @@ mod tests {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
-        let va = b.expr(ea(), int, Cexpr::Var(a));
-        let neg = b.expr(
-            ea(),
-            int,
-            Cexpr::Unary {
-                op: UnOp::Neg,
-                x: va,
-            },
-        );
+        let va = b.var(int, a);
+        let neg = b.unary(int, UnOp::Neg, va);
         let r = b.push_lvar(lvar("r", int));
-        let asg = b.expr(ea(), int, Cexpr::Var(r));
-        let assign = b.expr(
-            ea(),
-            int,
-            Cexpr::Assign {
-                op: AssignOp::Assign,
-                x: asg,
-                y: neg,
-            },
-        );
-        let st = b.stmt(ea(), Cinsn::Expr(assign));
-        let block = b.stmt(ea(), Cinsn::Block(vec![st]));
+        let asg = b.var(int, r);
+        let assign = b.assign(int, AssignOp::Assign, asg, neg);
+        let st = b.expr_stmt(assign);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(
             tree.to_pseudocode().contains("r = -a;"),
@@ -761,13 +681,13 @@ mod tests {
     fn renders_string_and_numbers() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let s = b.expr(ea(), int, Cexpr::Str("hi".into()));
-        let big = b.expr(ea(), int, Cexpr::Num(255));
-        let small = b.expr(ea(), int, Cexpr::Num(7));
-        let st1 = b.stmt(ea(), Cinsn::Expr(s));
-        let st2 = b.stmt(ea(), Cinsn::Expr(big));
-        let st3 = b.stmt(ea(), Cinsn::Expr(small));
-        let block = b.stmt(ea(), Cinsn::Block(vec![st1, st2, st3]));
+        let s = b.string(int, "hi");
+        let big = b.num(int, 255);
+        let small = b.num(int, 7);
+        let st1 = b.expr_stmt(s);
+        let st2 = b.expr_stmt(big);
+        let st3 = b.expr_stmt(small);
+        let block = b.block(vec![st1, st2, st3]);
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
         assert!(out.contains("\"hi\";"), "got: {out}");
@@ -781,20 +701,19 @@ mod tests {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
-        let cond = b.expr(ea(), int, Cexpr::Var(a));
-        let r1 = b.stmt(ea(), Cinsn::Return(None));
-        let then_ = b.stmt(ea(), Cinsn::Block(vec![r1]));
-        let r2 = b.stmt(ea(), Cinsn::Break);
-        let else_ = b.stmt(ea(), Cinsn::Block(vec![r2]));
-        let iff = b.stmt(
-            ea(),
-            Cinsn::If {
+        let cond = b.var(int, a);
+        let r1 = b.ret(None);
+        let then_ = b.block(vec![r1]);
+        let r2 = b.stmt(Cinsn::Break).call();
+        let else_ = b.block(vec![r2]);
+        let iff = b
+            .stmt(Cinsn::If {
                 cond,
                 then_,
                 else_: Some(else_),
-            },
-        );
-        let block = b.stmt(ea(), Cinsn::Block(vec![iff]));
+            })
+            .call();
+        let block = b.block(vec![iff]);
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
         assert!(out.contains("if ( a )\n"), "got: {out}");
@@ -807,9 +726,9 @@ mod tests {
     fn missing_lvar_does_not_panic() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let v = b.expr(ea(), int, Cexpr::Var(LvarId(7)));
-        let st = b.stmt(ea(), Cinsn::Expr(v));
-        let block = b.stmt(ea(), Cinsn::Block(vec![st]));
+        let v = b.var(int, LvarId(7));
+        let st = b.expr_stmt(v);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(
             tree.to_pseudocode().contains("v7"),

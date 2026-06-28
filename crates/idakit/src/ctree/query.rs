@@ -51,7 +51,7 @@ pub struct ThisCall {
 /// [`global_target`], and public so custom matchers peel the same way.
 pub fn strip_casts(tree: &Ctree, mut e: ExprId) -> ExprId {
     loop {
-        match &tree.expr(e).kind {
+        match tree.kind(e) {
             Cexpr::Cast { x } | Cexpr::Unary { op: UnOp::Ref, x } => e = *x,
             _ => return e,
         }
@@ -70,7 +70,7 @@ pub fn strip_casts(tree: &Ctree, mut e: ExprId) -> ExprId {
 pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
     // Casts and `&` rename nothing; peel them first so the match below sees the place node.
     let e = strip_casts(tree, e);
-    match &tree.expr(e).kind {
+    match tree.kind(e) {
         Cexpr::Var(v) => Some((*v, 0)),
         Cexpr::MemberRef { obj, byte_offset } | Cexpr::MemberPtr { obj, byte_offset } => {
             base_var(tree, *obj).map(|(v, off)| (v, off + i64::from(*byte_offset)))
@@ -86,7 +86,7 @@ pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
             x,
             y,
         } => {
-            let (base, k) = match (&tree.expr(*x).kind, &tree.expr(*y).kind) {
+            let (base, k) = match (tree.kind(*x), tree.kind(*y)) {
                 (_, Cexpr::Num(k)) => (*x, *k),
                 (Cexpr::Num(k), _) => (*y, *k),
                 _ => return None,
@@ -107,7 +107,7 @@ fn pointee_size(tree: &Ctree, e: ExprId) -> Option<i64> {
 
 /// Follow `e` through `Cast`/`&` down to a [`Cexpr::Obj`], returning the global it names.
 pub fn global_target(tree: &Ctree, e: ExprId) -> Option<GlobalRef> {
-    let (ea, name) = tree.expr(strip_casts(tree, e)).kind.as_obj()?;
+    let (ea, name) = tree.kind(strip_casts(tree, e)).as_obj()?;
     Some(GlobalRef {
         ea,
         name: name.map(str::to_owned),
@@ -120,9 +120,8 @@ pub fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
     let Some(this) = tree.this_lvar() else {
         return Vec::new();
     };
-    tree.exprs()
-        .filter_map(|(_, node)| {
-            let (op, x, y) = node.kind.as_assign()?;
+    tree.assigns()
+        .filter_map(|(_, op, x, y)| {
             if op != AssignOp::Assign {
                 return None;
             }
@@ -146,9 +145,8 @@ pub fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
     let Some(this) = tree.this_lvar() else {
         return Vec::new();
     };
-    tree.exprs()
-        .filter_map(|(_, node)| {
-            let (callee, args) = node.kind.as_call()?;
+    tree.calls()
+        .filter_map(|(_, callee, args)| {
             let g = global_target(tree, callee)?;
             let (v, off) = base_var(tree, *args.first()?)?;
             if v != this {
@@ -166,7 +164,7 @@ pub fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ctree::node::{Cinsn, Lvar, LvarLocation};
+    use crate::ctree::node::{Lvar, LvarLocation};
     use crate::ctree::tree::CtreeBuilder;
     use crate::ctree::types::{TypeData, TypeKind};
     use assert2::assert;
@@ -204,170 +202,47 @@ mod tests {
         let mut b = CtreeBuilder::new();
         let t = ty(&mut b);
         let this = b.push_lvar(this_lvar_def("this", t));
-        let none = None;
 
-        // primary vtable install: Assign( MemberRef{0}(MemberPtr{0}(this)), Cast(Obj) )
-        let v0 = b.expr(none, t, Cexpr::Var(this));
-        let mp0 = b.expr(
-            none,
-            t,
-            Cexpr::MemberPtr {
-                obj: v0,
-                byte_offset: 0,
-            },
-        );
-        let mr0 = b.expr(
-            none,
-            t,
-            Cexpr::MemberRef {
-                obj: mp0,
-                byte_offset: 0,
-            },
-        );
-        let o1 = b.expr(
-            none,
-            t,
-            Cexpr::Obj {
-                ea: Ea::new_const(0x1000),
-                name: Some("vtbl_primary".into()),
-            },
-        );
-        let c1 = b.expr(none, t, Cexpr::Cast { x: o1 });
-        let a1 = b.expr(
-            none,
-            t,
-            Cexpr::Assign {
-                op: AssignOp::Assign,
-                x: mr0,
-                y: c1,
-            },
-        );
+        // primary vtable install: this->_vptr = (..)&vtbl_primary  (offset 0)
+        let v0 = b.var(t, this);
+        let mp0 = b.member_ptr(t, v0, 0);
+        let mr0 = b.member_ref(t, mp0, 0);
+        let o1 = b.obj(t, Ea::new_const(0x1000), Some("vtbl_primary"));
+        let c1 = b.cast(t, o1);
+        let a1 = b.assign(t, AssignOp::Assign, mr0, c1);
 
-        // subobject install: Assign( MemberRef{0}(MemberPtr{16}(this)), Cast(&Obj) )
-        let v1 = b.expr(none, t, Cexpr::Var(this));
-        let mp16 = b.expr(
-            none,
-            t,
-            Cexpr::MemberPtr {
-                obj: v1,
-                byte_offset: 16,
-            },
-        );
-        let mr0b = b.expr(
-            none,
-            t,
-            Cexpr::MemberRef {
-                obj: mp16,
-                byte_offset: 0,
-            },
-        );
-        let o2 = b.expr(
-            none,
-            t,
-            Cexpr::Obj {
-                ea: Ea::new_const(0x2000),
-                name: Some("vtbl_sub".into()),
-            },
-        );
-        let r2 = b.expr(
-            none,
-            t,
-            Cexpr::Unary {
-                op: UnOp::Ref,
-                x: o2,
-            },
-        );
-        let c2 = b.expr(none, t, Cexpr::Cast { x: r2 });
-        let a2 = b.expr(
-            none,
-            t,
-            Cexpr::Assign {
-                op: AssignOp::Assign,
-                x: mr0b,
-                y: c2,
-            },
-        );
+        // subobject install: this->Other._vptr = (..)&vtbl_sub  (offset 16)
+        let v1 = b.var(t, this);
+        let mp16 = b.member_ptr(t, v1, 16);
+        let mr0b = b.member_ref(t, mp16, 0);
+        let o2 = b.obj(t, Ea::new_const(0x2000), Some("vtbl_sub"));
+        let r2 = b.unary(t, UnOp::Ref, o2);
+        let c2 = b.cast(t, r2);
+        let a2 = b.assign(t, AssignOp::Assign, mr0b, c2);
 
-        // base ctor call: Call(Obj(BaseCtor), [Var(this)])
-        let v2 = b.expr(none, t, Cexpr::Var(this));
-        let oc1 = b.expr(
-            none,
-            t,
-            Cexpr::Obj {
-                ea: Ea::new_const(0x3000),
-                name: Some("BaseCtor".into()),
-            },
-        );
-        let call1 = b.expr(
-            none,
-            t,
-            Cexpr::Call {
-                callee: oc1,
-                args: vec![v2],
-            },
-        );
+        // base ctor call: BaseCtor(this)  (offset 0)
+        let v2 = b.var(t, this);
+        let oc1 = b.obj(t, Ea::new_const(0x3000), Some("BaseCtor"));
+        let call1 = b.call_expr(t, oc1, vec![v2]);
 
-        // subobject ctor call: Call(Obj(OtherCtor), [&this->Other])
-        let v3 = b.expr(none, t, Cexpr::Var(this));
-        let mp16b = b.expr(
-            none,
-            t,
-            Cexpr::MemberPtr {
-                obj: v3,
-                byte_offset: 16,
-            },
-        );
-        let r4 = b.expr(
-            none,
-            t,
-            Cexpr::Unary {
-                op: UnOp::Ref,
-                x: mp16b,
-            },
-        );
-        let oc2 = b.expr(
-            none,
-            t,
-            Cexpr::Obj {
-                ea: Ea::new_const(0x4000),
-                name: Some("OtherCtor".into()),
-            },
-        );
-        let call2 = b.expr(
-            none,
-            t,
-            Cexpr::Call {
-                callee: oc2,
-                args: vec![r4],
-            },
-        );
+        // subobject ctor call: OtherCtor(&this->Other)  (offset 16)
+        let v3 = b.var(t, this);
+        let mp16b = b.member_ptr(t, v3, 16);
+        let r4 = b.unary(t, UnOp::Ref, mp16b);
+        let oc2 = b.obj(t, Ea::new_const(0x4000), Some("OtherCtor"));
+        let call2 = b.call_expr(t, oc2, vec![r4]);
 
-        // field init: Assign( MemberPtr{28}(this), Num(4) ) — not a vtable install
-        let v4 = b.expr(none, t, Cexpr::Var(this));
-        let mp28 = b.expr(
-            none,
-            t,
-            Cexpr::MemberPtr {
-                obj: v4,
-                byte_offset: 28,
-            },
-        );
-        let num = b.expr(none, t, Cexpr::Num(4));
-        let a3 = b.expr(
-            none,
-            t,
-            Cexpr::Assign {
-                op: AssignOp::Assign,
-                x: mp28,
-                y: num,
-            },
-        );
+        // field init: this->d = 4  (NOT a vtable install)
+        let v4 = b.var(t, this);
+        let mp28 = b.member_ptr(t, v4, 28);
+        let num = b.num(t, 4);
+        let a3 = b.assign(t, AssignOp::Assign, mp28, num);
 
         let stmts: Vec<_> = [a1, a2, call1, call2, a3]
             .into_iter()
-            .map(|e| b.stmt(none, Cinsn::Expr(e)))
+            .map(|e| b.expr_stmt(e))
             .collect();
-        let block = b.stmt(none, Cinsn::Block(stmts));
+        let block = b.block(stmts);
         b.finish(block)
     }
 
@@ -382,18 +257,11 @@ mod tests {
     fn strip_casts_peels_cast_and_ref_but_stops_at_deref() {
         let mut b = CtreeBuilder::new();
         let t = ty(&mut b);
-        let obj = b.expr(
-            None,
-            t,
-            Cexpr::Obj {
-                ea: Ea::new_const(0x10),
-                name: None,
-            },
-        );
-        let deref = b.expr(None, t, Cexpr::Deref { x: obj, size: 8 });
-        let cast = b.expr(None, t, Cexpr::Cast { x: deref });
-        let st = b.stmt(None, Cinsn::Expr(cast));
-        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let obj = b.obj(t, Ea::new_const(0x10), None);
+        let deref = b.deref(t, obj, 8);
+        let cast = b.cast(t, deref);
+        let st = b.expr_stmt(cast);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         // `(T)(*obj)`: the cast peels, the deref does not.
         assert!(strip_casts(&tree, cast) == deref);
@@ -405,14 +273,12 @@ mod tests {
     fn base_var_threads_offset_through_member_and_address_ops() {
         let tree = ctor_tree();
         // Find the `&this->Other` argument of the OtherCtor call and resolve it.
-        let (_, call) = tree
-            .exprs()
-            .find(|(_, n)| {
-                matches!(&n.kind, Cexpr::Call { callee, .. }
-                    if matches!(&tree.expr(*callee).kind, Cexpr::Obj { name: Some(n), .. } if n == "OtherCtor"))
+        let (_, _, args) = tree
+            .calls()
+            .find(|(_, callee, _)| {
+                matches!(tree.kind(*callee), Cexpr::Obj { name: Some(n), .. } if n == "OtherCtor")
             })
             .expect("OtherCtor call");
-        assert!(let Cexpr::Call { args, .. } = &call.kind);
         assert!(base_var(&tree, args[0]) == Some((LvarId(0), 16)));
     }
 
@@ -441,30 +307,15 @@ mod tests {
             size: Some(8),
         });
         let this = b.push_lvar(this_lvar_def("this", ptr));
-        let v = b.expr(None, ptr, Cexpr::Var(this));
-        let cast = b.expr(None, ptr, Cexpr::Cast { x: v });
-        let num = b.expr(None, elem, Cexpr::Num(index));
-        let add = b.expr(
-            None,
-            ptr,
-            Cexpr::Binary {
-                op: BinOp::Add,
-                x: cast,
-                y: num,
-            },
-        );
+        let v = b.var(ptr, this);
+        let cast = b.cast(ptr, v);
+        let num = b.num(elem, index);
+        let add = b.binary(ptr, BinOp::Add, cast, num);
         // The install/arg shapes wrap the arithmetic in a `*(...)` or `(T)(...)`; resolving
         // through that wrapper is the whole point.
-        let deref = b.expr(
-            None,
-            elem,
-            Cexpr::Deref {
-                x: add,
-                size: u32::from(elem_bytes),
-            },
-        );
-        let st = b.stmt(None, Cinsn::Expr(deref));
-        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let deref = b.deref(elem, add, u32::from(elem_bytes));
+        let st = b.expr_stmt(deref);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(base_var(&tree, deref) == Some((this, expect)));
     }
@@ -481,19 +332,11 @@ mod tests {
             size: Some(4),
         });
         let this = b.push_lvar(this_lvar_def("this", int));
-        let v = b.expr(None, int, Cexpr::Var(this));
-        let num = b.expr(None, int, Cexpr::Num(4));
-        let add = b.expr(
-            None,
-            int,
-            Cexpr::Binary {
-                op: BinOp::Add,
-                x: v,
-                y: num,
-            },
-        );
-        let st = b.stmt(None, Cinsn::Expr(add));
-        let block = b.stmt(None, Cinsn::Block(vec![st]));
+        let v = b.var(int, this);
+        let num = b.num(int, 4);
+        let add = b.binary(int, BinOp::Add, v, num);
+        let st = b.expr_stmt(add);
+        let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(let None = base_var(&tree, add));
     }

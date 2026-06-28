@@ -10,8 +10,8 @@ fn dump(tree: &idakit::ctree::Ctree, node: idakit::ctree::NodeRef, depth: usize)
     use idakit::ctree::NodeRef;
     let pad = "  ".repeat(depth);
     let label = match node {
-        NodeRef::Expr(id) => format!("{:?}", tree.expr(id).kind),
-        NodeRef::Stmt(id) => format!("{:?}", tree.stmt(id).kind),
+        NodeRef::Expr(id) => format!("{:?}", tree.kind(id)),
+        NodeRef::Stmt(id) => format!("{:?}", tree.stmt_kind(id)),
     };
     let line: String = label
         .lines()
