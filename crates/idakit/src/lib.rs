@@ -84,7 +84,7 @@ pub use func::{Chunk, Chunks, Func, FuncImage, Functions, Instructions};
 pub use insn::{
     Access, DecodeError, Dtype, Flow, Insn, Isa, Mem, Operand, OperandKind, Reg, RegClass,
 };
-pub use kernel::Ida;
+pub use kernel::{Ida, IdaConfig, IdaConfigBuilder};
 pub use meta::Meta;
 pub use name::{Name, Names};
 pub use segment::{Segment, Segments};

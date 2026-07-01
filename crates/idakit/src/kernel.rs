@@ -51,6 +51,15 @@ pub struct Ida {
 const KERNEL_STACK_DEFAULT: usize = 8 << 20;
 
 impl Ida {
+    /// Start configuring kernel bring-up; chain setters (`stack_size`, and policies as they
+    /// land), then finish with `.run(app)` or `.here()`. The [`run`](Self::run) /
+    /// [`here`](Self::here) shortcuts skip the builder for the defaults.
+    // Deliberate builder entry (Command::new style), not a constructor returning Self.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new() -> IdaConfigBuilder {
+        IdaConfig::builder()
+    }
+
     /// Bring the kernel up *on the current thread* and return the open database -- no
     /// kernel thread, no closure. The `!Send` [`Idb`] lives here; dropping it releases
     /// the kernel. For scripts, tests, and CLIs that own their thread. Prefer
@@ -156,6 +165,54 @@ impl Ida {
             Ok(Err(payload)) => Err(CallError::Panicked(payload)),
             Err(_) => Err(CallError::Disconnected),
         }
+    }
+}
+
+/// Kernel bring-up configuration, built via [`Ida::new`] and finished with
+/// [`run`](IdaConfigBuilder::run) or [`here`](IdaConfigBuilder::here). Policy setters
+/// (console, signals, batch, ...) land here as they're implemented.
+#[derive(bon::Builder)]
+pub struct IdaConfig {
+    /// Kernel-thread stack in bytes; ignored by [`here`](IdaConfigBuilder::here), which runs
+    /// on the current thread. Defaults to 8 MiB -- raise only for deep decompilation.
+    #[builder(default = KERNEL_STACK_DEFAULT)]
+    stack_size: usize,
+}
+
+impl IdaConfig {
+    /// Bring the kernel up on a dedicated thread and run `app`; see [`Ida::run`].
+    pub fn run<R, F>(self, app: F) -> Result<R, InitError>
+    where
+        F: FnOnce(Ida) -> R,
+    {
+        Ida::run_with_stack(self.stack_size, app)
+    }
+
+    /// Bring the kernel up on the current thread and return the [`Idb`]; see [`Ida::here`].
+    pub fn here(self) -> Result<Idb, InitError> {
+        Ida::here()
+    }
+}
+
+use ida_config_builder::{IsComplete, State};
+
+/// Finish the builder in place, without an intervening `.build()`.
+impl<S: State> IdaConfigBuilder<S> {
+    /// Bring the kernel up on a dedicated thread and run `app`; see [`Ida::run`].
+    pub fn run<R, F>(self, app: F) -> Result<R, InitError>
+    where
+        S: IsComplete,
+        F: FnOnce(Ida) -> R,
+    {
+        self.build().run(app)
+    }
+
+    /// Bring the kernel up on the current thread and return the [`Idb`]; see [`Ida::here`].
+    pub fn here(self) -> Result<Idb, InitError>
+    where
+        S: IsComplete,
+    {
+        self.build().here()
     }
 }
 
