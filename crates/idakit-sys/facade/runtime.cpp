@@ -24,10 +24,9 @@
 
 #include "idakit_facade_internal.hpp"
 
-// The SDK's pro.h poisons direct stdio (#define stdout dont_use_stdout, ...) to push
-// callers onto IDA's own msg()/qfflush wrappers. The fatal-exit output capture works at
-// the libc/fd level deliberately -- it must catch whatever IDA writes, however it writes
-// it -- so undo the poisoning for the handful of symbols it uses.
+// pro.h #defines stdout/stderr/fflush to poisoned names, pushing callers onto IDA's
+// msg()/qfflush wrappers. Output capture works at the fd level (to catch everything IDA
+// writes, however it writes it), so undo the poisoning for the symbols it needs.
 #undef stdout
 #undef stderr
 #undef fflush
@@ -35,23 +34,18 @@
 #undef tmpfile
 #undef fileno
 
-// Fatal-exit trap.
-// IDA reports unrecoverable conditions (e.g. an unaccepted license) by calling
-// verror() -> qexit() -> libc exit(): it terminates the whole process instead of
-// returning an error a library caller could handle. We redirect libida's own call
-// table (GOT) entry for exit() to our handler: while a guarded kernel call is on the
-// stack we convert the exit into a longjmp back to the guard and report it as an error;
-// outside a guarded call we defer to the real exit so ordinary shutdown is untouched.
-//
-// GOT patching (rather than ELF symbol interposition) is deliberate: it needs no special
-// link flag on the final executable, so the trap works for any binary that links idakit.
+// Fatal traps.
+// IDA kills the process on unrecoverable conditions instead of returning an error: an
+// unaccepted license runs verror() -> qexit() -> exit(), and bundled LLVM/libc++ asserts
+// call abort() directly. We redirect libida's GOT slots for both to our handlers: inside a
+// guarded call they longjmp back and report an error; outside one they defer to the real
+// exit/abort, leaving ordinary shutdown and genuine crashes untouched. GOT patching (not
+// symbol interposition) needs no link flag, so it works for any binary linking idakit.
 namespace idakit_facade {
 
-// libida's verror/qexit frames carry no unwind info -- a C++ exception thrown from our
-// exit() stand-in aborts (SIGABRT) trying to propagate through them. longjmp does not
-// rely on unwind info (it just restores the stack pointer), so it is the only mechanism
-// that escapes a fatal exit. It must jump back to a setjmp in the *same C call chain*,
-// with no Rust frame in between (Rust frames have no longjmp support and would leak/UB).
+// libida's frames carry no unwind info, so a C++ throw from our stand-in can't propagate
+// through them -- longjmp can (it just restores the stack pointer). It must reach a setjmp
+// in the same C call chain, with no Rust frame between (Rust can't be longjmped over).
 thread_local jmp_buf g_exit_jmp;
 thread_local bool g_exit_guarded = false;
 thread_local int g_exit_code = 0;
@@ -62,7 +56,9 @@ thread_local std::string g_output;
 
 namespace {
 typedef void (*exit_fn)(int);
+typedef void (*abort_fn)(void);
 exit_fn g_real_exit = nullptr;
+abort_fn g_real_abort = nullptr;
 bool g_trap_installed = false;
 
 // Our stand-in for libida's exit(): jump back to the armed guard if a guarded kernel call
@@ -76,6 +72,18 @@ void idakit_exit(int status) {
   if (g_real_exit != nullptr)
     g_real_exit(status);
   _exit(status);
+}
+
+// Same escape as idakit_exit, for the abort() path; defer to the real abort outside a guard.
+[[noreturn]] void idakit_abort(void) {
+  if (g_exit_guarded) {
+    g_exit_guarded = false;
+    g_exit_code = 134; // 128 + SIGABRT
+    longjmp(g_exit_jmp, 1);
+  }
+  if (g_real_abort != nullptr)
+    g_real_abort();
+  _exit(134);
 }
 
 // Overwrite one GOT slot, handling a possibly read-only (RELRO) page. Left writable
@@ -102,7 +110,7 @@ void scan_rela(ElfW(Addr) base, const ElfW(Rela) * rela, size_t count, const Elf
 }
 
 // dl_iterate_phdr callback: for each loaded libida*/libidalib* object, walk its dynamic
-// relocations and point its `exit` slot at idakit_exit.
+// relocations and point its `exit`/`abort` slots at our stand-ins.
 int patch_cb(struct dl_phdr_info *info, size_t, void *) {
   const char *objname = info->dlpi_name != nullptr ? info->dlpi_name : "";
   if (strstr(objname, "libida") == nullptr)
@@ -158,30 +166,36 @@ int patch_cb(struct dl_phdr_info *info, size_t, void *) {
   if (symtab == nullptr || strtab == nullptr)
     return 0;
 
-  void *trap = reinterpret_cast<void *>(&idakit_exit);
-  if (jmprel != nullptr && pltrelsz > 0)
-    scan_rela(info->dlpi_addr, jmprel, pltrelsz / sizeof(ElfW(Rela)), symtab, strtab, "exit", trap);
-  if (rela != nullptr && relasz > 0 && relaent > 0)
-    scan_rela(info->dlpi_addr, rela, relasz / relaent, symtab, strtab, "exit", trap);
+  void *exit_trap = reinterpret_cast<void *>(&idakit_exit);
+  void *abort_trap = reinterpret_cast<void *>(&idakit_abort);
+  if (jmprel != nullptr && pltrelsz > 0) {
+    size_t n = pltrelsz / sizeof(ElfW(Rela));
+    scan_rela(info->dlpi_addr, jmprel, n, symtab, strtab, "exit", exit_trap);
+    scan_rela(info->dlpi_addr, jmprel, n, symtab, strtab, "abort", abort_trap);
+  }
+  if (rela != nullptr && relasz > 0 && relaent > 0) {
+    size_t n = relasz / relaent;
+    scan_rela(info->dlpi_addr, rela, n, symtab, strtab, "exit", exit_trap);
+    scan_rela(info->dlpi_addr, rela, n, symtab, strtab, "abort", abort_trap);
+  }
   return 0;
 }
 } // namespace
 
-// Point libida's exit() at our handler. Idempotent; safe to call before every guarded
-// entry (the work happens once).
-void install_exit_trap() {
+// Point libida's exit()/abort() at our handlers. Idempotent; safe to call before every
+// guarded entry (the work happens once).
+void install_fatal_traps() {
   if (g_trap_installed)
     return;
   g_trap_installed = true;
   g_real_exit = reinterpret_cast<exit_fn>(dlsym(RTLD_DEFAULT, "exit"));
+  g_real_abort = reinterpret_cast<abort_fn>(dlsym(RTLD_DEFAULT, "abort"));
   dl_iterate_phdr(patch_cb, nullptr);
 }
 
-// Redirect fd 1 and 2 to a fresh temp file, saving the originals. Returns the capture
-// FILE* (nullptr if capture could not be set up, in which case fds are untouched). IDA
-// writes diagnostics (the "License not yet accepted" line, analysis chatter) straight to
-// the process's stdout; capturing keeps that off the caller's console so the text can ride
-// along with the error instead.
+// Redirect fd 1+2 to a fresh temp file, saving the originals; returns the capture FILE*
+// (nullptr on failure, fds untouched). IDA writes diagnostics straight to fd 1/2, so this
+// keeps them off the caller's console to ride along with the error instead.
 FILE *begin_capture(int *saved_out, int *saved_err) {
   (void)fflush(stdout);
   (void)fflush(stderr);
@@ -228,10 +242,10 @@ void end_capture(FILE *cap, int saved_out, int saved_err) {
 
 using namespace idakit_facade;
 
-// libidalib's load-time init registers an atexit that prints a goodbye banner to stdout,
-// which corrupts stdout parsers like `nextest --list`. This constructor runs after that
-// init, so its atexit runs *before* the banner (LIFO): redirecting fd 1 to /dev/null at exit
-// swallows the banner while leaving run-time output, already written, untouched.
+// libidalib's init registers an atexit that prints a goodbye banner to stdout, corrupting
+// parsers like `nextest --list`. Our constructor runs after that init, so our atexit runs
+// before the banner (LIFO): redirecting fd 1 to /dev/null at exit swallows it, leaving
+// already-written run-time output untouched.
 namespace {
 void swallow_exit_banner() {
   int devnull = open("/dev/null", O_WRONLY);
@@ -275,11 +289,9 @@ extern "C" int idakit_reg_read_int(const char *name, int defval) {
   return reg_read_int(name, defval, nullptr);
 }
 
-// Record acceptance of the IDA end-user license agreement in the registry -- exactly
-// what the GUI writes when the user clicks Accept. Without it, headless idalib refuses
-// to open a database ("License not yet accepted, cannot run in batch mode"). The key is
-// "EULA <version>"; 90 is the version this IDA 9.3 runtime checks. Idempotent. Returns
-// the key's value after writing (nonzero = accepted).
+// Write EULA acceptance to the registry, as the GUI does on Accept; without it headless
+// idalib refuses to open ("License not yet accepted"). Key is "EULA <version>"; 90 is what
+// IDA 9.3 checks. Idempotent; returns the value after writing (nonzero = accepted).
 extern "C" int idakit_accept_eula(void) {
   reg_write_bool("EULA 90", 1, nullptr);
   return reg_read_int("EULA 90", 0, nullptr);
@@ -296,3 +308,17 @@ extern "C" size_t idakit_last_output(char *buf, size_t cap) {
   }
   return n;
 }
+
+#ifdef IDAKIT_TEST_SHIMS
+// Run the chosen fatal inside guarded<> so the trap tests can prove it's caught. Calls the
+// same stand-ins libida's patched GOT slots point at, exercising the longjmp path directly.
+extern "C" int idakit_test_fatal(int kind) {
+  return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [kind]() -> int {
+    if (kind == IDAKIT_FATAL_EXIT)
+      idakit_exit(42);
+    else if (kind == IDAKIT_FATAL_ABORT)
+      idakit_abort();
+    return 0;
+  });
+}
+#endif

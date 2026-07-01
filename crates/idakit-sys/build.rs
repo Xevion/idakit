@@ -46,6 +46,11 @@ fn main() {
         .flag(sdk_include_str)
         .define("__EA64__", None)
         .define("__LINUX__", None);
+    // Fault-injection shim for the trap tests -- see the `test-shims` feature. Cargo sets this
+    // env when the feature is on; it gates `idakit_test_fatal` in the facade.
+    if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
+        build.define("IDAKIT_TEST_SHIMS", None);
+    }
     for src in FACADE_SOURCES {
         build.file(src);
     }

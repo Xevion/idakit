@@ -5,6 +5,11 @@
 [test-groups]
 serial-kernel = { max-threads = 1 }
 
+# A kernel fatal that the facade traps but that leaks a held qmutex turns "clean crash" into a
+# silent deadlock on the next kernel call. terminate-after bounds that: a wedged kernel test is
+# killed (and fails) rather than hanging the suite. The period is generous so a legitimately
+# slow open/analysis on a large database is not mistaken for a hang.
 [[profile.default.overrides]]
 filter = 'kind(test)'
 test-group = 'serial-kernel'
+slow-timeout = { period = "60s", terminate-after = 3 }

@@ -35,12 +35,11 @@ unsafe extern "C" {
     pub fn qstrerror(code: c_int) -> *const c_char;
 }
 
-// Fatal-exit trap. The guarded entry points (open, auto_wait, close, decompile) wrap their
-// SDK call in a `setjmp` guard and redirect libida's GOT entry for `exit` to a handler that
-// `longjmp`s back, so IDA's `verror -> qexit -> exit` fatal path (e.g. an unaccepted
-// license) becomes a return value instead of a dead process. A guarded call returns its
-// normal rc, or `IDAKIT_EXIT_TRAPPED` (and sets `idakit_was_trapped`) when an exit was
-// caught; `idakit_last_exit_code` then holds the code and `idakit_last_output` the capture.
+// Fatal trap. The guarded entry points (open, auto_wait, close, decompile) wrap their SDK
+// call in a `setjmp` guard and redirect libida's GOT `exit`/`abort` slots to handlers that
+// `longjmp` back, turning IDA's fatal paths (unaccepted license, LLVM/libc++ asserts) into a
+// return value. A guarded call returns its normal rc, or `IDAKIT_EXIT_TRAPPED` (and sets
+// `idakit_was_trapped`); `idakit_last_exit_code`/`idakit_last_output` then carry the detail.
 pub const IDAKIT_EXIT_TRAPPED: c_int = -0x7FFF_FFFF;
 unsafe extern "C" {
     pub fn idakit_guarded_open(path: *const c_char, run_auto: c_int) -> c_int;
@@ -51,4 +50,18 @@ unsafe extern "C" {
     pub fn idakit_last_output(buf: *mut c_char, cap: usize) -> usize;
     pub fn idakit_reg_read_int(name: *const c_char, defval: c_int) -> c_int;
     pub fn idakit_accept_eula() -> c_int;
+}
+
+/// [`idakit_test_fatal`] kind: run `exit()` inside the guarded call.
+#[cfg(feature = "test-shims")]
+pub const IDAKIT_FATAL_EXIT: c_int = 0;
+/// [`idakit_test_fatal`] kind: run `abort()` inside the guarded call.
+#[cfg(feature = "test-shims")]
+pub const IDAKIT_FATAL_ABORT: c_int = 1;
+
+// Fault-injection shim, compiled into the facade only under `test-shims`. Runs the chosen
+// fatal inside `guarded<>` so the trap tests can prove it becomes `IDAKIT_EXIT_TRAPPED`.
+#[cfg(feature = "test-shims")]
+unsafe extern "C" {
+    pub fn idakit_test_fatal(kind: c_int) -> c_int;
 }

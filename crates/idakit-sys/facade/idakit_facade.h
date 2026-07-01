@@ -27,6 +27,15 @@ size_t idakit_last_output(char *buf, size_t cap); /* captured stdout+stderr; len
 int idakit_reg_read_int(const char *name, int defval); /* read an int/bool registry value */
 int idakit_accept_eula(void); /* record EULA acceptance; returns its value */
 
+/* Fault-injection shim, compiled only under the `test-shims` feature. Runs the chosen fatal
+ * inside the guarded<> wrapper so the trap tests can prove it is converted to
+ * IDAKIT_EXIT_TRAPPED rather than terminating the process. */
+#ifdef IDAKIT_TEST_SHIMS
+#define IDAKIT_FATAL_EXIT 0
+#define IDAKIT_FATAL_ABORT 1
+int idakit_test_fatal(int kind);
+#endif
+
 size_t idakit_func_qty(void);
 idakit_ea_t idakit_func_ea(size_t n); /* start_ea of nth func, or BADADDR */
 int64_t idakit_func_name(idakit_ea_t ea, char *buf, size_t cap); /* name length, <0 on miss */

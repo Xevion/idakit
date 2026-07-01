@@ -17,10 +17,20 @@ links = "ida"
 default-target = "x86_64-unknown-linux-gnu"
 targets = []
 
+[features]
+# Compiles the facade's fault-injection shim (`idakit_test_fatal`) so the trap tests can drive
+# a fatal through `guarded<>` and prove it is caught. Off by default and never enabled by
+# dependents -- the self dev-dependency below turns it on only for this crate's own tests, so
+# no `abort()`/`exit()` shim reaches a production build.
+test-shims = []
+
 [build-dependencies]
 cc = "1"
 dirs = "6.0.0"
 libloading = "0.9.0"
+
+[dev-dependencies]
+idakit-sys = { path = ".", features = ["test-shims"] }
 
 [[example]]
 name = "read"
