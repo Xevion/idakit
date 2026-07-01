@@ -19,9 +19,18 @@ extern thread_local bool g_trapped;
 extern thread_local int g_exit_code;
 extern thread_local std::string g_output;
 
+// stdout+stderr capture over a guarded call via an in-memory pipe (no temp file). `rd < 0`
+// means capture is off or setup failed, so end_capture is a no-op.
+struct capture_t {
+  int rd = -1; // pipe read end, drained into g_output at the end
+  int wr = -1; // pipe write end; fd 1+2 are dup2'd onto it for the call
+  int saved_out = -1;
+  int saved_err = -1;
+};
+
 void install_fatal_traps();
-FILE *begin_capture(int *saved_out, int *saved_err);
-void end_capture(FILE *cap, int saved_out, int saved_err);
+capture_t begin_capture();
+void end_capture(capture_t &cap);
 
 // Run fn() with the fatal paths armed, returning `trapval` instead of letting the process die
 // on any of them: exit()/abort() are trapped via the GOT and longjmp back here, and interr()
@@ -33,15 +42,13 @@ template <class T, class F> T guarded(T trapval, bool capture, F &&fn) {
   install_fatal_traps();
   g_trapped = false;
   g_output.clear();
-  int saved_out = -1, saved_err = -1;
-  FILE *cap = capture ? begin_capture(&saved_out, &saved_err) : nullptr;
+  capture_t cap = capture ? begin_capture() : capture_t{};
   bool prev_throws = set_interr_throws(true);
   // Called on every exit path. Not an RAII guard: a longjmp over a non-trivial destructor is
   // UB, and this runs on the longjmp path too. Reference captures make its destructor trivial.
   auto finish = [&] {
     set_interr_throws(prev_throws);
-    if (cap != nullptr)
-      end_capture(cap, saved_out, saved_err);
+    end_capture(cap);
   };
   if (setjmp(g_exit_jmp) != 0) {
     g_trapped = true;

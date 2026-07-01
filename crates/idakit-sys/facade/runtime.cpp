@@ -12,16 +12,16 @@
 
 #include <csetjmp> // setjmp/longjmp exit trap
 #include <cstdint> // uintptr_t
-#include <cstdio>  // fflush, tmpfile
+#include <cstdio>  // fflush
 #include <cstdlib> // std::abort
 #include <cstring>
 #include <dlfcn.h> // dlsym
 #include <elf.h>   // ELF64_R_SYM
-#include <fcntl.h> // open (/dev/null)
+#include <fcntl.h> // open (/dev/null), fcntl (O_NONBLOCK)
 #include <link.h>  // dl_iterate_phdr, ElfW
 #include <string>
 #include <sys/mman.h> // mprotect
-#include <unistd.h>   // dup/dup2/read/lseek
+#include <unistd.h>   // pipe/dup/dup2/read/close
 
 #include "idakit_facade_internal.hpp"
 
@@ -32,9 +32,6 @@
 #undef stdout
 #undef stderr
 #undef fflush
-#undef fclose
-#undef tmpfile
-#undef fileno
 #undef setenv
 
 // Fatal traps.
@@ -196,49 +193,57 @@ void install_fatal_traps() {
   dl_iterate_phdr(patch_cb, nullptr);
 }
 
-// Redirect fd 1+2 to a fresh temp file, saving the originals; returns the capture FILE*
-// (nullptr on failure, fds untouched). IDA writes diagnostics straight to fd 1/2, so this
-// keeps them off the caller's console to ride along with the error instead.
-FILE *begin_capture(int *saved_out, int *saved_err) {
+// Redirect fd 1+2 into an in-memory pipe (no temp file), saving the originals. The write end
+// is non-blocking: only small fatal error() text lands here, so were it ever to exceed the
+// pipe buffer the excess drops rather than deadlocking the writer. Portable primitive
+// (pipe/dup2; Windows has _pipe/_dup2). `rd < 0` => setup failed, fds untouched. IDA writes
+// diagnostics straight to fd 1/2, so this keeps them off the caller's console to ride along
+// with the error instead.
+capture_t begin_capture() {
+  capture_t cap;
   (void)fflush(stdout);
   (void)fflush(stderr);
-  FILE *cap = tmpfile();
-  if (cap == nullptr)
-    return nullptr;
-  int cap_fd = fileno(cap);
-  *saved_out = dup(1);
-  *saved_err = dup(2);
-  dup2(cap_fd, 1);
-  dup2(cap_fd, 2);
+  int fds[2];
+  if (pipe(fds) != 0)
+    return cap;
+  int fl = fcntl(fds[1], F_GETFL, 0);
+  if (fl != -1)
+    (void)fcntl(fds[1], F_SETFL, fl | O_NONBLOCK);
+  cap.rd = fds[0];
+  cap.wr = fds[1];
+  cap.saved_out = dup(1);
+  cap.saved_err = dup(2);
+  dup2(fds[1], 1);
+  dup2(fds[1], 2);
   return cap;
 }
 
-// Restore the original fds and read everything written during the capture into g_output.
-void end_capture(FILE *cap, int saved_out, int saved_err) {
-  if (cap == nullptr)
+// Restore the original fds, then drain the pipe into g_output.
+void end_capture(capture_t &cap) {
+  if (cap.rd < 0)
     return;
   (void)fflush(stdout);
   (void)fflush(stderr);
   // Only restore fds that begin_capture actually saved (dup can fail, leaving -1).
-  if (saved_out >= 0) {
-    dup2(saved_out, 1);
-    close(saved_out);
+  if (cap.saved_out >= 0) {
+    dup2(cap.saved_out, 1);
+    close(cap.saved_out);
   }
-  if (saved_err >= 0) {
-    dup2(saved_err, 2);
-    close(saved_err);
+  if (cap.saved_err >= 0) {
+    dup2(cap.saved_err, 2);
+    close(cap.saved_err);
   }
-
-  int fd = fileno(cap);
-  off_t end = lseek(fd, 0, SEEK_END);
+  close(cap.wr); // drop the last write end so the drain read sees EOF
   g_output.clear();
-  if (end > 0) {
-    g_output.resize((size_t)end);
-    lseek(fd, 0, SEEK_SET);
-    ssize_t got = read(fd, &g_output[0], (size_t)end);
-    g_output.resize(got > 0 ? (size_t)got : 0);
+  char buf[4096];
+  for (;;) {
+    ssize_t n = read(cap.rd, buf, sizeof(buf));
+    if (n <= 0)
+      break;
+    g_output.append(buf, static_cast<size_t>(n));
   }
-  (void)fclose(cap);
+  close(cap.rd);
+  cap.rd = -1;
 }
 
 } // namespace idakit_facade
