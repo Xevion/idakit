@@ -9,7 +9,13 @@ use std::process::Command;
 
 const SDK_REPO: &str = "https://github.com/HexRaysSA/ida-sdk.git";
 
-const FACADE_SOURCES: &[&str] = &["facade/idakit_facade.cpp"];
+const FACADE_SOURCES: &[&str] = &[
+    "facade/runtime.cpp",
+    "facade/db.cpp",
+    "facade/types.cpp",
+    "facade/hexrays.cpp",
+    "facade/decode.cpp",
+];
 
 fn main() {
     // docs.rs has no IDA and no network: skip the native build (rustdoc still renders).
@@ -59,6 +65,7 @@ fn main() {
         println!("cargo:rerun-if-changed={src}");
     }
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
+    println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
     println!("cargo:rerun-if-env-changed=IDADIR");
     println!("cargo:rerun-if-env-changed=IDAKIT_EMIT_COMPILE_COMMANDS");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");

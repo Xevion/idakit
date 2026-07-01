@@ -1,2 +1,5 @@
 BasedOnStyle: LLVM
 ColumnLimit: 100
+# The SDK requires pro.h (then ida.hpp) before any other header; keep them in leading
+# blocks and sort only within each block.
+IncludeBlocks: Preserve
