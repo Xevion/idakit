@@ -173,6 +173,90 @@ typedef struct idakit_emit_vtbl_t
  * to `*root`. Returns 0 on success, non-zero if `cfunc` is NULL. */
 int idakit_cfunc_walk_ctree(void *cfunc, const idakit_emit_vtbl_t *vtbl, void *ctx, uint32_t *root);
 
+/* Instruction decode. One flat POD per instruction (no owned handle): the facade decodes
+ * on the kernel thread, folds every raw operand type into a semantic kind, resolves
+ * register names and control-flow facts, and copies it all into `*out`. Bounded to
+ * IDAKIT_MAX_OPS operands, so a fixed struct beats a streaming vtable here. */
+#define IDAKIT_MAX_OPS 8
+
+/* idakit_op_t::kind -- semantic operand classification (raw optype is folded away). */
+#define IDAKIT_OP_REG  0
+#define IDAKIT_OP_MEM  1
+#define IDAKIT_OP_IMM  2
+#define IDAKIT_OP_NEAR 3
+#define IDAKIT_OP_FAR  4
+
+/* idakit_reg_t::num sentinel for an absent base/index register. */
+#define IDAKIT_REG_NONE 0xFFFF
+
+/* idakit_insn_t::flow bit flags. */
+#define IDAKIT_FLOW_CALL     0x01
+#define IDAKIT_FLOW_RET      0x02
+#define IDAKIT_FLOW_JUMP     0x04
+#define IDAKIT_FLOW_INDIRECT 0x08
+#define IDAKIT_FLOW_STOPS    0x10
+
+/* A register reference: number, idakit RegClass code, selected byte width, and IDA's
+ * resolved name (NUL-terminated, empty if unresolved). num == IDAKIT_REG_NONE means the
+ * slot is absent (a memory operand with no base/index). */
+typedef struct
+{
+  uint16_t num;
+  uint8_t  cls;
+  uint8_t  width;
+  char     name[16];
+} idakit_reg_t;
+
+/* One decoded operand. Which fields are meaningful depends on `kind`:
+ *   REG  -> reg
+ *   MEM  -> base, index, scale, disp, addr (target, BADADDR if none)
+ *   IMM  -> value
+ *   NEAR -> addr (target)
+ *   FAR  -> value (offset), sel (selector)
+ * `idx` is the original operand slot (feature bits are keyed by it). `access` bit0 =
+ * read, bit1 = written. `dtype` is the raw op_dtype_t. */
+typedef struct
+{
+  uint8_t  kind;
+  uint8_t  idx;
+  uint8_t  dtype;
+  uint8_t  access;
+  uint8_t  scale;
+  idakit_reg_t reg;
+  idakit_reg_t base;
+  idakit_reg_t index;
+  int64_t  disp;
+  uint64_t value;
+  uint64_t addr;
+  uint16_t sel;
+} idakit_op_t;
+
+/* One decoded instruction. `isa`: 0 = x86, 1 = x64. `target` is the direct branch/call
+ * destination or BADADDR. `nops` counts the populated `ops` (trailing empty slots
+ * dropped). On the error return -3, `err_optype`/`err_op` carry the offending raw type
+ * and operand index. */
+typedef struct
+{
+  uint64_t ea;
+  uint64_t target;
+  uint16_t itype;
+  uint8_t  len;
+  uint8_t  isa;
+  uint8_t  nops;
+  uint8_t  flow;
+  uint8_t  err_optype;
+  uint8_t  err_op;
+  char     mnemonic[24];
+  idakit_op_t ops[IDAKIT_MAX_OPS];
+} idakit_insn_t;
+
+/* Decode the instruction at `ea` into `*out`. Returns 0 on success, or negative:
+ *   -1 no instruction decodes at `ea`
+ *   -2 the database's processor has no wired decoder (only x86/x64 for now)
+ *   -3 a supported processor produced an operand this decoder cannot model
+ *      (should be unreachable for x86; err_optype/err_op say which). */
+int idakit_decode_insn(idakit_ea_t ea, idakit_insn_t *out);
+
 #ifdef __cplusplus
 }
 #endif

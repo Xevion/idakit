@@ -8,6 +8,7 @@ use std::fmt;
 use snafu::Snafu;
 
 use crate::ctree::ExtractError;
+use crate::insn::DecodeError;
 
 /// IDA's `error_t` code, with the documented generic values named. Carried by the
 /// operational errors below; the raw integer is available via [`Qerrno::code`].
@@ -100,6 +101,15 @@ pub enum Error {
         ea: u64,
         /// The underlying extraction error.
         source: ExtractError,
+    },
+
+    /// Instruction decoding failed; carries the [`DecodeError`]. [`decode`](crate::Idb::decode)
+    /// returns [`DecodeError`] directly, but `#[snafu(context(false))]` gives a `From` so `?`
+    /// flattens it into an [`Error`] in code that returns the crate [`Result`].
+    #[snafu(display("{source}"), context(false))]
+    Decode {
+        /// The underlying decode error.
+        source: DecodeError,
     },
 
     /// The Hex-Rays decompiler could not be initialized.

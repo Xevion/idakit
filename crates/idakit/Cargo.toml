@@ -51,6 +51,11 @@ harness = false
 name = "ctor"
 harness = false
 
+# Instruction-decode cycle against a real database; skips without IDAKIT_TEST_DB.
+[[test]]
+name = "disasm"
+harness = false
+
 [dev-dependencies]
 assert2 = "0.4.0"
 proptest = "1.11.0"

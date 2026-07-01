@@ -101,6 +101,10 @@ impl Idb {
         unsafe { sys::idakit_get_bytes(ea.get(), buf, size) }
     }
 
+    pub(crate) fn decode_insn(&self, ea: Ea, out: *mut sys::InsnRaw) -> c_int {
+        unsafe { sys::idakit_decode_insn(ea.get(), out) }
+    }
+
     /// Open an xref cursor over the current database; `is_to` selects xrefs targeting
     /// `ea` vs originating at it. The returned handle is owned by the [`Xrefs`] iterator,
     /// which closes it on drop.

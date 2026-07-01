@@ -71,6 +71,7 @@ mod ea;
 mod error;
 mod ffi;
 mod func;
+mod insn;
 mod raw;
 mod segment;
 mod ty;
@@ -81,6 +82,9 @@ pub use decompile::{Cfunc, CtreeCounts};
 pub use ea::{BADADDR, Ea, Offset};
 pub use error::{CallError, Error, InitError, Qerrno, Result};
 pub use func::{Func, FuncImage, Functions};
+pub use insn::{
+    Access, DecodeError, Dtype, Flow, Insn, Isa, Mem, Operand, OperandKind, Reg, RegClass,
+};
 pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
 pub use xref::{CodeRef, DataRef, Xref, XrefKind, Xrefs};
@@ -224,7 +228,31 @@ impl Idb {
         Segments::new(self)
     }
 
-    // TODO: instruction layer -- decode at an ea, mnemonic/operands, basic blocks and CFG.
+    /// Decode the instruction at `ea` into an owned, `Send` [`Insn`] -- mnemonic, semantic
+    /// operands, and control-flow facts, all resolved here on the kernel thread.
+    ///
+    /// `Err` if no instruction decodes there ([`DecodeError::NotCode`]) or the database's
+    /// processor has no decoder ([`DecodeError::UnsupportedProcessor`]); only x86/x64 are
+    /// modelled. An [`Insn`] that is returned is fully decoded -- there is no partial or
+    /// fallback result.
+    pub fn decode(&self, ea: Ea) -> Result<Insn, DecodeError> {
+        // SAFETY: `InsnRaw` is an all-integer POD, so an all-zero bit pattern is a valid
+        // value; the facade overwrites it before it reports success.
+        let mut raw: sys::InsnRaw = unsafe { std::mem::zeroed() };
+        match self.decode_insn(ea, &mut raw) {
+            0 => Ok(insn::insn_from_raw(&raw)),
+            -2 => Err(DecodeError::UnsupportedProcessor),
+            -3 => Err(DecodeError::UnsupportedOperand {
+                ea: ea.get(),
+                op: raw.err_op,
+                optype: raw.err_optype,
+            }),
+            // -1 (no instruction) and any other negative rc.
+            _ => Err(DecodeError::NotCode { ea: ea.get() }),
+        }
+    }
+
+    // TODO: basic blocks and CFG over the decoded instruction stream.
     // TODO: enumerate strings, names, imports/exports, entry points; name->ea lookup and demangling.
     // TODO: database metadata -- input path, processor, bitness, image base, file format, IDA version.
 
