@@ -107,6 +107,26 @@ unsafe extern "C" {
     pub fn idakit_get_prev_head(ea: Ea, minea: Ea) -> Ea;
 }
 
+// database-wide metadata
+unsafe extern "C" {
+    pub fn idakit_bitness() -> c_int;
+    pub fn idakit_image_base() -> Ea;
+    pub fn idakit_proc_name(buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_file_type_name(buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_input_path(buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_root_filename(buf: *mut c_char, cap: usize) -> i64;
+}
+
+// names and the name list (name.hpp)
+unsafe extern "C" {
+    pub fn idakit_get_ea_name(ea: Ea, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_get_name_ea(name: *const c_char) -> Ea;
+    pub fn idakit_demangle_name(name: *const c_char, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_nlist_size() -> usize;
+    pub fn idakit_nlist_ea(idx: usize) -> Ea;
+    pub fn idakit_nlist_name(idx: usize, buf: *mut c_char, cap: usize) -> i64;
+}
+
 // cross-reference cursor. `idakit_xref_open` returns an owned handle the caller must
 // release with `idakit_xref_close`; `is_to` selects xrefs *to* `ea` (1) or *from* it
 // (0). `idakit_xref_next` writes the edge endpoints and returns 1 until exhausted.

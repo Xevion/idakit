@@ -8,6 +8,7 @@
 #include <ida.hpp>
 #include <funcs.hpp>
 #include <name.hpp>
+#include <nalt.hpp>     // get_input_file_path, get_root_filename, get_imagebase
 #include <segment.hpp>
 #include <bytes.hpp>    // get_bytes
 #include <xref.hpp>     // xrefblk_t
@@ -465,6 +466,120 @@ extern "C" idakit_ea_t idakit_get_next_head(idakit_ea_t ea, idakit_ea_t maxea)
 extern "C" idakit_ea_t idakit_get_prev_head(idakit_ea_t ea, idakit_ea_t minea)
 {
   return (idakit_ea_t)prev_head((ea_t)ea, (ea_t)minea);
+}
+
+extern "C" int idakit_bitness(void)
+{
+  return (int)inf_get_app_bitness();
+}
+
+extern "C" idakit_ea_t idakit_image_base(void)
+{
+  return (idakit_ea_t)get_imagebase();
+}
+
+extern "C" int64_t idakit_proc_name(char *buf, size_t cap)
+{
+  try
+  {
+    qstring out = inf_get_procname();
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  }
+  catch ( ... )
+  {
+    std::abort();
+  }
+}
+
+extern "C" int64_t idakit_file_type_name(char *buf, size_t cap)
+{
+  // get_file_type_name writes directly and returns the length it produced.
+  return (int64_t)get_file_type_name(buf, cap);
+}
+
+extern "C" int64_t idakit_input_path(char *buf, size_t cap)
+{
+  // get_input_file_path goes through getinf_buf, whose count includes the trailing NUL;
+  // report the string length like the other getters so read_string slices it cleanly.
+  ssize_t n = get_input_file_path(buf, cap);
+  return n > 0 ? (int64_t)(n - 1) : -1;
+}
+
+extern "C" int64_t idakit_root_filename(char *buf, size_t cap)
+{
+  return (int64_t)get_root_filename(buf, cap);
+}
+
+extern "C" int64_t idakit_get_ea_name(idakit_ea_t ea, char *buf, size_t cap)
+{
+  try
+  {
+    qstring out;
+    if ( get_ea_name(&out, (ea_t)ea) <= 0 )
+    {
+      if ( cap > 0 )
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  }
+  catch ( ... )
+  {
+    std::abort();
+  }
+}
+
+extern "C" idakit_ea_t idakit_get_name_ea(const char *name)
+{
+  return (idakit_ea_t)get_name_ea(BADADDR, name);
+}
+
+// Full demangle (disable_mask 0). An unmangled name leaves `out` empty, reported as -1 so
+// the caller sees "not mangled" rather than an empty string.
+extern "C" int64_t idakit_demangle_name(const char *name, char *buf, size_t cap)
+{
+  try
+  {
+    qstring out;
+    demangle_name(&out, name, 0);
+    if ( out.empty() )
+    {
+      if ( cap > 0 )
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  }
+  catch ( ... )
+  {
+    std::abort();
+  }
+}
+
+extern "C" size_t idakit_nlist_size(void)
+{
+  return get_nlist_size();
+}
+
+extern "C" idakit_ea_t idakit_nlist_ea(size_t idx)
+{
+  return (idakit_ea_t)get_nlist_ea(idx);
+}
+
+extern "C" int64_t idakit_nlist_name(size_t idx, char *buf, size_t cap)
+{
+  const char *nm = get_nlist_name(idx);
+  if ( nm == nullptr )
+  {
+    if ( cap > 0 )
+      buf[0] = 0;
+    return -1;
+  }
+  qstrncpy(buf, nm, cap);
+  return (int64_t)qstrlen(nm);
 }
 
 // Cursor state for a streaming xref walk. `started` distinguishes the first_* call

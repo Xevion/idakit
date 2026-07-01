@@ -51,6 +51,25 @@ idakit_ea_t idakit_get_item_end(idakit_ea_t ea);                     /* one-past
 idakit_ea_t idakit_get_next_head(idakit_ea_t ea, idakit_ea_t maxea); /* next head before maxea, or BADADDR */
 idakit_ea_t idakit_get_prev_head(idakit_ea_t ea, idakit_ea_t minea); /* prev head at/after minea, or BADADDR */
 
+/* Database-wide metadata. String getters are snprintf-style (return the full length). */
+int         idakit_bitness(void);                                  /* 16, 32, or 64 */
+idakit_ea_t idakit_image_base(void);                               /* preferred load address */
+int64_t     idakit_proc_name(char *buf, size_t cap);               /* processor id, e.g. "metapc" */
+int64_t     idakit_file_type_name(char *buf, size_t cap);          /* input file format, human text */
+int64_t     idakit_input_path(char *buf, size_t cap);              /* full path of the analyzed input */
+int64_t     idakit_root_filename(char *buf, size_t cap);           /* input's base file name */
+
+/* Names (name.hpp). get_ea_name reads the name at an address; get_name_ea is the reverse
+ * lookup (BADADDR if unknown); demangle_name turns a mangled symbol into readable form (<0
+ * if the name is not mangled). The nlist enumerates every named address. String getters are
+ * snprintf-style; <0 means "no such name". */
+int64_t     idakit_get_ea_name(idakit_ea_t ea, char *buf, size_t cap);
+idakit_ea_t idakit_get_name_ea(const char *name);
+int64_t     idakit_demangle_name(const char *name, char *buf, size_t cap);
+size_t      idakit_nlist_size(void);
+idakit_ea_t idakit_nlist_ea(size_t idx);
+int64_t     idakit_nlist_name(size_t idx, char *buf, size_t cap);
+
 /* Cross-reference cursor (ordinary flow excluded). `is_to` selects xrefs TO ea (callers
  * of ea) vs FROM ea (what ea references). Open returns an opaque cursor; step it with
  * next (writes from/to/type/iscode, returns 1 until exhausted, then 0); release with

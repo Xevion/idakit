@@ -1,0 +1,51 @@
+//! [`Meta`]: an owned snapshot of database-wide metadata.
+
+use crate::Idb;
+use crate::ea::Ea;
+use crate::ffi::read_string;
+
+/// An owned, `Send` snapshot of database-wide metadata, from [`Idb::meta`].
+///
+/// Every field is resolved and copied out at snapshot time, so a `Meta` carries no borrow on
+/// the [`Idb`] and can be inspected on any thread. Reading it is a handful of kernel calls,
+/// so grab it once rather than per field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Meta {
+    /// Application bitness: 16, 32, or 64.
+    pub bitness: u8,
+    /// Preferred load address (image base), when the format records one.
+    pub image_base: Option<Ea>,
+    /// Processor module id (e.g. `metapc`).
+    pub processor: Option<String>,
+    /// Human-readable input file format (e.g. `Portable executable for 80386 (PE)`).
+    pub file_type: Option<String>,
+    /// Full path of the analyzed input file.
+    pub input_path: Option<String>,
+    /// Base file name of the input.
+    pub root_filename: Option<String>,
+}
+
+impl Idb {
+    /// Snapshot the database's metadata into an owned, `Send` [`Meta`].
+    #[must_use]
+    pub fn meta(&self) -> Meta {
+        Meta {
+            bitness: self.bitness().max(0) as u8,
+            image_base: Ea::try_new(self.image_base()),
+            processor: read_string(|buf, cap| self.proc_name(buf, cap)),
+            file_type: read_string(|buf, cap| self.file_type_name(buf, cap)),
+            input_path: read_string(|buf, cap| self.input_path(buf, cap)),
+            root_filename: read_string(|buf, cap| self.root_filename(buf, cap)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Meta;
+
+    const fn assert_send<T: Send>() {}
+
+    // A detached snapshot is only worth having if it can leave the kernel thread.
+    const _: () = assert_send::<Meta>();
+}

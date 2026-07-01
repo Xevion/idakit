@@ -72,6 +72,8 @@ mod error;
 mod ffi;
 mod func;
 mod insn;
+mod meta;
+mod name;
 mod raw;
 mod segment;
 mod ty;
@@ -85,6 +87,8 @@ pub use func::{Chunk, Chunks, Func, FuncImage, Functions, Instructions};
 pub use insn::{
     Access, DecodeError, Dtype, Flow, Insn, Isa, Mem, Operand, OperandKind, Reg, RegClass,
 };
+pub use meta::Meta;
+pub use name::{Name, Names};
 pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
 pub use xref::{CodeRef, DataRef, Xref, XrefKind, Xrefs};
@@ -296,8 +300,7 @@ impl Idb {
     }
 
     // TODO: basic blocks and CFG over the decoded instruction stream.
-    // TODO: enumerate strings, names, imports/exports, entry points; name->ea lookup and demangling.
-    // TODO: database metadata -- input path, processor, bitness, image base, file format, IDA version.
+    // TODO: enumerate strings, imports/exports, and entry points.
 
     /// Read bytes at `ea` into `buf`, returning how many were supplied. Zero-alloc;
     /// reuse one buffer on hot loops. [`bytes`](Self::bytes) is the owning shortcut.

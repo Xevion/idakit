@@ -125,6 +125,54 @@ impl Idb {
         unsafe { sys::idakit_get_prev_head(ea.get(), minea.get()) }
     }
 
+    pub(crate) fn bitness(&self) -> c_int {
+        unsafe { sys::idakit_bitness() }
+    }
+
+    pub(crate) fn image_base(&self) -> sys::Ea {
+        unsafe { sys::idakit_image_base() }
+    }
+
+    pub(crate) fn proc_name(&self, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_proc_name(buf, cap) }
+    }
+
+    pub(crate) fn file_type_name(&self, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_file_type_name(buf, cap) }
+    }
+
+    pub(crate) fn input_path(&self, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_input_path(buf, cap) }
+    }
+
+    pub(crate) fn root_filename(&self, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_root_filename(buf, cap) }
+    }
+
+    pub(crate) fn get_ea_name(&self, ea: Ea, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_get_ea_name(ea.get(), buf, cap) }
+    }
+
+    pub(crate) fn get_name_ea(&self, name: *const c_char) -> sys::Ea {
+        unsafe { sys::idakit_get_name_ea(name) }
+    }
+
+    pub(crate) fn demangle_name(&self, name: *const c_char, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_demangle_name(name, buf, cap) }
+    }
+
+    pub(crate) fn nlist_size(&self) -> usize {
+        unsafe { sys::idakit_nlist_size() }
+    }
+
+    pub(crate) fn nlist_ea(&self, idx: usize) -> sys::Ea {
+        unsafe { sys::idakit_nlist_ea(idx) }
+    }
+
+    pub(crate) fn nlist_name(&self, idx: usize, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_nlist_name(idx, buf, cap) }
+    }
+
     /// Open an xref cursor over the current database; `is_to` selects xrefs targeting
     /// `ea` vs originating at it. The returned handle is owned by the [`Xrefs`] iterator,
     /// which closes it on drop.
