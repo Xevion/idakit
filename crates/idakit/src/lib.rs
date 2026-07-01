@@ -150,12 +150,14 @@ impl Idb {
             return Err(self.kernel_exit_error());
         }
         if rc != 0 {
-            // The return value IS the error_t (eOS=1 means "see errno", e.g. ENOENT).
-            let qerrno = Qerrno::from_code(rc);
+            // open_database's return value is an internal status, not an error_t: a locked
+            // database returns 4 (which reads as eFileTooLarge) though the real failure is in
+            // get_qerrno(). Read IDA's own error channel, as the write paths do.
+            let (qerrno, reason) = self.last_reason();
             return Err(Error::Open {
                 path: path.to_owned(),
-                reason: self.error_reason(qerrno),
                 qerrno,
+                reason: reason.unwrap_or_else(|| format!("open failed (status {rc})")),
             });
         }
         // run_auto only enables the analysis queue; block until it drains so callers

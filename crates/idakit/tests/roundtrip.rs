@@ -2,13 +2,15 @@
 //!
 //! A normal `#[test]`: the kernel runs on the thread `Ida::run` spawns (8 MiB stack), so no
 //! `harness = false`. The nextest `serial-kernel` group serializes it against the other
-//! kernel tests. Set `IDAKIT_TEST_DB` to an absolute `.i64` path (`cargo test`/`nextest` run
-//! from the crate dir); skips when unset.
+//! kernel tests. Runs against `IDAKIT_TEST_DB` or `$IDADIR/libida.so.i64` (see
+//! [`common::test_db`]); skips when neither is present.
+
+mod common;
 
 #[test]
 fn roundtrip() {
-    let Ok(db) = std::env::var("IDAKIT_TEST_DB") else {
-        eprintln!("skipping: set IDAKIT_TEST_DB=<path to .i64> to run this test");
+    let Some(db) = common::test_db() else {
+        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
         return;
     };
     idakit::Ida::run(move |ida| {

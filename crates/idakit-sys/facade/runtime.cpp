@@ -16,6 +16,7 @@
 #include <cstring>
 #include <dlfcn.h> // dlsym
 #include <elf.h>   // ELF64_R_SYM
+#include <fcntl.h> // open (/dev/null)
 #include <link.h>  // dl_iterate_phdr, ElfW
 #include <string>
 #include <sys/mman.h> // mprotect
@@ -219,6 +220,22 @@ void end_capture(FILE *cap, int saved_out, int saved_err) {
 } // namespace idakit_facade
 
 using namespace idakit_facade;
+
+// libidalib's load-time init registers an atexit that prints a goodbye banner to stdout,
+// which corrupts stdout parsers like `nextest --list`. This constructor runs after that
+// init, so its atexit runs *before* the banner (LIFO): redirecting fd 1 to /dev/null at exit
+// swallows the banner while leaving run-time output, already written, untouched.
+namespace {
+void swallow_exit_banner() {
+  int devnull = open("/dev/null", O_WRONLY);
+  if (devnull >= 0) {
+    fflush(stdout);
+    dup2(devnull, 1);
+    close(devnull);
+  }
+}
+__attribute__((constructor)) void install_exit_banner_filter() { atexit(swallow_exit_banner); }
+} // namespace
 
 // Returns open_database's rc, or IDAKIT_EXIT_TRAPPED if the kernel tried to exit() during
 // the call (then idakit_last_exit_code()/idakit_last_output() carry the detail).

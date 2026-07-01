@@ -73,14 +73,16 @@ impl fmt::Display for ReasonTail<'_> {
 #[derive(Debug, Snafu, PartialEq, Eq)]
 #[snafu(visibility(pub(crate)))]
 pub enum Error {
-    /// The database file could not be opened.
+    /// The database file could not be opened. `reason` is IDA's own error text via
+    /// `get_qerrno` -- e.g. `"Resource temporarily unavailable"` when another process holds
+    /// the database open.
     #[snafu(display("failed to open database {path:?}: {reason}"))]
     Open {
         /// The database path that failed to open.
         path: String,
         /// IDA's `error_t` for the failure.
         qerrno: Qerrno,
-        /// Human-readable failure reason.
+        /// Human-readable failure reason, from `get_qerrno`/`qstrerror`.
         reason: String,
     },
 

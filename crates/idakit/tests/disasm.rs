@@ -2,12 +2,15 @@
 //!
 //! A normal `#[test]`: the kernel runs on the thread `Ida::run` spawns (8 MiB stack), so no
 //! `harness = false`; the nextest `serial-kernel` group keeps it off the other kernel tests'
-//! toes. Set `IDAKIT_TEST_DB` to an absolute `.i64` path; skips when unset. It decodes a
+//! toes. Runs against `IDAKIT_TEST_DB` or `$IDADIR/libida.so.i64` (see [`common::test_db`]);
+//! skips when neither is present. It decodes a
 //! slice of each function's instruction stream, asserts structural invariants, and
 //! cross-checks direct-branch targets against IDA's own xref graph -- two independent sources
 //! that must agree. Read-only; never opens for write.
 
 use idakit::{CodeRef, Ida, Idb, Offset, Operand, OperandKind, XrefKind};
+
+mod common;
 
 fn fmt_op(op: &Operand) -> String {
     match &op.kind {
@@ -46,8 +49,8 @@ fn fmt_insn(insn: &idakit::Insn) -> String {
 
 #[test]
 fn disasm() {
-    let Ok(db) = std::env::var("IDAKIT_TEST_DB") else {
-        eprintln!("skipping: set IDAKIT_TEST_DB=<path to .i64> to run this test");
+    let Some(db) = common::test_db() else {
+        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
         return;
     };
     Ida::run(move |ida| {
