@@ -4,8 +4,8 @@ facade_sources := "crates/idakit-sys/facade/*.cpp crates/idakit-sys/facade/*.h"
 default:
     @just --list
 
-check:
-    cargo check --workspace
+# One-stop gate mirroring CI: a clean run here means CI will very likely pass.
+check: fmt-check clippy test
 
 build:
     cargo build --workspace
@@ -24,6 +24,11 @@ fmt-rust:
 
 fmt-cpp:
     clang-format -i {{ facade_sources }}
+
+fmt-check: fmt-rust-check fmt-cpp-check
+
+fmt-rust-check:
+    cargo fmt --all --check
 
 fmt-cpp-check:
     clang-format --dry-run --Werror {{ facade_sources }}

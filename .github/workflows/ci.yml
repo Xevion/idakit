@@ -24,8 +24,7 @@ jobs:
       # No toolchain action: rust-toolchain.toml pins the version + rustfmt for rustup.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-      - run: cargo fmt --all --check
-      - run: just fmt-cpp-check
+      - run: just fmt-check
 
   container:
     # secrets can't be used in a job-level `if`; gate on a var (the image ref isn't secret).
