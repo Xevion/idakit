@@ -9,6 +9,25 @@ use crate::ffi::read_string;
 use crate::insn::Insn;
 use crate::xref::Xrefs;
 
+impl Idb {
+    /// A typed cursor at `ea`; does not verify a function lives there (absence
+    /// surfaces lazily). Use [`functions`](Self::functions) to enumerate real ones.
+    #[inline]
+    #[must_use]
+    pub fn func(&self, ea: Ea) -> Func<'_> {
+        Func::new(ea, self)
+    }
+
+    /// Iterate every function in the database, in kernel order.
+    #[inline]
+    #[must_use]
+    pub fn functions(&self) -> Functions<'_> {
+        Functions::new(self)
+    }
+
+    // TODO: basic blocks and CFG over the decoded instruction stream.
+}
+
 /// A borrowed view of one function, valid while the database stays open.
 #[derive(Clone, Copy)]
 pub struct Func<'db> {

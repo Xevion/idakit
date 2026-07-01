@@ -4,6 +4,15 @@ use crate::Idb;
 use crate::ea::Ea;
 use crate::ffi::read_string;
 
+impl Idb {
+    /// Iterate every segment in the database, in kernel order.
+    #[inline]
+    #[must_use]
+    pub fn segments(&self) -> Segments<'_> {
+        Segments::new(self)
+    }
+}
+
 /// A borrowed view of one segment, valid while the database stays open.
 #[derive(Clone, Copy)]
 pub struct Segment<'db> {

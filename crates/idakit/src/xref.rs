@@ -11,6 +11,24 @@ use num_enum::FromPrimitive;
 use crate::Idb;
 use crate::ea::Ea;
 
+impl Idb {
+    /// Lazily iterate every cross-reference targeting `ea` -- its callers and the data
+    /// that points at it (ordinary sequential flow excluded).
+    #[inline]
+    #[must_use]
+    pub fn xrefs_to(&self, ea: Ea) -> Xrefs<'_> {
+        Xrefs::new(self.xref_open(ea, true))
+    }
+
+    /// Lazily iterate every cross-reference originating at `ea` -- what the code there
+    /// calls, jumps to, or reads (ordinary sequential flow excluded).
+    #[inline]
+    #[must_use]
+    pub fn xrefs_from(&self, ea: Ea) -> Xrefs<'_> {
+        Xrefs::new(self.xref_open(ea, false))
+    }
+}
+
 /// A cross-reference edge, carrying both endpoints. For [`xrefs_to`](Idb::xrefs_to) the
 /// `to` end is the queried address; for [`xrefs_from`](Idb::xrefs_from) the `from` end is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

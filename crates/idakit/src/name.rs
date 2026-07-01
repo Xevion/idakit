@@ -3,6 +3,7 @@
 
 use crate::Idb;
 use crate::ea::Ea;
+use crate::error::{Error, Result};
 use crate::ffi::{read_string, with_cstr};
 
 impl Idb {
@@ -40,6 +41,24 @@ impl Idb {
     pub fn names(&self) -> Names<'_> {
         Names::new(self)
     }
+
+    /// Rename the item at `ea`.
+    pub fn rename(&mut self, ea: Ea, name: &str) -> Result<()> {
+        let ok = with_cstr(name, "name", |p| self.set_name(ea, p))?;
+        if ok {
+            Ok(())
+        } else {
+            let (qerrno, reason) = self.last_reason();
+            Err(Error::WriteRejected {
+                op: "rename",
+                ea: ea.get(),
+                qerrno,
+                reason,
+            })
+        }
+    }
+
+    // TODO: enumerate strings, imports/exports, and entry points.
 }
 
 /// A named address from the database's name list, yielded by [`Names`].

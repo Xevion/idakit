@@ -8,7 +8,41 @@ use idakit_sys as sys;
 
 use crate::Idb;
 use crate::ctree::{Ctree, ExtractError, walk};
+use crate::ea::Ea;
+use crate::error::{Error, Result};
 use crate::ffi::read_string;
+
+impl Idb {
+    /// Decompile the function at `ea` and materialize its ctree. Sugar for
+    /// [`func(ea)`](Self::func)`.`[`ctree()`](crate::Func::ctree).
+    pub fn ctree(&self, ea: Ea) -> Result<Ctree> {
+        self.func(ea).ctree()
+    }
+
+    /// Decompile the function containing `ea` (inits Hex-Rays on first use).
+    pub fn decompile(&self, ea: Ea) -> Result<Cfunc<'_>> {
+        if !self.hexrays_ready.get() {
+            let rc = self.hexrays_init();
+            if rc != 1 {
+                return Err(Error::HexRaysInit { code: rc });
+            }
+            self.hexrays_ready.set(true);
+        }
+        let (handle, reason) = self.decompile_at(ea);
+        if handle.is_null() {
+            // A trapped fatal exit() during decompilation is a dead kernel, not an ordinary
+            // decompile miss -- surface it as such.
+            if self.was_trapped() {
+                return Err(self.kernel_exit_error());
+            }
+            return Err(Error::Decompile {
+                ea: ea.get(),
+                reason,
+            });
+        }
+        Ok(Cfunc::from_handle(handle, self))
+    }
+}
 
 /// Statement / expression / call-site counts of a decompiled function's ctree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

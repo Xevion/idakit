@@ -9,7 +9,21 @@ use std::marker::PhantomData;
 use idakit_sys as sys;
 
 use crate::Idb;
-use crate::ffi::read_string;
+use crate::error::{Error, Result};
+use crate::ffi::{read_string, with_cstr};
+
+impl Idb {
+    /// Resolve a named type and its member layout. `Err` if no such type exists.
+    pub fn type_named(&self, name: &str) -> Result<TypeInfo<'_>> {
+        let handle = with_cstr(name, "name", |p| self.type_open(p))?;
+        if handle.is_null() {
+            return Err(Error::TypeNotFound {
+                name: name.to_owned(),
+            });
+        }
+        Ok(TypeInfo::from_handle(handle, self))
+    }
+}
 
 /// One field of a struct/union type. Offset and size are in bytes.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
