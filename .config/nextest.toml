@@ -1,0 +1,10 @@
+# The integration tests (`kind(test)`) each bring up the IDA kernel: `init_library` is a
+# process global run once per process, and idalib opens the database file in place and locks
+# it. nextest isolates tests in their own processes, but still runs them concurrently -- so
+# two kernel tests would race on that on-disk database. Cap the whole set to one at a time.
+[test-groups]
+serial-kernel = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'kind(test)'
+test-group = 'serial-kernel'

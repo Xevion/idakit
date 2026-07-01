@@ -1,18 +1,25 @@
 //! End-to-end cycle against a real database: open, read, write, re-read.
 //!
-//! `harness = false` so the test owns `fn main()` -- `Ida::here` needs the OS main
-//! thread's stack (libtest workers get 2 MiB and overflow). Set `IDAKIT_TEST_DB` to an
-//! absolute `.i64` path (`cargo test` runs from the crate dir); skips when unset. The
-//! actor path (`Ida::run` + `call`) is covered by the `actor` example.
+//! A normal `#[test]`: the kernel runs on the thread `Ida::run` spawns (8 MiB stack), so no
+//! `harness = false`. The nextest `serial-kernel` group serializes it against the other
+//! kernel tests. Set `IDAKIT_TEST_DB` to an absolute `.i64` path (`cargo test`/`nextest` run
+//! from the crate dir); skips when unset.
 
-fn main() {
+#[test]
+fn roundtrip() {
     let Ok(db) = std::env::var("IDAKIT_TEST_DB") else {
         eprintln!("skipping: set IDAKIT_TEST_DB=<path to .i64> to run this test");
         return;
     };
+    idakit::Ida::run(move |ida| {
+        ida.call(move |idb| run(idb, &db))
+            .unwrap_or_else(|e| e.resume())
+    })
+    .expect("kernel init failed");
+}
 
-    let mut idb = idakit::Ida::here().expect("kernel init failed");
-    idb.open(&db).call().expect("open failed");
+fn run(idb: &mut idakit::Idb, db: &str) {
+    idb.open(db).call().expect("open failed");
 
     let func_count = idb.functions().count();
     let seg_count = idb.segments().count();

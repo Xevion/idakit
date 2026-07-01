@@ -9,9 +9,9 @@
 //! and the `Other` subobject at a nonzero offset) and calls both base constructors with
 //! the matching `this`-relative arguments.
 //!
-//! `harness = false`: the test owns `fn main()` to control process lifetime around the
-//! kernel thread `Ida::run` spawns. Skips (exit 0) when `g++` is unavailable. It needs a
-//! working IDA install, so it does not run in CI -- run it locally.
+//! A normal `#[test]`; the kernel runs on the thread `Ida::run` spawns, so no
+//! `harness = false`. The nextest `serial-kernel` group serializes it against the other
+//! kernel tests. Skips when `g++` is unavailable to build the fixture.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -97,7 +97,8 @@ fn gxx_available() -> bool {
         .is_ok_and(|s| s.success())
 }
 
-fn main() {
+#[test]
+fn ctor() {
     if !gxx_available() {
         eprintln!("skipping: g++ not available to build the fixture");
         return;
@@ -180,7 +181,7 @@ fn main() {
                  calls both base ctors with matching this-relative args"
             );
         })
-        .expect("kernel call panicked");
+        .unwrap_or_else(|e| e.resume());
     })
     .expect("kernel init failed");
 

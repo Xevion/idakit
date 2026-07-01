@@ -78,7 +78,8 @@ impl Iterator for Names<'_> {
             let idx = self.next;
             self.next += 1;
             if let Some(ea) = Ea::try_new(self.db.nlist_ea(idx)) {
-                let name = read_string(|buf, cap| self.db.nlist_name(idx, buf, cap)).unwrap_or_default();
+                let name =
+                    read_string(|buf, cap| self.db.nlist_name(idx, buf, cap)).unwrap_or_default();
                 return Some(Name { ea, name });
             }
         }

@@ -1,18 +1,27 @@
 //! Database metadata and name lookup against a real database.
 //!
-//! `harness = false` (owns `fn main()`) like the other kernel tests; set `IDAKIT_TEST_DB` to
-//! an absolute `.i64` path or it skips. Read-only; opens `save = false`.
+//! A normal `#[test]`: the kernel runs on the thread `Ida::run` spawns (8 MiB stack), so no
+//! `harness = false`. The nextest `serial-kernel` group keeps it from overlapping the other
+//! kernel tests. Set `IDAKIT_TEST_DB` to an absolute `.i64` path or it skips. Read-only;
+//! opens `save = false`.
 
-use idakit::{Ida, Name};
+use idakit::{Ida, Idb, Name};
 
-fn main() {
+#[test]
+fn dbinfo() {
     let Ok(db) = std::env::var("IDAKIT_TEST_DB") else {
         eprintln!("skipping: set IDAKIT_TEST_DB=<path to .i64> to run this test");
         return;
     };
+    Ida::run(move |ida| {
+        ida.call(move |idb| run(idb, &db))
+            .unwrap_or_else(|e| e.resume())
+    })
+    .expect("kernel init failed");
+}
 
-    let mut idb = Ida::here().expect("kernel init failed");
-    idb.open(&db).call().expect("open failed");
+fn run(idb: &mut Idb, db: &str) {
+    idb.open(db).call().expect("open failed");
 
     // Metadata snapshot: an x86 database is 32- or 64-bit, has a processor name, and its
     // full input path ends with the bare root filename.

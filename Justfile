@@ -10,8 +10,12 @@ check:
 build:
     cargo build --workspace
 
+# nextest runs the suite; the kernel-touching integration tests are serialized by
+# .config/nextest.toml and skip without their preconditions. Doctests run separately --
+# nextest doesn't cover them.
 test:
-    cargo test --workspace
+    cargo nextest run --workspace
+    cargo test --workspace --doc
 
 fmt: fmt-rust fmt-cpp
 
@@ -31,22 +35,17 @@ tidy:
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
-# Build the workspace, then run the end-to-end suite against a freshly built fixture
-# database (gcc a sample, auto-analyze it, roundtrip over it). Needs the IDA runtime.
+# Build the fixture database (gcc a sample, auto-analyze it into an .i64) and run the whole
+# suite against it. The kernel-touching integration tests skip without IDAKIT_TEST_DB.
 ci-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    # roundtrip and ctor are harness = false (own fn main), which nextest can't list or
-    # drive -- exclude both and run them below via cargo test. --doc keeps doctests nextest
-    # doesn't cover.
-    cargo nextest run --workspace --no-fail-fast -E 'not (binary(roundtrip) or binary(ctor))'
-    cargo test --workspace --doc
-    cargo test -p idakit --test ctor
     work="$(mktemp -d)"
     gcc -O1 -g -o "$work/sample" crates/idakit/tests/fixtures/sample.c
     cargo run -q -p idakit --example make_fixture -- "$work/sample"
     test -f "$work/sample.i64" || { echo "make_fixture produced no .i64" >&2; exit 1; }
-    IDAKIT_TEST_DB="$work/sample.i64" cargo test -p idakit --test roundtrip -- --nocapture
+    IDAKIT_TEST_DB="$work/sample.i64" cargo nextest run --workspace --no-fail-fast
+    cargo test --workspace --doc
 
 # Build the CI image from a local IDA install ($IDADIR, default ~/ida-pro-9.3), pruning
 # the bundled database and *.bak copies out of the build context first.

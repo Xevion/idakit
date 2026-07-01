@@ -1,12 +1,13 @@
 //! Instruction decode against a real database: walk, decode, cross-check.
 //!
-//! `harness = false` so the test owns `fn main()` -- `Ida::here` needs the OS main
-//! thread's stack. Set `IDAKIT_TEST_DB` to an absolute `.i64` path; skips when unset. It
-//! decodes a slice of each function's instruction stream, asserts structural invariants,
-//! and cross-checks direct-branch targets against IDA's own xref graph -- two independent
-//! sources that must agree. Read-only; never opens for write.
+//! A normal `#[test]`: the kernel runs on the thread `Ida::run` spawns (8 MiB stack), so no
+//! `harness = false`; the nextest `serial-kernel` group keeps it off the other kernel tests'
+//! toes. Set `IDAKIT_TEST_DB` to an absolute `.i64` path; skips when unset. It decodes a
+//! slice of each function's instruction stream, asserts structural invariants, and
+//! cross-checks direct-branch targets against IDA's own xref graph -- two independent sources
+//! that must agree. Read-only; never opens for write.
 
-use idakit::{CodeRef, Offset, Operand, OperandKind, XrefKind};
+use idakit::{CodeRef, Ida, Idb, Offset, Operand, OperandKind, XrefKind};
 
 fn fmt_op(op: &Operand) -> String {
     match &op.kind {
@@ -43,14 +44,21 @@ fn fmt_insn(insn: &idakit::Insn) -> String {
     )
 }
 
-fn main() {
+#[test]
+fn disasm() {
     let Ok(db) = std::env::var("IDAKIT_TEST_DB") else {
         eprintln!("skipping: set IDAKIT_TEST_DB=<path to .i64> to run this test");
         return;
     };
+    Ida::run(move |ida| {
+        ida.call(move |idb| run(idb, &db))
+            .unwrap_or_else(|e| e.resume())
+    })
+    .expect("kernel init failed");
+}
 
-    let mut idb = idakit::Ida::here().expect("kernel init failed");
-    idb.open(&db).call().expect("open failed");
+fn run(idb: &mut Idb, db: &str) {
+    idb.open(db).call().expect("open failed");
 
     const BUDGET: usize = 4000;
     let mut total = 0usize;

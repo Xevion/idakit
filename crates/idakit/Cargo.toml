@@ -40,26 +40,12 @@ path = "examples/analyze.rs"
 name = "ctree_dump"
 path = "examples/ctree_dump.rs"
 
-# No libtest harness: these own `fn main()` to control the process lifetime around the
-# kernel thread that `Ida::run` spawns.
-[[test]]
-name = "roundtrip"
-harness = false
-
-# Live constructor-matcher check; needs g++ + IDA (skips without g++, can't run in CI).
-[[test]]
-name = "ctor"
-harness = false
-
-# Instruction-decode cycle against a real database; skips without IDAKIT_TEST_DB.
-[[test]]
-name = "disasm"
-harness = false
-
-# Database metadata + name lookup against a real database; skips without IDAKIT_TEST_DB.
-[[test]]
-name = "dbinfo"
-harness = false
+# The integration tests under tests/ are ordinary `#[test]` binaries (auto-discovered). Each
+# brings the kernel up on the thread `Ida::run` spawns and skips without its precondition
+# (`IDAKIT_TEST_DB`, or `g++` for `ctor`). They must not run concurrently -- init_library is a
+# process global and idalib locks the database file -- so `.config/nextest.toml` puts every
+# integration test in a `max-threads = 1` group. Run the suite with nextest, never bare
+# `cargo test` (which would run them in parallel and collide).
 
 [dev-dependencies]
 assert2 = "0.4.0"

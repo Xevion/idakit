@@ -31,6 +31,7 @@
 #include <cstring>
 #include <dlfcn.h> // dlsym
 #include <elf.h>   // ELF64_R_SYM
+#include <fcntl.h> // open (O_WRONLY, /dev/null redirect)
 #include <link.h>  // dl_iterate_phdr, ElfW
 #include <set>
 #include <string>
@@ -229,6 +230,25 @@ void end_capture(FILE *cap, int saved_out, int saved_err) {
   }
   fclose(cap);
 }
+
+// libida prints a farewell ("Thank you for using IDA. Have a nice day!") on stdout from a
+// load-time exit hook, during process teardown -- after the program's own output has
+// flushed. That corrupts any machine-readable stdout (a test runner enumerating tests, JSON
+// on stdout, ...). Point fd 1 at /dev/null so the farewell goes nowhere; stderr is left
+// alone, so a genuine teardown diagnostic still surfaces. Registered via atexit from a
+// load-time constructor: libida is a link dependency, so its constructors -- and thus its
+// farewell-hook registration -- run before ours, and atexit's LIFO order then runs ours
+// first, before the farewell is written.
+void squelch_exit_banner() {
+  int devnull = open("/dev/null", O_WRONLY);
+  if (devnull < 0)
+    return;
+  fflush(stdout);
+  dup2(devnull, 1);
+  close(devnull);
+}
+
+__attribute__((constructor)) void install_exit_squelch() { atexit(squelch_exit_banner); }
 } // namespace
 
 namespace {
