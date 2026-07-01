@@ -1,0 +1,16 @@
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  misc-*,
+  cert-*,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-const-correctness,
+  -misc-non-private-member-variables-in-classes,
+  -bugprone-easily-swappable-parameters,
+  -performance-no-int-to-ptr,
+  -cert-err52-cpp,
+  -cert-err58-cpp
+HeaderFilterRegex: 'idakit_facade\.h$'
+WarningsAsErrors: ''

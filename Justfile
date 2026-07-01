@@ -1,3 +1,6 @@
+facade_cpp := "crates/idakit-sys/facade/*.cpp"
+facade_sources := "crates/idakit-sys/facade/*.cpp crates/idakit-sys/facade/*.h"
+
 default:
     @just --list
 
@@ -10,8 +13,20 @@ build:
 test:
     cargo test --workspace
 
-fmt:
+fmt: fmt-rust fmt-cpp
+
+fmt-rust:
     cargo fmt --all
+
+fmt-cpp:
+    clang-format -i {{ facade_sources }}
+
+fmt-cpp-check:
+    clang-format --dry-run --Werror {{ facade_sources }}
+
+tidy:
+    IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
+    clang-tidy -p crates/idakit-sys {{ facade_cpp }}
 
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings

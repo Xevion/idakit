@@ -9,18 +9,13 @@
 # Keep in sync with rust-toolchain.toml's `channel`.
 FROM rust:1.96.1-bookworm
 
-# g++: the C++ facade (cc crate). git: SDK-header fetch in build.rs. just: the test recipe.
+# g++: the C++ facade (cc crate). git: SDK-header fetch in build.rs.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends g++ git ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
-       | bash -s -- --to /usr/local/bin
+    && rm -rf /var/lib/apt/lists/*
 
 # The base image ships neither; CI runs clippy and cargo fmt.
 RUN rustup component add clippy rustfmt
-
-# nextest runs the test suite; prebuilt binary into cargo's bin dir.
-RUN curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /usr/local/cargo/bin
 
 # build.rs links libida.so/libidalib.so from here; LD_LIBRARY_PATH is for the stock tools.
 ENV IDADIR=/opt/ida

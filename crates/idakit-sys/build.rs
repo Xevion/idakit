@@ -9,6 +9,8 @@ use std::process::Command;
 
 const SDK_REPO: &str = "https://github.com/HexRaysSA/ida-sdk.git";
 
+const FACADE_SOURCES: &[&str] = &["facade/idakit_facade.cpp"];
+
 fn main() {
     // docs.rs has no IDA and no network: skip the native build (rustdoc still renders).
     if env::var_os("DOCS_RS").is_some() {
@@ -26,10 +28,10 @@ fn main() {
     let sdk_include = resolve_sdk_include(&idadir);
     let sdk_include_str = sdk_include.to_str().expect("SDK include path is not UTF-8");
 
-    cc::Build::new()
+    let mut build = cc::Build::new();
+    build
         .cpp(true)
         .std("c++17")
-        .file("facade/idakit_facade.cpp")
         .include("facade")
         // Treat the SDK headers as system includes so their warning noise is
         // suppressed while the facade's own warnings still surface. Emitted as an
@@ -37,8 +39,15 @@ fn main() {
         .flag("-isystem")
         .flag(sdk_include_str)
         .define("__EA64__", None)
-        .define("__LINUX__", None)
-        .compile("idakit_facade");
+        .define("__LINUX__", None);
+    for src in FACADE_SOURCES {
+        build.file(src);
+    }
+    build.compile("idakit_facade");
+
+    if env::var_os("IDAKIT_EMIT_COMPILE_COMMANDS").is_some() {
+        emit_compile_commands(sdk_include_str);
+    }
 
     let idadir_str = idadir.to_str().expect("IDADIR is not UTF-8");
     println!("cargo:rustc-link-search=native={idadir_str}");
@@ -46,12 +55,34 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=idalib");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{idadir_str}");
     println!("cargo:lib_dir={idadir_str}"); // -> DEP_IDA_LIB_DIR for dependents' rpath
-    println!("cargo:rerun-if-changed=facade/idakit_facade.cpp");
+    for src in FACADE_SOURCES {
+        println!("cargo:rerun-if-changed={src}");
+    }
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-env-changed=IDADIR");
+    println!("cargo:rerun-if-env-changed=IDAKIT_EMIT_COMPILE_COMMANDS");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");
     println!("cargo:rerun-if-env-changed=IDA_SDK_CACHE_DIR");
     println!("cargo:rerun-if-env-changed=DOCS_RS");
+}
+
+/// Emit `compile_commands.json` for clang-tidy/clangd (opt-in via `just tidy`).
+fn emit_compile_commands(sdk_include: &str) {
+    let dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset");
+    let mut json = String::from("[\n");
+    for (i, src) in FACADE_SOURCES.iter().enumerate() {
+        if i > 0 {
+            json.push_str(",\n");
+        }
+        json.push_str(&format!(
+            "  {{\"directory\": {dir:?}, \"file\": {src:?}, \"arguments\": \
+             [\"c++\", \"-std=c++17\", \"-Ifacade\", \"-isystem\", {sdk_include:?}, \
+             \"-D__EA64__\", \"-D__LINUX__\", \"-c\", {src:?}]}}"
+        ));
+    }
+    json.push_str("\n]\n");
+    std::fs::write(Path::new(&dir).join("compile_commands.json"), json)
+        .expect("write compile_commands.json");
 }
 
 /// The IDA install holding `libida.so`: `IDADIR`, else `idat64`/`idat` on `PATH`, else the
