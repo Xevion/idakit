@@ -52,7 +52,7 @@ impl<'db> Segment<'db> {
         Some(self.db.bytes(start, len))
     }
 
-    // TODO: attributes — permissions, class, and bitness.
+    // TODO: attributes -- permissions, class, and bitness.
 }
 
 impl std::fmt::Debug for Segment<'_> {

@@ -3,10 +3,10 @@
 //! taint pass (call-return sources -> lvar def/use fixpoint -> dangerous-call sinks)
 //! and times the work in four separate phases:
 //!
-//!   decompile   — Hex-Rays, kernel thread, serial and unavoidable
-//!   extract     — `cfunc.ctree()`, the facade DFS + Rust rebuild, kernel thread
-//!   resolve     — turning `Obj(ea)` callees into names, kernel thread (needs `&Idb`)
-//!   analyze     — the pure taint pass over the Send image (no kernel access)
+//!   decompile   -- Hex-Rays, kernel thread, serial and unavoidable
+//!   extract     -- `cfunc.ctree()`, the facade DFS + Rust rebuild, kernel thread
+//!   resolve     -- turning `Obj(ea)` callees into names, kernel thread (needs `&Idb`)
+//!   analyze     -- the pure taint pass over the Send image (no kernel access)
 //!
 //! The split answers the live question: how much of the work is the serial kernel
 //! floor (decompile + extract + resolve) versus the part that could ever be fanned
@@ -38,7 +38,7 @@ fn matches(name: &str, set: &[&str]) -> bool {
 /// A function lifted into a Send-able analysis input. The callee-name map is the
 /// telling part: the ctree's `Call` carries only an `Obj(ea)`/`Helper`, so the names
 /// every analysis actually keys on have to be resolved *here*, on the kernel thread,
-/// and folded in — the bare tree cannot answer "what does this call?" off-thread.
+/// and folded in -- the bare tree cannot answer "what does this call?" off-thread.
 struct FuncImage {
     tree: Ctree,
     /// Call expr -> resolved callee name (only the ones that resolve to a symbol).
@@ -57,7 +57,7 @@ fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
 }
 
 /// Build the callee-name map for a tree. Now that the tree carries callee names, this is
-/// pure (no `Idb`) — the kernel-thread name resolution that used to dominate is gone.
+/// pure (no `Idb`) -- the kernel-thread name resolution that used to dominate is gone.
 fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
     let mut map = HashMap::new();
     for (id, callee, _) in tree.calls() {
@@ -69,7 +69,7 @@ fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
 }
 
 /// Does `e`'s subtree read a tainted lvar or call a source directly? Flow-insensitive
-/// and deliberately crude — the point is to do real work proportional to tree size.
+/// and deliberately crude -- the point is to do real work proportional to tree size.
 fn expr_tainted(img: &FuncImage, e: ExprId, tainted: &HashSet<u32>) -> bool {
     img.tree
         .expr_descendants(NodeRef::Expr(e))
@@ -230,7 +230,7 @@ fn report(t: &Totals, wall: Duration) {
         per(t.analyze)
     );
     println!(
-        "kernel-bound (decompile+extract+resolve): {:.1}% of wall — the serial floor",
+        "kernel-bound (decompile+extract+resolve): {:.1}% of wall -- the serial floor",
         pct(kernel)
     );
 }

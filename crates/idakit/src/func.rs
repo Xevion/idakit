@@ -40,7 +40,7 @@ impl<'db> Func<'db> {
         read_string(|buf, cap| self.db.func_type(self.ea, buf, cap))
     }
 
-    // TODO: attributes — end/size, bounds/chunks, and flags (lib/thunk/noreturn).
+    // TODO: attributes -- end/size, bounds/chunks, and flags (lib/thunk/noreturn).
 
     /// Lazily iterate cross-references targeting this function's entry.
     #[must_use]

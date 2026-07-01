@@ -1,4 +1,4 @@
-//! Auto-analyze a raw binary headlessly and report what IDA found — the inverse of
+//! Auto-analyze a raw binary headlessly and report what IDA found -- the inverse of
 //! the other examples, which open an already-analyzed `.i64`. This is the path that
 //! turns a fixture binary into an analyzed database (IDA writes `<binary>.i64` beside
 //! the input), so it doubles as the smoke test for `open(...).run_auto(true)`.

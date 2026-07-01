@@ -16,7 +16,7 @@ pub type ExprId = Idx<ExprNode>;
 /// Handle to a [`StmtNode`].
 pub type StmtId = Idx<StmtNode>;
 
-/// A reference to any node — expression or statement. Used for parent links and
+/// A reference to any node -- expression or statement. Used for parent links and
 /// uniform navigation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum NodeRef {
@@ -152,7 +152,7 @@ pub enum Cexpr {
         /// `cot_memptr.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
         byte_offset: u32,
     },
-    /// `(T)x` — the target type is carried on the node (added with the type arena).
+    /// `(T)x` -- the target type is carried on the node (added with the type arena).
     Cast { x: ExprId },
     /// `*x`, dereferencing `size` bytes
     Deref { x: ExprId, size: u32 },
@@ -178,7 +178,7 @@ pub enum Cexpr {
     TypeExpr,
     /// empty/absent expression
     Empty,
-    /// a statement embedded in an expression — internal to the decompiler, never
+    /// a statement embedded in an expression -- internal to the decompiler, never
     /// present in a finalized (`CMAT_FINAL`) tree. Carried so materialization is
     /// total rather than lossy (the one allowance instead of a catch-all).
     Internal,

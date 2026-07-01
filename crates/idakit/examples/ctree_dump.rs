@@ -4,7 +4,7 @@
 //!
 //!   cargo run -p idakit --example ctree_dump -- <binary> [name-substring]
 
-/// Recursively print each node's kind, indented by depth — the structural ground truth
+/// Recursively print each node's kind, indented by depth -- the structural ground truth
 /// behind the render.
 fn dump(tree: &idakit::ctree::Ctree, node: idakit::ctree::NodeRef, depth: usize) {
     use idakit::ctree::NodeRef;

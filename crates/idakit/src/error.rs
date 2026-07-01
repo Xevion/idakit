@@ -55,7 +55,7 @@ impl Qerrno {
     }
 }
 
-/// `": {reason}"` when present, empty otherwise — for the optional tail of a
+/// `": {reason}"` when present, empty otherwise -- for the optional tail of a
 /// [`Error::WriteRejected`] message.
 struct ReasonTail<'a>(&'a Option<String>);
 
@@ -117,7 +117,7 @@ pub enum Error {
     },
 
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is
-    /// present only when the kernel left a usable `error_t` — best-effort, since not
+    /// present only when the kernel left a usable `error_t` -- best-effort, since not
     /// every rejection path sets one.
     #[snafu(display("{op} failed at {ea:#x}{}", ReasonTail(reason)))]
     WriteRejected {
@@ -136,6 +136,23 @@ pub enum Error {
     InteriorNul {
         /// The argument name that contained the NUL.
         arg: &'static str,
+    },
+
+    /// The kernel tried to terminate the process with `exit(code)` mid-operation --
+    /// IDA's reaction to an unrecoverable condition such as an unaccepted license. The
+    /// facade trapped the exit and returned control, but the kernel has already torn
+    /// itself down: the [`Idb`](crate::Idb) is unusable and a fresh process is needed
+    /// to run IDA again. `diagnostic` is whatever IDA printed on its way out (captured,
+    /// not leaked) -- e.g. `"License not yet accepted, cannot run in batch mode"`.
+    #[snafu(display(
+        "the IDA kernel aborted the process (exit code {code}){}",
+        ReasonTail(diagnostic)
+    ))]
+    KernelExit {
+        /// The code IDA passed to `exit()`.
+        code: i32,
+        /// What IDA printed before exiting, when it printed anything.
+        diagnostic: Option<String>,
     },
 
     /// A marshaled [`call`](crate::Ida::call) did not return: the kernel closure panicked or
@@ -166,7 +183,7 @@ impl From<CallError> for Error {
 pub enum CallError {
     /// The closure panicked on the kernel thread. The original payload is kept so it
     /// can be inspected with [`message`](CallError::message) or re-raised with
-    /// [`resume`](CallError::resume) — nothing is lost to stringification.
+    /// [`resume`](CallError::resume) -- nothing is lost to stringification.
     Panicked(Box<dyn Any + Send + 'static>),
 
     /// The kernel thread is gone: it shut down or died before returning a value.
@@ -264,7 +281,7 @@ mod tests {
 
     use super::*;
 
-    /// Each error variant renders its operation, hex address, and reason — and omits the
+    /// Each error variant renders its operation, hex address, and reason -- and omits the
     /// reason clause when there is none.
     #[rstest]
     #[case::decompile(

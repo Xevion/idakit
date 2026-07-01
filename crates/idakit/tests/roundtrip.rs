@@ -1,6 +1,6 @@
 //! End-to-end cycle against a real database: open, read, write, re-read.
 //!
-//! `harness = false` so the test owns `fn main()` — `Ida::here` needs the OS main
+//! `harness = false` so the test owns `fn main()` -- `Ida::here` needs the OS main
 //! thread's stack (libtest workers get 2 MiB and overflow). Set `IDAKIT_TEST_DB` to an
 //! absolute `.i64` path (`cargo test` runs from the crate dir); skips when unset. The
 //! actor path (`Ida::run` + `call`) is covered by the `actor` example.

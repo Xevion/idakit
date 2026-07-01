@@ -1,17 +1,17 @@
 //! Deterministic constructor-analysis check against real decompiler output.
 //!
 //! The C++ constructor matchers (`vtable_installs` / `this_arg_calls`) live here as
-//! test-local helpers composed from the public `idakit::ctree::query` primitives — they
+//! test-local helpers composed from the public `idakit::ctree::query` primitives -- they
 //! are specific to C++ reverse engineering, so they are not part of the crate's API. This
 //! test pins them to ground truth: it compiles `tests/fixtures/vtbl.cpp` with g++, lets
 //! IDA auto-analyze it headlessly, then asserts the multiple-inheritance constructor
-//! pattern is recovered — the `Derived` ctor installs two vtables (the primary at offset 0
+//! pattern is recovered -- the `Derived` ctor installs two vtables (the primary at offset 0
 //! and the `Other` subobject at a nonzero offset) and calls both base constructors with
 //! the matching `this`-relative arguments.
 //!
 //! `harness = false`: the test owns `fn main()` to control process lifetime around the
 //! kernel thread `Ida::run` spawns. Skips (exit 0) when `g++` is unavailable. It needs a
-//! working IDA install, so it does not run in CI — run it locally.
+//! working IDA install, so it does not run in CI -- run it locally.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -21,7 +21,7 @@ use idakit::ctree::Ctree;
 use idakit::ctree::query::{base_var, global_target};
 use idakit::{AssignOp, Ea};
 
-/// A store of a global's address into a `this`-relative slot — a vtable install in a
+/// A store of a global's address into a `this`-relative slot -- a vtable install in a
 /// constructor (`this->__vftable = &vtbl`). `this_offset` is the byte offset within the
 /// object (0 = primary base, non-zero = a multiple-inheritance subobject).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,7 +31,7 @@ struct VtableInstall {
     vtable_name: Option<String>,
 }
 
-/// A direct call whose first argument is `this`-relative — a base or subobject
+/// A direct call whose first argument is `this`-relative -- a base or subobject
 /// constructor call. `this_offset` is the byte offset of the subobject it applies to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ThisCall {
@@ -66,7 +66,7 @@ fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
         .collect()
 }
 
-/// Every direct call whose first argument is `this`-relative — base/subobject constructor
+/// Every direct call whose first argument is `this`-relative -- base/subobject constructor
 /// calls and other `this`-threading calls.
 fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
     let Some(this) = tree.this_lvar() else {
@@ -126,7 +126,7 @@ fn main() {
                 .expect("open + auto-analysis failed");
 
             // Run the constructor matchers over every function's ctree. Decompilation can
-            // fail for thunks/imports — skip those. Keep only functions that install at
+            // fail for thunks/imports -- skip those. Keep only functions that install at
             // least one vtable, with their this-arg calls, for the assertions below.
             let eas: Vec<_> = idb.functions().map(|f| (f.ea(), f.name())).collect();
             let mut analyzed = Vec::new();

@@ -15,7 +15,6 @@
 //! string getters fill `(buf, cap)` and return the value's full length.
 
 use std::ffi::{c_char, c_int, c_void};
-use std::ptr;
 
 use idakit_sys as sys;
 
@@ -56,18 +55,46 @@ impl Idb {
         (qerrno, reason)
     }
 
+    /// Open via the facade's guarded wrapper: IDA's fatal `exit()` path (an unaccepted
+    /// license, a corrupt input it refuses) is trapped and surfaced as the
+    /// [`sys::IDAKIT_EXIT_TRAPPED`] sentinel instead of killing the process.
     pub(crate) fn open_database(&mut self, path: *const c_char, run_auto: bool) -> c_int {
-        unsafe { sys::open_database(path, run_auto, ptr::null()) }
+        unsafe { sys::idakit_guarded_open(path, run_auto as c_int) }
+    }
+
+    /// The exit code IDA passed to `exit()` on the last trapped fatal open.
+    pub(crate) fn last_exit_code(&self) -> c_int {
+        unsafe { sys::idakit_last_exit_code() }
+    }
+
+    /// The stdout+stderr IDA emitted during the last guarded open, captured by the
+    /// facade instead of leaking to the caller's console.
+    pub(crate) fn last_output(&self) -> String {
+        crate::ffi::read_string(|buf, cap| unsafe { sys::idakit_last_output(buf, cap) as i64 })
+            .unwrap_or_default()
+    }
+
+    /// Record EULA acceptance in IDA's registry; returns whether it now reads accepted.
+    pub(crate) fn reg_accept_eula(&self) -> bool {
+        unsafe { sys::idakit_accept_eula() != 0 }
     }
 
     /// Block until the auto-analysis queue drains. Only meaningful after an
     /// `open_database(run_auto = true)`, which enables but does not await analysis.
-    pub(crate) fn auto_wait(&self) -> bool {
-        unsafe { sys::auto_wait() }
+    /// Guarded: returns [`sys::IDAKIT_EXIT_TRAPPED`] if analysis hit a fatal exit().
+    pub(crate) fn auto_wait(&self) -> c_int {
+        unsafe { sys::idakit_guarded_auto_wait() }
     }
 
+    /// Guarded close; a fatal during a save is trapped (returns the sentinel) rather than
+    /// killing the process. Best-effort -- by the time we close, the result is moot.
     pub(crate) fn close_database(&mut self, save: bool) {
-        unsafe { sys::close_database(save) }
+        unsafe { sys::idakit_guarded_close(save as c_int) };
+    }
+
+    /// Whether the most recent guarded facade call trapped a fatal exit().
+    pub(crate) fn was_trapped(&self) -> bool {
+        unsafe { sys::idakit_was_trapped() != 0 }
     }
 
     pub(crate) fn get_bytes(&self, ea: Ea, buf: *mut c_void, size: usize) -> i64 {

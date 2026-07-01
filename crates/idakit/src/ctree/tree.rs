@@ -27,7 +27,7 @@ fn for_each_child(
 /// A decompiled function's ctree. The root is always a block statement.
 ///
 /// Owned and `Send`: materialized on the kernel thread, then analyzed anywhere. A
-/// read-only analysis snapshot — there is no in-place mutation, and it does not track
+/// read-only analysis snapshot -- there is no in-place mutation, and it does not track
 /// the live database, so it goes stale if the function is re-decompiled. Writing back to
 /// IDA is a separate concern, not routed through these handles.
 #[derive(Debug)]
@@ -95,7 +95,7 @@ impl Ctree {
         self.lvars.iter()
     }
 
-    /// The first argument local — the implicit `this` in a member function, or simply the
+    /// The first argument local -- the implicit `this` in a member function, or simply the
     /// first parameter otherwise. `None` for a function that takes no arguments. A pure
     /// structural accessor: it reads the lvar table's argument flags and makes no
     /// assumption about calling convention.
@@ -107,7 +107,7 @@ impl Ctree {
             .map(|i| LvarId(i as u32))
     }
 
-    /// Every expression node, flat, in allocation order — for whole-tree scans like
+    /// Every expression node, flat, in allocation order -- for whole-tree scans like
     /// "find all calls" that don't need the tree shape.
     pub fn exprs(&self) -> impl ExactSizeIterator<Item = (ExprId, &ExprNode)> {
         self.exprs.iter()
@@ -118,7 +118,7 @@ impl Ctree {
         self.stmts.iter()
     }
 
-    /// Every call in the tree as `(node, callee, args)` — the whole-tree scan behind
+    /// Every call in the tree as `(node, callee, args)` -- the whole-tree scan behind
     /// "find every call" without re-spelling the [`as_call`](Cexpr::as_call) filter.
     pub fn calls(&self) -> impl Iterator<Item = (ExprId, ExprId, &[ExprId])> {
         self.exprs()
@@ -160,7 +160,7 @@ impl Ctree {
         v
     }
 
-    /// Visit each direct child without allocating — the push-based form that
+    /// Visit each direct child without allocating -- the push-based form that
     /// [`children`](Self::children) buffers into a `Vec`.
     pub fn children_for_each(&self, node: NodeRef, f: impl FnMut(NodeRef)) {
         for_each_child(&self.exprs, &self.stmts, node, f);
@@ -194,7 +194,7 @@ impl Iterator for Descendants<'_> {
     fn next(&mut self) -> Option<NodeRef> {
         let node = self.stack.pop()?;
         // Push children straight onto the stack (no intermediate child list), then
-        // reverse just that suffix so the first child is popped — and visited — next.
+        // reverse just that suffix so the first child is popped -- and visited -- next.
         let base = self.stack.len();
         for_each_child(&self.tree.exprs, &self.tree.stmts, node, |c| {
             self.stack.push(c);
@@ -231,7 +231,7 @@ impl CtreeBuilder {
     }
 
     /// Reserve a placeholder type handle to fill later via [`fill_type`](Self::fill_type)
-    /// — the recursion break for aggregate extraction
+    /// -- the recursion break for aggregate extraction
     /// (see [`TypeTable::alloc_placeholder`]).
     pub fn alloc_type_placeholder(&mut self) -> TypeId {
         self.types.alloc_placeholder()
@@ -349,7 +349,7 @@ impl CtreeBuilder {
         self.expr(ty, Cexpr::Sizeof(x)).call()
     }
 
-    /// `e;` — an expression in statement position.
+    /// `e;` -- an expression in statement position.
     pub fn expr_stmt(&mut self, e: ExprId) -> StmtId {
         self.stmt(Cinsn::Expr(e)).call()
     }
@@ -530,7 +530,7 @@ mod tests {
         assert!(exprs == vec![add, va, vb]);
     }
 
-    /// `kind`/`stmt_kind` resolve a handle straight to its node kind — the shorthand the
+    /// `kind`/`stmt_kind` resolve a handle straight to its node kind -- the shorthand the
     /// matchers project from.
     #[test]
     fn kind_resolves_handles_to_their_node_kind() {
@@ -590,7 +590,7 @@ mod tests {
         );
     }
 
-    /// `this_lvar` returns the first argument local — the implicit receiver — and `None`
+    /// `this_lvar` returns the first argument local -- the implicit receiver -- and `None`
     /// when the function takes no arguments.
     #[test]
     fn this_lvar_is_the_first_argument() {

@@ -2,9 +2,9 @@
 //!
 //! Every expression carries a [`TypeId`] into a [`TypeTable`]. Types are interned, so
 //! identical types share one handle, and recursion (a struct pointing at itself) is
-//! represented by a [`TypeId`] back-reference — a named aggregate reserves its handle
+//! represented by a [`TypeId`] back-reference -- a named aggregate reserves its handle
 //! via [`alloc_placeholder`](TypeTable::alloc_placeholder) before its body is filled, so
-//! a member can point back at it — rather than by nesting. The table stays flat, finite,
+//! a member can point back at it -- rather than by nesting. The table stays flat, finite,
 //! and `Send`, so a materialized ctree carries its full type information off the kernel
 //! thread.
 
@@ -88,8 +88,8 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
-    /// The type a pointer addresses, or `None` for a non-pointer. A structural accessor —
-    /// the pointer analogue of reading a struct's members — so callers needn't re-match
+    /// The type a pointer addresses, or `None` for a non-pointer. A structural accessor --
+    /// the pointer analogue of reading a struct's members -- so callers needn't re-match
     /// the [`Ptr`](TypeKind::Ptr) variant by hand.
     #[inline]
     #[must_use]
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn recursive_struct_uses_a_placeholder_back_reference() {
-        // struct node { struct node *next; } — reserve the struct's handle first, so the
+        // struct node { struct node *next; } -- reserve the struct's handle first, so the
         // member pointer can target it before the body is filled. The table stays finite.
         let mut table = TypeTable::new();
         let node = table.alloc_placeholder();

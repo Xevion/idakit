@@ -1,18 +1,49 @@
-# Build and clippy require the proprietary IDA SDK and runtime, which are not
-# available on CI runners, so only formatting is checked here.
+# fmt lints on a public runner; the build/tests need a real IDA kernel (build.rs links
+# libida.so), so `container` supplies one via a private image and is gated on the
+# IDAKIT_IMAGE var so forks without it skip.
+
 name: ci
 
 on:
   push:
+    branches: [master] # PR branches run via pull_request; avoids the double run
   pull_request:
+  workflow_dispatch:
+
+# Supersede in-progress runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      # No toolchain action: rust-toolchain.toml pins the version + rustfmt for rustup.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - run: cargo fmt --all --check
+
+  container:
+    # secrets can't be used in a job-level `if`; gate on a var (the image ref isn't secret).
+    if: ${{ vars.IDAKIT_IMAGE != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      packages: read
+    env:
+      RUST_BACKTRACE: "1"
+    container:
+      image: ${{ vars.IDAKIT_IMAGE }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-directories: /root/.cache/idakit/ida-sdk
+      - run: just clippy
+      - run: cargo run -q -p idakit --example accept_eula
+      - run: just ci-test

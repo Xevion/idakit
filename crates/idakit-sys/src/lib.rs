@@ -54,6 +54,24 @@ unsafe extern "C" {
     pub fn qstrerror(code: c_int) -> *const c_char;
 }
 
+// Fatal-exit trap. The guarded entry points (open, auto_wait, close, decompile) wrap their
+// SDK call in a `setjmp` guard and redirect libida's GOT entry for `exit` to a handler that
+// `longjmp`s back, so IDA's `verror -> qexit -> exit` fatal path (e.g. an unaccepted
+// license) becomes a return value instead of a dead process. A guarded call returns its
+// normal rc, or `IDAKIT_EXIT_TRAPPED` (and sets `idakit_was_trapped`) when an exit was
+// caught; `idakit_last_exit_code` then holds the code and `idakit_last_output` the capture.
+pub const IDAKIT_EXIT_TRAPPED: c_int = -0x7FFF_FFFF;
+unsafe extern "C" {
+    pub fn idakit_guarded_open(path: *const c_char, run_auto: c_int) -> c_int;
+    pub fn idakit_guarded_auto_wait() -> c_int;
+    pub fn idakit_guarded_close(save: c_int) -> c_int;
+    pub fn idakit_last_exit_code() -> c_int;
+    pub fn idakit_was_trapped() -> c_int;
+    pub fn idakit_last_output(buf: *mut c_char, cap: usize) -> usize;
+    pub fn idakit_reg_read_int(name: *const c_char, defval: c_int) -> c_int;
+    pub fn idakit_accept_eula() -> c_int;
+}
+
 // idakit facade functions (C++ SDK wrapped behind a clean C ABI)
 unsafe extern "C" {
     pub fn idakit_func_qty() -> usize;
@@ -140,7 +158,7 @@ pub struct CaseDesc {
 /// The callbacks the facade invokes while streaming a ctree walk. The consumer (idakit)
 /// builds owned nodes inside each callback and returns the handle the parent will
 /// reference; children are emitted before parents. `#[repr(C)]` and field order mirror
-/// `idakit_emit_vtbl_t` exactly — the facade indexes by offset.
+/// `idakit_emit_vtbl_t` exactly -- the facade indexes by offset.
 ///
 /// Every `*const c_char`/byte-slice pointer passed to a callback (names, string literals,
 /// member and enum-constant names, comments, value arrays) borrows a C++ stack temporary

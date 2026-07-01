@@ -19,7 +19,7 @@ pub struct Xref {
     pub from: Ea,
     /// The referenced (target) address.
     pub to: Ea,
-    /// How the reference is classified — code vs data, and its specific type.
+    /// How the reference is classified -- code vs data, and its specific type.
     pub kind: XrefKind,
 }
 
@@ -98,7 +98,7 @@ impl Drop for Xrefs<'_> {
 pub enum XrefKind {
     /// A code reference (call, jump, or ordinary flow).
     Code(CodeRef),
-    /// A data reference (read, write, offset, …).
+    /// A data reference (read, write, offset, ...).
     Data(DataRef),
 }
 

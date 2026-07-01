@@ -164,7 +164,7 @@ macro_rules! ctype_op {
                 self.into()
             }
 
-            // Single-line `concat!` keeps rustfmt idempotent — it re-indents a
+            // Single-line `concat!` keeps rustfmt idempotent -- it re-indents a
             // multi-line `concat!` in a macro body deeper on every run.
             #[doc = concat!("The operator for a raw `ctype_t`, or `None` if it is not ", $reject, ".")]
             #[must_use]
@@ -184,8 +184,8 @@ ctype_op!(
 );
 
 impl BinOp {
-    /// The C source spelling of this operator (`+`, `<<`, `&&`, …). Signed/unsigned and
-    /// integer/float variants that print the same collapse here (`Sdiv`/`Udiv`/`Fdiv` →
+    /// The C source spelling of this operator (`+`, `<<`, `&&`, ...). Signed/unsigned and
+    /// integer/float variants that print the same collapse here (`Sdiv`/`Udiv`/`Fdiv` ->
     /// `/`); the distinction lives in the variant, not the glyph.
     #[must_use]
     pub fn symbol(self) -> &'static str {
@@ -214,7 +214,7 @@ impl BinOp {
 }
 
 impl AssignOp {
-    /// The C source spelling of this assignment (`=`, `+=`, `>>=`, …).
+    /// The C source spelling of this assignment (`=`, `+=`, `>>=`, ...).
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
@@ -255,7 +255,7 @@ mod tests {
     use assert2::assert;
     use rstest::rstest;
 
-    /// Spot-check raw discriminants against `hexrays.hpp` (IDA 9.3) values — the oracle
+    /// Spot-check raw discriminants against `hexrays.hpp` (IDA 9.3) values -- the oracle
     /// the `IntoPrimitive` derive is supposed to reproduce.
     #[rstest]
     #[case(BinOp::Comma, 1)]
@@ -298,7 +298,7 @@ mod tests {
     fn from_raw_rejects_cross_group_discriminants() {
         // 35 = cot_add (binary), not an assignment.
         assert!(let None = AssignOp::from_raw(35));
-        // 48 = cot_cast, 51 = cot_ptr — their own expression variants, not bare unaries.
+        // 48 = cot_cast, 51 = cot_ptr -- their own expression variants, not bare unaries.
         assert!(let None = UnOp::from_raw(48));
         assert!(let None = UnOp::from_raw(51));
     }

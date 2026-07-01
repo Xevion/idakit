@@ -110,7 +110,7 @@ impl<'db> TypeInfo<'db> {
 ///
 /// `'t` is the borrow of the [`TypeInfo`]; `'db` is the database that type belongs
 /// to. Keeping them distinct lets the iterator borrow a `TypeInfo` for less than the
-/// full `'db` — conflating them (`&'t TypeInfo<'t>`) over-constrains the caller.
+/// full `'db` -- conflating them (`&'t TypeInfo<'t>`) over-constrains the caller.
 pub struct Members<'t, 'db> {
     ty: &'t TypeInfo<'db>,
     next: usize,

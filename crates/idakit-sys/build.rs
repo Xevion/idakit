@@ -55,7 +55,7 @@ fn main() {
 }
 
 /// The IDA install holding `libida.so`: `IDADIR`, else `idat64`/`idat` on `PATH`, else the
-/// known install locations. Any valid install will do — its version is read at link time.
+/// known install locations. Any valid install will do -- its version is read at link time.
 fn resolve_idadir() -> PathBuf {
     if let Some(dir) = env::var_os("IDADIR") {
         return PathBuf::from(dir);
@@ -179,7 +179,7 @@ fn library_version(idadir: &Path) -> (i32, i32) {
     }
 }
 
-/// The newest `vMAJOR.MINOR.*-release` tag — match major.minor (IDA's build number isn't
+/// The newest `vMAJOR.MINOR.*-release` tag -- match major.minor (IDA's build number isn't
 /// the SDK patch level) and take the highest patch.
 fn newest_release_tag(major: i32, minor: i32) -> String {
     let prefix = format!("v{major}.{minor}.");

@@ -3,7 +3,7 @@
 //! # The kernel thread
 //!
 //! The IDA kernel is single-threaded and thread-affine. [`Ida::here`] brings it up *on
-//! the current thread* and hands back the open [`Idb`] — no kernel thread, no closure —
+//! the current thread* and hands back the open [`Idb`] -- no kernel thread, no closure --
 //! for programs that own their thread (scripts, tests, CLIs):
 //!
 //! ```no_run
@@ -43,14 +43,14 @@
 //! # Read/write separation
 //!
 //! [`Idb`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Idb` and
-//! return lightweight views ([`Func`], [`Segment`], …); writes take `&mut Idb`, so a read
+//! return lightweight views ([`Func`], [`Segment`], ...); writes take `&mut Idb`, so a read
 //! view can't be held across a mutation.
 //!
 //! # Building
 //!
 //! Linking needs a real IDA install (`IDADIR`, holding `libida.so`); the build compiles
 //! a small C++ facade against the IDA SDK headers, fetched to match the installed IDA
-//! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64` — the facade
+//! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64` -- the facade
 //! is compiled `__EA64__`.
 #![deny(missing_docs)]
 
@@ -136,6 +136,11 @@ impl Idb {
         #[builder(default)] run_auto: bool,
     ) -> Result<()> {
         let rc = ffi::with_cstr(path, "path", |p| self.open_database(p, run_auto))?;
+        if rc == idakit_sys::IDAKIT_EXIT_TRAPPED {
+            // IDA hit an unrecoverable condition and tried to terminate the process; the
+            // facade trapped the exit() and handed control back, with whatever it printed.
+            return Err(self.kernel_exit_error());
+        }
         if rc != 0 {
             // The return value IS the error_t (eOS=1 means "see errno", e.g. ENOENT).
             let qerrno = Qerrno::from_code(rc);
@@ -146,9 +151,9 @@ impl Idb {
             });
         }
         // run_auto only enables the analysis queue; block until it drains so callers
-        // observe a fully analyzed database.
-        if run_auto {
-            self.auto_wait();
+        // observe a fully analyzed database. Analysis runs kernel code, so it can trap too.
+        if run_auto && self.auto_wait() == idakit_sys::IDAKIT_EXIT_TRAPPED {
+            return Err(self.kernel_exit_error());
         }
         Ok(())
     }
@@ -178,6 +183,25 @@ impl Idb {
         self.close_database(save);
     }
 
+    /// Record EULA acceptance in IDA's registry (`$HOME/.idapro`), a one-time setup per
+    /// home. Headless `idalib` refuses to [`open`](Self::open) a database until this is
+    /// set, aborting with [`Error::KernelExit`] (`"License not yet accepted, cannot run in
+    /// batch mode"`). Returns whether the registry now reads accepted.
+    pub fn accept_eula(&self) -> bool {
+        self.reg_accept_eula()
+    }
+
+    /// Build a [`Error::KernelExit`] from the facade's trap state -- the code IDA passed to
+    /// `exit()` and whatever it printed on the way out (captured, when the call captured).
+    fn kernel_exit_error(&self) -> Error {
+        let captured = self.last_output();
+        let trimmed = captured.trim();
+        Error::KernelExit {
+            code: self.last_exit_code(),
+            diagnostic: (!trimmed.is_empty()).then(|| trimmed.to_owned()),
+        }
+    }
+
     /// A typed cursor at `ea`; does not verify a function lives there (absence
     /// surfaces lazily). Use [`functions`](Self::functions) to enumerate real ones.
     #[inline]
@@ -200,9 +224,9 @@ impl Idb {
         Segments::new(self)
     }
 
-    // TODO: instruction layer — decode at an ea, mnemonic/operands, basic blocks and CFG.
+    // TODO: instruction layer -- decode at an ea, mnemonic/operands, basic blocks and CFG.
     // TODO: enumerate strings, names, imports/exports, entry points; name->ea lookup and demangling.
-    // TODO: database metadata — input path, processor, bitness, image base, file format, IDA version.
+    // TODO: database metadata -- input path, processor, bitness, image base, file format, IDA version.
 
     /// Read bytes at `ea` into `buf`, returning how many were supplied. Zero-alloc;
     /// reuse one buffer on hot loops. [`bytes`](Self::bytes) is the owning shortcut.
@@ -222,7 +246,7 @@ impl Idb {
         buf
     }
 
-    /// Lazily iterate every cross-reference targeting `ea` — its callers and the data
+    /// Lazily iterate every cross-reference targeting `ea` -- its callers and the data
     /// that points at it (ordinary sequential flow excluded).
     #[inline]
     #[must_use]
@@ -230,7 +254,7 @@ impl Idb {
         Xrefs::new(self.xref_open(ea, true))
     }
 
-    /// Lazily iterate every cross-reference originating at `ea` — what the code there
+    /// Lazily iterate every cross-reference originating at `ea` -- what the code there
     /// calls, jumps to, or reads (ordinary sequential flow excluded).
     #[inline]
     #[must_use]
@@ -266,6 +290,11 @@ impl Idb {
         }
         let (handle, reason) = self.decompile_at(ea);
         if handle.is_null() {
+            // A trapped fatal exit() during decompilation is a dead kernel, not an ordinary
+            // decompile miss -- surface it as such.
+            if self.was_trapped() {
+                return Err(self.kernel_exit_error());
+            }
             return Err(Error::Decompile {
                 ea: ea.get(),
                 reason,
@@ -322,7 +351,7 @@ pub struct Ida {
 const KERNEL_STACK_DEFAULT: usize = 8 << 20;
 
 impl Ida {
-    /// Bring the kernel up *on the current thread* and return the open database — no
+    /// Bring the kernel up *on the current thread* and return the open database -- no
     /// kernel thread, no closure. The `!Send` [`Idb`] lives here; dropping it releases
     /// the kernel. For scripts, tests, and CLIs that own their thread. Prefer
     /// [`run`](Self::run) when the current thread must stay free or many threads drive
@@ -392,7 +421,7 @@ impl Ida {
         let result = app(Ida { tx });
         // `app` has returned, so its handle and any clones it joined are dropped and
         // the pump has exited; join to reap the kernel thread. The pump guards every
-        // job, so a panic here is an unexpected kernel-setup failure — surface it
+        // job, so a panic here is an unexpected kernel-setup failure -- surface it
         // rather than let it vanish, but don't poison the app's own result.
         if let Err(payload) = kernel.join() {
             let reason =

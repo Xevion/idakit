@@ -13,6 +13,20 @@ extern "C" {
 
 typedef uint64_t idakit_ea_t; /* ea_t under __EA64__ */
 
+/* Fatal-exit trap. idakit_guarded_open returns this sentinel (instead of an
+ * open_database rc) when the kernel tried to terminate the process mid-call; the
+ * intercepted exit code is then available from idakit_last_exit_code(). */
+#define IDAKIT_EXIT_TRAPPED (-0x7FFFFFFF)
+int idakit_guarded_open(const char *file_path, int run_auto);
+int idakit_guarded_auto_wait(void);               /* 1 ok / 0 fail / IDAKIT_EXIT_TRAPPED */
+int idakit_guarded_close(int save);               /* 0 ok / IDAKIT_EXIT_TRAPPED */
+int idakit_last_exit_code(void);
+int idakit_was_trapped(void);                     /* 1 if the last guarded call trapped a fatal exit */
+size_t idakit_last_output(char *buf, size_t cap); /* captured stdout+stderr; len, snprintf-style */
+
+int idakit_reg_read_int(const char *name, int defval); /* read an int/bool registry value */
+int idakit_accept_eula(void);                          /* record EULA acceptance; returns its value */
+
 size_t      idakit_func_qty(void);
 idakit_ea_t idakit_func_ea(size_t n);                              /* start_ea of nth func, or BADADDR */
 int64_t     idakit_func_name(idakit_ea_t ea, char *buf, size_t cap); /* name length, <0 on miss */
@@ -58,7 +72,7 @@ void  idakit_cfunc_ctree_counts(void *cfunc, int *n_insn, int *n_expr, int *n_ca
  * the corresponding owned node. Children are emitted before their parent (post-order),
  * so each callback receives its children as the `uint32_t` handles their own callbacks
  * returned; the facade just threads them through the recursion. The facade owns no node
- * storage and does no interning — all identity, dedup, and meaning live on the Rust side.
+ * storage and does no interning -- all identity, dedup, and meaning live on the Rust side.
  *
  * Handles are opaque to the facade. `0xFFFFFFFF` (IDAKIT_NONE) marks an absent optional
  * child. `ctx` is passed back to every callback untouched. */

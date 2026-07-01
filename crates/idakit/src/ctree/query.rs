@@ -1,4 +1,4 @@
-//! Structural primitives for querying a [`Ctree`] — the composable layer above the bare
+//! Structural primitives for querying a [`Ctree`] -- the composable layer above the bare
 //! node arenas.
 //!
 //! Decompiled expressions wrap the interesting node in address/place nodes (`Cast`, `&`,
@@ -8,8 +8,8 @@
 //! against one exact shape.
 //!
 //! These are deliberately general. The crate's constructor-analysis test (`tests/ctor.rs`)
-//! composes them into higher-level matchers — recovering C++ vtable installs and base-ctor
-//! calls from real decompiler output — as a worked example.
+//! composes them into higher-level matchers -- recovering C++ vtable installs and base-ctor
+//! calls from real decompiler output -- as a worked example.
 
 use super::node::{Cexpr, ExprId, LvarId};
 use super::ops::{BinOp, UnOp};
@@ -41,9 +41,9 @@ pub fn strip_casts(tree: &Ctree, mut e: ExprId) -> ExprId {
 /// Returns the local and the total offset from its base, or `None` if the expression isn't
 /// rooted at a variable.
 ///
-/// Both the typed shape — `this->Other` as `MemberRef`/`MemberPtr` once IDA has the struct
-/// layout — and the untyped shape — `*((_QWORD *)this + 2)` or `(char *)this + 16` as raw
-/// pointer arithmetic — resolve to the same `(this, 16)`. The untyped form is what shows up
+/// Both the typed shape -- `this->Other` as `MemberRef`/`MemberPtr` once IDA has the struct
+/// layout -- and the untyped shape -- `*((_QWORD *)this + 2)` or `(char *)this + 16` as raw
+/// pointer arithmetic -- resolve to the same `(this, 16)`. The untyped form is what shows up
 /// in stripped binaries, so threading it is what makes these matchers useful there.
 pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
     // Casts and `&` rename nothing; peel them first so the match below sees the place node.
@@ -56,7 +56,7 @@ pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
         // `*p` keeps the same root and offset; the load itself is not navigation.
         Cexpr::Deref { x, .. } => base_var(tree, *x),
         // Pointer arithmetic `base + k`: the byte delta is the constant index scaled by the
-        // pointee size of `base`, exactly as C scales it — so a `_QWORD*` index of 2 and a
+        // pointee size of `base`, exactly as C scales it -- so a `_QWORD*` index of 2 and a
         // `char*` index of 16 both advance 16 bytes. The `pointee_size` guard means plain
         // integer addition (no pointer type) is not mistaken for navigation.
         Cexpr::Binary {

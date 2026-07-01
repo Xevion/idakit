@@ -2,7 +2,7 @@
 //!
 //! An `Ea` is any `ea_t` except the [`BADADDR`] sentinel (`0` is a valid
 //! address). It stores `!raw` in a [`NonZeroU64`], so the niche sits on the
-//! sentinel and `Option<Ea>` is `u64`-sized — `BADADDR`-on-failure maps straight
+//! sentinel and `Option<Ea>` is `u64`-sized -- `BADADDR`-on-failure maps straight
 //! to `None`.
 
 use std::num::NonZeroU64;

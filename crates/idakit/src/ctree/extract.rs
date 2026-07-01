@@ -32,7 +32,7 @@ mod ct {
     pub const TERN: u32 = 16;
     pub const CAST: u32 = 48;
     pub const IDX: u32 = 58;
-    /// `cot_insn`: a statement in expression position — never present in a finalized
+    /// `cot_insn`: a statement in expression position -- never present in a finalized
     /// tree, collapsed to [`Cexpr::Internal`](super::Cexpr::Internal) rather than erroring.
     pub const INSN: u32 = 66;
     pub const SIZEOF: u32 = 67;
@@ -123,8 +123,8 @@ impl CallbackBuilder {
         }
     }
 
-    /// Record a deferred failure. Only the first error is kept — later failures in the
-    /// same walk are dropped — so callers must not assume every problem surfaces at
+    /// Record a deferred failure. Only the first error is kept -- later failures in the
+    /// same walk are dropped -- so callers must not assume every problem surfaces at
     /// [`finish`](Self::finish), only that a failed walk reports *some* error.
     fn fail(&mut self, e: ExtractError) {
         if self.error.is_none() {
@@ -511,7 +511,7 @@ impl CallbackBuilder {
             return Err(e);
         }
         // A placeholder left in `pending` was referenced but never filled, so it would
-        // stay `TypeKind::Unknown` in the tree — surface it rather than ship a silent gap.
+        // stay `TypeKind::Unknown` in the tree -- surface it rather than ship a silent gap.
         if !self.pending.is_empty() {
             return Err(ExtractError::UnfilledType {
                 count: self.pending.len(),
@@ -976,7 +976,7 @@ mod tests {
         assert!(matches!(tree.expr(args[1]).kind, Cexpr::Num(42)));
     }
 
-    /// `if` with and without an `else` — exercises the optional-child sentinel.
+    /// `if` with and without an `else` -- exercises the optional-child sentinel.
     #[test]
     fn builds_if_with_optional_else() {
         let mut cb = CallbackBuilder::new();
@@ -1002,14 +1002,14 @@ mod tests {
         ));
     }
 
-    /// `for`, `switch` (with the case-values pool), `try`/catches, and `asm` — the
+    /// `for`, `switch` (with the case-values pool), `try`/catches, and `asm` -- the
     /// variadic statements whose child wiring is easiest to get wrong.
     #[test]
     fn builds_variadic_statements() {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
 
-        // for (; cond; ) body;  — only the condition present.
+        // for (; cond; ) body;  -- only the condition present.
         let cond = cb.var(0, 0, it);
         let body = cb.break_(0);
         let for_s = cb.for_(0, IDAKIT_NONE, cond, IDAKIT_NONE, body);
@@ -1137,7 +1137,7 @@ mod tests {
     }
 
     /// `cot_insn` (a statement in expression position) collapses to `Internal`, not an
-    /// error — the one allowance, since a finalized tree never contains it.
+    /// error -- the one allowance, since a finalized tree never contains it.
     #[test]
     fn cot_insn_collapses_to_internal() {
         let mut cb = CallbackBuilder::new();
