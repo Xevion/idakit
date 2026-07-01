@@ -9,12 +9,13 @@ mod common;
 
 #[test]
 fn roundtrip() {
-    let Some(db) = common::test_db() else {
+    let Some(db) = common::TestDb::acquire() else {
         eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
         return;
     };
+    let path = db.path().to_owned();
     idakit::Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &db))
+        ida.call(move |idb| run(idb, &path))
             .unwrap_or_else(|e| e.resume())
     })
     .expect("kernel init failed");

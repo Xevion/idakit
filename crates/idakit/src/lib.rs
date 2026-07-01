@@ -116,9 +116,10 @@ impl Idb {
     #[builder]
     pub fn open(
         &mut self,
-        #[builder(start_fn)] path: &str,
+        #[builder(start_fn)] path: impl AsRef<str>,
         #[builder(default)] run_auto: bool,
     ) -> Result<()> {
+        let path = path.as_ref();
         let rc = ffi::with_cstr(path, "path", |p| self.open_database(p, run_auto))?;
         if rc == sys::IDAKIT_EXIT_TRAPPED {
             // IDA hit an unrecoverable condition and tried to terminate the process; the

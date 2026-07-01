@@ -4,11 +4,11 @@
 //! `abort`, or a deadlock hitting the `slow-timeout`) surfaces as that one test failing.
 //!
 //! The bad-input cases here need no database fixture; the corrupt-copy cases gate on
-//! [`common::test_db`] and skip without it.
+//! [`common::TestDb::source`] and skip without it.
 
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use assert2::assert;
 use idakit::{Ida, Idb};
@@ -29,7 +29,7 @@ impl Scratch {
 
     /// The first `len` bytes of `src` -- a header-truncated database. Reads only the prefix,
     /// never the whole (potentially huge) source.
-    fn truncated(name: &str, src: &str, len: usize) -> Self {
+    fn truncated(name: &str, src: impl AsRef<Path>, len: usize) -> Self {
         let mut file = fs::File::open(src).expect("open source db");
         let mut buf = vec![0u8; len];
         let n = file.read(&mut buf).expect("read source prefix");
@@ -89,7 +89,7 @@ fn directory_path_is_rejected() {
 
 #[test]
 fn truncated_database_is_rejected() {
-    let Some(db) = common::test_db() else {
+    let Some(db) = common::TestDb::source() else {
         eprintln!("skipping: no test database (set IDAKIT_TEST_DB)");
         return;
     };

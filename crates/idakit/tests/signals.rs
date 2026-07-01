@@ -40,16 +40,17 @@ fn probe() -> Vec<usize> {
 
 #[test]
 fn idalib_leaves_signal_handlers_untouched() {
-    let Some(db) = common::test_db() else {
+    let Some(db) = common::TestDb::acquire() else {
         eprintln!("skipping: no test database (set IDAKIT_TEST_DB)");
         return;
     };
+    let path = db.path().to_owned();
     // Baseline before any idalib code runs; handlers are process-global, so reading here
     // captures whatever the Rust runtime installed at startup.
     let before = probe();
     let after = Ida::run(move |ida| {
         ida.call(move |idb| {
-            idb.open(db.as_str()).run_auto(true).call().expect("open");
+            idb.open(&path).run_auto(true).call().expect("open");
             probe()
         })
         .unwrap_or_else(|e| e.resume())
