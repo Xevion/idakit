@@ -19,6 +19,9 @@ RUN apt-get update \
 # The base image ships neither; CI runs clippy and cargo fmt.
 RUN rustup component add clippy rustfmt
 
+# nextest runs the test suite; prebuilt binary into cargo's bin dir.
+RUN curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /usr/local/cargo/bin
+
 # build.rs links libida.so/libidalib.so from here; LD_LIBRARY_PATH is for the stock tools.
 ENV IDADIR=/opt/ida
 ENV LD_LIBRARY_PATH=/opt/ida

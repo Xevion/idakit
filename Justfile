@@ -14,14 +14,19 @@ fmt:
     cargo fmt --all
 
 clippy:
-    cargo clippy --workspace --all-targets
+    cargo clippy --workspace --all-targets -- -D warnings
 
 # Build the workspace, then run the end-to-end suite against a freshly built fixture
 # database (gcc a sample, auto-analyze it, roundtrip over it). Needs the IDA runtime.
 ci-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo test --workspace --no-fail-fast
+    # roundtrip and ctor are harness = false (own fn main), which nextest can't list or
+    # drive -- exclude both and run them below via cargo test. --doc keeps doctests nextest
+    # doesn't cover.
+    cargo nextest run --workspace --no-fail-fast -E 'not (binary(roundtrip) or binary(ctor))'
+    cargo test --workspace --doc
+    cargo test -p idakit --test ctor
     work="$(mktemp -d)"
     gcc -O1 -g -o "$work/sample" crates/idakit/tests/fixtures/sample.c
     cargo run -q -p idakit --example make_fixture -- "$work/sample"
