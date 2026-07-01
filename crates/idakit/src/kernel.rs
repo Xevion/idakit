@@ -4,7 +4,6 @@
 //! [`KernelClaim`] so only one [`Idb`] is ever live.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
@@ -168,7 +167,7 @@ fn bring_up_kernel() -> Result<(), InitError> {
         return Ok(());
     }
     // SAFETY: on the (now) kernel thread, once, before any other kernel call.
-    let rc = unsafe { sys::init_library(0, ptr::null_mut()) };
+    let rc = unsafe { sys::idakit_init_library() };
     if rc == 0 {
         Ok(())
     } else {

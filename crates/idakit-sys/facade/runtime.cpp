@@ -24,15 +24,17 @@
 
 #include "idakit_facade_internal.hpp"
 
-// pro.h #defines stdout/stderr/fflush to poisoned names, pushing callers onto IDA's
-// msg()/qfflush wrappers. Output capture works at the fd level (to catch everything IDA
-// writes, however it writes it), so undo the poisoning for the symbols it needs.
+// pro.h poisons libc calls (#define stdout/setenv/... to dont_use_ names) to push callers
+// onto IDA's wrappers. We deliberately want raw libc here: fd-level capture must catch
+// whatever IDA writes however it writes it, and TVHEADLESS must land in the real
+// environment libidalib reads. Undo the poisoning for the symbols we call directly.
 #undef stdout
 #undef stderr
 #undef fflush
 #undef fclose
 #undef tmpfile
 #undef fileno
+#undef setenv
 
 // Fatal traps.
 // IDA kills the process on unrecoverable conditions instead of returning an error: an
@@ -260,6 +262,14 @@ __attribute__((constructor)) void install_exit_banner_filter() {
 }
 } // namespace
 
+// libidalib reads TVHEADLESS to stay off the GUI/Qt path but never sets it, so set it here
+// before init runs. setenv (not the Rust env API) keeps this off the edition-2024 unsafe
+// set_var race and colocates it with init.
+extern "C" int idakit_init_library(void) {
+  setenv("TVHEADLESS", "1", 1);
+  return init_library(0, nullptr);
+}
+
 // Returns open_database's rc, or IDAKIT_EXIT_TRAPPED if the kernel tried to exit() during
 // the call (then idakit_last_exit_code()/idakit_last_output() carry the detail).
 extern "C" int idakit_guarded_open(const char *file_path, int run_auto) {
@@ -310,14 +320,16 @@ extern "C" size_t idakit_last_output(char *buf, size_t cap) {
 }
 
 #ifdef IDAKIT_TEST_SHIMS
-// Run the chosen fatal inside guarded<> so the trap tests can prove it's caught. Calls the
-// same stand-ins libida's patched GOT slots point at, exercising the longjmp path directly.
+// Run the chosen fatal inside guarded<> so the trap tests can prove it's caught: the exit/abort
+// stand-ins libida's patched GOT slots point at (the longjmp path), or interr (the throw path).
 extern "C" int idakit_test_fatal(int kind) {
   return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [kind]() -> int {
     if (kind == IDAKIT_FATAL_EXIT)
       idakit_exit(42);
     else if (kind == IDAKIT_FATAL_ABORT)
       idakit_abort();
+    else if (kind == IDAKIT_FATAL_INTERR)
+      interr(1);
     return 0;
   });
 }

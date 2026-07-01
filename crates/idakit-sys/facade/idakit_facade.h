@@ -13,6 +13,10 @@ extern "C" {
 
 typedef uint64_t idakit_ea_t; /* ea_t under __EA64__ */
 
+/* Force headless (TVHEADLESS) then init_library; returns its rc (0 = ok). Wrapping keeps
+ * the setenv ordered before init and the side effect on the C++ side. */
+int idakit_init_library(void);
+
 /* Fatal-exit trap. idakit_guarded_open returns this sentinel (instead of an
  * open_database rc) when the kernel tried to terminate the process mid-call; the
  * intercepted exit code is then available from idakit_last_exit_code(). */
@@ -33,6 +37,7 @@ int idakit_accept_eula(void); /* record EULA acceptance; returns its value */
 #ifdef IDAKIT_TEST_SHIMS
 #define IDAKIT_FATAL_EXIT 0
 #define IDAKIT_FATAL_ABORT 1
+#define IDAKIT_FATAL_INTERR 2
 int idakit_test_fatal(int kind);
 #endif
 

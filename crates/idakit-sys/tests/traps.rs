@@ -4,7 +4,10 @@
 //! the trap fails only that test. The shim compiles under the `test-shims` feature, which the
 //! crate's self dev-dependency enables for these tests.
 
-use idakit_sys::{IDAKIT_EXIT_TRAPPED, IDAKIT_FATAL_ABORT, IDAKIT_FATAL_EXIT, idakit_test_fatal};
+use idakit_sys::{
+    IDAKIT_EXIT_TRAPPED, IDAKIT_FATAL_ABORT, IDAKIT_FATAL_EXIT, IDAKIT_FATAL_INTERR,
+    idakit_test_fatal,
+};
 
 #[test]
 fn exit_inside_guarded_call_is_trapped() {
@@ -17,5 +20,13 @@ fn exit_inside_guarded_call_is_trapped() {
 fn abort_inside_guarded_call_is_trapped() {
     // SAFETY: the shim calls abort() inside guarded<>; the trap longjmps back instead of aborting.
     let rc = unsafe { idakit_test_fatal(IDAKIT_FATAL_ABORT) };
+    assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
+}
+
+#[test]
+fn interr_inside_guarded_call_is_trapped() {
+    // SAFETY: the shim calls interr() inside guarded<>; set_interr_throws makes it a catchable
+    // interr_exc_t, so the guard returns instead of terminating.
+    let rc = unsafe { idakit_test_fatal(IDAKIT_FATAL_INTERR) };
     assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
 }

@@ -5,6 +5,8 @@ use std::ffi::{c_char, c_int};
 // idalib lifecycle entry points (plain C ABI from libidalib.so)
 unsafe extern "C" {
     pub fn init_library(argc: c_int, argv: *mut *mut c_char) -> c_int;
+    /// Facade wrapper: force headless (`TVHEADLESS`) then [`init_library`]; returns its rc.
+    pub fn idakit_init_library() -> c_int;
     pub fn get_library_version(major: *mut c_int, minor: *mut c_int, build: *mut c_int) -> bool;
     pub fn open_database(path: *const c_char, run_auto: bool, args: *const c_char) -> c_int;
     pub fn close_database(save: bool);
@@ -58,6 +60,9 @@ pub const IDAKIT_FATAL_EXIT: c_int = 0;
 /// [`idakit_test_fatal`] kind: run `abort()` inside the guarded call.
 #[cfg(feature = "test-shims")]
 pub const IDAKIT_FATAL_ABORT: c_int = 1;
+/// [`idakit_test_fatal`] kind: run `interr()` inside the guarded call.
+#[cfg(feature = "test-shims")]
+pub const IDAKIT_FATAL_INTERR: c_int = 2;
 
 // Fault-injection shim, compiled into the facade only under `test-shims`. Runs the chosen
 // fatal inside `guarded<>` so the trap tests can prove it becomes `IDAKIT_EXIT_TRAPPED`.
