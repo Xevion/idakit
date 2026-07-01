@@ -7,6 +7,7 @@
 
 #include <auto.hpp>     // auto_wait
 #include <idalib.hpp>   // open_database
+#include <kernwin.hpp>  // batch
 #include <registry.hpp> // reg_read_int/reg_write_bool (EULA acceptance)
 
 #include <csetjmp> // setjmp/longjmp exit trap
@@ -270,6 +271,9 @@ extern "C" int idakit_init_library(void) {
   return init_library(0, nullptr);
 }
 
+// nonzero -> suppress dialogs / auto-answer prompts (headless default); zero -> interactive.
+extern "C" void idakit_set_batch(int on) { batch = on != 0; }
+
 // Returns open_database's rc, or IDAKIT_EXIT_TRAPPED if the kernel tried to exit() during
 // the call (then idakit_last_exit_code()/idakit_last_output() carry the detail).
 extern "C" int idakit_guarded_open(const char *file_path, int run_auto) {
@@ -333,4 +337,6 @@ extern "C" int idakit_test_fatal(int kind) {
     return 0;
   });
 }
+
+extern "C" int idakit_get_batch(void) { return batch ? 1 : 0; }
 #endif

@@ -7,6 +7,9 @@ unsafe extern "C" {
     pub fn init_library(argc: c_int, argv: *mut *mut c_char) -> c_int;
     /// Facade wrapper: force headless (`TVHEADLESS`) then [`init_library`]; returns its rc.
     pub fn idakit_init_library() -> c_int;
+    /// Set IDA's `batch` global: nonzero suppresses dialogs/auto-answers prompts, zero restores
+    /// interactive behavior.
+    pub fn idakit_set_batch(on: c_int);
     pub fn get_library_version(major: *mut c_int, minor: *mut c_int, build: *mut c_int) -> bool;
     pub fn open_database(path: *const c_char, run_auto: bool, args: *const c_char) -> c_int;
     pub fn close_database(save: bool);
@@ -69,4 +72,6 @@ pub const IDAKIT_FATAL_INTERR: c_int = 2;
 #[cfg(feature = "test-shims")]
 unsafe extern "C" {
     pub fn idakit_test_fatal(kind: c_int) -> c_int;
+    /// Read back the `batch` global, to prove bring-up wired [`idakit_set_batch`].
+    pub fn idakit_get_batch() -> c_int;
 }

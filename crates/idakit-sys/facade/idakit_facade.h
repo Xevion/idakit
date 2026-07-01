@@ -17,6 +17,10 @@ typedef uint64_t idakit_ea_t; /* ea_t under __EA64__ */
  * the setenv ordered before init and the side effect on the C++ side. */
 int idakit_init_library(void);
 
+/* Set IDA's `batch` global: nonzero suppresses dialogs and auto-answers prompts (headless
+ * default), zero restores interactive behavior (e.g. a GUI-plugin host). */
+void idakit_set_batch(int on);
+
 /* Fatal-exit trap. idakit_guarded_open returns this sentinel (instead of an
  * open_database rc) when the kernel tried to terminate the process mid-call; the
  * intercepted exit code is then available from idakit_last_exit_code(). */
@@ -39,6 +43,7 @@ int idakit_accept_eula(void); /* record EULA acceptance; returns its value */
 #define IDAKIT_FATAL_ABORT 1
 #define IDAKIT_FATAL_INTERR 2
 int idakit_test_fatal(int kind);
+int idakit_get_batch(void); /* read back the `batch` global, to prove bring-up wired it */
 #endif
 
 size_t idakit_func_qty(void);
