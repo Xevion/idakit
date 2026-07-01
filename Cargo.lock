@@ -300,6 +300,7 @@ dependencies = [
  "assert2",
  "bon",
  "idakit-sys",
+ "libc",
  "num_enum",
  "proptest",
  "rstest",
