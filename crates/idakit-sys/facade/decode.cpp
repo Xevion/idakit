@@ -27,9 +27,11 @@
 #define RC_TEST 10
 #define RC_IP 11
 
+namespace {
+
 // Classify an x86 RegNo by range. Used for plain o_reg operands and for a memory
 // operand's base/index registers, whose numbers are always RegNo values.
-static uint8_t reg_class_of(int r) {
+uint8_t reg_class_of(int r) {
   if (r < 0)
     return RC_GPR;
   if (is_segreg(r))
@@ -53,7 +55,7 @@ static uint8_t reg_class_of(int r) {
 
 // Class for a register carried by a processor-specific operand type, where op.reg is a
 // class-relative index (control/debug/test) rather than a RegNo.
-static uint8_t reg_class_for_optype(uint8_t t) {
+uint8_t reg_class_for_optype(uint8_t t) {
   switch (t) {
   case o_trreg:
     return RC_TEST;
@@ -78,7 +80,7 @@ static uint8_t reg_class_for_optype(uint8_t t) {
   }
 }
 
-static void fill_reg(idakit_reg_t *r, int num, uint8_t cls, int width) {
+void fill_reg(idakit_reg_t *r, int num, uint8_t cls, int width) {
   r->num = (uint16_t)num;
   r->cls = cls;
   r->width = (uint8_t)width;
@@ -88,7 +90,7 @@ static void fill_reg(idakit_reg_t *r, int num, uint8_t cls, int width) {
     qstrncpy(r->name, nm.c_str(), sizeof(r->name));
 }
 
-static void clear_reg(idakit_reg_t *r) {
+void clear_reg(idakit_reg_t *r) {
   r->num = IDAKIT_REG_NONE;
   r->cls = RC_GPR;
   r->width = 0;
@@ -96,9 +98,9 @@ static void clear_reg(idakit_reg_t *r) {
 }
 
 // A memory operand's effective address width (for naming its base/index registers).
-static int addr_width(const insn_t &insn) { return ad64(insn) ? 8 : (ad32(insn) ? 4 : 2); }
+int addr_width(const insn_t &insn) { return ad64(insn) ? 8 : (ad32(insn) ? 4 : 2); }
 
-static void fill_mem(const insn_t &insn, const op_t &op, idakit_op_t *dst) {
+void fill_mem(const insn_t &insn, const op_t &op, idakit_op_t *dst) {
   int aw = addr_width(insn);
   int base = x86_base_reg(insn, op);
   int index = x86_index_reg(insn, op);
@@ -119,7 +121,7 @@ static void fill_mem(const insn_t &insn, const op_t &op, idakit_op_t *dst) {
 
 // Fold one raw op_t into a semantic idakit_op_t. Returns 0, or -3 for a type this decoder
 // does not model (unreachable for x86, which enumerates all of its operand types).
-static int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t *dst) {
+int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t *dst) {
   memset(dst, 0, sizeof(*dst));
   clear_reg(&dst->reg);
   clear_reg(&dst->base);
@@ -129,7 +131,7 @@ static int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t 
   switch (op.type) {
   case o_reg:
     dst->kind = IDAKIT_OP_REG;
-    fill_reg(&dst->reg, op.reg, reg_class_of(op.reg), get_dtype_size(op.dtype));
+    fill_reg(&dst->reg, op.reg, reg_class_of(op.reg), (int)get_dtype_size(op.dtype));
     return 0;
   case o_trreg:
   case o_dbreg:
@@ -141,7 +143,7 @@ static int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t 
   case o_zmmreg:
   case o_kreg:
     dst->kind = IDAKIT_OP_REG;
-    fill_reg(&dst->reg, op.reg, reg_class_for_optype(op.type), get_dtype_size(op.dtype));
+    fill_reg(&dst->reg, op.reg, reg_class_for_optype(op.type), (int)get_dtype_size(op.dtype));
     return 0;
   case o_mem:
   case o_phrase:
@@ -166,6 +168,8 @@ static int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t 
     return -3;
   }
 }
+
+} // namespace
 
 extern "C" int idakit_decode_insn(idakit_ea_t ea, idakit_insn_t *out) {
   try {

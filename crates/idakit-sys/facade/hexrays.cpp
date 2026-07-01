@@ -406,8 +406,8 @@ struct walker_t {
       return v->s_break(ctx, ea);
     case cit_continue:
       return v->s_continue(ctx, ea);
+    // cit_empty and any statement kind this facade doesn't model both emit an empty stmt.
     case cit_empty:
-      return v->s_empty(ctx, ea);
     default:
       return v->s_empty(ctx, ea);
     }

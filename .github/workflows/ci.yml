@@ -48,6 +48,5 @@ jobs:
           cache-directories: /root/.cache/idakit/ida-sdk
       - run: just clippy
       - run: just tidy
-        continue-on-error: true # until the facade split clears the remaining findings
       - run: cargo run -q -p idakit --example accept_eula
       - run: just ci-test

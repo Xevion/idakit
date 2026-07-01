@@ -151,6 +151,8 @@ int patch_cb(struct dl_phdr_info *info, size_t, void *) {
     case DT_RELAENT:
       relaent = d->d_un.d_val;
       break;
+    default:
+      break;
     }
   }
   if (symtab == nullptr || strtab == nullptr)
@@ -181,8 +183,8 @@ void install_exit_trap() {
 // the process's stdout; capturing keeps that off the caller's console so the text can ride
 // along with the error instead.
 FILE *begin_capture(int *saved_out, int *saved_err) {
-  fflush(stdout);
-  fflush(stderr);
+  (void)fflush(stdout);
+  (void)fflush(stderr);
   FILE *cap = tmpfile();
   if (cap == nullptr)
     return nullptr;
@@ -198,12 +200,17 @@ FILE *begin_capture(int *saved_out, int *saved_err) {
 void end_capture(FILE *cap, int saved_out, int saved_err) {
   if (cap == nullptr)
     return;
-  fflush(stdout);
-  fflush(stderr);
-  dup2(saved_out, 1);
-  dup2(saved_err, 2);
-  close(saved_out);
-  close(saved_err);
+  (void)fflush(stdout);
+  (void)fflush(stderr);
+  // Only restore fds that begin_capture actually saved (dup can fail, leaving -1).
+  if (saved_out >= 0) {
+    dup2(saved_out, 1);
+    close(saved_out);
+  }
+  if (saved_err >= 0) {
+    dup2(saved_err, 2);
+    close(saved_err);
+  }
 
   int fd = fileno(cap);
   off_t end = lseek(fd, 0, SEEK_END);
@@ -214,7 +221,7 @@ void end_capture(FILE *cap, int saved_out, int saved_err) {
     ssize_t got = read(fd, &g_output[0], (size_t)end);
     g_output.resize(got > 0 ? (size_t)got : 0);
   }
-  fclose(cap);
+  (void)fclose(cap);
 }
 
 } // namespace idakit_facade
@@ -229,12 +236,14 @@ namespace {
 void swallow_exit_banner() {
   int devnull = open("/dev/null", O_WRONLY);
   if (devnull >= 0) {
-    fflush(stdout);
+    (void)fflush(stdout);
     dup2(devnull, 1);
     close(devnull);
   }
 }
-__attribute__((constructor)) void install_exit_banner_filter() { atexit(swallow_exit_banner); }
+__attribute__((constructor)) void install_exit_banner_filter() {
+  (void)atexit(swallow_exit_banner);
+}
 } // namespace
 
 // Returns open_database's rc, or IDAKIT_EXIT_TRAPPED if the kernel tried to exit() during

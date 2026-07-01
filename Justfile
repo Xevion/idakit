@@ -5,7 +5,7 @@ default:
     @just --list
 
 # One-stop gate mirroring CI: a clean run here means CI will very likely pass.
-check: fmt-check clippy test
+check: fmt-check clippy tidy test
 
 build:
     cargo build --workspace
