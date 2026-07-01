@@ -14,7 +14,12 @@ pub const BADADDR: u64 = u64::MAX;
 const MAX_EA: u64 = BADADDR - 1;
 
 /// A validated effective address: any `ea_t` except [`BADADDR`].
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// Ordering is by the real address: the niche stores `!raw`, so a *derived* `Ord` would
+/// compare inverted bits and reverse the order. Callers expect an `Ea` to sort like the
+/// `ea_t` it wraps -- linear walks, chunk bounds, `BTreeMap` keys -- so `Ord`/`PartialOrd`
+/// are hand-written over [`get`](Self::get).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ea(NonZeroU64);
 
 impl Ea {
@@ -79,6 +84,20 @@ impl From<Ea> for u64 {
     #[inline]
     fn from(ea: Ea) -> Self {
         ea.get()
+    }
+}
+
+impl Ord for Ea {
+    #[inline]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.get().cmp(&other.get())
+    }
+}
+
+impl PartialOrd for Ea {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -186,6 +205,17 @@ mod tests {
     }
 
     #[test]
+    fn order_follows_address_not_niche() {
+        // The niche stores `!raw`, so a derived `Ord` would sort these backwards.
+        let lo = Ea::new_const(0x1000);
+        let hi = Ea::new_const(0x2000);
+        assert!(lo < hi);
+        assert!(hi > lo);
+        assert!(lo.min(hi) == lo);
+        assert!([hi, lo].iter().min() == Some(&lo));
+    }
+
+    #[test]
     fn sub_is_signed_distance() {
         let a = Ea::new_const(0x2000);
         let b = Ea::new_const(0x1f00);
@@ -231,6 +261,11 @@ mod tests {
                 let a = Ea::new_const(base);
                 let b = a + Offset::new(off);
                 prop_assert_eq!(b - a, off);
+            }
+
+            #[test]
+            fn order_matches_raw(a in 0u64..BADADDR, b in 0u64..BADADDR) {
+                prop_assert_eq!(Ea::new_const(a).cmp(&Ea::new_const(b)), a.cmp(&b));
             }
         }
     }
