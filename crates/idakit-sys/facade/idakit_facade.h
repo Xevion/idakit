@@ -30,6 +30,9 @@ int idakit_accept_eula(void);                          /* record EULA acceptance
 size_t      idakit_func_qty(void);
 idakit_ea_t idakit_func_ea(size_t n);                              /* start_ea of nth func, or BADADDR */
 int64_t     idakit_func_name(idakit_ea_t ea, char *buf, size_t cap); /* name length, <0 on miss */
+int         idakit_func_chunk_qty(idakit_ea_t ea);                 /* # chunks (entry + tails), 0 if not a func */
+int         idakit_func_chunk(idakit_ea_t ea, int idx,
+                              idakit_ea_t *start, idakit_ea_t *end); /* 1 + fills [start,end) if chunk idx exists (entry chunk = idx 0) */
 
 int     idakit_seg_qty(void);
 int64_t idakit_seg_name(int n, char *buf, size_t cap);
@@ -37,6 +40,16 @@ idakit_ea_t idakit_seg_start(int n);
 idakit_ea_t idakit_seg_end(int n);
 
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size);  /* bytes read, <0 on fail */
+
+/* Byte/item classification and navigation (bytes.hpp). `flags` is IDA's per-address class
+ * word; the Rust side masks it against MS_CLS for is_code/is_data. An item head is the first
+ * address of a defined instruction or data item; next/prev_head return BADADDR when no head
+ * lies within the given bound. */
+uint64_t    idakit_get_flags(idakit_ea_t ea);
+idakit_ea_t idakit_get_item_head(idakit_ea_t ea);                    /* start of the item covering ea */
+idakit_ea_t idakit_get_item_end(idakit_ea_t ea);                     /* one-past-end of the item at ea */
+idakit_ea_t idakit_get_next_head(idakit_ea_t ea, idakit_ea_t maxea); /* next head before maxea, or BADADDR */
+idakit_ea_t idakit_get_prev_head(idakit_ea_t ea, idakit_ea_t minea); /* prev head at/after minea, or BADADDR */
 
 /* Cross-reference cursor (ordinary flow excluded). `is_to` selects xrefs TO ea (callers
  * of ea) vs FROM ea (what ea references). Open returns an opaque cursor; step it with

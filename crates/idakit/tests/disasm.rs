@@ -56,9 +56,8 @@ fn main() {
     let mut total = 0usize;
     let mut with_ops = 0usize;
     let mut checked_target = false;
-    let mut samples: Vec<String> = Vec::new();
 
-    'outer: for (fi, func) in idb.functions().enumerate() {
+    'outer: for func in idb.functions() {
         let mut ea = func.ea();
         for _ in 0..256 {
             let insn = match idb.decode(ea) {
@@ -120,10 +119,6 @@ fn main() {
                 }
             }
 
-            if fi == 0 && samples.len() < 12 {
-                samples.push(fmt_insn(&insn));
-            }
-
             total += 1;
             ea = ea + Offset::new(i64::from(insn.len));
             if total >= BUDGET {
@@ -143,8 +138,46 @@ fn main() {
     );
 
     println!("decoded {total} instructions ({with_ops} with operands); invariants held");
-    println!("first function disassembly:");
-    for s in &samples {
+
+    // Code-gated iteration: `Func::instructions()` must yield only real instructions, unlike
+    // the straight-line decode above that runs off a function's tail into adjacent bytes.
+    // Every yielded instruction sits at a code address inside one of the function's chunks
+    // and does not spill past that chunk's end.
+    let mut iter_total = 0usize;
+    let mut first_fn: Vec<String> = Vec::new();
+    'iter: for (fi, func) in idb.functions().enumerate() {
+        let chunks: Vec<_> = func.chunks().collect();
+        assert!(
+            !chunks.is_empty(),
+            "function {:#x} reports no chunks",
+            func.ea().get()
+        );
+        for insn in func.instructions() {
+            assert!(
+                idb.is_code(insn.ea),
+                "instructions() yielded a non-code address {:#x}",
+                insn.ea.get()
+            );
+            let end = insn.ea + Offset::new(i64::from(insn.len));
+            let in_chunk = chunks.iter().any(|c| insn.ea >= c.start && end <= c.end);
+            assert!(
+                in_chunk,
+                "instruction {:#x} escapes its function's chunks",
+                insn.ea.get()
+            );
+            if fi == 0 && first_fn.len() < 12 {
+                first_fn.push(fmt_insn(&insn));
+            }
+            iter_total += 1;
+            if iter_total >= BUDGET {
+                break 'iter;
+            }
+        }
+    }
+    assert!(iter_total > 0, "instructions() yielded nothing");
+    println!("code-gated instructions(): {iter_total} in-chunk code instructions");
+    println!("first function via instructions():");
+    for s in &first_fn {
         println!("  {s}");
     }
 

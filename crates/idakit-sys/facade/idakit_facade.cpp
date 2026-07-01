@@ -364,6 +364,40 @@ extern "C" int64_t idakit_func_name(idakit_ea_t ea, char *buf, size_t cap)
   }
 }
 
+extern "C" int idakit_func_chunk_qty(idakit_ea_t ea)
+{
+  func_t *pfn = get_func((ea_t)ea);
+  if ( pfn == nullptr )
+    return 0;
+  int n = 0;
+  func_tail_iterator_t fti(pfn);
+  for ( bool ok = fti.main(); ok; ok = fti.next() )
+    n++;
+  return n;
+}
+
+// main() yields the entry chunk first, then next() walks the tails; a single-chunk function
+// is just the entry chunk. get_func locks nothing lasting -- the iterator's dtor unlocks.
+extern "C" int idakit_func_chunk(idakit_ea_t ea, int idx, idakit_ea_t *start, idakit_ea_t *end)
+{
+  func_t *pfn = get_func((ea_t)ea);
+  if ( pfn == nullptr )
+    return 0;
+  int n = 0;
+  func_tail_iterator_t fti(pfn);
+  for ( bool ok = fti.main(); ok; ok = fti.next(), n++ )
+  {
+    if ( n == idx )
+    {
+      const range_t &r = fti.chunk();
+      *start = (idakit_ea_t)r.start_ea;
+      *end = (idakit_ea_t)r.end_ea;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 extern "C" int idakit_seg_qty(void)
 {
   return get_segm_qty();
@@ -406,6 +440,31 @@ extern "C" idakit_ea_t idakit_seg_end(int n)
 extern "C" int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size)
 {
   return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);
+}
+
+extern "C" uint64_t idakit_get_flags(idakit_ea_t ea)
+{
+  return (uint64_t)get_flags((ea_t)ea);
+}
+
+extern "C" idakit_ea_t idakit_get_item_head(idakit_ea_t ea)
+{
+  return (idakit_ea_t)get_item_head((ea_t)ea);
+}
+
+extern "C" idakit_ea_t idakit_get_item_end(idakit_ea_t ea)
+{
+  return (idakit_ea_t)get_item_end((ea_t)ea);
+}
+
+extern "C" idakit_ea_t idakit_get_next_head(idakit_ea_t ea, idakit_ea_t maxea)
+{
+  return (idakit_ea_t)next_head((ea_t)ea, (ea_t)maxea);
+}
+
+extern "C" idakit_ea_t idakit_get_prev_head(idakit_ea_t ea, idakit_ea_t minea)
+{
+  return (idakit_ea_t)prev_head((ea_t)ea, (ea_t)minea);
 }
 
 // Cursor state for a streaming xref walk. `started` distinguishes the first_* call

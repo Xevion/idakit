@@ -105,6 +105,26 @@ impl Idb {
         unsafe { sys::idakit_decode_insn(ea.get(), out) }
     }
 
+    pub(crate) fn get_flags(&self, ea: Ea) -> u64 {
+        unsafe { sys::idakit_get_flags(ea.get()) }
+    }
+
+    pub(crate) fn get_item_head(&self, ea: Ea) -> sys::Ea {
+        unsafe { sys::idakit_get_item_head(ea.get()) }
+    }
+
+    pub(crate) fn get_item_end(&self, ea: Ea) -> sys::Ea {
+        unsafe { sys::idakit_get_item_end(ea.get()) }
+    }
+
+    pub(crate) fn get_next_head(&self, ea: Ea, maxea: Ea) -> sys::Ea {
+        unsafe { sys::idakit_get_next_head(ea.get(), maxea.get()) }
+    }
+
+    pub(crate) fn get_prev_head(&self, ea: Ea, minea: Ea) -> sys::Ea {
+        unsafe { sys::idakit_get_prev_head(ea.get(), minea.get()) }
+    }
+
     /// Open an xref cursor over the current database; `is_to` selects xrefs targeting
     /// `ea` vs originating at it. The returned handle is owned by the [`Xrefs`] iterator,
     /// which closes it on drop.
@@ -152,6 +172,20 @@ impl Idb {
 
     pub(crate) fn func_name(&self, ea: Ea, buf: *mut c_char, cap: usize) -> i64 {
         unsafe { sys::idakit_func_name(ea.get(), buf, cap) }
+    }
+
+    pub(crate) fn func_chunk_qty(&self, ea: Ea) -> c_int {
+        unsafe { sys::idakit_func_chunk_qty(ea.get()) }
+    }
+
+    pub(crate) fn func_chunk(
+        &self,
+        ea: Ea,
+        idx: c_int,
+        start: *mut sys::Ea,
+        end: *mut sys::Ea,
+    ) -> c_int {
+        unsafe { sys::idakit_func_chunk(ea.get(), idx, start, end) }
     }
 
     pub(crate) fn func_type(&self, ea: Ea, buf: *mut c_char, cap: usize) -> i64 {

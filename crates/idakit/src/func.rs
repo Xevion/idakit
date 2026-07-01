@@ -6,6 +6,7 @@ use crate::decompile::Cfunc;
 use crate::ea::Ea;
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
+use crate::insn::Insn;
 use crate::xref::Xrefs;
 
 /// A borrowed view of one function, valid while the database stays open.
@@ -40,7 +41,22 @@ impl<'db> Func<'db> {
         read_string(|buf, cap| self.db.func_type(self.ea, buf, cap))
     }
 
-    // TODO: attributes -- end/size, bounds/chunks, and flags (lib/thunk/noreturn).
+    /// Lazily iterate this function's chunks: the entry chunk first, then any tail chunks in
+    /// address order. A contiguous function yields exactly one [`Chunk`].
+    #[must_use]
+    pub fn chunks(&self) -> Chunks<'db> {
+        Chunks::new(self.ea, self.db)
+    }
+
+    /// Lazily iterate this function's instructions, in address order within each chunk,
+    /// across every chunk. Data items and the alignment tail are skipped -- see
+    /// [`Instructions`].
+    #[must_use]
+    pub fn instructions(&self) -> Instructions<'db> {
+        Instructions::new(self.db, self.ea)
+    }
+
+    // TODO: attributes -- end/size and flags (lib/thunk/noreturn).
 
     /// Lazily iterate cross-references targeting this function's entry.
     #[must_use]
@@ -163,6 +179,118 @@ impl<'db> Iterator for Functions<'db> {
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, Some(self.count - self.next))
+    }
+}
+
+/// A contiguous address range belonging to a function: `[start, end)`.
+///
+/// A function is one chunk when contiguous, or several when the compiler scattered its body
+/// into tail chunks placed elsewhere. Yielded by [`Func::chunks`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Chunk {
+    /// First address of the chunk.
+    pub start: Ea,
+    /// One-past-the-last address of the chunk.
+    pub end: Ea,
+}
+
+/// Lazy iterator over a function's chunks, entry chunk first then tail chunks in address
+/// order, from [`Func::chunks`].
+pub struct Chunks<'db> {
+    db: &'db Idb,
+    ea: Ea,
+    next: i32,
+    count: i32,
+}
+
+impl<'db> Chunks<'db> {
+    #[inline]
+    pub(crate) fn new(ea: Ea, db: &'db Idb) -> Self {
+        Self {
+            db,
+            ea,
+            next: 0,
+            count: db.func_chunk_qty(ea),
+        }
+    }
+}
+
+impl Iterator for Chunks<'_> {
+    type Item = Chunk;
+
+    fn next(&mut self) -> Option<Chunk> {
+        if self.next >= self.count {
+            return None;
+        }
+        let idx = self.next;
+        self.next += 1;
+        let (mut start, mut end): (u64, u64) = (0, 0);
+        if self.db.func_chunk(self.ea, idx, &mut start, &mut end) == 0 {
+            return None;
+        }
+        Some(Chunk {
+            start: Ea::try_new(start)?,
+            end: Ea::try_new(end)?,
+        })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some((self.count - self.next).max(0) as usize))
+    }
+}
+
+/// Lazy iterator over a function's instructions, across all its chunks.
+///
+/// Code-gated: it decodes only addresses the kernel classifies as code ([`Idb::is_code`])
+/// and steps over data items (jump tables, embedded constants) and the alignment tail. This
+/// gate is the point of the iterator -- [`Idb::decode`] turns any bytes into an [`Insn`], so
+/// a plain linear decode past a function's `ret` yields garbage; `is_code` keeps the stream
+/// to real instructions.
+pub struct Instructions<'db> {
+    db: &'db Idb,
+    chunks: Chunks<'db>,
+    /// `(next address to examine, current chunk end)`; `None` until the first chunk loads and
+    /// again once the last chunk drains.
+    cursor: Option<(Ea, Ea)>,
+}
+
+impl<'db> Instructions<'db> {
+    #[inline]
+    pub(crate) fn new(db: &'db Idb, ea: Ea) -> Self {
+        Self {
+            db,
+            chunks: Chunks::new(ea, db),
+            cursor: None,
+        }
+    }
+}
+
+impl Iterator for Instructions<'_> {
+    type Item = Insn;
+
+    fn next(&mut self) -> Option<Insn> {
+        loop {
+            let (ea, end) = match self.cursor {
+                Some((ea, end)) if ea < end => (ea, end),
+                _ => {
+                    let chunk = self.chunks.next()?;
+                    self.cursor = Some((chunk.start, chunk.end));
+                    continue;
+                }
+            };
+            // Step past this item before deciding to yield, so every branch advances; the
+            // kernel's item end is `ea + len` for a decoded instruction, and skips a whole
+            // data item in one go. The `> ea` guard keeps a pathological zero-width item from
+            // stalling the walk.
+            let stepped = self.db.item_end(ea);
+            self.cursor = Some((if stepped > ea { stepped } else { end }, end));
+            if self.db.is_code(ea)
+                && let Ok(insn) = self.db.decode(ea)
+            {
+                return Some(insn);
+            }
+        }
     }
 }
 
