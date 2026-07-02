@@ -4,10 +4,37 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // Compile the C++ facade against the IDA SDK headers and link the kernel. __EA64__ makes
-// ea_t 64-bit; __LINUX__ sets the platform. SDK headers: `IDA_SDK_DIR`, else fetched to
-// match the installed IDA's version.
+// ea_t 64-bit; `PLATFORM_DEFINE` (`__LINUX__`/`__MAC__`/`__NT__`) tells the SDK which OS it
+// targets. SDK headers: `IDA_SDK_DIR`, else fetched to match the installed IDA's version.
 
 const SDK_REPO: &str = "https://github.com/HexRaysSA/ida-sdk.git";
+
+// Per-target runtime/import-library filenames, the SDK platform macro, and whether the
+// linker takes an rpath. The build links a *native* IDA, so host and target coincide; keying
+// off `#[cfg]` (host) is therefore correct and lets the version probe below share the split.
+#[cfg(target_os = "windows")]
+mod platform {
+    pub const RUNTIME_LIB: &str = "ida.dll";
+    pub const IDALIB_LIB: &str = "idalib.dll";
+    pub const PLATFORM_DEFINE: &str = "__NT__";
+    // PE resolves DLLs via the search path, not an embedded rpath.
+    pub const EMIT_RPATH: bool = false;
+}
+#[cfg(target_os = "macos")]
+mod platform {
+    pub const RUNTIME_LIB: &str = "libida.dylib";
+    pub const IDALIB_LIB: &str = "libidalib.dylib";
+    pub const PLATFORM_DEFINE: &str = "__MAC__";
+    pub const EMIT_RPATH: bool = true;
+}
+#[cfg(all(unix, not(target_os = "macos")))]
+mod platform {
+    pub const RUNTIME_LIB: &str = "libida.so";
+    pub const IDALIB_LIB: &str = "libidalib.so";
+    pub const PLATFORM_DEFINE: &str = "__LINUX__";
+    pub const EMIT_RPATH: bool = true;
+}
+use platform::{EMIT_RPATH, IDALIB_LIB, PLATFORM_DEFINE, RUNTIME_LIB};
 
 const FACADE_SOURCES: &[&str] = &[
     "facade/runtime.cpp",
@@ -24,10 +51,10 @@ fn main() {
     }
 
     let idadir = resolve_idadir();
-    let runtime = idadir.join("libida.so");
+    let runtime = idadir.join(RUNTIME_LIB);
     assert!(
         runtime.exists(),
-        "libida.so not found at {} - set IDADIR to your IDA install directory",
+        "{RUNTIME_LIB} not found at {} - set IDADIR to your IDA install directory",
         runtime.display()
     );
 
@@ -45,7 +72,7 @@ fn main() {
         .flag("-isystem")
         .flag(sdk_include_str)
         .define("__EA64__", None)
-        .define("__LINUX__", None);
+        .define(PLATFORM_DEFINE, None);
     // Fault-injection shim for the trap tests -- see the `test-shims` feature. Cargo sets this
     // env when the feature is on; it gates `idakit_test_fatal` in the facade.
     if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
@@ -62,9 +89,13 @@ fn main() {
 
     let idadir_str = idadir.to_str().expect("IDADIR is not UTF-8");
     println!("cargo:rustc-link-search=native={idadir_str}");
+    // Names resolve to `libida.so`/`libida.dylib` on Unix and the `ida.lib`/`idalib.lib`
+    // import libraries on Windows (both must sit under IDADIR).
     println!("cargo:rustc-link-lib=dylib=ida");
     println!("cargo:rustc-link-lib=dylib=idalib");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{idadir_str}");
+    if EMIT_RPATH {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{idadir_str}");
+    }
     println!("cargo:lib_dir={idadir_str}"); // -> DEP_IDA_LIB_DIR for dependents' rpath
     for src in FACADE_SOURCES {
         println!("cargo:rerun-if-changed={src}");
@@ -86,10 +117,11 @@ fn emit_compile_commands(sdk_include: &str) {
         if i > 0 {
             json.push_str(",\n");
         }
+        let plat = format!("-D{PLATFORM_DEFINE}");
         json.push_str(&format!(
             "  {{\"directory\": {dir:?}, \"file\": {src:?}, \"arguments\": \
              [\"c++\", \"-std=c++17\", \"-Ifacade\", \"-isystem\", {sdk_include:?}, \
-             \"-D__EA64__\", \"-D__LINUX__\", \"-c\", {src:?}]}}"
+             \"-D__EA64__\", {plat:?}, \"-c\", {src:?}]}}"
         ));
     }
     json.push_str("\n]\n");
@@ -97,8 +129,9 @@ fn emit_compile_commands(sdk_include: &str) {
         .expect("write compile_commands.json");
 }
 
-/// The IDA install holding `libida.so`: `IDADIR`, else `idat64`/`idat` on `PATH`, else the
-/// known install locations. Any valid install will do -- its version is read at link time.
+/// The IDA install holding the runtime (`RUNTIME_LIB`): `IDADIR`, else `idat64`/`idat` on
+/// `PATH`, else the known install locations. Any valid install will do -- its version is read
+/// at link time.
 fn resolve_idadir() -> PathBuf {
     if let Some(dir) = env::var_os("IDADIR") {
         return PathBuf::from(dir);
@@ -108,13 +141,13 @@ fn resolve_idadir() -> PathBuf {
         .unwrap_or_else(|| {
             panic!(
                 "could not locate an IDA install; set IDADIR to your IDA directory \
-                 (the one holding libida.so)"
+                 (the one holding {RUNTIME_LIB})"
             )
         })
 }
 
 fn has_runtime(dir: &Path) -> bool {
-    dir.join("libida.so").exists()
+    dir.join(RUNTIME_LIB).exists()
 }
 
 /// The install dir of `idat64`/`idat` if on `PATH` (canonicalized, so a wrapper symlink
@@ -138,8 +171,8 @@ fn idadir_from_path() -> Option<PathBuf> {
     None
 }
 
-/// Scan `$HOME` and `/opt` for an `ida-pro-*` / `idapro-*` install holding `libida.so`,
-/// preferring the highest-named (newest) one.
+/// Scan `$HOME` and `/opt` for an `ida-pro-*` / `idapro-*` install holding the runtime,
+/// preferring the highest-named (newest) one. (These are Unix layouts; on Windows set IDADIR.)
 fn idadir_from_known_locations() -> Option<PathBuf> {
     let roots = env::var_os("HOME")
         .map(PathBuf::from)
@@ -194,31 +227,75 @@ fn find_include(root: &Path) -> Option<PathBuf> {
         .find(|dir| dir.join("idalib.hpp").exists())
 }
 
-/// The installed IDA's `(major, minor)`, via dlopen of `libidalib.so` (no headers needed,
-/// so it runs before the fetch that uses the tag).
+const VERSION_HINT: &str = "set IDA_SDK_DIR to a local SDK checkout to skip version auto-detection";
+
+/// idalib's `get_library_version(major, minor, build)`.
+type GetLibraryVersion = unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int) -> bool;
+
+/// The installed IDA's `(major, minor)`, by loading the runtime + idalib and calling
+/// `get_library_version` (no headers needed, so it runs before the fetch that uses the tag).
+/// The dlopen differs per OS ([`load_version_fn`]); the call is shared.
 fn library_version(idadir: &Path) -> (i32, i32) {
+    let get = load_version_fn(idadir);
+    let (mut major, mut minor, mut build) = (0, 0, 0);
+    unsafe { get(&mut major, &mut minor, &mut build) };
+    (major, minor)
+}
+
+/// dlopen the runtime + idalib and resolve `get_library_version`. Both libraries are leaked so
+/// the returned pointer stays valid for the process. Unix preloads the runtime `RTLD_GLOBAL` in
+/// case idalib's runpath misses it; Windows loads `ida.dll` first so idalib's import of it from
+/// the same dir resolves.
+#[cfg(unix)]
+fn load_version_fn(idadir: &Path) -> GetLibraryVersion {
     use libloading::os::unix::{Library, RTLD_GLOBAL, RTLD_LAZY, Symbol};
 
-    let hint = "set IDA_SDK_DIR to a local SDK checkout to skip version auto-detection";
-    let idalib = idadir.join("libidalib.so");
+    let idalib = idadir.join(IDALIB_LIB);
     unsafe {
-        // Preload libida globally (and leak it) in case libidalib's runpath misses it.
-        if let Ok(ida) = Library::open(Some(idadir.join("libida.so")), RTLD_LAZY | RTLD_GLOBAL) {
+        if let Ok(ida) = Library::open(Some(idadir.join(RUNTIME_LIB)), RTLD_LAZY | RTLD_GLOBAL) {
             std::mem::forget(ida);
         }
-        let lib = Library::open(Some(&idalib), RTLD_LAZY | RTLD_GLOBAL)
-            .unwrap_or_else(|e| panic!("could not dlopen {} ({e}); {hint}", idalib.display()));
-        let get: Symbol<unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int) -> bool> =
+        let lib = Library::open(Some(&idalib), RTLD_LAZY | RTLD_GLOBAL).unwrap_or_else(|e| {
+            panic!(
+                "could not dlopen {} ({e}); {VERSION_HINT}",
+                idalib.display()
+            )
+        });
+        let get: Symbol<GetLibraryVersion> =
             lib.get(b"get_library_version\0").unwrap_or_else(|e| {
                 panic!(
-                    "no get_library_version in {} ({e}); {hint}",
+                    "no get_library_version in {} ({e}); {VERSION_HINT}",
                     idalib.display()
                 )
             });
-        let (mut major, mut minor, mut build) = (0, 0, 0);
-        get(&mut major, &mut minor, &mut build);
+        let ptr = *get;
         std::mem::forget(lib);
-        (major, minor)
+        ptr
+    }
+}
+
+#[cfg(windows)]
+fn load_version_fn(idadir: &Path) -> GetLibraryVersion {
+    use libloading::os::windows::{Library, Symbol};
+
+    let idalib = idadir.join(IDALIB_LIB);
+    unsafe {
+        if let Ok(ida) = Library::new(idadir.join(RUNTIME_LIB)) {
+            std::mem::forget(ida);
+        }
+        let lib = Library::new(&idalib).unwrap_or_else(|e| {
+            panic!("could not load {} ({e}); {VERSION_HINT}", idalib.display())
+        });
+        let get: Symbol<GetLibraryVersion> =
+            lib.get(b"get_library_version\0").unwrap_or_else(|e| {
+                panic!(
+                    "no get_library_version in {} ({e}); {VERSION_HINT}",
+                    idalib.display()
+                )
+            });
+        let ptr = *get;
+        std::mem::forget(lib);
+        ptr
     }
 }
 

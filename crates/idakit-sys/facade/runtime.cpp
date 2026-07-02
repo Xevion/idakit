@@ -15,13 +15,26 @@
 #include <cstdio>  // fflush
 #include <cstdlib> // std::abort
 #include <cstring>
-#include <dlfcn.h> // dlsym
-#include <elf.h>   // ELF64_R_SYM
-#include <fcntl.h> // open (/dev/null), fcntl (O_NONBLOCK)
-#include <link.h>  // dl_iterate_phdr, ElfW
 #include <string>
+
+// Platform split. The fatal-exit trap is ELF-specific (it rewrites libida's GOT slots), so it
+// only compiles on Linux; elsewhere `install_fatal_traps` is a no-op and IDA's exit()/abort()
+// still kill the process, exactly as raw idalib does. fd capture is portable POSIX, kept on
+// Linux+macOS and stubbed on Windows. The interr trap in `guarded<>` is pure C++ and works
+// everywhere. See idakit_facade_internal.hpp for `guarded<>`.
+#if defined(_WIN32)
+#include <process.h> // _exit
+#else
+#include <fcntl.h>  // open (/dev/null), fcntl (O_NONBLOCK)
+#include <unistd.h> // pipe/dup/dup2/read/close/_exit
+#endif
+
+#if defined(__linux__)
+#include <dlfcn.h>    // dlsym
+#include <elf.h>      // ELF64_R_SYM
+#include <link.h>     // dl_iterate_phdr, ElfW
 #include <sys/mman.h> // mprotect
-#include <unistd.h>   // pipe/dup/dup2/read/close
+#endif
 
 #include "idakit_facade_internal.hpp"
 
@@ -63,7 +76,9 @@ bool g_trap_installed = false;
 
 // Our stand-in for libida's exit(): jump back to the armed guard if a guarded kernel call
 // is on the stack, else fall through to the real libc exit so normal teardown still works.
-void idakit_exit(int status) {
+// Off Linux nothing installs it into the GOT, so it's only reached (inside a guard) by the
+// test shim -- hence maybe_unused there.
+[[maybe_unused]] void idakit_exit(int status) {
   if (g_exit_guarded) {
     g_exit_guarded = false;
     g_exit_code = status;
@@ -75,7 +90,7 @@ void idakit_exit(int status) {
 }
 
 // Same escape as idakit_exit, for the abort() path; defer to the real abort outside a guard.
-[[noreturn]] void idakit_abort(void) {
+[[maybe_unused]] [[noreturn]] void idakit_abort(void) {
   if (g_exit_guarded) {
     g_exit_guarded = false;
     g_exit_code = 134; // 128 + SIGABRT
@@ -86,6 +101,7 @@ void idakit_exit(int status) {
   _exit(134);
 }
 
+#if defined(__linux__)
 // Overwrite one GOT slot, handling a possibly read-only (RELRO) page. Left writable
 // afterward, which is the normal state of the lazy-bound .got.plt this targets.
 void patch_slot(void **slot, void *newval) {
@@ -180,25 +196,31 @@ int patch_cb(struct dl_phdr_info *info, size_t, void *) {
   }
   return 0;
 }
+#endif // __linux__
 } // namespace
 
 // Point libida's exit()/abort() at our handlers. Idempotent; safe to call before every
-// guarded entry (the work happens once).
+// guarded entry (the work happens once). Only the ELF GOT rewrite is implemented, so off
+// Linux this is a no-op: those fatals fall through to the real exit/abort (process dies),
+// while the interr trap in `guarded<>` still catches the common case everywhere.
 void install_fatal_traps() {
   if (g_trap_installed)
     return;
   g_trap_installed = true;
+#if defined(__linux__)
   g_real_exit = reinterpret_cast<exit_fn>(dlsym(RTLD_DEFAULT, "exit"));
   g_real_abort = reinterpret_cast<abort_fn>(dlsym(RTLD_DEFAULT, "abort"));
   dl_iterate_phdr(patch_cb, nullptr);
+#endif
 }
 
+#if !defined(_WIN32)
 // Redirect fd 1+2 into an in-memory pipe (no temp file), saving the originals. The write end
 // is non-blocking: only small fatal error() text lands here, so were it ever to exceed the
-// pipe buffer the excess drops rather than deadlocking the writer. Portable primitive
-// (pipe/dup2; Windows has _pipe/_dup2). `rd < 0` => setup failed, fds untouched. IDA writes
-// diagnostics straight to fd 1/2, so this keeps them off the caller's console to ride along
-// with the error instead.
+// pipe buffer the excess drops rather than deadlocking the writer. POSIX primitive (pipe/dup2;
+// Windows would need _pipe/_dup2 and a different non-blocking scheme, so it's stubbed there).
+// `rd < 0` => setup failed, fds untouched. IDA writes diagnostics straight to fd 1/2, so this
+// keeps them off the caller's console to ride along with the error instead.
 capture_t begin_capture() {
   capture_t cap;
   (void)fflush(stdout);
@@ -245,6 +267,12 @@ void end_capture(capture_t &cap) {
   close(cap.rd);
   cap.rd = -1;
 }
+#else
+// Windows stub: no fd redirection (see begin_capture). `rd` stays -1 so a guarded call runs
+// unredirected and end_capture is a no-op; g_output is left empty.
+capture_t begin_capture() { return capture_t{}; }
+void end_capture(capture_t &cap) { (void)cap; }
+#endif // !_WIN32
 
 } // namespace idakit_facade
 
@@ -253,7 +281,9 @@ using namespace idakit_facade;
 // libidalib's init registers an atexit that prints a goodbye banner to stdout, corrupting
 // parsers like `nextest --list`. Our constructor runs after that init, so our atexit runs
 // before the banner (LIFO): redirecting fd 1 to /dev/null at exit swallows it, leaving
-// already-written run-time output untouched.
+// already-written run-time output untouched. POSIX-only (constructor attribute + /dev/null);
+// harmless to skip elsewhere -- the banner just isn't suppressed.
+#if !defined(_WIN32)
 namespace {
 void swallow_exit_banner() {
   int devnull = open("/dev/null", O_WRONLY);
@@ -267,12 +297,17 @@ __attribute__((constructor)) void install_exit_banner_filter() {
   (void)atexit(swallow_exit_banner);
 }
 } // namespace
+#endif // !_WIN32
 
 // libidalib reads TVHEADLESS to stay off the GUI/Qt path but never sets it, so set it here
-// before init runs. setenv (not the Rust env API) keeps this off the edition-2024 unsafe
-// set_var race and colocates it with init.
+// before init runs. Setting it in C (not the Rust env API) keeps this off the edition-2024
+// unsafe set_var race and colocates it with init.
 extern "C" int idakit_init_library(void) {
+#if defined(_WIN32)
+  _putenv_s("TVHEADLESS", "1");
+#else
   setenv("TVHEADLESS", "1", 1);
+#endif
   return init_library(0, nullptr);
 }
 
