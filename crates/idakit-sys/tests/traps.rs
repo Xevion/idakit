@@ -23,7 +23,14 @@ fn abort_inside_guarded_call_is_trapped() {
     assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
 }
 
+// Unlike exit/abort (trapped by the shim's direct longjmp), interr relies on idalib throwing
+// interr_exc_t across the libida boundary for guarded<> to catch. That throw is only trapped on
+// Linux; off it the exception is not caught and the process aborts, so the check runs there only.
 #[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "interr trapping needs a catchable throw across the libida boundary (Linux-only)"
+)]
 fn interr_inside_guarded_call_is_trapped() {
     // SAFETY: the shim calls interr() inside guarded<>; set_interr_throws makes it a catchable
     // interr_exc_t, so the guard returns instead of terminating.

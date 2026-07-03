@@ -1,6 +1,6 @@
-# fmt lints on a public runner; the build/tests need a real IDA kernel (build.rs links
-# libida.so), so `container` supplies one via a private image and is gated on the
-# IDAKIT_IMAGE var so forks without it skip.
+# fmt lints on a stock runner. The build and tests link native dependencies that build.rs
+# resolves from IDADIR, so the `test` matrix fetches a prebuilt bundle from S3 first. The
+# S3_* secrets gate it: forks without them skip the matrix and still get fmt.
 
 name: ci
 
@@ -10,10 +10,17 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Supersede in-progress runs on the same ref.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNTIME_VERSION: 9.3.260421sp2
+  # SDK headers the facade compiles against; bump alongside RUNTIME_VERSION.
+  SDK_TAG: v9.3.1-release
 
 jobs:
   fmt:
@@ -26,27 +33,45 @@ jobs:
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - run: just fmt-check
 
-  container:
-    # secrets can't be used in a job-level `if`; gate on a var (the image ref isn't secret).
-    if: ${{ vars.IDAKIT_IMAGE != '' }}
-    runs-on: ubuntu-latest
+  test:
+    name: test (${{ matrix.platform }})
+    # secrets can't be used in a job-level `if`; gate on a var (forks without it skip).
+    if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, platform: linux-x64 }
+          - { runner: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { runner: macos-15-intel, platform: macos-x64 }
+          - { runner: macos-14, platform: macos-arm64 }
+          - { runner: windows-2022, platform: windows-x64 }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    permissions:
-      packages: read
     env:
       RUST_BACKTRACE: "1"
-    container:
-      image: ${{ vars.IDAKIT_IMAGE }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      AWS_REGION: auto
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: ./.github/actions/fetch-runtime
         with:
-          cache-directories: /root/.cache/idakit/ida-sdk
+          version: ${{ env.RUNTIME_VERSION }}
+          platform: ${{ matrix.platform }}
+          sdk-tag: ${{ env.SDK_TAG }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: just clippy
-      - run: just tidy
+      # clang-tidy runs against the facade's compile_commands, which name a POSIX-style
+      # compiler; on Windows the build uses MSVC, so lint the C++ on the other OSes instead.
+      - if: runner.os != 'Windows'
+        run: just tidy
       - run: cargo run -q -p idakit --example accept_eula
+      # The test fixture is a small x86-64 program; the arm64 runner cross-compiles it
+      # (gcc + the x86-64 target libc headers/libs it Recommends but doesn't Depend on).
+      - if: matrix.platform == 'linux-arm64'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-x86-64-linux-gnu libc6-dev-amd64-cross
       - run: just ci-test

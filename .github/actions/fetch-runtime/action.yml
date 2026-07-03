@@ -1,0 +1,67 @@
+name: fetch-runtime
+description: Fetch idakit's prebuilt native test dependencies from S3 (exporting IDADIR), and optionally the pinned SDK headers (exporting IDA_SDK_DIR).
+
+inputs:
+  version:
+    description: Dependency bundle version.
+    required: true
+  platform:
+    description: Platform slug (linux-x64, linux-arm64, windows-x64, macos-arm64, macos-x64).
+    required: true
+  sdk-tag:
+    description: If set, also sparse-checkout the SDK headers at this tag and export IDA_SDK_DIR.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # Credentials arrive as job-level env (AWS_*, S3_ENDPOINT, S3_BUCKET); composite run
+    # steps inherit it. The bundle is decompressed into a per-run temp dir and pointed at
+    # via IDADIR, which build.rs reads to compile and link. The runtime dir is added to the
+    # loader's search path, which is spelled differently on each OS.
+    - shell: bash
+      run: |
+        set -euo pipefail
+        tmp="$RUNNER_TEMP"
+        [ "${RUNNER_OS:-}" = Windows ] && tmp="$(cygpath -u "$RUNNER_TEMP")"
+        dest="$tmp/runtime"
+        mkdir -p "$dest"
+        aws s3 cp "s3://$S3_BUCKET/lean/${{ inputs.version }}/${{ inputs.platform }}.tar.zst" \
+          "$tmp/runtime.tar.zst" --endpoint-url "$S3_ENDPOINT" --only-show-errors
+        tar --zstd -xf "$tmp/runtime.tar.zst" -C "$dest"
+        rm -f "$tmp/runtime.tar.zst"
+        case "${RUNNER_OS:-Linux}" in
+          Windows)
+            # Rust needs a native path; PE finds the DLLs via PATH, not an rpath.
+            win="$(cygpath -w "$dest")"
+            echo "IDADIR=$win" >> "$GITHUB_ENV"
+            echo "$win" >> "$GITHUB_PATH"
+            ;;
+          macOS)
+            # Normalizing the archive strips the dylibs' code-signing metadata, and only arm64
+            # refuses to load an unsigned dylib -- re-sign ad-hoc there. No `|| true`: a genuine
+            # signing failure should fail the job here, not resurface later as a cryptic dyld error.
+            if [ "${RUNNER_ARCH:-}" = ARM64 ]; then
+              find "$dest" -name '*.dylib' -exec codesign --force --sign - {} +
+            fi
+            echo "IDADIR=$dest" >> "$GITHUB_ENV"
+            echo "DYLD_LIBRARY_PATH=$dest${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+            ;;
+          *)
+            echo "IDADIR=$dest" >> "$GITHUB_ENV"
+            echo "LD_LIBRARY_PATH=$dest${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+            ;;
+        esac
+        # Pin the SDK headers build.rs compiles against (sparse: only src/include), so the build
+        # never detects a version at runtime -- that probe is unreliable on macOS. Reuses $tmp.
+        if [ -n "${{ inputs.sdk-tag }}" ]; then
+          sdk="$tmp/ida-sdk"
+          git clone --depth 1 --filter=blob:none --no-checkout --branch "${{ inputs.sdk-tag }}" \
+            https://github.com/HexRaysSA/ida-sdk.git "$sdk"
+          git -C "$sdk" sparse-checkout init --cone
+          git -C "$sdk" sparse-checkout set src/include
+          git -C "$sdk" checkout
+          [ "${RUNNER_OS:-}" = Windows ] && sdk="$(cygpath -w "$sdk")"
+          echo "IDA_SDK_DIR=$sdk" >> "$GITHUB_ENV"
+        fi

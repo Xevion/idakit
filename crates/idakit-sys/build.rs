@@ -19,6 +19,8 @@ mod platform {
     pub const PLATFORM_DEFINE: &str = "__NT__";
     // PE resolves DLLs via the search path, not an embedded rpath.
     pub const EMIT_RPATH: bool = false;
+    // MSVC links the C++ runtime by default; nothing to name explicitly.
+    pub const CPP_STDLIB: Option<&str> = None;
 }
 #[cfg(target_os = "macos")]
 mod platform {
@@ -26,6 +28,7 @@ mod platform {
     pub const IDALIB_LIB: &str = "libidalib.dylib";
     pub const PLATFORM_DEFINE: &str = "__MAC__";
     pub const EMIT_RPATH: bool = true;
+    pub const CPP_STDLIB: Option<&str> = Some("c++");
 }
 #[cfg(all(unix, not(target_os = "macos")))]
 mod platform {
@@ -33,8 +36,9 @@ mod platform {
     pub const IDALIB_LIB: &str = "libidalib.so";
     pub const PLATFORM_DEFINE: &str = "__LINUX__";
     pub const EMIT_RPATH: bool = true;
+    pub const CPP_STDLIB: Option<&str> = Some("stdc++");
 }
-use platform::{EMIT_RPATH, IDALIB_LIB, PLATFORM_DEFINE, RUNTIME_LIB};
+use platform::{CPP_STDLIB, EMIT_RPATH, IDALIB_LIB, PLATFORM_DEFINE, RUNTIME_LIB};
 
 const FACADE_SOURCES: &[&str] = &[
     "facade/runtime.cpp",
@@ -62,17 +66,16 @@ fn main() {
     let sdk_include_str = sdk_include.to_str().expect("SDK include path is not UTF-8");
 
     let mut build = cc::Build::new();
-    build
-        .cpp(true)
-        .std("c++17")
-        .include("facade")
-        // Treat the SDK headers as system includes so their warning noise is
-        // suppressed while the facade's own warnings still surface. Emitted as an
-        // adjacent pair so the compiler reads the path as `-isystem`'s argument.
-        .flag("-isystem")
-        .flag(sdk_include_str)
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
+    build.cpp(true).std("c++17").include("facade");
+    // Treat the SDK headers as system includes so their warning noise is suppressed while
+    // the facade's own warnings still surface. `cl.exe`/`clang-cl` have no `-isystem`, so
+    // there fall back to a plain include (SDK warnings stay non-fatal in this build).
+    if build.get_compiler().is_like_msvc() {
+        build.include(sdk_include_str);
+    } else {
+        build.flag("-isystem").flag(sdk_include_str);
+    }
+    build.define("__EA64__", None).define(PLATFORM_DEFINE, None);
     // Fault-injection shim for the trap tests -- see the `test-shims` feature. Cargo sets this
     // env when the feature is on; it gates `idakit_test_fatal` in the facade.
     if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
@@ -81,7 +84,24 @@ fn main() {
     for src in FACADE_SOURCES {
         build.file(src);
     }
+    // Emit the link directives ourselves (below) so the facade is *whole-archive* linked.
+    build.cargo_metadata(false);
     build.compile("idakit_facade");
+
+    // Whole-archive the facade so its load-time constructor -- the idalib exit-banner filter
+    // in runtime.cpp -- is present in every binary, even pure unit-test binaries that call no
+    // facade function. Otherwise the linker never pulls that object and macOS idalib's goodbye
+    // banner (registered at dylib load) leaks into stdout, breaking `nextest --list`. The
+    // modifier maps per-linker (-force_load / --whole-archive / /WHOLEARCHIVE).
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR unset");
+    println!("cargo:rustc-link-search=native={out_dir}");
+    println!("cargo:rustc-link-lib=static:+whole-archive=idakit_facade");
+    // cargo_metadata(false) also dropped cc's C++ runtime link, which the whole-archived
+    // facade (std::string, exceptions, RTTI) needs; re-emit it after the facade so the
+    // dependency order is right.
+    if let Some(stdlib) = CPP_STDLIB {
+        println!("cargo:rustc-link-lib=dylib={stdlib}");
+    }
 
     if env::var_os("IDAKIT_EMIT_COMPILE_COMMANDS").is_some() {
         emit_compile_commands(sdk_include_str);

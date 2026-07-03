@@ -20,9 +20,12 @@
 // Platform split. The fatal-exit trap is ELF-specific (it rewrites libida's GOT slots), so it
 // only compiles on Linux; elsewhere `install_fatal_traps` is a no-op and IDA's exit()/abort()
 // still kill the process, exactly as raw idalib does. fd capture is portable POSIX, kept on
-// Linux+macOS and stubbed on Windows. The interr trap in `guarded<>` is pure C++ and works
-// everywhere. See idakit_facade_internal.hpp for `guarded<>`.
+// Linux+macOS and stubbed on Windows. The interr trap in `guarded<>` catches only where
+// idalib's throw unwinds across the libida boundary (Linux); elsewhere it aborts. See
+// idakit_facade_internal.hpp for `guarded<>`.
 #if defined(_WIN32)
+#include <fcntl.h>   // _O_WRONLY (banner swallow)
+#include <io.h>      // _open/_dup2/_close (banner swallow)
 #include <process.h> // _exit
 #else
 #include <fcntl.h>  // open (/dev/null), fcntl (O_NONBLOCK)
@@ -38,12 +41,12 @@
 
 #include "idakit_facade_internal.hpp"
 
-// pro.h poisons libc calls (#define stdout/setenv/... to dont_use_ names) to push callers
-// onto IDA's wrappers. We deliberately want raw libc here: fd-level capture must catch
-// whatever IDA writes however it writes it, and TVHEADLESS must land in the real
-// environment libidalib reads. Undo the poisoning for the symbols we call directly.
-#undef stdout
-#undef stderr
+// pro.h poisons libc calls (#define fflush/setenv/... to dont_use_ names) to push callers
+// onto IDA's wrappers. We deliberately want raw libc here: fd-level capture must flush and
+// catch whatever IDA writes however it writes it, and TVHEADLESS must land in the real
+// environment libidalib reads. Undo the poisoning for the symbols we call directly. We flush
+// with fflush(nullptr) (all streams) rather than naming stdout/stderr: on some libcs those
+// are macros with no backing symbol, so undoing the poison would leave them undeclared.
 #undef fflush
 #undef setenv
 
@@ -52,7 +55,7 @@
 // unaccepted license runs verror() -> qexit() -> exit(), and bundled LLVM/libc++ asserts
 // call abort() directly. We redirect libida's GOT slots for both to our handlers: inside a
 // guarded call they longjmp back and report an error; outside one they defer to the real
-// exit/abort, leaving ordinary shutdown and genuine crashes untouched. GOT patching (not
+// exit/abort, leaving ordinary shutdown and genuine crashes untouched. GOT redirection (not
 // symbol interposition) needs no link flag, so it works for any binary linking idakit.
 namespace idakit_facade {
 
@@ -104,7 +107,7 @@ bool g_trap_installed = false;
 #if defined(__linux__)
 // Overwrite one GOT slot, handling a possibly read-only (RELRO) page. Left writable
 // afterward, which is the normal state of the lazy-bound .got.plt this targets.
-void patch_slot(void **slot, void *newval) {
+void overwrite_slot(void **slot, void *newval) {
   long pg = sysconf(_SC_PAGESIZE);
   uintptr_t addr = reinterpret_cast<uintptr_t>(slot);
   uintptr_t page = addr & ~(uintptr_t)(pg - 1);
@@ -121,13 +124,13 @@ void scan_rela(ElfW(Addr) base, const ElfW(Rela) * rela, size_t count, const Elf
     unsigned long sym = ELF64_R_SYM(rela[i].r_info);
     const char *name = strtab + symtab[sym].st_name;
     if (strcmp(name, symname) == 0)
-      patch_slot(reinterpret_cast<void **>(base + rela[i].r_offset), newfn);
+      overwrite_slot(reinterpret_cast<void **>(base + rela[i].r_offset), newfn);
   }
 }
 
 // dl_iterate_phdr callback: for each loaded libida*/libidalib* object, walk its dynamic
 // relocations and point its `exit`/`abort` slots at our stand-ins.
-int patch_cb(struct dl_phdr_info *info, size_t, void *) {
+int redirect_cb(struct dl_phdr_info *info, size_t, void *) {
   const char *objname = info->dlpi_name != nullptr ? info->dlpi_name : "";
   if (strstr(objname, "libida") == nullptr)
     return 0;
@@ -201,8 +204,8 @@ int patch_cb(struct dl_phdr_info *info, size_t, void *) {
 
 // Point libida's exit()/abort() at our handlers. Idempotent; safe to call before every
 // guarded entry (the work happens once). Only the ELF GOT rewrite is implemented, so off
-// Linux this is a no-op: those fatals fall through to the real exit/abort (process dies),
-// while the interr trap in `guarded<>` still catches the common case everywhere.
+// Linux this is a no-op: idalib's own exit()/abort() stay unredirected and a fatal from
+// inside the kernel kills the process, exactly as raw idalib does.
 void install_fatal_traps() {
   if (g_trap_installed)
     return;
@@ -210,7 +213,7 @@ void install_fatal_traps() {
 #if defined(__linux__)
   g_real_exit = reinterpret_cast<exit_fn>(dlsym(RTLD_DEFAULT, "exit"));
   g_real_abort = reinterpret_cast<abort_fn>(dlsym(RTLD_DEFAULT, "abort"));
-  dl_iterate_phdr(patch_cb, nullptr);
+  dl_iterate_phdr(redirect_cb, nullptr);
 #endif
 }
 
@@ -223,8 +226,7 @@ void install_fatal_traps() {
 // keeps them off the caller's console to ride along with the error instead.
 capture_t begin_capture() {
   capture_t cap;
-  (void)fflush(stdout);
-  (void)fflush(stderr);
+  (void)fflush(nullptr);
   int fds[2];
   if (pipe(fds) != 0)
     return cap;
@@ -244,8 +246,7 @@ capture_t begin_capture() {
 void end_capture(capture_t &cap) {
   if (cap.rd < 0)
     return;
-  (void)fflush(stdout);
-  (void)fflush(stderr);
+  (void)fflush(nullptr);
   // Only restore fds that begin_capture actually saved (dup can fail, leaving -1).
   if (cap.saved_out >= 0) {
     dup2(cap.saved_out, 1);
@@ -278,26 +279,37 @@ void end_capture(capture_t &cap) { (void)cap; }
 
 using namespace idakit_facade;
 
-// libidalib's init registers an atexit that prints a goodbye banner to stdout, corrupting
-// parsers like `nextest --list`. Our constructor runs after that init, so our atexit runs
-// before the banner (LIFO): redirecting fd 1 to /dev/null at exit swallows it, leaving
-// already-written run-time output untouched. POSIX-only (constructor attribute + /dev/null);
-// harmless to skip elsewhere -- the banner just isn't suppressed.
-#if !defined(_WIN32)
+// idalib prints a goodbye banner to stdout at process exit, after the test harness has already
+// listed its tests -- which corrupts a stdout parser like `nextest --list`. We register (from a
+// static object's constructor, portable across MSVC/GCC/clang unlike __attribute__((constructor)))
+// an atexit that redirects fd 1 to the null device. Our constructor runs after the idalib image's
+// own initializers (dependency images init before the main binary), so where idalib arms the
+// banner at load its atexit is registered before ours and, atexit being LIFO, ours runs first --
+// sending the banner to the null fd. Whole-archive linking (build.rs) keeps this object in every
+// binary, even ones that call no facade function -- else the linker drops it and the banner
+// leaks. On Windows this relies on idalib and the test binary sharing the UCRT's fd table.
 namespace {
 void swallow_exit_banner() {
+  (void)fflush(nullptr);
+#if defined(_WIN32)
+  int devnull = _open("NUL", _O_WRONLY);
+  if (devnull >= 0) {
+    _dup2(devnull, 1);
+    _close(devnull);
+  }
+#else
   int devnull = open("/dev/null", O_WRONLY);
   if (devnull >= 0) {
-    (void)fflush(stdout);
     dup2(devnull, 1);
     close(devnull);
   }
+#endif
 }
-__attribute__((constructor)) void install_exit_banner_filter() {
-  (void)atexit(swallow_exit_banner);
-}
+struct BannerFilter {
+  BannerFilter() { (void)atexit(swallow_exit_banner); }
+};
+[[maybe_unused]] BannerFilter g_banner_filter;
 } // namespace
-#endif // !_WIN32
 
 // libidalib reads TVHEADLESS to stay off the GUI/Qt path but never sets it, so set it here
 // before init runs. Setting it in C (not the Rust env API) keeps this off the edition-2024
@@ -365,7 +377,7 @@ extern "C" size_t idakit_last_output(char *buf, size_t cap) {
 
 #ifdef IDAKIT_TEST_SHIMS
 // Run the chosen fatal inside guarded<> so the trap tests can prove it's caught: the exit/abort
-// stand-ins libida's patched GOT slots point at (the longjmp path), or interr (the throw path).
+// stand-ins libida's redirected GOT slots point at (the longjmp path), or interr (the throw path).
 extern "C" int idakit_test_fatal(int kind) {
   return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [kind]() -> int {
     if (kind == IDAKIT_FATAL_EXIT)

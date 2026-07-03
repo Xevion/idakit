@@ -1,5 +1,4 @@
-# One toolchain for local, the CI image, and the fmt runner. Keep `channel` in sync with
-# the `FROM rust:<version>` in .github/docker/Dockerfile.
+# The one toolchain for local dev and CI; rustup reads this file as the source of truth.
 [toolchain]
 channel = "1.96.1"
 components = ["rustfmt", "clippy"]

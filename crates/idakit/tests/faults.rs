@@ -88,6 +88,11 @@ fn directory_path_is_rejected() {
 }
 
 #[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "a corrupt-header database makes idalib call exit(); trapping that needs the \
+              GOT-redirect exit trap, which is Linux-only (elsewhere the process just exits)"
+)]
 fn truncated_database_is_rejected() {
     let Some(db) = common::TestDb::source() else {
         eprintln!("skipping: no test database (set IDAKIT_TEST_DB)");

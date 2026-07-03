@@ -5,6 +5,9 @@
 //! every tracked signal's handler is identical before idakit runs and after open+analyze, so a
 //! future idalib that starts stealing signals fails here instead of silently taking them.
 
+// The whole invariant is POSIX sigaction dispositions, which have no Windows analogue.
+#![cfg(unix)]
+
 use std::ffi::c_int;
 
 use assert2::assert;
