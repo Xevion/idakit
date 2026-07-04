@@ -5,7 +5,7 @@ default:
     @just --list
 
 # One-stop gate mirroring CI: a clean run here means CI will very likely pass.
-check: fmt-check clippy tidy test
+check: fmt-check actionlint clippy tidy test
 
 build:
     cargo build --workspace
@@ -48,6 +48,10 @@ tidy:
 
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
+
+# Lint the GitHub Actions workflows (auto-discovers .github/workflows/).
+actionlint:
+    actionlint
 
 # Build the fixture database (gcc a sample, auto-analyze it into an .i64) and run the whole
 # suite against it. The kernel-touching integration tests skip without IDAKIT_TEST_DB.

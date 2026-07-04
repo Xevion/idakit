@@ -4,6 +4,7 @@ just = "1.55.1"
 "pipx:clang-format" = "21.1.8"
 "pipx:clang-tidy" = "21.1.6"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.138"
+"aqua:rhysd/actionlint" = "1.7.12"
 
 [settings.pipx]
 uvx = true

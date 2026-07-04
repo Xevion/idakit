@@ -17,11 +17,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  RUNTIME_VERSION: 9.3.260421sp2
-  # SDK headers the facade compiles against; bump alongside RUNTIME_VERSION.
-  SDK_TAG: v9.3.1-release
-
 jobs:
   fmt:
     name: fmt
@@ -34,18 +29,19 @@ jobs:
       - run: just fmt-check
 
   test:
-    name: test (${{ matrix.platform }})
+    name: test (${{ matrix.platform }} @ ${{ matrix.version }})
     # secrets can't be used in a job-level `if`; gate on a var (forks without it skip).
     if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-latest, platform: linux-x64 }
-          - { runner: ubuntu-24.04-arm, platform: linux-arm64 }
-          - { runner: macos-15-intel, platform: macos-x64 }
-          - { runner: macos-14, platform: macos-arm64 }
-          - { runner: windows-2022, platform: windows-x64 }
+          - { runner: ubuntu-latest, platform: linux-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: ubuntu-24.04-arm, platform: linux-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: macos-15-intel, platform: macos-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: macos-14, platform: macos-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: windows-2022, platform: windows-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: ubuntu-latest, platform: linux-x64, version: 9.2.250908, sdk-tag: v9.2.0-release }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
@@ -60,9 +56,9 @@ jobs:
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - uses: ./.github/actions/fetch-runtime
         with:
-          version: ${{ env.RUNTIME_VERSION }}
+          version: ${{ matrix.version }}
           platform: ${{ matrix.platform }}
-          sdk-tag: ${{ env.SDK_TAG }}
+          sdk-tag: ${{ matrix.sdk-tag }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: just clippy
       # clang-tidy runs against the facade's compile_commands, which name a POSIX-style
