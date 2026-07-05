@@ -6,7 +6,6 @@
 // the public API is `deny(missing_docs)`.
 #![allow(missing_docs)]
 
-mod arena;
 mod extract;
 mod node;
 mod ops;
@@ -15,7 +14,7 @@ mod render;
 mod tree;
 mod types;
 
-pub use arena::{Arena, Idx};
+pub use crate::arena::{Arena, Idx};
 pub use extract::ExtractError;
 pub(crate) use extract::walk;
 pub use node::{

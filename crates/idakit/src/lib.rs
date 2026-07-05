@@ -59,7 +59,9 @@ use std::marker::PhantomData;
 
 use idakit_sys as sys;
 
+mod arena;
 mod bytes;
+mod cfg;
 mod claim;
 pub mod ctree;
 mod decompile;
@@ -77,11 +79,12 @@ mod segment;
 mod ty;
 mod xref;
 
+pub use cfg::{Block, BlockId, BlockKind, Cfg, ExternalExit};
 pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{Cfunc, CtreeCounts};
 pub use ea::{BADADDR, Ea, Offset};
 pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
-pub use func::{Chunk, Chunks, Func, FuncImage, Functions, Instructions};
+pub use func::{Chunk, Chunks, Func, FuncImage, Functions, Instructions, InstructionsIn};
 pub use insn::{
     Access, DecodeError, Dtype, Flow, Insn, Isa, Mem, Operand, OperandKind, Reg, RegClass,
 };

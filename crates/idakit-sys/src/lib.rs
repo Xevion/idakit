@@ -29,6 +29,7 @@ pub type Ea = u64;
 pub const BADADDR: Ea = u64::MAX;
 
 mod bytes;
+mod cfg;
 mod func;
 mod hexrays;
 mod insn;
@@ -40,6 +41,7 @@ mod ty;
 mod xref;
 
 pub use bytes::*;
+pub use cfg::*;
 pub use func::*;
 pub use hexrays::*;
 pub use insn::*;

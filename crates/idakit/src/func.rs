@@ -1,8 +1,11 @@
 //! [`Func`]: a borrowed view of one function, keyed by its entry [`Ea`].
 
+use std::ops::Range;
+
 use idakit_sys as sys;
 
 use crate::Idb;
+use crate::cfg::{Cfg, cfg_flags};
 use crate::ctree::Ctree;
 use crate::decompile::Cfunc;
 use crate::ea::Ea;
@@ -147,6 +150,32 @@ impl<'db> Func<'db> {
             name: self.name(),
             prototype: self.prototype(),
         }
+    }
+}
+
+#[bon::bon]
+impl<'db> Func<'db> {
+    /// Build this function's control-flow graph with default options. The whole function is
+    /// covered, tail chunks included. See [`Cfg`] and [`cfg_with`](Self::cfg_with) for the
+    /// knobs.
+    pub fn cfg(&self) -> Result<Cfg> {
+        self.db.cfg(self.ea)
+    }
+
+    /// Build this function's CFG with non-default options: `call_ends` splits a block after
+    /// every call instruction, `externals(false)` drops the out-of-function
+    /// [`ExternalExit`](crate::ExternalExit) edges (jump/call targets outside the function),
+    /// and `predecessors(false)` skips predecessor lists (a cheaper build when only forward
+    /// edges are needed).
+    #[builder]
+    pub fn cfg_with(
+        &self,
+        #[builder(default = false)] call_ends: bool,
+        #[builder(default = true)] externals: bool,
+        #[builder(default = true)] predecessors: bool,
+    ) -> Result<Cfg> {
+        self.db
+            .build_cfg(self.ea, cfg_flags(call_ends, externals, predecessors))
     }
 }
 
@@ -344,6 +373,48 @@ impl Iterator for Instructions<'_> {
                 return Some(insn);
             }
         }
+    }
+}
+
+impl Idb {
+    /// Lazily decode the instructions in the half-open range `[range.start, range.end)`,
+    /// code-gated like [`Func::instructions`]. The ranged twin of that walk -- pass a
+    /// [`Block`](crate::Block)'s [`range`](crate::Block::range) to iterate one basic block.
+    #[must_use]
+    pub fn instructions_in(&self, range: Range<Ea>) -> InstructionsIn<'_> {
+        InstructionsIn {
+            db: self,
+            cursor: range.start,
+            end: range.end,
+        }
+    }
+}
+
+/// Lazy iterator over the instructions in a fixed `[start, end)` range, code-gated like
+/// [`Instructions`]. From [`Idb::instructions_in`].
+pub struct InstructionsIn<'db> {
+    db: &'db Idb,
+    cursor: Ea,
+    end: Ea,
+}
+
+impl Iterator for InstructionsIn<'_> {
+    type Item = Insn;
+
+    fn next(&mut self) -> Option<Insn> {
+        while self.cursor < self.end {
+            let ea = self.cursor;
+            // Step past this item before deciding to yield, so every branch advances; the
+            // `> ea` guard keeps a zero-width item from stalling the walk (cf. Instructions).
+            let stepped = self.db.item_end(ea);
+            self.cursor = if stepped > ea { stepped } else { self.end };
+            if self.db.is_code(ea)
+                && let Ok(insn) = self.db.decode(ea)
+            {
+                return Some(insn);
+            }
+        }
+        None
     }
 }
 

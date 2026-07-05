@@ -18,12 +18,12 @@ use std::ffi::{c_char, c_void};
 use idakit_sys::{CaseDesc, EmitVtbl, EnumConstDesc, IDAKIT_NONE, MemberDesc};
 use snafu::Snafu;
 
-use super::arena::Idx;
 use super::node::{Case, Cexpr, Cinsn, ExprId, Lvar, LvarId, LvarLocation, StmtId};
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::{Ctree, CtreeBuilder};
 use super::types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember};
 use crate::Ea;
+use crate::arena::Idx;
 
 /// Structural `ctype_t` values the generic operator callback dispatches by name
 /// (operators proper go through `from_raw`).

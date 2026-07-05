@@ -206,6 +206,14 @@ pub enum Error {
         name: String,
     },
 
+    /// No function covers the requested address -- e.g. building a
+    /// [`Cfg`](crate::Cfg) at an address IDA has not attributed to any function.
+    #[snafu(display("no function at {ea:#x}"))]
+    NoFunction {
+        /// The address that lies in no function.
+        ea: u64,
+    },
+
     /// A binary search pattern was rejected by [`Pattern::compile`](crate::Pattern::compile).
     /// `kind` is a typed reason; see [`PatternRejection`].
     #[snafu(display("invalid search pattern {pattern:?}: {kind}"))]

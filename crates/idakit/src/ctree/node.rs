@@ -6,10 +6,10 @@
 //! Operators are grouped (see [`BinOp`]/[`UnOp`]/[`AssignOp`]); leaves carry their
 //! resolved value.
 
-use super::arena::Idx;
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::types::TypeId;
 use crate::Ea;
+use crate::arena::Idx;
 
 /// Handle to an [`ExprNode`].
 pub type ExprId = Idx<ExprNode>;

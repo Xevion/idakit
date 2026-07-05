@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use super::arena::{Arena, Idx};
+use crate::arena::{Arena, Idx};
 
 /// Handle to a [`TypeData`] in a [`TypeTable`].
 pub type TypeId = Idx<TypeData>;

@@ -7,6 +7,7 @@
 
 #include <bytes.hpp>
 #include <funcs.hpp>
+#include <gdl.hpp>    // qflow_chart_t
 #include <loader.hpp> // get_file_type_name
 #include <nalt.hpp>   // get_input_file_path, get_root_filename, get_imagebase
 #include <name.hpp>
@@ -82,6 +83,72 @@ extern "C" uint64_t idakit_func_flags(idakit_ea_t ea) {
   func_t *f = get_func((ea_t)ea);
   return f != nullptr ? (uint64_t)f->flags : 0;
 }
+
+// Passing pfn with BADADDR bounds builds the flow chart over the whole function, tail chunks
+// included; the constructor's refresh() materializes every block up front. Allocates and runs
+// analysis, so it can throw -- guard the boundary.
+extern "C" void *idakit_cfg_build(idakit_ea_t ea, int flags) {
+  try {
+    func_t *pfn = get_func((ea_t)ea);
+    if (pfn == nullptr)
+      return nullptr;
+    return new qflow_chart_t("", pfn, BADADDR, BADADDR, flags);
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_cfg_nblocks(const void *h) {
+  const qflow_chart_t *fc = (const qflow_chart_t *)h;
+  return fc != nullptr ? (int)fc->blocks.size() : 0;
+}
+
+extern "C" int idakit_cfg_nproper(const void *h) {
+  const qflow_chart_t *fc = (const qflow_chart_t *)h;
+  return fc != nullptr ? fc->nproper : 0;
+}
+
+extern "C" int idakit_cfg_block(const void *h, int n, idakit_ea_t *start, idakit_ea_t *end,
+                                int *kind) {
+  const qflow_chart_t *fc = (const qflow_chart_t *)h;
+  if (fc == nullptr || n < 0 || (size_t)n >= fc->blocks.size())
+    return 0;
+  const qbasic_block_t &b = fc->blocks[n];
+  *start = (idakit_ea_t)b.start_ea;
+  *end = (idakit_ea_t)b.end_ea;
+  *kind = (int)fc->calc_block_type((size_t)n);
+  return 1;
+}
+
+extern "C" int idakit_cfg_nsucc(const void *h, int n) {
+  const qflow_chart_t *fc = (const qflow_chart_t *)h;
+  if (fc == nullptr || n < 0 || (size_t)n >= fc->blocks.size())
+    return 0;
+  return fc->nsucc(n);
+}
+
+extern "C" int idakit_cfg_succ(const void *h, int n, int i) {
+  const qflow_chart_t *fc = (const qflow_chart_t *)h;
+  if (fc == nullptr || n < 0 || (size_t)n >= fc->blocks.size() || i < 0 || i >= fc->nsucc(n))
+    return -1;
+  return fc->succ(n, i);
+}
+
+extern "C" int idakit_cfg_npred(const void *h, int n) {
+  const qflow_chart_t *fc = (const qflow_chart_t *)h;
+  if (fc == nullptr || n < 0 || (size_t)n >= fc->blocks.size())
+    return 0;
+  return fc->npred(n);
+}
+
+extern "C" int idakit_cfg_pred(const void *h, int n, int i) {
+  const qflow_chart_t *fc = (const qflow_chart_t *)h;
+  if (fc == nullptr || n < 0 || (size_t)n >= fc->blocks.size() || i < 0 || i >= fc->npred(n))
+    return -1;
+  return fc->pred(n, i);
+}
+
+extern "C" void idakit_cfg_free(void *h) { delete (qflow_chart_t *)h; }
 
 extern "C" int idakit_seg_qty(void) { return get_segm_qty(); }
 

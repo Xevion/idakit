@@ -3,8 +3,9 @@
 //! [`Idx<T>`] is a 32-bit handle into an [`Arena<T>`]: `Copy`, lifetime-free, and
 //! typed by `T` so an `Idx<ExprData>` cannot be used where an `Idx<TypeData>` is
 //! expected. The arena only appends, so a handle stays valid for the arena's life.
-//! Being lifetime-free and (for `T: Send`) `Send` is what lets a materialized ctree
-//! move off the kernel thread to a worker.
+//! Being lifetime-free and (for `T: Send`) `Send` is what lets a materialized graph --
+//! the decompiler ctree, a function's [`Cfg`](crate::Cfg) -- move off the kernel thread
+//! to a worker.
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -81,6 +82,7 @@ pub struct Arena<T> {
 }
 
 impl<T> Arena<T> {
+    /// An empty arena.
     #[inline]
     pub fn new() -> Self {
         Self { data: Vec::new() }
@@ -94,11 +96,13 @@ impl<T> Arena<T> {
         idx
     }
 
+    /// The number of allocated elements.
     #[inline]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
+    /// Whether nothing has been allocated yet.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()

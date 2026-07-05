@@ -156,6 +156,24 @@ int64_t idakit_type_member_name(void *h, size_t i, char *buf,
 int64_t idakit_type_member_type(void *h, size_t i, char *buf,
                                 size_t cap); /* type repr length, <0 if absent */
 
+/* Disassembly-level control-flow graph (gdl.hpp qflow_chart_t). cfg_build constructs the
+ * flow chart for the function containing `ea` -- including tail chunks -- with the given
+ * FC_ flags, returning an opaque handle (NULL if no function is there); the block list is
+ * fully materialized at build time. Blocks are indexed [0, nblocks); block() fills the
+ * range and fc_block_type_t `kind`. The first nproper() blocks are the function's own; the
+ * rest are external stubs for out-of-function jump/call targets, built as zero-length
+ * [target, target) ranges. Edges are block indices: succ/pred(n, i) return the i-th
+ * successor/predecessor of block n, or -1 if out of range. Release with cfg_free. */
+void *idakit_cfg_build(idakit_ea_t ea, int flags);
+int idakit_cfg_nblocks(const void *h);
+int idakit_cfg_nproper(const void *h);
+int idakit_cfg_block(const void *h, int n, idakit_ea_t *start, idakit_ea_t *end, int *kind);
+int idakit_cfg_nsucc(const void *h, int n);
+int idakit_cfg_succ(const void *h, int n, int i);
+int idakit_cfg_npred(const void *h, int n);
+int idakit_cfg_pred(const void *h, int n, int i);
+void idakit_cfg_free(void *h);
+
 int idakit_hexrays_init(void); /* 1 = decompiler ready, 0 = unavailable */
 void *idakit_decompile(idakit_ea_t ea, char *errbuf,
                        size_t cap); /* cfunc handle (owns a ref); NULL on fail, reason in errbuf */

@@ -2,11 +2,11 @@
 //! statement. Built through [`CtreeBuilder`], which wires every node's `parent` link
 //! once the tree is complete.
 
-use super::arena::Arena;
 use super::node::{Cexpr, Cinsn, ExprId, ExprNode, Lvar, LvarId, NodeRef, StmtId, StmtNode};
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::types::{TypeData, TypeId, TypeTable};
 use crate::Ea;
+use crate::arena::Arena;
 
 /// Visit `node`'s children, dispatching to the right arena. Shared by every navigation
 /// path (read-only walks and the build-time parent pass) so the expr/stmt split lives
