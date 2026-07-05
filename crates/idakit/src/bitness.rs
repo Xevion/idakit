@@ -1,5 +1,18 @@
 //! [`Bitness`]: the addressing width of an image or segment.
 
+use crate::Idb;
+
+impl Idb {
+    /// The database's addressing width, or `None` if it reports an unrecognized one. The width
+    /// of a [`read_pointer`](Idb::read_pointer) and one field of the [`meta`](Idb::meta)
+    /// snapshot.
+    #[inline]
+    #[must_use]
+    pub fn bitness(&self) -> Option<Bitness> {
+        Bitness::try_from_bits(self.bitness_bits().max(0) as u8)
+    }
+}
+
 /// Addressing width: 16-, 32-, or 64-bit.
 ///
 /// A closed set: IDA reports a width in bits, and a value that is not one of these three

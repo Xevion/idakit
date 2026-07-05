@@ -98,6 +98,19 @@ int64_t idakit_strlit_contents(idakit_ea_t ea, size_t len, int type, char *buf, 
 
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size); /* bytes read, <0 on fail */
 
+/* Typed value reads (bytes.hpp). Each reads a value in the database's byte order and returns 1
+ * with *out filled, or 0 if any covered byte is uninitialized (unmapped or never assigned a
+ * value). Widths are 1/2/4/8 bytes. */
+int idakit_get_u8(idakit_ea_t ea, uint8_t *out);
+int idakit_get_u16(idakit_ea_t ea, uint16_t *out);
+int idakit_get_u32(idakit_ea_t ea, uint32_t *out);
+int idakit_get_u64(idakit_ea_t ea, uint64_t *out);
+
+/* Read the string literal at ea (bytes.hpp): auto-detect its length (get_max_strlit_length) for
+ * STRTYPE code `strtype` (0 = 1-byte C string), then decode to UTF-8 snprintf-style, replacing
+ * undecodable units with U+FFFD. Returns the decoded length, or -1 if ea holds no such string. */
+int64_t idakit_get_strlit(idakit_ea_t ea, int strtype, char *buf, size_t cap);
+
 /* Byte/item classification and navigation (bytes.hpp). `flags` is IDA's per-address class
  * word; the Rust side masks it against MS_CLS for is_code/is_data. An item head is the first
  * address of a defined instruction or data item; next/prev_head return BADADDR when no head

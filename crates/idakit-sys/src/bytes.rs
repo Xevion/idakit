@@ -10,6 +10,17 @@ unsafe extern "C" {
     pub fn idakit_get_bytes(address: Address, buf: *mut c_void, size: usize) -> i64;
 }
 
+// typed value reads (bytes.hpp). Each returns 1 with `*out` filled, or 0 if any covered byte is
+// uninitialized; `get_strlit` auto-detects the string length and decodes to UTF-8 (-1 if none).
+unsafe extern "C" {
+    pub fn idakit_get_u8(address: Address, out: *mut u8) -> c_int;
+    pub fn idakit_get_u16(address: Address, out: *mut u16) -> c_int;
+    pub fn idakit_get_u32(address: Address, out: *mut u32) -> c_int;
+    pub fn idakit_get_u64(address: Address, out: *mut u64) -> c_int;
+    pub fn idakit_get_strlit(address: Address, strtype: c_int, buf: *mut c_char, cap: usize)
+    -> i64;
+}
+
 // binary pattern search (bytes.hpp). A compiled pattern is an opaque handle; `binpat_free`
 // releases it. `bin_search` returns BADADDR when the pattern is absent from [start, end).
 unsafe extern "C" {

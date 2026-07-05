@@ -101,6 +101,32 @@ impl Idb {
         unsafe { sys::idakit_get_bytes(address.get(), buf, size) }
     }
 
+    pub(crate) fn get_u8(&self, address: Address, out: *mut u8) -> c_int {
+        unsafe { sys::idakit_get_u8(address.get(), out) }
+    }
+
+    pub(crate) fn get_u16(&self, address: Address, out: *mut u16) -> c_int {
+        unsafe { sys::idakit_get_u16(address.get(), out) }
+    }
+
+    pub(crate) fn get_u32(&self, address: Address, out: *mut u32) -> c_int {
+        unsafe { sys::idakit_get_u32(address.get(), out) }
+    }
+
+    pub(crate) fn get_u64(&self, address: Address, out: *mut u64) -> c_int {
+        unsafe { sys::idakit_get_u64(address.get(), out) }
+    }
+
+    pub(crate) fn get_strlit(
+        &self,
+        address: Address,
+        strtype: c_int,
+        buf: *mut c_char,
+        cap: usize,
+    ) -> i64 {
+        unsafe { sys::idakit_get_strlit(address.get(), strtype, buf, cap) }
+    }
+
     pub(crate) fn decode_insn(&self, address: Address, out: *mut sys::InstructionRaw) -> c_int {
         unsafe { sys::idakit_decode_insn(address.get(), out) }
     }
@@ -125,7 +151,7 @@ impl Idb {
         unsafe { sys::idakit_get_prev_head(address.get(), minea.get()) }
     }
 
-    pub(crate) fn bitness(&self) -> c_int {
+    pub(crate) fn bitness_bits(&self) -> c_int {
         unsafe { sys::idakit_bitness() }
     }
 

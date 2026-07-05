@@ -379,6 +379,66 @@ extern "C" int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size) {
   return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);
 }
 
+namespace {
+// A typed read must fail cleanly on a partly-mapped range, so gate on every covered byte.
+bool range_loaded(ea_t ea, size_t n) {
+  for (size_t i = 0; i < n; i++)
+    if (!is_loaded(ea + i))
+      return false;
+  return true;
+}
+} // namespace
+
+extern "C" int idakit_get_u8(idakit_ea_t ea, uint8_t *out) {
+  if (!range_loaded((ea_t)ea, 1))
+    return 0;
+  *out = (uint8_t)get_byte((ea_t)ea);
+  return 1;
+}
+
+extern "C" int idakit_get_u16(idakit_ea_t ea, uint16_t *out) {
+  if (!range_loaded((ea_t)ea, 2))
+    return 0;
+  *out = (uint16_t)get_word((ea_t)ea);
+  return 1;
+}
+
+extern "C" int idakit_get_u32(idakit_ea_t ea, uint32_t *out) {
+  if (!range_loaded((ea_t)ea, 4))
+    return 0;
+  *out = (uint32_t)get_dword((ea_t)ea);
+  return 1;
+}
+
+extern "C" int idakit_get_u64(idakit_ea_t ea, uint64_t *out) {
+  if (!range_loaded((ea_t)ea, 8))
+    return 0;
+  *out = (uint64_t)get_qword((ea_t)ea);
+  return 1;
+}
+
+extern "C" int64_t idakit_get_strlit(idakit_ea_t ea, int strtype, char *buf, size_t cap) {
+  try {
+    size_t len = get_max_strlit_length((ea_t)ea, strtype, ALOPT_IGNHEADS);
+    if (len == 0) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstring out;
+    ssize_t r = get_strlit_contents(&out, (ea_t)ea, len, strtype, nullptr, STRCONV_REPLCHAR);
+    if (r < 0) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  } catch (...) {
+    std::abort();
+  }
+}
+
 extern "C" uint64_t idakit_get_flags(idakit_ea_t ea) { return (uint64_t)get_flags((ea_t)ea); }
 
 extern "C" idakit_ea_t idakit_get_item_head(idakit_ea_t ea) {

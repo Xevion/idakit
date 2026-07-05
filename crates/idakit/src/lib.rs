@@ -66,6 +66,7 @@ mod bytes;
 mod cfg;
 mod claim;
 pub mod ctree;
+mod data;
 mod decompile;
 mod error;
 mod export;

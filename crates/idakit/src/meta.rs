@@ -43,7 +43,7 @@ impl Idb {
     #[must_use]
     pub fn meta(&self) -> Meta {
         Meta {
-            bitness: Bitness::try_from_bits(self.bitness().max(0) as u8),
+            bitness: self.bitness(),
             image_base: Address::try_new(self.image_base()),
             processor: read_string(|buf, cap| self.proc_name(buf, cap)),
             file_type: read_string(|buf, cap| self.file_type_name(buf, cap)),
