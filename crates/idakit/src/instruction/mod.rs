@@ -37,19 +37,26 @@ impl Idb {
     ///
     /// `Err` if no instruction decodes there ([`DecodeError::NotCode`]) or the database's
     /// processor has no decoder ([`DecodeError::UnsupportedProcessor`]); only x86/x64 are
-    /// modelled. An [`Instruction`] that is returned is fully decoded -- there is no partial or
-    /// fallback result.
+    /// modelled. An [`Instruction`] that is returned is *fully faithfully* decoded -- there is
+    /// no partial or fallback result: an operand the model cannot represent exactly (an
+    /// unmodelled register or value type, a malformed payload) is a loud error, never a guess.
     pub fn decode(&self, address: Address) -> Result<Instruction, DecodeError> {
         // SAFETY: `InstructionRaw` is an all-integer POD, so an all-zero bit pattern is a valid
         // value; the facade overwrites it before it reports success.
         let mut raw: sys::InstructionRaw = unsafe { std::mem::zeroed() };
         match self.decode_insn(address, &mut raw) {
-            0 => Ok(insn_from_raw(&raw)),
+            0 => insn_from_raw(&raw, address),
             -2 => Err(DecodeError::UnsupportedProcessor),
             -3 => Err(DecodeError::UnsupportedOperand {
                 address: address.get(),
                 op: raw.err_op,
                 optype: raw.err_optype,
+            }),
+            -4 => Err(DecodeError::UnsupportedRegister {
+                address: address.get(),
+                op: raw.err_op,
+                // for -4 the facade repurposes err_optype to carry the register number.
+                regnum: raw.err_optype,
             }),
             // -1 (no instruction) and any other negative rc.
             _ => Err(DecodeError::NotCode {
@@ -88,6 +95,45 @@ pub enum DecodeError {
         op: u8,
         /// The raw `optype` byte the decoder did not recognize.
         optype: u8,
+    },
+
+    /// A register operand referred to a register in no modelled [`RegisterClass`] -- flags,
+    /// fpu/sse control-status, or a number outside the register file. Rejected loudly rather
+    /// than mislabeled `Gpr`; empirically never emitted for a real x86 operand.
+    #[snafu(display("unmodeled register {regnum} at operand {op}, {address:#x}"))]
+    UnsupportedRegister {
+        /// Address of the instruction.
+        address: u64,
+        /// The operand slot carrying the register.
+        op: u8,
+        /// The processor-local register number that has no modelled class.
+        regnum: u8,
+    },
+
+    /// An operand's value type was outside this IDA minor's `op_dtype_t` domain -- only 9.3's
+    /// `dt_*` set is modelled, so a newer SDK's value is a deliberate break, not a silent
+    /// `Void`. See [`DataType`].
+    #[snafu(display("unmodeled data type {dtype} at operand {op}, {address:#x}"))]
+    UnsupportedDataType {
+        /// Address of the instruction.
+        address: u64,
+        /// The operand slot carrying the value type.
+        op: u8,
+        /// The raw `op_dtype_t` byte outside the modelled domain.
+        dtype: u8,
+    },
+
+    /// A modelled operand kind arrived with a payload that contradicts it -- a near branch
+    /// whose target did not resolve, or a register operand with no register. A facade
+    /// contract violation; empirically impossible, kept as a loud guard rather than a panic.
+    #[snafu(display("malformed operand {op} at {address:#x}: {reason}"))]
+    MalformedOperand {
+        /// Address of the instruction.
+        address: u64,
+        /// The offending operand slot.
+        op: u8,
+        /// What made the operand malformed.
+        reason: &'static str,
     },
 }
 

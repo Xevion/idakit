@@ -10,7 +10,8 @@ use std::ffi::{CStr, c_char};
 use idakit_sys as sys;
 
 use super::{
-    Access, DataType, Flow, Instruction, Isa, Mem, Operand, OperandKind, Register, RegisterClass,
+    Access, DataType, DecodeError, Flow, Instruction, Isa, Mem, Operand, OperandKind, Register,
+    RegisterClass,
 };
 use crate::address::Address;
 
@@ -23,24 +24,33 @@ fn name(buf: &[c_char]) -> Box<str> {
     s.to_string_lossy().into_owned().into_boxed_str()
 }
 
-/// Rebuild a register slot; `None` for the absent-register sentinel.
+/// Rebuild a register slot; `None` for the absent-register sentinel (a memory operand with
+/// no base/index). The facade only emits a modelled RegClass code -- an unmodelled register
+/// is rejected at the facade with `-4` and never reaches here, so a code outside the enum is
+/// pure ABI drift, not runtime data.
 fn register(r: &sys::InstructionRegister) -> Option<Register> {
     if r.num == sys::IDAKIT_REG_NONE {
         return None;
     }
+    let class = RegisterClass::from_raw(r.cls)
+        .unwrap_or_else(|| unreachable!("facade emitted an out-of-range reg class {}", r.cls));
     Some(Register {
         num: r.num,
-        class: RegisterClass::from_raw(r.cls).unwrap_or(RegisterClass::Gpr),
+        class,
         width: r.width,
         name: name(&r.name),
     })
 }
 
-fn operand(o: &sys::InstructionOperand) -> Operand {
+fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, DecodeError> {
     let kind = match o.kind {
-        sys::IDAKIT_OP_REG => OperandKind::Register(
-            register(&o.register).expect("a REG operand always carries a register"),
-        ),
+        sys::IDAKIT_OP_REG => {
+            OperandKind::Register(register(&o.register).ok_or(DecodeError::MalformedOperand {
+                address: address.get(),
+                op: o.idx,
+                reason: "register operand carries no register",
+            })?)
+        }
         sys::IDAKIT_OP_MEM => OperandKind::Mem(Mem {
             base: register(&o.base),
             index: register(&o.index),
@@ -50,9 +60,13 @@ fn operand(o: &sys::InstructionOperand) -> Operand {
             target: Address::try_new(o.addr),
         }),
         sys::IDAKIT_OP_IMM => OperandKind::Imm { value: o.value },
-        sys::IDAKIT_OP_NEAR => OperandKind::Near(
-            Address::try_new(o.addr).expect("a NEAR operand has a resolved target"),
-        ),
+        sys::IDAKIT_OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or(
+            DecodeError::MalformedOperand {
+                address: address.get(),
+                op: o.idx,
+                reason: "near operand has no resolved target",
+            },
+        )?),
         sys::IDAKIT_OP_FAR => OperandKind::Far {
             selector: o.sel,
             offset: o.value,
@@ -61,23 +75,36 @@ fn operand(o: &sys::InstructionOperand) -> Operand {
         // ABI drifted, which is a build-time bug, not runtime data.
         other => unreachable!("facade emitted unknown operand kind {other}"),
     };
-    Operand {
+    let data_type = DataType::from_raw(o.data_type).ok_or(DecodeError::UnsupportedDataType {
+        address: address.get(),
+        op: o.idx,
+        dtype: o.data_type,
+    })?;
+    Ok(Operand {
         idx: o.idx,
         kind,
-        data_type: DataType::from_raw(o.data_type).unwrap_or(DataType::Void),
+        data_type,
         access: Access {
             read: o.access & 1 != 0,
             written: o.access & 2 != 0,
         },
-    }
+    })
 }
 
-/// Rebuild an owned [`Instruction`] from a successfully-decoded (`rc == 0`) raw POD.
-pub(crate) fn insn_from_raw(raw: &sys::InstructionRaw) -> Instruction {
+/// Rebuild an owned [`Instruction`] from a successfully-decoded (`rc == 0`) raw POD. `address`
+/// is the decode site (the facade fills `raw.address` with it), passed through so operand
+/// errors carry it without re-parsing the sentinel-carrying raw field.
+pub(crate) fn insn_from_raw(
+    raw: &sys::InstructionRaw,
+    address: Address,
+) -> Result<Instruction, DecodeError> {
     let n = (raw.nops as usize).min(sys::IDAKIT_MAX_OPS);
-    let ops = raw.ops[..n].iter().map(operand).collect();
-    Instruction {
-        address: Address::try_new(raw.address).expect("a decoded instruction has a valid address"),
+    let ops = raw.ops[..n]
+        .iter()
+        .map(|o| operand(o, address))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Instruction {
+        address,
         len: raw.len,
         isa: if raw.isa == 1 { Isa::X64 } else { Isa::X86 },
         itype: raw.itype,
@@ -91,7 +118,7 @@ pub(crate) fn insn_from_raw(raw: &sys::InstructionRaw) -> Instruction {
             stops: raw.flow & sys::IDAKIT_FLOW_STOPS != 0,
             target: Address::try_new(raw.target),
         },
-    }
+    })
 }
 
 #[cfg(test)]
@@ -114,6 +141,12 @@ mod tests {
             a[i] = b as c_char;
         }
         a
+    }
+
+    // A fixed decode site for the operand-level tests; the facade would fill `raw.address`
+    // with this, and `insn_from_raw` takes it directly.
+    fn at() -> Address {
+        Address::try_new(0x1000).expect("0x1000 is a valid address")
     }
 
     fn none_reg() -> sys::InstructionRegister {
@@ -175,7 +208,7 @@ mod tests {
         op.access = 0b11; // read + written
         op.register = gpr(0, 8, "rax");
 
-        let mapped = operand(&op);
+        let mapped = operand(&op, at()).expect("valid reg operand");
         assert!(let OperandKind::Register(r) = &mapped.kind);
         assert!(r.name.as_ref() == "rax");
         assert!(r.class == RegisterClass::Gpr);
@@ -201,7 +234,7 @@ mod tests {
         op.disp = 8;
         op.addr = crate::address::BADADDR; // no static target for [rbp+rax*4+8]
 
-        let mapped = operand(&op);
+        let mapped = operand(&op, at()).expect("valid mem operand");
         assert!(let OperandKind::Mem(m) = &mapped.kind);
         assert!(let Some(base) = &m.base);
         assert!(base.name.as_ref() == "rbp");
@@ -218,7 +251,7 @@ mod tests {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_MEM;
         op.addr = 0x40_0000; // a direct [addr] reference resolves to a target
-        let mapped = operand(&op);
+        let mapped = operand(&op, at()).expect("valid mem operand");
         assert!(let OperandKind::Mem(m) = &mapped.kind);
         assert!(m.base.is_none());
         assert!(m.index.is_none());
@@ -231,13 +264,13 @@ mod tests {
         let mut imm = blank_op();
         imm.kind = sys::IDAKIT_OP_IMM;
         imm.value = 0x1234;
-        assert!(let OperandKind::Imm { value } = operand(&imm).kind);
+        assert!(let OperandKind::Imm { value } = operand(&imm, at()).expect("imm").kind);
         assert!(value == 0x1234);
 
         let mut near = blank_op();
         near.kind = sys::IDAKIT_OP_NEAR;
         near.addr = 0x1400;
-        assert!(let OperandKind::Near(t) = operand(&near).kind);
+        assert!(let OperandKind::Near(t) = operand(&near, at()).expect("near").kind);
         assert!(t.get() == 0x1400);
     }
 
@@ -249,7 +282,7 @@ mod tests {
         far.kind = sys::IDAKIT_OP_FAR;
         far.sel = 0x07;
         far.value = 0xdead_beef;
-        assert!(let OperandKind::Far { selector, offset } = operand(&far).kind);
+        assert!(let OperandKind::Far { selector, offset } = operand(&far, at()).expect("far").kind);
         assert!(selector == 0x07);
         assert!(offset == 0xdead_beef);
     }
@@ -267,7 +300,7 @@ mod tests {
         raw.ops[1].base = gpr(5, 8, "rbp");
         // ops[2..] stay blank and must not be included.
 
-        let instruction = insn_from_raw(&raw);
+        let instruction = insn_from_raw(&raw, at()).expect("valid instruction");
         assert!(instruction.address.get() == 0x1000);
         assert!(instruction.len == 3);
         assert!(instruction.isa == Isa::X64);
@@ -280,7 +313,7 @@ mod tests {
         let mut raw = blank_insn();
         raw.flow = sys::IDAKIT_FLOW_CALL | sys::IDAKIT_FLOW_STOPS;
         raw.target = 0x2000;
-        let instruction = insn_from_raw(&raw);
+        let instruction = insn_from_raw(&raw, at()).expect("valid instruction");
         assert!(instruction.flow.is_call);
         assert!(instruction.flow.stops);
         assert!(!instruction.flow.is_ret);
@@ -291,9 +324,37 @@ mod tests {
         // A branch with no static target reports None.
         let mut ind = blank_insn();
         ind.flow = sys::IDAKIT_FLOW_JUMP | sys::IDAKIT_FLOW_INDIRECT | sys::IDAKIT_FLOW_STOPS;
-        let instruction = insn_from_raw(&ind);
+        let instruction = insn_from_raw(&ind, at()).expect("valid instruction");
         assert!(instruction.flow.is_jump);
         assert!(instruction.flow.is_indirect);
         assert!(instruction.flow.target.is_none());
+    }
+
+    // The escape hatches are gone: each malformed field the facade could theoretically emit
+    // now yields a typed error instead of a panic or a silent fallback. Empirically these
+    // never occur (0 across ~5.8M operands in bf4 + libida), but the decoder rejects them
+    // loudly rather than fabricating a value.
+
+    #[test]
+    fn reg_operand_without_register_is_rejected() {
+        let mut op = blank_op();
+        op.kind = sys::IDAKIT_OP_REG; // REG kind, but the register slot is the absent sentinel
+        assert!(let Err(DecodeError::MalformedOperand { .. }) = operand(&op, at()));
+    }
+
+    #[test]
+    fn near_operand_without_target_is_rejected() {
+        let mut op = blank_op();
+        op.kind = sys::IDAKIT_OP_NEAR;
+        op.addr = crate::address::BADADDR; // an unresolved near target
+        assert!(let Err(DecodeError::MalformedOperand { .. }) = operand(&op, at()));
+    }
+
+    #[test]
+    fn out_of_domain_data_type_is_rejected() {
+        let mut op = blank_op();
+        op.kind = sys::IDAKIT_OP_IMM;
+        op.data_type = 200; // outside this SDK's dt_* domain -- no longer folded to Void
+        assert!(let Err(DecodeError::UnsupportedDataType { dtype: 200, .. }) = operand(&op, at()));
     }
 }

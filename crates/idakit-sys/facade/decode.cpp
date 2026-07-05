@@ -13,7 +13,8 @@
 
 #include "idakit_facade.h"
 
-// idakit RegClass discriminants -- must match the Rust `RegClass` enum.
+// idakit RegClass discriminants -- must match the Rust `RegisterClass` enum, pinned by an
+// alignment test (idakit_reg_class_ids below feeds it).
 #define RC_GPR 0
 #define RC_SEGMENT 1
 #define RC_XMM 2
@@ -26,18 +27,25 @@
 #define RC_DEBUG 9
 #define RC_TEST 10
 #define RC_IP 11
+#define RC_BND 12
+// Sentinel: a register idakit does not model as an operand class. Never emitted to Rust --
+// classify_op turns it into the -4 return so the decoder rejects it loudly.
+#define RC_BAD 0xFF
 
 namespace {
 
-// Classify an x86 RegNo by range. Used for plain o_reg operands and for a memory
-// operand's base/index registers, whose numbers are always RegNo values.
+// Classify an x86 RegNo by its authoritative range (intel.hpp `RegNo`). Used for plain
+// o_reg operands and a memory operand's base/index (incl. a VSIB vector index). The GPR
+// case is the tight R_ax..R_dil block, not a catch-all residual: a number that lands in no
+// modelled class (flags cf..efl, fpctrl/fpstat/fptags, mxcsr, or out of range) returns
+// RC_BAD so classify_op can reject it loudly rather than mislabel it GPR.
 uint8_t reg_class_of(int r) {
-  if (r < 0)
+  if (r >= R_ax && r <= R_dil)
     return RC_GPR;
-  if (is_segreg(r))
-    return RC_SEGMENT;
   if (r == R_ip)
     return RC_IP;
+  if (is_segreg(r))
+    return RC_SEGMENT;
   if (r >= R_st0 && r <= R_st7)
     return RC_ST;
   if (r >= R_mm0 && r <= R_mm7)
@@ -50,7 +58,9 @@ uint8_t reg_class_of(int r) {
     return RC_ZMM;
   if (r >= R_k0 && r <= R_k7)
     return RC_MASK;
-  return RC_GPR;
+  if (r >= R_bnd0 && r <= R_bnd3)
+    return RC_BND;
+  return RC_BAD;
 }
 
 // Class for a register carried by a processor-specific operand type, where op.reg is a
@@ -119,8 +129,9 @@ void fill_mem(const insn_t &insn, const op_t &op, idakit_op_t *dst) {
   dst->addr = op.type == o_mem ? (uint64_t)op.addr : (uint64_t)BADADDR;
 }
 
-// Fold one raw op_t into a semantic idakit_op_t. Returns 0, or -3 for a type this decoder
-// does not model (unreachable for x86, which enumerates all of its operand types).
+// Fold one raw op_t into a semantic idakit_op_t. Returns 0, -3 for a raw operand type this
+// decoder does not model (unreachable for x86, which enumerates all of its operand types),
+// or -4 for an o_reg whose register lands in no modelled class (reg_class_of -> RC_BAD).
 int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t *dst) {
   memset(dst, 0, sizeof(*dst));
   clear_reg(&dst->reg);
@@ -129,10 +140,14 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t *dst) {
   dst->idx = (uint8_t)idx;
   dst->dtype = op.dtype;
   switch (op.type) {
-  case o_reg:
+  case o_reg: {
+    uint8_t rc = reg_class_of(op.reg);
+    if (rc == RC_BAD)
+      return -4;
     dst->kind = IDAKIT_OP_REG;
-    fill_reg(&dst->reg, op.reg, reg_class_of(op.reg), (int)get_dtype_size(op.dtype));
+    fill_reg(&dst->reg, op.reg, rc, (int)get_dtype_size(op.dtype));
     return 0;
+  }
   case o_trreg:
   case o_dbreg:
   case o_crreg:
@@ -203,9 +218,10 @@ extern "C" int idakit_decode_insn(idakit_ea_t ea, idakit_insn_t *out) {
       idakit_op_t *dst = &out->ops[nops];
       int rc = classify_op(insn, op, i, dst);
       if (rc != 0) {
-        out->err_optype = op.type;
         out->err_op = (uint8_t)i;
-        return -3;
+        // -3 reports the raw operand type; -4 reports the unmodelled register number.
+        out->err_optype = rc == -4 ? (uint8_t)op.reg : (uint8_t)op.type;
+        return rc;
       }
       dst->access = (has_cf_use(feature, i) ? 1 : 0) | (has_cf_chg(feature, i) ? 2 : 0);
       if ((op.type == o_near || op.type == o_far) && tgt == BADADDR)
@@ -243,4 +259,48 @@ extern "C" int idakit_decode_insn(idakit_ea_t ea, idakit_insn_t *out) {
   } catch (...) {
     std::abort();
   }
+}
+
+// Alignment sources. These expose the facade's own discriminants so idakit can pin its
+// hand-maintained mirrors to this SDK build in a test, catching drift between the two sides.
+
+// idakit RegisterClass codes, written by position in the Rust enum's discriminant order so a
+// drift between a C++ #define and its Rust variant shows up as out[i] != i in the test.
+extern "C" void idakit_reg_class_ids(uint8_t *out) {
+  out[0] = RC_GPR;
+  out[1] = RC_SEGMENT;
+  out[2] = RC_XMM;
+  out[3] = RC_YMM;
+  out[4] = RC_ZMM;
+  out[5] = RC_MASK;
+  out[6] = RC_ST;
+  out[7] = RC_MMX;
+  out[8] = RC_CONTROL;
+  out[9] = RC_DEBUG;
+  out[10] = RC_TEST;
+  out[11] = RC_IP;
+  out[12] = RC_BND;
+}
+
+// This SDK's op_dtype_t values (ua.hpp dt_*), in idakit DataType's discriminant order.
+extern "C" void idakit_op_dtype_ids(uint8_t *out) {
+  out[0] = dt_byte;
+  out[1] = dt_word;
+  out[2] = dt_dword;
+  out[3] = dt_float;
+  out[4] = dt_double;
+  out[5] = dt_tbyte;
+  out[6] = dt_packreal;
+  out[7] = dt_qword;
+  out[8] = dt_byte16;
+  out[9] = dt_code;
+  out[10] = dt_void;
+  out[11] = dt_fword;
+  out[12] = dt_bitfild;
+  out[13] = dt_string;
+  out[14] = dt_unicode;
+  out[15] = dt_ldbl;
+  out[16] = dt_byte32;
+  out[17] = dt_byte64;
+  out[18] = dt_half;
 }

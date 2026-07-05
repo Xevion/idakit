@@ -107,9 +107,23 @@ pub struct InstructionRaw {
     pub ops: [InstructionOperand; IDAKIT_MAX_OPS],
 }
 
+/// Number of idakit RegisterClass codes (buffer length for [`idakit_reg_class_ids`]).
+pub const IDAKIT_REG_CLASS_COUNT: usize = 13;
+/// Number of `op_dtype_t` values idakit mirrors (buffer length for [`idakit_op_dtype_ids`]).
+pub const IDAKIT_OP_DTYPE_COUNT: usize = 19;
+
 // instruction decode
 unsafe extern "C" {
     /// Decode the instruction at `address` into `*out`. Returns 0 on success, or negative:
-    /// `-1` no instruction, `-2` unsupported processor, `-3` unmodeled operand.
+    /// `-1` no instruction, `-2` unsupported processor, `-3` unmodeled operand type,
+    /// `-4` an `o_reg` register in no modelled class (`err_optype` carries its number).
     pub fn idakit_decode_insn(address: Address, out: *mut InstructionRaw) -> c_int;
+
+    /// Fill `out` (length [`IDAKIT_REG_CLASS_COUNT`]) with the facade's RegisterClass codes
+    /// in the Rust enum's discriminant order -- an alignment source for a mirror test.
+    pub fn idakit_reg_class_ids(out: *mut u8);
+
+    /// Fill `out` (length [`IDAKIT_OP_DTYPE_COUNT`]) with this SDK's `op_dtype_t` (`dt_*`)
+    /// values in idakit `DataType`'s discriminant order -- an alignment source for a mirror test.
+    pub fn idakit_op_dtype_ids(out: *mut u8);
 }

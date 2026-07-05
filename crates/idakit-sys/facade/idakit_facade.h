@@ -457,8 +457,17 @@ typedef struct {
  *   -1 no instruction decodes at `ea`
  *   -2 the database's processor has no wired decoder (only x86/x64 for now)
  *   -3 a supported processor produced an operand this decoder cannot model
- *      (should be unreachable for x86; err_optype/err_op say which). */
+ *      (should be unreachable for x86; err_op is the slot, err_optype the raw operand type)
+ *   -4 an o_reg operand's register lands in no modelled RegClass (flags, fpu/sse
+ *      control-status, ...); err_op is the slot, err_optype the register number. */
 int idakit_decode_insn(idakit_ea_t ea, idakit_insn_t *out);
+
+/* Alignment sources: the facade's own discriminants, so idakit can pin its hand-maintained
+ * mirrors to this SDK build in a test. Each fills the caller's buffer in the corresponding
+ * Rust enum's discriminant order: reg_class_ids -> 13 idakit RegClass codes; op_dtype_ids ->
+ * 19 op_dtype_t (dt_*) values. */
+void idakit_reg_class_ids(uint8_t *out);
+void idakit_op_dtype_ids(uint8_t *out);
 
 #ifdef __cplusplus
 }

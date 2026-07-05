@@ -6,21 +6,27 @@
 //! it later would need a kernel call, which an owned `Send` value must never do.
 //!
 //! [`RegisterClass`] is idakit's own grouping (not a raw SDK enum), so its discriminants are
-//! arbitrary and stable only within idakit. The x86 decoder assigns it: the SIMD and
-//! special classes fall straight out of the operand's raw type byte (IDA encodes YMM/ZMM/
-//! mask/st/mmx/control/debug/test as distinct `o_idpspec*` types), which is what lets the
-//! semantic [`OperandKind`](super::OperandKind) stay a small closed set while still
-//! representing every register x86 can encode.
+//! arbitrary and stable only within idakit. The x86 decoder assigns it two ways: the vector
+//! and integer classes (GPR/segment/MMX/XMM/YMM/ZMM/mask/BND/IP) arrive as plain `o_reg`
+//! operands and are classified by the register *number*'s range (IDA hands out e.g. `xmm0`
+//! and `ymm0` as ordinary register operands, not distinct operand types), while `st`/control/
+//! debug/test arrive as their own `o_idpspec*` operand types. Either way the class is a small
+//! closed set, which lets the semantic [`OperandKind`](super::OperandKind) stay closed while
+//! still representing every register x86 can encode.
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
 
 /// The register file a [`Register`] belongs to.
+///
+/// A closed set: the x86 decoder maps every register it can emit into one of these, so the
+/// facade never produces a value outside this range (a register in no modelled class is a
+/// [`DecodeError`](super::DecodeError), not a stray discriminant). Exhaustive on purpose --
+/// adding a class is a deliberate, breaking widening, pinned to the facade by an alignment test.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u8)]
-#[non_exhaustive]
 pub enum RegisterClass {
     /// General-purpose integer register (`al`/`ax`/`eax`/`rax`, ...).
     Gpr = 0,
@@ -46,6 +52,8 @@ pub enum RegisterClass {
     Test = 10,
     /// Instruction pointer (`rip`/`eip`), as used by RIP-relative addressing.
     Ip = 11,
+    /// MPX bounds register (`bnd0`..`bnd3`).
+    Bnd = 12,
 }
 
 impl RegisterClass {
@@ -61,6 +69,63 @@ impl RegisterClass {
     #[must_use]
     pub fn from_raw(v: u8) -> Option<Self> {
         Self::try_from(v).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+    use idakit_sys as sys;
+
+    use super::*;
+
+    #[test]
+    fn raw_roundtrips_every_variant() {
+        for &c in RegisterClass::VARIANTS {
+            assert!(RegisterClass::from_raw(c.raw()) == Some(c));
+        }
+    }
+
+    #[test]
+    fn from_raw_rejects_unknown() {
+        assert!(RegisterClass::from_raw(13).is_none());
+        assert!(RegisterClass::from_raw(255).is_none());
+    }
+
+    // The facade fills its RegClass codes by position in this enum's declaration order, so a
+    // drift between a C++ `RC_*` #define and its Rust variant surfaces as a mismatch here.
+    // `idakit_reg_class_ids` is a pure constant source -- no kernel, so it runs as a unit test.
+    #[test]
+    fn reg_class_ids_align_with_the_facade() {
+        let expected = [
+            RegisterClass::Gpr,
+            RegisterClass::Segment,
+            RegisterClass::Xmm,
+            RegisterClass::Ymm,
+            RegisterClass::Zmm,
+            RegisterClass::Mask,
+            RegisterClass::St,
+            RegisterClass::Mmx,
+            RegisterClass::Control,
+            RegisterClass::Debug,
+            RegisterClass::Test,
+            RegisterClass::Ip,
+            RegisterClass::Bnd,
+        ];
+        assert!(expected.len() == sys::IDAKIT_REG_CLASS_COUNT);
+        assert!(RegisterClass::VARIANTS.len() == expected.len());
+
+        let mut ids = [0u8; sys::IDAKIT_REG_CLASS_COUNT];
+        // SAFETY: the facade writes exactly IDAKIT_REG_CLASS_COUNT bytes.
+        unsafe { sys::idakit_reg_class_ids(ids.as_mut_ptr()) };
+        for (i, cls) in expected.iter().enumerate() {
+            assert!(
+                ids[i] == cls.raw(),
+                "reg class {cls:?}: facade {} != discriminant {}",
+                ids[i],
+                cls.raw()
+            );
+        }
     }
 }
 

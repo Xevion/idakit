@@ -1,9 +1,11 @@
 //! Operand value types, mirroring IDA's `op_dtype_t`.
 //!
-//! Discriminants are the raw `dt_*` values from `ua.hpp` (IDA 9.3), so the
-//! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the SDK
-//! mapping. `#[non_exhaustive]` because a future SDK may add a value (as 9.x already grew
-//! `dt_half`); a new data_type should widen this, not break every `match`.
+//! Discriminants are the raw `dt_*` values from `ua.hpp`, so the `IntoPrimitive`/
+//! `TryFromPrimitive` derives are the single source of truth for the SDK mapping. This mirror
+//! is pinned to one IDA minor (9.3): the `dt_*` set is fixed there, so the enum is exhaustive
+//! and an alignment test ties it to the facade. A later SDK that grows the set (as 9.x grew
+//! `dt_half`) is a deliberate, breaking widening -- an out-of-domain value decodes to
+//! [`DecodeError::UnsupportedDataType`](super::DecodeError), never a silent fallback.
 //!
 //! `data_type` is the *value* type, distinct from the addressing-mode size: `dt_float` and
 //! `dt_dword` are both four bytes but differ here, which is exactly why the operand keeps
@@ -17,7 +19,6 @@ use strum::VariantArray;
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u8)]
-#[non_exhaustive]
 pub enum DataType {
     /// 8-bit integer.
     Byte = 0,
@@ -108,6 +109,7 @@ impl DataType {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
 
     use super::*;
 
@@ -115,6 +117,25 @@ mod tests {
     fn raw_roundtrips_every_variant() {
         for &d in DataType::VARIANTS {
             assert!(DataType::from_raw(d.raw()) == Some(d));
+        }
+    }
+
+    // Pin the mirror to this SDK's `op_dtype_t` values: the facade reports each `dt_*` in this
+    // enum's discriminant order, so a header change (or a mistyped discriminant) mismatches.
+    // Pure constant source -- no kernel, so it runs as a unit test.
+    #[test]
+    fn dtype_ids_align_with_the_facade() {
+        assert!(DataType::VARIANTS.len() == sys::IDAKIT_OP_DTYPE_COUNT);
+        let mut ids = [0u8; sys::IDAKIT_OP_DTYPE_COUNT];
+        // SAFETY: the facade writes exactly IDAKIT_OP_DTYPE_COUNT bytes.
+        unsafe { sys::idakit_op_dtype_ids(ids.as_mut_ptr()) };
+        for (i, &d) in DataType::VARIANTS.iter().enumerate() {
+            assert!(
+                ids[i] == d.raw(),
+                "data type {d:?}: facade dt_ {} != discriminant {}",
+                ids[i],
+                d.raw()
+            );
         }
     }
 
