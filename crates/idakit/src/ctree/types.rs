@@ -75,7 +75,7 @@ pub enum TypeKind {
         members: Vec<EnumMember>,
     },
     /// a function prototype
-    Func {
+    Function {
         ret: TypeId,
         params: Vec<TypeId>,
         varargs: bool,

@@ -1,16 +1,16 @@
-//! Instruction-decode facade: the flat [`InsnRaw`] POD and `idakit_decode_insn` (`decode.cpp`).
+//! Instruction-decode facade: the flat [`InstructionRaw`] POD and `idakit_decode_insn` (`decode.cpp`).
 
 use std::ffi::{c_char, c_int};
 
-use crate::Ea;
+use crate::Address;
 
-/// Maximum operands the facade fills in an [`InsnRaw`], matching `UA_MAXOP`.
+/// Maximum operands the facade fills in an [`InstructionRaw`], matching `UA_MAXOP`.
 pub const IDAKIT_MAX_OPS: usize = 8;
 
-/// [`InsnReg::num`] sentinel for an absent base/index register.
+/// [`InstructionRegister::num`] sentinel for an absent base/index register.
 pub const IDAKIT_REG_NONE: u16 = 0xFFFF;
 
-/// Semantic operand kinds ([`InsnOp::kind`]); the raw `optype` is folded into these.
+/// Semantic operand kinds ([`InstructionOperand::kind`]); the raw `optype` is folded into these.
 pub const IDAKIT_OP_REG: u8 = 0;
 /// See [`IDAKIT_OP_REG`].
 pub const IDAKIT_OP_MEM: u8 = 1;
@@ -21,7 +21,7 @@ pub const IDAKIT_OP_NEAR: u8 = 3;
 /// See [`IDAKIT_OP_REG`].
 pub const IDAKIT_OP_FAR: u8 = 4;
 
-/// [`InsnRaw::flow`] bit flags.
+/// [`InstructionRaw::flow`] bit flags.
 pub const IDAKIT_FLOW_CALL: u8 = 0x01;
 /// See [`IDAKIT_FLOW_CALL`].
 pub const IDAKIT_FLOW_RET: u8 = 0x02;
@@ -36,10 +36,10 @@ pub const IDAKIT_FLOW_STOPS: u8 = 0x10;
 /// `num == `[`IDAKIT_REG_NONE`] marks an absent base/index slot; `name` is NUL-terminated.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct InsnReg {
+pub struct InstructionRegister {
     /// Register number, or [`IDAKIT_REG_NONE`].
     pub num: u16,
-    /// idakit RegClass code.
+    /// idakit RegisterClass code.
     pub cls: u8,
     /// Byte width selecting the name alias.
     pub width: u8,
@@ -51,23 +51,23 @@ pub struct InsnReg {
 /// depends on `kind` (see the `IDAKIT_OP_*` constants).
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct InsnOp {
+pub struct InstructionOperand {
     /// Semantic kind (`IDAKIT_OP_*`).
     pub kind: u8,
     /// Original operand slot index (feature bits are keyed by it).
     pub idx: u8,
     /// Raw `op_dtype_t`.
-    pub dtype: u8,
+    pub data_type: u8,
     /// Access bits: bit0 read, bit1 written.
     pub access: u8,
     /// Memory index scale multiplier (1/2/4/8).
     pub scale: u8,
     /// Register (kind = REG).
-    pub reg: InsnReg,
+    pub register: InstructionRegister,
     /// Memory base register (kind = MEM).
-    pub base: InsnReg,
+    pub base: InstructionRegister,
     /// Memory index register (kind = MEM).
-    pub index: InsnReg,
+    pub index: InstructionRegister,
     /// Memory displacement (kind = MEM).
     pub disp: i64,
     /// Immediate value (kind = IMM) or far offset (kind = FAR).
@@ -82,9 +82,9 @@ pub struct InsnOp {
 /// [`idakit_decode_insn`]; only the first `nops` entries of `ops` are populated.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct InsnRaw {
+pub struct InstructionRaw {
     /// Instruction address.
-    pub ea: u64,
+    pub address: u64,
     /// Direct branch/call target, or `BADADDR`.
     pub target: u64,
     /// Processor-local canonical instruction id.
@@ -104,12 +104,12 @@ pub struct InsnRaw {
     /// Canonical mnemonic (NUL-terminated).
     pub mnemonic: [c_char; 24],
     /// Operands; only `nops` are valid.
-    pub ops: [InsnOp; IDAKIT_MAX_OPS],
+    pub ops: [InstructionOperand; IDAKIT_MAX_OPS],
 }
 
 // instruction decode
 unsafe extern "C" {
-    /// Decode the instruction at `ea` into `*out`. Returns 0 on success, or negative:
+    /// Decode the instruction at `address` into `*out`. Returns 0 on success, or negative:
     /// `-1` no instruction, `-2` unsupported processor, `-3` unmodeled operand.
-    pub fn idakit_decode_insn(ea: Ea, out: *mut InsnRaw) -> c_int;
+    pub fn idakit_decode_insn(address: Address, out: *mut InstructionRaw) -> c_int;
 }

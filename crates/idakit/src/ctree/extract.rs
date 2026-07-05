@@ -18,11 +18,13 @@ use std::ffi::{c_char, c_void};
 use idakit_sys::{CaseDesc, EmitVtbl, EnumConstDesc, IDAKIT_NONE, MemberDesc};
 use snafu::Snafu;
 
-use super::node::{Case, Cexpr, Cinsn, ExprId, Lvar, LvarId, LvarLocation, StmtId};
+use super::node::{
+    Case, ExpressionId, ExpressionKind, Local, LocalId, LocalLocation, StatementId, StatementKind,
+};
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::{Ctree, CtreeBuilder};
 use super::types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember};
-use crate::Ea;
+use crate::Address;
 use crate::arena::Idx;
 
 /// Structural `ctype_t` values the generic operator callback dispatches by name
@@ -33,7 +35,7 @@ mod ct {
     pub const CAST: u32 = 48;
     pub const IDX: u32 = 58;
     /// `cot_insn`: a statement in expression position -- never present in a finalized
-    /// tree, collapsed to [`Cexpr::Internal`](super::Cexpr::Internal) rather than erroring.
+    /// tree, collapsed to [`ExpressionKind::Internal`](super::ExpressionKind::Internal) rather than erroring.
     pub const INSN: u32 = 66;
     pub const SIZEOF: u32 = 67;
     pub const TYPE: u32 = 69;
@@ -55,7 +57,7 @@ pub enum ExtractError {
     WalkFailed,
 
     #[snafu(display("unmodeled expression ctype {tag}"))]
-    UnknownExprTag { tag: u32 },
+    UnknownExpressionTag { tag: u32 },
 
     #[snafu(display("a node carries the BADADDR sentinel as a required address"))]
     BadEa,
@@ -68,15 +70,15 @@ pub enum ExtractError {
 }
 
 /// A node's own source address: `None` for a synthetic node (the BADADDR sentinel).
-fn node_ea(raw: u64) -> Option<Ea> {
-    Ea::try_new(raw)
+fn node_ea(raw: u64) -> Option<Address> {
+    Address::try_new(raw)
 }
 
-fn eid(raw: u32) -> ExprId {
+fn eid(raw: u32) -> ExpressionId {
     Idx::from_raw(raw)
 }
 
-fn sid(raw: u32) -> StmtId {
+fn sid(raw: u32) -> StatementId {
     Idx::from_raw(raw)
 }
 
@@ -84,11 +86,11 @@ fn tid(raw: u32) -> TypeId {
     Idx::from_raw(raw)
 }
 
-fn opt_e(raw: u32) -> Option<ExprId> {
+fn opt_e(raw: u32) -> Option<ExpressionId> {
     (raw != IDAKIT_NONE).then(|| eid(raw))
 }
 
-fn opt_s(raw: u32) -> Option<StmtId> {
+fn opt_s(raw: u32) -> Option<StatementId> {
     (raw != IDAKIT_NONE).then(|| sid(raw))
 }
 
@@ -132,145 +134,160 @@ impl CallbackBuilder {
         }
     }
 
-    fn push_expr(&mut self, ea: u64, ty: u32, kind: Cexpr) -> u32 {
-        raw(self.b.expr(tid(ty), kind).maybe_ea(node_ea(ea)).call())
+    fn push_expression(&mut self, address: u64, ty: u32, kind: ExpressionKind) -> u32 {
+        raw(self
+            .b
+            .expression(tid(ty), kind)
+            .maybe_address(node_ea(address))
+            .call())
     }
 
-    fn push_stmt(&mut self, ea: u64, kind: Cinsn) -> u32 {
-        raw(self.b.stmt(kind).maybe_ea(node_ea(ea)).call())
+    fn push_statement(&mut self, address: u64, kind: StatementKind) -> u32 {
+        raw(self
+            .b
+            .statement(kind)
+            .maybe_address(node_ea(address))
+            .call())
     }
 
-    fn num(&mut self, ea: u64, value: u64, ty: u32) -> u32 {
-        self.push_expr(ea, ty, Cexpr::Num(value))
+    fn num(&mut self, address: u64, value: u64, ty: u32) -> u32 {
+        self.push_expression(address, ty, ExpressionKind::Num(value))
     }
 
-    fn fnum(&mut self, ea: u64, value: f64, ty: u32) -> u32 {
-        self.push_expr(ea, ty, Cexpr::Fnum(value))
+    fn fnum(&mut self, address: u64, value: f64, ty: u32) -> u32 {
+        self.push_expression(address, ty, ExpressionKind::Fnum(value))
     }
 
-    fn obj(&mut self, ea: u64, target: u64, name: Option<String>, ty: u32) -> u32 {
-        match Ea::try_new(target) {
-            Some(addr) => self.push_expr(ea, ty, Cexpr::Obj { ea: addr, name }),
+    fn obj(&mut self, address: u64, target: u64, name: Option<String>, ty: u32) -> u32 {
+        match Address::try_new(target) {
+            Some(addr) => self.push_expression(
+                address,
+                ty,
+                ExpressionKind::Obj {
+                    address: addr,
+                    name,
+                },
+            ),
             None => {
                 self.fail(ExtractError::BadEa);
-                self.push_expr(ea, ty, Cexpr::Empty)
+                self.push_expression(address, ty, ExpressionKind::Empty)
             }
         }
     }
 
-    fn var(&mut self, ea: u64, idx: u32, ty: u32) -> u32 {
-        self.push_expr(ea, ty, Cexpr::Var(LvarId(idx)))
+    fn var(&mut self, address: u64, idx: u32, ty: u32) -> u32 {
+        self.push_expression(address, ty, ExpressionKind::Var(LocalId(idx)))
     }
 
-    fn string(&mut self, ea: u64, s: String, ty: u32) -> u32 {
-        self.push_expr(ea, ty, Cexpr::Str(s))
+    fn string(&mut self, address: u64, s: String, ty: u32) -> u32 {
+        self.push_expression(address, ty, ExpressionKind::Str(s))
     }
 
-    fn helper(&mut self, ea: u64, s: String, ty: u32) -> u32 {
-        self.push_expr(ea, ty, Cexpr::Helper(s))
+    fn helper(&mut self, address: u64, s: String, ty: u32) -> u32 {
+        self.push_expression(address, ty, ExpressionKind::Helper(s))
     }
 
-    fn call(&mut self, ea: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
+    fn call(&mut self, address: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
         let args = args.iter().map(|&a| eid(a)).collect();
-        self.push_expr(
-            ea,
+        self.push_expression(
+            address,
             ty,
-            Cexpr::Call {
+            ExpressionKind::Call {
                 callee: eid(callee),
                 args,
             },
         )
     }
 
-    fn memref(&mut self, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
-        self.push_expr(
-            ea,
+    fn memref(&mut self, address: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+        self.push_expression(
+            address,
             ty,
-            Cexpr::MemberRef {
+            ExpressionKind::MemberRef {
                 obj: eid(obj),
                 byte_offset: offset,
             },
         )
     }
 
-    fn memptr(&mut self, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
-        self.push_expr(
-            ea,
+    fn memptr(&mut self, address: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+        self.push_expression(
+            address,
             ty,
-            Cexpr::MemberPtr {
+            ExpressionKind::MemberPtr {
                 obj: eid(obj),
                 byte_offset: offset,
             },
         )
     }
 
-    fn deref(&mut self, ea: u64, x: u32, size: u32, ty: u32) -> u32 {
-        self.push_expr(ea, ty, Cexpr::Deref { x: eid(x), size })
+    fn deref(&mut self, address: u64, x: u32, size: u32, ty: u32) -> u32 {
+        self.push_expression(address, ty, ExpressionKind::Deref { x: eid(x), size })
     }
 
-    fn op(&mut self, ea: u64, ctype: u32, x: u32, y: u32, z: u32, ty: u32) -> u32 {
+    fn op(&mut self, address: u64, ctype: u32, x: u32, y: u32, z: u32, ty: u32) -> u32 {
         let kind = self.classify(ctype, x, y, z);
-        self.push_expr(ea, ty, kind)
+        self.push_expression(address, ty, kind)
     }
 
     /// Map a generic operator `ctype` to its expression kind. Assignment ctypes overlap
     /// the binary numeric range, so probe assignments first.
-    fn classify(&mut self, ctype: u32, x: u32, y: u32, z: u32) -> Cexpr {
+    fn classify(&mut self, ctype: u32, x: u32, y: u32, z: u32) -> ExpressionKind {
         if ctype == ct::INSN {
-            return Cexpr::Internal;
+            return ExpressionKind::Internal;
         }
         let op16 = u16::try_from(ctype).ok();
         if let Some(op) = op16.and_then(AssignOp::from_raw) {
-            return Cexpr::Assign {
+            return ExpressionKind::Assign {
                 op,
                 x: eid(x),
                 y: eid(y),
             };
         }
         if let Some(op) = op16.and_then(BinOp::from_raw) {
-            return Cexpr::Binary {
+            return ExpressionKind::Binary {
                 op,
                 x: eid(x),
                 y: eid(y),
             };
         }
         if let Some(op) = op16.and_then(UnOp::from_raw) {
-            return Cexpr::Unary { op, x: eid(x) };
+            return ExpressionKind::Unary { op, x: eid(x) };
         }
         match ctype {
-            ct::TERN => Cexpr::Ternary {
+            ct::TERN => ExpressionKind::Ternary {
                 cond: eid(x),
                 then_: eid(y),
                 else_: eid(z),
             },
-            ct::CAST => Cexpr::Cast { x: eid(x) },
-            ct::IDX => Cexpr::Index {
+            ct::CAST => ExpressionKind::Cast { x: eid(x) },
+            ct::IDX => ExpressionKind::Index {
                 array: eid(x),
                 index: eid(y),
             },
-            ct::SIZEOF => Cexpr::Sizeof(eid(x)),
-            ct::EMPTY => Cexpr::Empty,
-            ct::TYPE => Cexpr::TypeExpr,
+            ct::SIZEOF => ExpressionKind::Sizeof(eid(x)),
+            ct::EMPTY => ExpressionKind::Empty,
+            ct::TYPE => ExpressionKind::TypeExpression,
             other => {
-                self.fail(ExtractError::UnknownExprTag { tag: other });
-                Cexpr::Internal
+                self.fail(ExtractError::UnknownExpressionTag { tag: other });
+                ExpressionKind::Internal
             }
         }
     }
 
-    fn block(&mut self, ea: u64, kids: &[u32]) -> u32 {
+    fn block(&mut self, address: u64, kids: &[u32]) -> u32 {
         let kids = kids.iter().map(|&s| sid(s)).collect();
-        self.push_stmt(ea, Cinsn::Block(kids))
+        self.push_statement(address, StatementKind::Block(kids))
     }
 
-    fn expr_stmt(&mut self, ea: u64, e: u32) -> u32 {
-        self.push_stmt(ea, Cinsn::Expr(eid(e)))
+    fn expression_statement(&mut self, address: u64, e: u32) -> u32 {
+        self.push_statement(address, StatementKind::Expression(eid(e)))
     }
 
-    fn if_(&mut self, ea: u64, cond: u32, then_s: u32, else_s: u32) -> u32 {
-        self.push_stmt(
-            ea,
-            Cinsn::If {
+    fn if_(&mut self, address: u64, cond: u32, then_s: u32, else_s: u32) -> u32 {
+        self.push_statement(
+            address,
+            StatementKind::If {
                 cond: eid(cond),
                 then_: sid(then_s),
                 else_: opt_s(else_s),
@@ -278,10 +295,10 @@ impl CallbackBuilder {
         )
     }
 
-    fn for_(&mut self, ea: u64, init: u32, cond: u32, step: u32, body: u32) -> u32 {
-        self.push_stmt(
-            ea,
-            Cinsn::For {
+    fn for_(&mut self, address: u64, init: u32, cond: u32, step: u32, body: u32) -> u32 {
+        self.push_statement(
+            address,
+            StatementKind::For {
                 init: opt_e(init),
                 cond: opt_e(cond),
                 step: opt_e(step),
@@ -290,80 +307,80 @@ impl CallbackBuilder {
         )
     }
 
-    fn while_(&mut self, ea: u64, cond: u32, body: u32) -> u32 {
-        self.push_stmt(
-            ea,
-            Cinsn::While {
+    fn while_(&mut self, address: u64, cond: u32, body: u32) -> u32 {
+        self.push_statement(
+            address,
+            StatementKind::While {
                 cond: eid(cond),
                 body: sid(body),
             },
         )
     }
 
-    fn do_(&mut self, ea: u64, body: u32, cond: u32) -> u32 {
-        self.push_stmt(
-            ea,
-            Cinsn::Do {
+    fn do_(&mut self, address: u64, body: u32, cond: u32) -> u32 {
+        self.push_statement(
+            address,
+            StatementKind::Do {
                 body: sid(body),
                 cond: eid(cond),
             },
         )
     }
 
-    fn switch(&mut self, ea: u64, expr: u32, cases: Vec<Case>) -> u32 {
-        self.push_stmt(
-            ea,
-            Cinsn::Switch {
-                expr: eid(expr),
+    fn switch(&mut self, address: u64, expression: u32, cases: Vec<Case>) -> u32 {
+        self.push_statement(
+            address,
+            StatementKind::Switch {
+                expression: eid(expression),
                 cases,
             },
         )
     }
 
-    fn return_(&mut self, ea: u64, e: u32) -> u32 {
-        self.push_stmt(ea, Cinsn::Return(opt_e(e)))
+    fn return_(&mut self, address: u64, e: u32) -> u32 {
+        self.push_statement(address, StatementKind::Return(opt_e(e)))
     }
 
-    fn goto(&mut self, ea: u64, label: i32) -> u32 {
-        self.push_stmt(ea, Cinsn::Goto { label })
+    fn goto(&mut self, address: u64, label: i32) -> u32 {
+        self.push_statement(address, StatementKind::Goto { label })
     }
 
-    fn asm(&mut self, ea: u64, addrs: &[u64]) -> u32 {
+    fn asm(&mut self, address: u64, addrs: &[u64]) -> u32 {
         let mut out = Vec::with_capacity(addrs.len());
         for &a in addrs {
-            match Ea::try_new(a) {
+            match Address::try_new(a) {
                 Some(e) => out.push(e),
                 None => self.fail(ExtractError::BadEa),
             }
         }
-        self.push_stmt(ea, Cinsn::Asm(out))
+        self.push_statement(address, StatementKind::Asm(out))
     }
 
-    fn try_(&mut self, ea: u64, body: u32, catches: &[u32]) -> u32 {
+    fn try_(&mut self, address: u64, body: u32, catches: &[u32]) -> u32 {
         let catches = catches.iter().map(|&s| sid(s)).collect();
-        self.push_stmt(
-            ea,
-            Cinsn::Try {
+        self.push_statement(
+            address,
+            StatementKind::Try {
                 body: sid(body),
                 catches,
             },
         )
     }
 
-    fn throw(&mut self, ea: u64, e: u32) -> u32 {
-        self.push_stmt(ea, Cinsn::Throw(opt_e(e)))
+    fn throw(&mut self, address: u64, e: u32) -> u32 {
+        self.push_statement(address, StatementKind::Throw(opt_e(e)))
     }
 
-    fn break_(&mut self, ea: u64) -> u32 {
-        self.push_stmt(ea, Cinsn::Break)
+    fn break_(&mut self, address: u64) -> u32 {
+        self.push_statement(address, StatementKind::Break)
     }
 
-    fn continue_(&mut self, ea: u64) -> u32 {
-        self.push_stmt(ea, Cinsn::Continue)
+    fn continue_(&mut self, address: u64) -> u32 {
+        self.push_statement(address, StatementKind::Continue)
     }
 
-    fn empty_stmt(&mut self, ea: u64) -> u32 {
-        self.push_stmt(ea, Cinsn::Empty)
+    fn empty_statement(&mut self, address: u64) -> u32 {
+        self.push_statement(address, StatementKind::Empty)
     }
 
     fn scalar(&mut self, kind: u32, bytes: u32, signed: u32, size: u64, has_size: u32) -> u32 {
@@ -407,10 +424,10 @@ impl CallbackBuilder {
         }))
     }
 
-    fn func(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
+    fn function(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
         let params = params.iter().map(|&p| tid(p)).collect();
         raw(self.b.intern_type(TypeData {
-            kind: TypeKind::Func {
+            kind: TypeKind::Function {
                 ret: tid(ret),
                 params,
                 varargs: vararg != 0,
@@ -502,7 +519,7 @@ impl CallbackBuilder {
         );
     }
 
-    fn push_lvar(&mut self, lvar: Lvar) {
+    fn push_lvar(&mut self, lvar: Local) {
         self.b.push_lvar(lvar);
     }
 
@@ -563,108 +580,131 @@ unsafe fn builder(ctx: &*mut c_void) -> &mut CallbackBuilder {
     unsafe { &mut *(*ctx as *mut CallbackBuilder) }
 }
 
-unsafe extern "C" fn cb_num(ctx: *mut c_void, ea: u64, value: u64, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.num(ea, value, ty)
+unsafe extern "C" fn cb_num(ctx: *mut c_void, address: u64, value: u64, ty: u32) -> u32 {
+    unsafe { builder(&ctx) }.num(address, value, ty)
 }
-unsafe extern "C" fn cb_fnum(ctx: *mut c_void, ea: u64, value: f64, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.fnum(ea, value, ty)
+unsafe extern "C" fn cb_fnum(ctx: *mut c_void, address: u64, value: f64, ty: u32) -> u32 {
+    unsafe { builder(&ctx) }.fnum(address, value, ty)
 }
 unsafe extern "C" fn cb_obj(
     ctx: *mut c_void,
-    ea: u64,
+    address: u64,
     target: u64,
     name: *const c_char,
     name_len: usize,
     ty: u32,
 ) -> u32 {
     let name = unsafe { lossy(name, name_len) };
-    unsafe { builder(&ctx) }.obj(ea, target, name, ty)
+    unsafe { builder(&ctx) }.obj(address, target, name, ty)
 }
-unsafe extern "C" fn cb_var(ctx: *mut c_void, ea: u64, idx: u32, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.var(ea, idx, ty)
+unsafe extern "C" fn cb_var(ctx: *mut c_void, address: u64, idx: u32, ty: u32) -> u32 {
+    unsafe { builder(&ctx) }.var(address, idx, ty)
 }
 unsafe extern "C" fn cb_str(
     ctx: *mut c_void,
-    ea: u64,
+    address: u64,
     s: *const c_char,
     len: usize,
     ty: u32,
 ) -> u32 {
     let s = unsafe { lossy(s, len) }.unwrap_or_default();
-    unsafe { builder(&ctx) }.string(ea, s, ty)
+    unsafe { builder(&ctx) }.string(address, s, ty)
 }
 unsafe extern "C" fn cb_helper(
     ctx: *mut c_void,
-    ea: u64,
+    address: u64,
     s: *const c_char,
     len: usize,
     ty: u32,
 ) -> u32 {
     let s = unsafe { lossy(s, len) }.unwrap_or_default();
-    unsafe { builder(&ctx) }.helper(ea, s, ty)
+    unsafe { builder(&ctx) }.helper(address, s, ty)
 }
 unsafe extern "C" fn cb_call(
     ctx: *mut c_void,
-    ea: u64,
+    address: u64,
     callee: u32,
     args: *const u32,
     nargs: usize,
     ty: u32,
 ) -> u32 {
     let args = unsafe { slice(&args, nargs) };
-    unsafe { builder(&ctx) }.call(ea, callee, args, ty)
+    unsafe { builder(&ctx) }.call(address, callee, args, ty)
 }
-unsafe extern "C" fn cb_memref(ctx: *mut c_void, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.memref(ea, obj, offset, ty)
+unsafe extern "C" fn cb_memref(
+    ctx: *mut c_void,
+    address: u64,
+    obj: u32,
+    offset: u32,
+    ty: u32,
+) -> u32 {
+    unsafe { builder(&ctx) }.memref(address, obj, offset, ty)
 }
-unsafe extern "C" fn cb_memptr(ctx: *mut c_void, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.memptr(ea, obj, offset, ty)
+unsafe extern "C" fn cb_memptr(
+    ctx: *mut c_void,
+    address: u64,
+    obj: u32,
+    offset: u32,
+    ty: u32,
+) -> u32 {
+    unsafe { builder(&ctx) }.memptr(address, obj, offset, ty)
 }
-unsafe extern "C" fn cb_deref(ctx: *mut c_void, ea: u64, x: u32, size: u32, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.deref(ea, x, size, ty)
+unsafe extern "C" fn cb_deref(ctx: *mut c_void, address: u64, x: u32, size: u32, ty: u32) -> u32 {
+    unsafe { builder(&ctx) }.deref(address, x, size, ty)
 }
 unsafe extern "C" fn cb_op(
     ctx: *mut c_void,
-    ea: u64,
+    address: u64,
     ctype: u32,
     x: u32,
     y: u32,
     z: u32,
     ty: u32,
 ) -> u32 {
-    unsafe { builder(&ctx) }.op(ea, ctype, x, y, z, ty)
+    unsafe { builder(&ctx) }.op(address, ctype, x, y, z, ty)
 }
 
-unsafe extern "C" fn cb_block(ctx: *mut c_void, ea: u64, kids: *const u32, nkids: usize) -> u32 {
+unsafe extern "C" fn cb_block(
+    ctx: *mut c_void,
+    address: u64,
+    kids: *const u32,
+    nkids: usize,
+) -> u32 {
     let kids = unsafe { slice(&kids, nkids) };
-    unsafe { builder(&ctx) }.block(ea, kids)
+    unsafe { builder(&ctx) }.block(address, kids)
 }
-unsafe extern "C" fn cb_expr(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
-    unsafe { builder(&ctx) }.expr_stmt(ea, e)
+unsafe extern "C" fn cb_expr(ctx: *mut c_void, address: u64, e: u32) -> u32 {
+    unsafe { builder(&ctx) }.expression_statement(address, e)
 }
-unsafe extern "C" fn cb_if(ctx: *mut c_void, ea: u64, cond: u32, then_s: u32, else_s: u32) -> u32 {
-    unsafe { builder(&ctx) }.if_(ea, cond, then_s, else_s)
+unsafe extern "C" fn cb_if(
+    ctx: *mut c_void,
+    address: u64,
+    cond: u32,
+    then_s: u32,
+    else_s: u32,
+) -> u32 {
+    unsafe { builder(&ctx) }.if_(address, cond, then_s, else_s)
 }
 unsafe extern "C" fn cb_for(
     ctx: *mut c_void,
-    ea: u64,
+    address: u64,
     init: u32,
     cond: u32,
     step: u32,
     body: u32,
 ) -> u32 {
-    unsafe { builder(&ctx) }.for_(ea, init, cond, step, body)
+    unsafe { builder(&ctx) }.for_(address, init, cond, step, body)
 }
-unsafe extern "C" fn cb_while(ctx: *mut c_void, ea: u64, cond: u32, body: u32) -> u32 {
-    unsafe { builder(&ctx) }.while_(ea, cond, body)
+unsafe extern "C" fn cb_while(ctx: *mut c_void, address: u64, cond: u32, body: u32) -> u32 {
+    unsafe { builder(&ctx) }.while_(address, cond, body)
 }
-unsafe extern "C" fn cb_do(ctx: *mut c_void, ea: u64, body: u32, cond: u32) -> u32 {
-    unsafe { builder(&ctx) }.do_(ea, body, cond)
+unsafe extern "C" fn cb_do(ctx: *mut c_void, address: u64, body: u32, cond: u32) -> u32 {
+    unsafe { builder(&ctx) }.do_(address, body, cond)
 }
 unsafe extern "C" fn cb_switch(
     ctx: *mut c_void,
-    ea: u64,
-    expr: u32,
+    address: u64,
+    expression: u32,
     cases: *const CaseDesc,
     ncases: usize,
 ) -> u32 {
@@ -676,39 +716,39 @@ unsafe extern "C" fn cb_switch(
             body: sid(cd.body),
         })
         .collect();
-    unsafe { builder(&ctx) }.switch(ea, expr, cases)
+    unsafe { builder(&ctx) }.switch(address, expression, cases)
 }
-unsafe extern "C" fn cb_break(ctx: *mut c_void, ea: u64) -> u32 {
-    unsafe { builder(&ctx) }.break_(ea)
+unsafe extern "C" fn cb_break(ctx: *mut c_void, address: u64) -> u32 {
+    unsafe { builder(&ctx) }.break_(address)
 }
-unsafe extern "C" fn cb_continue(ctx: *mut c_void, ea: u64) -> u32 {
-    unsafe { builder(&ctx) }.continue_(ea)
+unsafe extern "C" fn cb_continue(ctx: *mut c_void, address: u64) -> u32 {
+    unsafe { builder(&ctx) }.continue_(address)
 }
-unsafe extern "C" fn cb_return(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
-    unsafe { builder(&ctx) }.return_(ea, e)
+unsafe extern "C" fn cb_return(ctx: *mut c_void, address: u64, e: u32) -> u32 {
+    unsafe { builder(&ctx) }.return_(address, e)
 }
-unsafe extern "C" fn cb_goto(ctx: *mut c_void, ea: u64, label: i32) -> u32 {
-    unsafe { builder(&ctx) }.goto(ea, label)
+unsafe extern "C" fn cb_goto(ctx: *mut c_void, address: u64, label: i32) -> u32 {
+    unsafe { builder(&ctx) }.goto(address, label)
 }
-unsafe extern "C" fn cb_asm(ctx: *mut c_void, ea: u64, addrs: *const u64, n: usize) -> u32 {
+unsafe extern "C" fn cb_asm(ctx: *mut c_void, address: u64, addrs: *const u64, n: usize) -> u32 {
     let addrs = unsafe { slice(&addrs, n) };
-    unsafe { builder(&ctx) }.asm(ea, addrs)
+    unsafe { builder(&ctx) }.asm(address, addrs)
 }
 unsafe extern "C" fn cb_try(
     ctx: *mut c_void,
-    ea: u64,
+    address: u64,
     body: u32,
     catches: *const u32,
     n: usize,
 ) -> u32 {
     let catches = unsafe { slice(&catches, n) };
-    unsafe { builder(&ctx) }.try_(ea, body, catches)
+    unsafe { builder(&ctx) }.try_(address, body, catches)
 }
-unsafe extern "C" fn cb_throw(ctx: *mut c_void, ea: u64, e: u32) -> u32 {
-    unsafe { builder(&ctx) }.throw(ea, e)
+unsafe extern "C" fn cb_throw(ctx: *mut c_void, address: u64, e: u32) -> u32 {
+    unsafe { builder(&ctx) }.throw(address, e)
 }
-unsafe extern "C" fn cb_empty(ctx: *mut c_void, ea: u64) -> u32 {
-    unsafe { builder(&ctx) }.empty_stmt(ea)
+unsafe extern "C" fn cb_empty(ctx: *mut c_void, address: u64) -> u32 {
+    unsafe { builder(&ctx) }.empty_statement(address)
 }
 
 unsafe extern "C" fn cb_scalar(
@@ -741,7 +781,7 @@ unsafe extern "C" fn cb_func(
     vararg: u32,
 ) -> u32 {
     let params = unsafe { slice(&params, n) };
-    unsafe { builder(&ctx) }.func(ret, params, vararg)
+    unsafe { builder(&ctx) }.function(ret, params, vararg)
 }
 unsafe extern "C" fn cb_named_ref(ctx: *mut c_void, name: *const c_char, name_len: usize) -> u32 {
     let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
@@ -806,11 +846,11 @@ unsafe extern "C" fn cb_lvar(
     loc_val: i64,
 ) {
     let location = match loc_kind {
-        1 => LvarLocation::Register(loc_val as u32),
-        2 => LvarLocation::Stack(loc_val),
-        _ => LvarLocation::Other,
+        1 => LocalLocation::Register(loc_val as u32),
+        2 => LocalLocation::Stack(loc_val),
+        _ => LocalLocation::Other,
     };
-    let lvar = Lvar {
+    let lvar = Local {
         name: unsafe { lossy(name, name_len) }.unwrap_or_default(),
         ty: tid(ty),
         is_arg: flags & 1 != 0,
@@ -864,7 +904,7 @@ static VTBL: EmitVtbl = EmitVtbl {
 };
 
 /// Walk a decompiled function's ctree into an owned [`Ctree`]. `cfunc` is a live
-/// `idakit_decompile` handle (see [`Cfunc`](crate::Cfunc)); the walk runs on this (kernel)
+/// `idakit_decompile` handle (see [`DecompiledFunction`](crate::DecompiledFunction)); the walk runs on this (kernel)
 /// thread and copies everything it needs, so the result outlives the handle.
 pub(crate) fn walk(cfunc: *mut c_void) -> Result<Ctree, ExtractError> {
     let mut cb = CallbackBuilder::new();
@@ -913,9 +953,15 @@ mod tests {
         let blk = cb.block(0, &[ret]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        assert!(matches!(tree.stmt(tree.root()).kind, Cinsn::Block(_)));
-        let kinds: Vec<&Cexpr> = tree.exprs().map(|(_, e)| &e.kind).collect();
-        assert!(matches!(kinds[2], Cexpr::Binary { op: BinOp::Add, .. }));
+        assert!(matches!(
+            tree.statement(tree.root()).kind,
+            StatementKind::Block(_)
+        ));
+        let kinds: Vec<&ExpressionKind> = tree.expressions().map(|(_, e)| &e.kind).collect();
+        assert!(matches!(
+            kinds[2],
+            ExpressionKind::Binary { op: BinOp::Add, .. }
+        ));
     }
 
     /// Operator-family dispatch: assignment / binary / unary ctypes land on the right
@@ -932,27 +978,27 @@ mod tests {
         let bin = cb.op(0, COT_SUB, v2, v3, IDAKIT_NONE, it);
         let v4 = cb.var(0, 4, it);
         let un = cb.op(0, COT_NEG, v4, IDAKIT_NONE, IDAKIT_NONE, it);
-        let s0 = cb.expr_stmt(0, asg);
-        let s1 = cb.expr_stmt(0, bin);
-        let s2 = cb.expr_stmt(0, un);
+        let s0 = cb.expression_statement(0, asg);
+        let s1 = cb.expression_statement(0, bin);
+        let s2 = cb.expression_statement(0, un);
         let blk = cb.block(0, &[s0, s1, s2]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        let kinds: Vec<&Cexpr> = tree.exprs().map(|(_, e)| &e.kind).collect();
+        let kinds: Vec<&ExpressionKind> = tree.expressions().map(|(_, e)| &e.kind).collect();
         assert!(matches!(
             kinds[eid(asg).index()],
-            Cexpr::Assign {
+            ExpressionKind::Assign {
                 op: AssignOp::AddAssign,
                 ..
             }
         ));
         assert!(matches!(
             kinds[eid(bin).index()],
-            Cexpr::Binary { op: BinOp::Sub, .. }
+            ExpressionKind::Binary { op: BinOp::Sub, .. }
         ));
         assert!(matches!(
             kinds[eid(un).index()],
-            Cexpr::Unary { op: UnOp::Neg, .. }
+            ExpressionKind::Unary { op: UnOp::Neg, .. }
         ));
     }
 
@@ -965,15 +1011,20 @@ mod tests {
         let fmt = cb.string(0, "%d".into(), it);
         let n = cb.num(0, 42, it);
         let call = cb.call(0, callee, &[fmt, n], it);
-        let s = cb.expr_stmt(0, call);
+        let s = cb.expression_statement(0, call);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        assert!(let Cexpr::Call { callee, args } = &tree.expr(eid(call)).kind);
-        assert!(matches!(tree.expr(*callee).kind, Cexpr::Helper(ref h) if h == "printf"));
+        assert!(let ExpressionKind::Call { callee, args } = &tree.expression(eid(call)).kind);
+        assert!(
+            matches!(tree.expression(*callee).kind, ExpressionKind::Helper(ref h) if h == "printf")
+        );
         assert!(args.len() == 2);
-        assert!(matches!(tree.expr(args[0]).kind, Cexpr::Str(ref s) if s == "%d"));
-        assert!(matches!(tree.expr(args[1]).kind, Cexpr::Num(42)));
+        assert!(matches!(tree.expression(args[0]).kind, ExpressionKind::Str(ref s) if s == "%d"));
+        assert!(matches!(
+            tree.expression(args[1]).kind,
+            ExpressionKind::Num(42)
+        ));
     }
 
     /// `if` with and without an `else` -- exercises the optional-child sentinel.
@@ -991,14 +1042,14 @@ mod tests {
         let blk = cb.block(0, &[if_with, if_without]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        let stmts: Vec<&Cinsn> = tree.stmts().map(|(_, s)| &s.kind).collect();
+        let statements: Vec<&StatementKind> = tree.statements().map(|(_, s)| &s.kind).collect();
         assert!(matches!(
-            stmts[sid(if_with).index()],
-            Cinsn::If { else_: Some(_), .. }
+            statements[sid(if_with).index()],
+            StatementKind::If { else_: Some(_), .. }
         ));
         assert!(matches!(
-            stmts[sid(if_without).index()],
-            Cinsn::If { else_: None, .. }
+            statements[sid(if_without).index()],
+            StatementKind::If { else_: None, .. }
         ));
     }
 
@@ -1041,23 +1092,23 @@ mod tests {
         let blk = cb.block(0, &[for_s, switch_s, try_s, asm_s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        let get = |s: u32| tree.stmt(sid(s)).kind.clone();
+        let get = |s: u32| tree.statement(sid(s)).kind.clone();
         assert!(matches!(
             get(for_s),
-            Cinsn::For {
+            StatementKind::For {
                 init: None,
                 cond: Some(_),
                 step: None,
                 ..
             }
         ));
-        assert!(let Cinsn::Switch { cases, .. } = get(switch_s));
+        assert!(let StatementKind::Switch { cases, .. } = get(switch_s));
         assert!(cases.len() == 2);
         assert!(cases[0].values == vec![1, 2]);
         assert!(cases[1].values.is_empty());
-        assert!(let Cinsn::Try { catches, .. } = get(try_s));
+        assert!(let StatementKind::Try { catches, .. } = get(try_s));
         assert!(catches.len() == 1);
-        assert!(let Cinsn::Asm(addrs) = get(asm_s));
+        assert!(let StatementKind::Asm(addrs) = get(asm_s));
         assert!(addrs.len() == 2);
     }
 
@@ -1078,7 +1129,7 @@ mod tests {
 
         // a variable typed as the struct, so the tree has a reachable node.
         let v = cb.var(0, 0, node);
-        let s = cb.expr_stmt(0, v);
+        let s = cb.expression_statement(0, v);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
@@ -1099,7 +1150,7 @@ mod tests {
         cb.fill_typedef(alias, it);
 
         let v = cb.var(0, 0, alias);
-        let s = cb.expr_stmt(0, v);
+        let s = cb.expression_statement(0, v);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
@@ -1131,9 +1182,9 @@ mod tests {
         let it = int_ty(&mut cb);
         let v = cb.var(0, 0, it);
         let bad = cb.op(0, 999, v, IDAKIT_NONE, IDAKIT_NONE, it);
-        let s = cb.expr_stmt(0, bad);
+        let s = cb.expression_statement(0, bad);
         let blk = cb.block(0, &[s]);
-        assert!(cb.finish(blk).err() == Some(ExtractError::UnknownExprTag { tag: 999 }));
+        assert!(cb.finish(blk).err() == Some(ExtractError::UnknownExpressionTag { tag: 999 }));
     }
 
     /// `cot_insn` (a statement in expression position) collapses to `Internal`, not an
@@ -1142,11 +1193,14 @@ mod tests {
     fn cot_insn_collapses_to_internal() {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
-        let insn = cb.op(0, ct::INSN, IDAKIT_NONE, IDAKIT_NONE, IDAKIT_NONE, it);
-        let s = cb.expr_stmt(0, insn);
+        let instruction = cb.op(0, ct::INSN, IDAKIT_NONE, IDAKIT_NONE, IDAKIT_NONE, it);
+        let s = cb.expression_statement(0, instruction);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("internal is not an error");
-        assert!(matches!(tree.expr(eid(insn)).kind, Cexpr::Internal));
+        assert!(matches!(
+            tree.expression(eid(instruction)).kind,
+            ExpressionKind::Internal
+        ));
     }
 
     /// A float literal now carries its real value (the old extractor always emitted 0.0).
@@ -1155,10 +1209,10 @@ mod tests {
         let mut cb = CallbackBuilder::new();
         let ft = cb.scalar(4, 8, 0, 8, 1);
         let f = cb.fnum(0, 3.5, ft);
-        let s = cb.expr_stmt(0, f);
+        let s = cb.expression_statement(0, f);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
-        assert!(matches!(tree.expr(eid(f)).kind, Cexpr::Fnum(v) if v == 3.5));
+        assert!(matches!(tree.expression(eid(f)).kind, ExpressionKind::Fnum(v) if v == 3.5));
     }
 
     /// Lvars land in the table in push order and `Var` resolves to them.
@@ -1166,7 +1220,7 @@ mod tests {
     fn lvars_resolve_through_the_table() {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
-        cb.push_lvar(Lvar {
+        cb.push_lvar(Local {
             name: "argc".into(),
             ty: tid(it),
             is_arg: true,
@@ -1174,17 +1228,17 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: None,
-            location: LvarLocation::Stack(-4),
+            location: LocalLocation::Stack(-4),
         });
         let v = cb.var(0, 0, it);
-        let s = cb.expr_stmt(0, v);
+        let s = cb.expression_statement(0, v);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        assert!(let Cexpr::Var(id) = &tree.expr(eid(v)).kind);
+        assert!(let ExpressionKind::Var(id) = &tree.expression(eid(v)).kind);
         let lv = tree.lvar(*id);
         assert!(lv.name == "argc");
         assert!(lv.is_arg);
-        assert!(lv.location == LvarLocation::Stack(-4));
+        assert!(lv.location == LocalLocation::Stack(-4));
     }
 }

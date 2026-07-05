@@ -9,7 +9,7 @@
 
 mod common;
 
-use idakit::{Cfg, Ea, Error, Idb};
+use idakit::{Address, Cfg, Error, Idb};
 
 #[test]
 fn cfg() {
@@ -33,7 +33,7 @@ fn run(idb: &mut Idb, db: &str) {
     entry_and_lookup(&cfg);
     instructions_walk_the_entry_block(idb, &cfg);
     exits_leave_the_function(idb);
-    knobs_behave(idb, cfg.func());
+    knobs_behave(idb, cfg.function());
     non_function_is_rejected(idb);
 
     // Cfg is an owned snapshot -- it holds no borrow of `idb`, so the &mut close needs no
@@ -95,9 +95,9 @@ fn entry_and_lookup(cfg: &Cfg) {
     );
 
     // Address 0 is below any real code segment here, so it lies in no block.
-    if start > Ea::new_const(0) {
+    if start > Address::new_const(0) {
         assert!(
-            cfg.block_at(Ea::new_const(0)).is_none(),
+            cfg.block_at(Address::new_const(0)).is_none(),
             "block_at should miss an address outside every block"
         );
     }
@@ -111,14 +111,14 @@ fn instructions_walk_the_entry_block(idb: &Idb, cfg: &Cfg) {
 
     assert!(!insns.is_empty(), "the entry block decodes an instruction");
     assert!(
-        insns[0].ea == entry.start(),
+        insns[0].address == entry.start(),
         "the first instruction sits at the block start"
     );
-    for insn in &insns {
+    for instruction in &insns {
         assert!(
-            insn.ea >= entry.start() && insn.ea < entry.end(),
+            instruction.address >= entry.start() && instruction.address < entry.end(),
             "instruction {:#x} escapes the block range",
-            insn.ea
+            instruction.address
         );
     }
 }
@@ -152,11 +152,11 @@ fn exits_leave_the_function(idb: &Idb) {
 
 /// `call_ends` only ever splits more blocks, `externals(false)` drops every out-of-function
 /// exit, and `predecessors(false)` leaves predecessor lists empty.
-fn knobs_behave(idb: &Idb, func: Ea) {
-    let base = idb.cfg(func).expect("base cfg");
+fn knobs_behave(idb: &Idb, function: Address) {
+    let base = idb.cfg(function).expect("base cfg");
 
     let split = idb
-        .func(func)
+        .function(function)
         .cfg_with()
         .call_ends(true)
         .call()
@@ -169,7 +169,7 @@ fn knobs_behave(idb: &Idb, func: Ea) {
     );
 
     let no_ext = idb
-        .func(func)
+        .function(function)
         .cfg_with()
         .externals(false)
         .call()
@@ -180,7 +180,7 @@ fn knobs_behave(idb: &Idb, func: Ea) {
     );
 
     let no_preds = idb
-        .func(func)
+        .function(function)
         .cfg_with()
         .predecessors(false)
         .call()

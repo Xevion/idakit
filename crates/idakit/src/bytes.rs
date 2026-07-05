@@ -5,70 +5,70 @@
 use idakit_sys as sys;
 
 use crate::Idb;
-use crate::ea::Ea;
+use crate::address::Address;
 use crate::error::{Error, Result};
 use crate::ffi::{read_string, with_cstr};
 
 impl Idb {
-    /// Whether the kernel classifies the item at `ea` as an instruction. This is the gate
-    /// [`Func::instructions`](crate::Func::instructions) walks by: [`decode`](Self::decode)
-    /// will happily turn arbitrary bytes into an [`Insn`](crate::Insn), so only `is_code`
+    /// Whether the kernel classifies the item at `address` as an instruction. This is the gate
+    /// [`Function::instructions`](crate::Function::instructions) walks by: [`decode`](Self::decode)
+    /// will happily turn arbitrary bytes into an [`Instruction`](crate::Instruction), so only `is_code`
     /// separates real instructions from data (or a function's alignment tail) that merely
     /// happens to decode.
     #[must_use]
-    pub fn is_code(&self, ea: Ea) -> bool {
-        (self.get_flags(ea) & sys::MS_CLS) == sys::FF_CODE
+    pub fn is_code(&self, address: Address) -> bool {
+        (self.get_flags(address) & sys::MS_CLS) == sys::FF_CODE
     }
 
-    /// Whether the kernel classifies the item at `ea` as a data definition.
+    /// Whether the kernel classifies the item at `address` as a data definition.
     #[must_use]
-    pub fn is_data(&self, ea: Ea) -> bool {
-        (self.get_flags(ea) & sys::MS_CLS) == sys::FF_DATA
+    pub fn is_data(&self, address: Address) -> bool {
+        (self.get_flags(address) & sys::MS_CLS) == sys::FF_DATA
     }
 
-    /// Start of the defined item (instruction or data) covering `ea`; `ea` itself when it is
+    /// Start of the defined item (instruction or data) covering `address`; `address` itself when it is
     /// already a head or falls in undefined bytes.
     #[must_use]
-    pub fn item_head(&self, ea: Ea) -> Ea {
-        Ea::try_new(self.get_item_head(ea)).unwrap_or(ea)
+    pub fn item_head(&self, address: Address) -> Address {
+        Address::try_new(self.get_item_head(address)).unwrap_or(address)
     }
 
-    /// One-past-the-last address of the item at `ea` -- the next item's head, and the natural
+    /// One-past-the-last address of the item at `address` -- the next item's head, and the natural
     /// step to advance a linear walk. Undefined bytes advance one at a time.
     #[must_use]
-    pub fn item_end(&self, ea: Ea) -> Ea {
-        Ea::try_new(self.get_item_end(ea)).unwrap_or(ea)
+    pub fn item_end(&self, address: Address) -> Address {
+        Address::try_new(self.get_item_end(address)).unwrap_or(address)
     }
 
-    /// Next defined item head after `ea`, searching up to (but not reaching) `max`; `None`
+    /// Next defined item head after `address`, searching up to (but not reaching) `max`; `None`
     /// when no head lies in that span.
     #[must_use]
-    pub fn next_head(&self, ea: Ea, max: Ea) -> Option<Ea> {
-        Ea::try_new(self.get_next_head(ea, max))
+    pub fn next_head(&self, address: Address, max: Address) -> Option<Address> {
+        Address::try_new(self.get_next_head(address, max))
     }
 
-    /// Previous defined item head before `ea`, searching down to `min`; `None` when no head
+    /// Previous defined item head before `address`, searching down to `min`; `None` when no head
     /// lies in that span.
     #[must_use]
-    pub fn prev_head(&self, ea: Ea, min: Ea) -> Option<Ea> {
-        Ea::try_new(self.get_prev_head(ea, min))
+    pub fn prev_head(&self, address: Address, min: Address) -> Option<Address> {
+        Address::try_new(self.get_prev_head(address, min))
     }
 
-    /// Read bytes at `ea` into `buf`, returning how many were supplied. Zero-alloc;
+    /// Read bytes at `address` into `buf`, returning how many were supplied. Zero-alloc;
     /// reuse one buffer on hot loops. [`bytes`](Self::bytes) is the owning shortcut.
-    pub fn read_into(&self, ea: Ea, buf: &mut [u8]) -> usize {
-        let got = self.get_bytes(ea, buf.as_mut_ptr().cast(), buf.len());
+    pub fn read_into(&self, address: Address, buf: &mut [u8]) -> usize {
+        let got = self.get_bytes(address, buf.as_mut_ptr().cast(), buf.len());
         (got.max(0) as usize).min(buf.len())
     }
 
-    /// Patch `bytes` over the image at `ea`, saving the originals (IDA can recover them and
+    /// Patch `bytes` over the image at `address`, saving the originals (IDA can recover them and
     /// a later save writes the patch into the `.i64`). `Err` if any target byte is unmapped:
     /// the write is all-or-nothing, so a bad address leaves the database untouched.
-    pub fn patch(&mut self, ea: Ea, bytes: &[u8]) -> Result<()> {
+    pub fn patch(&mut self, address: Address, bytes: &[u8]) -> Result<()> {
         if bytes.is_empty() {
             return Ok(());
         }
-        let ok = self.patch_bytes(ea, bytes.as_ptr().cast(), bytes.len());
+        let ok = self.patch_bytes(address, bytes.as_ptr().cast(), bytes.len());
         if ok != 0 {
             return Ok(());
         }
@@ -77,39 +77,39 @@ impl Idb {
         let (qerrno, reason) = self.last_reason();
         Err(Error::WriteRejected {
             op: "patch",
-            ea: ea.get(),
+            address: address.get(),
             qerrno,
             reason: reason.or_else(|| Some("target range is not fully mapped".to_owned())),
         })
     }
 
-    /// Read up to `len` bytes at `ea` into a fresh vector (empty on failure).
+    /// Read up to `len` bytes at `address` into a fresh vector (empty on failure).
     #[must_use]
-    pub fn bytes(&self, ea: Ea, len: usize) -> Vec<u8> {
+    pub fn bytes(&self, address: Address, len: usize) -> Vec<u8> {
         let mut buf = vec![0u8; len];
-        let got = self.read_into(ea, &mut buf);
+        let got = self.read_into(address, &mut buf);
         buf.truncate(got);
         buf
     }
 
-    /// Read the comment at `ea` -- `repeatable` selects the repeatable channel over the
+    /// Read the comment at `address` -- `repeatable` selects the repeatable channel over the
     /// regular one -- or `None` when that channel carries none. The write half is
     /// [`set_comment`](Self::set_comment).
     #[must_use]
-    pub fn comment(&self, ea: Ea, repeatable: bool) -> Option<String> {
-        read_string(|buf, cap| self.get_cmt(ea, repeatable, buf, cap))
+    pub fn comment(&self, address: Address, repeatable: bool) -> Option<String> {
+        read_string(|buf, cap| self.get_cmt(address, repeatable, buf, cap))
     }
 
-    /// Set the comment at `ea`. `repeatable` repeats it at every reference.
-    pub fn set_comment(&mut self, ea: Ea, text: &str, repeatable: bool) -> Result<()> {
-        let ok = with_cstr(text, "comment", |p| self.set_cmt(ea, p, repeatable))?;
+    /// Set the comment at `address`. `repeatable` repeats it at every reference.
+    pub fn set_comment(&mut self, address: Address, text: &str, repeatable: bool) -> Result<()> {
+        let ok = with_cstr(text, "comment", |p| self.set_cmt(address, p, repeatable))?;
         if ok {
             Ok(())
         } else {
             let (qerrno, reason) = self.last_reason();
             Err(Error::WriteRejected {
                 op: "set_comment",
-                ea: ea.get(),
+                address: address.get(),
                 qerrno,
                 reason,
             })

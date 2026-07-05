@@ -2,25 +2,28 @@
 //! statement. Built through [`CtreeBuilder`], which wires every node's `parent` link
 //! once the tree is complete.
 
-use super::node::{Cexpr, Cinsn, ExprId, ExprNode, Lvar, LvarId, NodeRef, StmtId, StmtNode};
+use super::node::{
+    ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef, StatementId,
+    StatementKind, StatementNode,
+};
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::types::{TypeData, TypeId, TypeTable};
-use crate::Ea;
+use crate::Address;
 use crate::arena::Arena;
 
 /// Visit `node`'s children, dispatching to the right arena. Shared by every navigation
-/// path (read-only walks and the build-time parent pass) so the expr/stmt split lives
+/// path (read-only walks and the build-time parent pass) so the expression/statement split lives
 /// in one place.
 #[inline]
 fn for_each_child(
-    exprs: &Arena<ExprNode>,
-    stmts: &Arena<StmtNode>,
+    expressions: &Arena<ExpressionNode>,
+    statements: &Arena<StatementNode>,
     node: NodeRef,
     f: impl FnMut(NodeRef),
 ) {
     match node {
-        NodeRef::Expr(id) => exprs[id].kind.for_each_child(f),
-        NodeRef::Stmt(id) => stmts[id].kind.for_each_child(f),
+        NodeRef::Expression(id) => expressions[id].kind.for_each_child(f),
+        NodeRef::Statement(id) => statements[id].kind.for_each_child(f),
     }
 }
 
@@ -32,66 +35,66 @@ fn for_each_child(
 /// IDA is a separate concern, not routed through these handles.
 #[derive(Debug)]
 pub struct Ctree {
-    exprs: Arena<ExprNode>,
-    stmts: Arena<StmtNode>,
+    expressions: Arena<ExpressionNode>,
+    statements: Arena<StatementNode>,
     types: TypeTable,
-    lvars: Vec<Lvar>,
-    root: StmtId,
+    lvars: Vec<Local>,
+    root: StatementId,
 }
 
 impl Ctree {
     /// The root statement (a block).
     #[inline]
     #[must_use]
-    pub fn root(&self) -> StmtId {
+    pub fn root(&self) -> StatementId {
         self.root
     }
 
     /// The expression node behind a handle.
     #[inline]
     #[must_use]
-    pub fn expr(&self, id: ExprId) -> &ExprNode {
-        &self.exprs[id]
+    pub fn expression(&self, id: ExpressionId) -> &ExpressionNode {
+        &self.expressions[id]
     }
 
     /// The statement node behind a handle.
     #[inline]
     #[must_use]
-    pub fn stmt(&self, id: StmtId) -> &StmtNode {
-        &self.stmts[id]
+    pub fn statement(&self, id: StatementId) -> &StatementNode {
+        &self.statements[id]
     }
 
-    /// The expression *kind* behind a handle: shorthand for [`expr(id)`](Self::expr)`.kind`,
-    /// the form matchers want when projecting with the [`Cexpr`] `as_*` accessors.
+    /// The expression *kind* behind a handle: shorthand for [`expression(id)`](Self::expression)`.kind`,
+    /// the form matchers want when projecting with the [`ExpressionKind`] `as_*` accessors.
     #[inline]
     #[must_use]
-    pub fn kind(&self, id: ExprId) -> &Cexpr {
-        &self.exprs[id].kind
+    pub fn kind(&self, id: ExpressionId) -> &ExpressionKind {
+        &self.expressions[id].kind
     }
 
-    /// The statement *kind* behind a handle: shorthand for [`stmt(id)`](Self::stmt)`.kind`.
+    /// The statement *kind* behind a handle: shorthand for [`statement(id)`](Self::statement)`.kind`.
     #[inline]
     #[must_use]
-    pub fn stmt_kind(&self, id: StmtId) -> &Cinsn {
-        &self.stmts[id].kind
+    pub fn statement_kind(&self, id: StatementId) -> &StatementKind {
+        &self.statements[id].kind
     }
 
-    /// The type behind a handle (e.g. an [`ExprNode::ty`]).
+    /// The type behind a handle (e.g. an [`ExpressionNode::ty`]).
     #[inline]
     #[must_use]
     pub fn type_of(&self, id: TypeId) -> &TypeData {
         self.types.get(id)
     }
 
-    /// The local variable a [`Cexpr::Var`] refers to.
+    /// The local variable a [`ExpressionKind::Var`] refers to.
     #[inline]
     #[must_use]
-    pub fn lvar(&self, id: LvarId) -> &Lvar {
+    pub fn lvar(&self, id: LocalId) -> &Local {
         &self.lvars[id.0 as usize]
     }
 
     /// Every local variable of the function, in lvar-index order.
-    pub fn lvars(&self) -> impl ExactSizeIterator<Item = &Lvar> {
+    pub fn lvars(&self) -> impl ExactSizeIterator<Item = &Local> {
         self.lvars.iter()
     }
 
@@ -100,40 +103,42 @@ impl Ctree {
     /// structural accessor: it reads the lvar table's argument flags and makes no
     /// assumption about calling convention.
     #[must_use]
-    pub fn this_lvar(&self) -> Option<LvarId> {
+    pub fn this_lvar(&self) -> Option<LocalId> {
         self.lvars
             .iter()
             .position(|lv| lv.is_arg)
-            .map(|i| LvarId(i as u32))
+            .map(|i| LocalId(i as u32))
     }
 
     /// Every expression node, flat, in allocation order -- for whole-tree scans like
     /// "find all calls" that don't need the tree shape.
-    pub fn exprs(&self) -> impl ExactSizeIterator<Item = (ExprId, &ExprNode)> {
-        self.exprs.iter()
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = (ExpressionId, &ExpressionNode)> {
+        self.expressions.iter()
     }
 
     /// Every statement node, flat, in allocation order.
-    pub fn stmts(&self) -> impl ExactSizeIterator<Item = (StmtId, &StmtNode)> {
-        self.stmts.iter()
+    pub fn statements(&self) -> impl ExactSizeIterator<Item = (StatementId, &StatementNode)> {
+        self.statements.iter()
     }
 
     /// Every call in the tree as `(node, callee, args)` -- the whole-tree scan behind
-    /// "find every call" without re-spelling the [`as_call`](Cexpr::as_call) filter.
-    pub fn calls(&self) -> impl Iterator<Item = (ExprId, ExprId, &[ExprId])> {
-        self.exprs()
+    /// "find every call" without re-spelling the [`as_call`](ExpressionKind::as_call) filter.
+    pub fn calls(&self) -> impl Iterator<Item = (ExpressionId, ExpressionId, &[ExpressionId])> {
+        self.expressions()
             .filter_map(|(id, node)| node.kind.as_call().map(|(callee, args)| (id, callee, args)))
     }
 
     /// Every assignment in the tree as `(node, op, lhs, rhs)`.
-    pub fn assigns(&self) -> impl Iterator<Item = (ExprId, AssignOp, ExprId, ExprId)> {
-        self.exprs()
+    pub fn assigns(
+        &self,
+    ) -> impl Iterator<Item = (ExpressionId, AssignOp, ExpressionId, ExpressionId)> {
+        self.expressions()
             .filter_map(|(id, node)| node.kind.as_assign().map(|(op, x, y)| (id, op, x, y)))
     }
 
     /// Every local-variable reference in the tree as `(node, lvar)`.
-    pub fn vars(&self) -> impl Iterator<Item = (ExprId, LvarId)> {
-        self.exprs()
+    pub fn vars(&self) -> impl Iterator<Item = (ExpressionId, LocalId)> {
+        self.expressions()
             .filter_map(|(id, node)| node.kind.as_var().map(|v| (id, v)))
     }
 
@@ -147,8 +152,8 @@ impl Ctree {
     #[must_use]
     pub fn parent(&self, node: NodeRef) -> Option<NodeRef> {
         match node {
-            NodeRef::Expr(id) => self.exprs[id].parent,
-            NodeRef::Stmt(id) => self.stmts[id].parent,
+            NodeRef::Expression(id) => self.expressions[id].parent,
+            NodeRef::Statement(id) => self.statements[id].parent,
         }
     }
 
@@ -156,14 +161,14 @@ impl Ctree {
     #[must_use]
     pub fn children(&self, node: NodeRef) -> Vec<NodeRef> {
         let mut v = Vec::new();
-        for_each_child(&self.exprs, &self.stmts, node, |c| v.push(c));
+        for_each_child(&self.expressions, &self.statements, node, |c| v.push(c));
         v
     }
 
     /// Visit each direct child without allocating -- the push-based form that
     /// [`children`](Self::children) buffers into a `Vec`.
     pub fn children_for_each(&self, node: NodeRef, f: impl FnMut(NodeRef)) {
-        for_each_child(&self.exprs, &self.stmts, node, f);
+        for_each_child(&self.expressions, &self.statements, node, f);
     }
 
     /// A pre-order walk of `node` and all its descendants (the node itself first).
@@ -177,8 +182,8 @@ impl Ctree {
 
     /// Like [`descendants`](Self::descendants) but yielding only the expression handles,
     /// skipping statements.
-    pub fn expr_descendants(&self, node: NodeRef) -> impl Iterator<Item = ExprId> + '_ {
-        self.descendants(node).filter_map(NodeRef::as_expr)
+    pub fn expression_descendants(&self, node: NodeRef) -> impl Iterator<Item = ExpressionId> + '_ {
+        self.descendants(node).filter_map(NodeRef::as_expression)
     }
 }
 
@@ -196,7 +201,7 @@ impl Iterator for Descendants<'_> {
         // Push children straight onto the stack (no intermediate child list), then
         // reverse just that suffix so the first child is popped -- and visited -- next.
         let base = self.stack.len();
-        for_each_child(&self.tree.exprs, &self.tree.stmts, node, |c| {
+        for_each_child(&self.tree.expressions, &self.tree.statements, node, |c| {
             self.stack.push(c);
         });
         self.stack[base..].reverse();
@@ -208,24 +213,24 @@ impl Iterator for Descendants<'_> {
 /// children's handles), then [`finish`](CtreeBuilder::finish) to wire parent links.
 #[derive(Debug)]
 pub struct CtreeBuilder {
-    exprs: Arena<ExprNode>,
-    stmts: Arena<StmtNode>,
+    expressions: Arena<ExpressionNode>,
+    statements: Arena<StatementNode>,
     types: TypeTable,
-    lvars: Vec<Lvar>,
+    lvars: Vec<Local>,
 }
 
 impl CtreeBuilder {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            exprs: Arena::new(),
-            stmts: Arena::new(),
+            expressions: Arena::new(),
+            statements: Arena::new(),
             types: TypeTable::new(),
             lvars: Vec::new(),
         }
     }
 
-    /// Intern a type, returning a shared handle to pass to [`expr`](Self::expr).
+    /// Intern a type, returning a shared handle to pass to [`expression`](Self::expression).
     pub fn intern_type(&mut self, data: TypeData) -> TypeId {
         self.types.intern(data)
     }
@@ -249,35 +254,35 @@ impl CtreeBuilder {
         self.types.get(id).size
     }
 
-    /// Append a local variable; the returned [`LvarId`] (its index) is what
-    /// [`Cexpr::Var`] carries.
-    pub fn push_lvar(&mut self, lvar: Lvar) -> LvarId {
-        let id = LvarId(u32::try_from(self.lvars.len()).expect("ctree exceeded u32 lvars"));
+    /// Append a local variable; the returned [`LocalId`] (its index) is what
+    /// [`ExpressionKind::Var`] carries.
+    pub fn push_lvar(&mut self, lvar: Local) -> LocalId {
+        let id = LocalId(u32::try_from(self.lvars.len()).expect("ctree exceeded u32 lvars"));
         self.lvars.push(lvar);
         id
     }
 
     /// `Var(lvar)`.
-    pub fn var(&mut self, ty: TypeId, lvar: LvarId) -> ExprId {
-        self.expr(ty, Cexpr::Var(lvar)).call()
+    pub fn var(&mut self, ty: TypeId, lvar: LocalId) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Var(lvar)).call()
     }
 
     /// An integer literal (raw bits; signedness rides on `ty`).
-    pub fn num(&mut self, ty: TypeId, value: u64) -> ExprId {
-        self.expr(ty, Cexpr::Num(value)).call()
+    pub fn num(&mut self, ty: TypeId, value: u64) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Num(value)).call()
     }
 
     /// A floating-point literal.
-    pub fn fnum(&mut self, ty: TypeId, value: f64) -> ExprId {
-        self.expr(ty, Cexpr::Fnum(value)).call()
+    pub fn fnum(&mut self, ty: TypeId, value: f64) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Fnum(value)).call()
     }
 
-    /// A global/static reference at `ea`, with its symbol name when it has one.
-    pub fn obj(&mut self, ty: TypeId, ea: Ea, name: Option<&str>) -> ExprId {
-        self.expr(
+    /// A global/static reference at `address`, with its symbol name when it has one.
+    pub fn obj(&mut self, ty: TypeId, address: Address, name: Option<&str>) -> ExpressionId {
+        self.expression(
             ty,
-            Cexpr::Obj {
-                ea,
+            ExpressionKind::Obj {
+                address,
                 name: name.map(str::to_owned),
             },
         )
@@ -285,104 +290,135 @@ impl CtreeBuilder {
     }
 
     /// A string literal.
-    pub fn string(&mut self, ty: TypeId, s: impl Into<String>) -> ExprId {
-        self.expr(ty, Cexpr::Str(s.into())).call()
+    pub fn string(&mut self, ty: TypeId, s: impl Into<String>) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Str(s.into())).call()
     }
 
     /// A decompiler helper name, e.g. `__readfsqword`.
-    pub fn helper(&mut self, ty: TypeId, s: impl Into<String>) -> ExprId {
-        self.expr(ty, Cexpr::Helper(s.into())).call()
+    pub fn helper(&mut self, ty: TypeId, s: impl Into<String>) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Helper(s.into())).call()
     }
 
     /// `(ty)x`.
-    pub fn cast(&mut self, ty: TypeId, x: ExprId) -> ExprId {
-        self.expr(ty, Cexpr::Cast { x }).call()
+    pub fn cast(&mut self, ty: TypeId, x: ExpressionId) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Cast { x }).call()
     }
 
     /// `*x`, reading `size` bytes.
-    pub fn deref(&mut self, ty: TypeId, x: ExprId, size: u32) -> ExprId {
-        self.expr(ty, Cexpr::Deref { x, size }).call()
+    pub fn deref(&mut self, ty: TypeId, x: ExpressionId, size: u32) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Deref { x, size })
+            .call()
     }
 
     /// `OP x`.
-    pub fn unary(&mut self, ty: TypeId, op: UnOp, x: ExprId) -> ExprId {
-        self.expr(ty, Cexpr::Unary { op, x }).call()
+    pub fn unary(&mut self, ty: TypeId, op: UnOp, x: ExpressionId) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Unary { op, x }).call()
     }
 
     /// `x OP y`.
-    pub fn binary(&mut self, ty: TypeId, op: BinOp, x: ExprId, y: ExprId) -> ExprId {
-        self.expr(ty, Cexpr::Binary { op, x, y }).call()
+    pub fn binary(
+        &mut self,
+        ty: TypeId,
+        op: BinOp,
+        x: ExpressionId,
+        y: ExpressionId,
+    ) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Binary { op, x, y })
+            .call()
     }
 
     /// `x OP= y`.
-    pub fn assign(&mut self, ty: TypeId, op: AssignOp, x: ExprId, y: ExprId) -> ExprId {
-        self.expr(ty, Cexpr::Assign { op, x, y }).call()
+    pub fn assign(
+        &mut self,
+        ty: TypeId,
+        op: AssignOp,
+        x: ExpressionId,
+        y: ExpressionId,
+    ) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Assign { op, x, y })
+            .call()
     }
 
     /// `cond ? then_ : else_`.
-    pub fn ternary(&mut self, ty: TypeId, cond: ExprId, then_: ExprId, else_: ExprId) -> ExprId {
-        self.expr(ty, Cexpr::Ternary { cond, then_, else_ }).call()
+    pub fn ternary(
+        &mut self,
+        ty: TypeId,
+        cond: ExpressionId,
+        then_: ExpressionId,
+        else_: ExpressionId,
+    ) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Ternary { cond, then_, else_ })
+            .call()
     }
 
     /// `array[index]`.
-    pub fn index(&mut self, ty: TypeId, array: ExprId, index: ExprId) -> ExprId {
-        self.expr(ty, Cexpr::Index { array, index }).call()
+    pub fn index(&mut self, ty: TypeId, array: ExpressionId, index: ExpressionId) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Index { array, index })
+            .call()
     }
 
     /// `obj.field` at `byte_offset`.
-    pub fn member_ref(&mut self, ty: TypeId, obj: ExprId, byte_offset: u32) -> ExprId {
-        self.expr(ty, Cexpr::MemberRef { obj, byte_offset }).call()
+    pub fn member_ref(&mut self, ty: TypeId, obj: ExpressionId, byte_offset: u32) -> ExpressionId {
+        self.expression(ty, ExpressionKind::MemberRef { obj, byte_offset })
+            .call()
     }
 
     /// `obj->field` at `byte_offset`.
-    pub fn member_ptr(&mut self, ty: TypeId, obj: ExprId, byte_offset: u32) -> ExprId {
-        self.expr(ty, Cexpr::MemberPtr { obj, byte_offset }).call()
+    pub fn member_ptr(&mut self, ty: TypeId, obj: ExpressionId, byte_offset: u32) -> ExpressionId {
+        self.expression(ty, ExpressionKind::MemberPtr { obj, byte_offset })
+            .call()
     }
 
     /// `callee(args...)`.
-    pub fn call_expr(&mut self, ty: TypeId, callee: ExprId, args: Vec<ExprId>) -> ExprId {
-        self.expr(ty, Cexpr::Call { callee, args }).call()
+    pub fn call_expression(
+        &mut self,
+        ty: TypeId,
+        callee: ExpressionId,
+        args: Vec<ExpressionId>,
+    ) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Call { callee, args })
+            .call()
     }
 
     /// `sizeof(x)`.
-    pub fn sizeof(&mut self, ty: TypeId, x: ExprId) -> ExprId {
-        self.expr(ty, Cexpr::Sizeof(x)).call()
+    pub fn sizeof(&mut self, ty: TypeId, x: ExpressionId) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Sizeof(x)).call()
     }
 
     /// `e;` -- an expression in statement position.
-    pub fn expr_stmt(&mut self, e: ExprId) -> StmtId {
-        self.stmt(Cinsn::Expr(e)).call()
+    pub fn expression_statement(&mut self, e: ExpressionId) -> StatementId {
+        self.statement(StatementKind::Expression(e)).call()
     }
 
     /// `{ ... }`.
-    pub fn block(&mut self, stmts: Vec<StmtId>) -> StmtId {
-        self.stmt(Cinsn::Block(stmts)).call()
+    pub fn block(&mut self, statements: Vec<StatementId>) -> StatementId {
+        self.statement(StatementKind::Block(statements)).call()
     }
 
     /// `return [value];`.
-    pub fn ret(&mut self, value: Option<ExprId>) -> StmtId {
-        self.stmt(Cinsn::Return(value)).call()
+    pub fn ret(&mut self, value: Option<ExpressionId>) -> StatementId {
+        self.statement(StatementKind::Return(value)).call()
     }
 
     /// Finalize the tree rooted at `root`, wiring every node's `parent` link by one
     /// pre-order pass from the root.
     #[must_use]
-    pub fn finish(mut self, root: StmtId) -> Ctree {
+    pub fn finish(mut self, root: StatementId) -> Ctree {
         // Reading a node's children borrows an arena while writing the children's
         // `parent` needs `&mut` to the same arena, so the two phases can't share one
         // borrow. `kids` decouples them; reused across the walk, it allocates once
         // (growing to the largest fan-out) rather than per node.
-        let mut stack = vec![NodeRef::Stmt(root)];
+        let mut stack = vec![NodeRef::Statement(root)];
         let mut kids: Vec<NodeRef> = Vec::new();
         let mut visited = 0usize;
         while let Some(node) = stack.pop() {
             visited += 1;
             kids.clear();
-            for_each_child(&self.exprs, &self.stmts, node, |c| kids.push(c));
+            for_each_child(&self.expressions, &self.statements, node, |c| kids.push(c));
             for &child in &kids {
                 match child {
-                    NodeRef::Expr(id) => self.exprs[id].parent = Some(node),
-                    NodeRef::Stmt(id) => self.stmts[id].parent = Some(node),
+                    NodeRef::Expression(id) => self.expressions[id].parent = Some(node),
+                    NodeRef::Statement(id) => self.statements[id].parent = Some(node),
                 }
                 stack.push(child);
             }
@@ -393,12 +429,12 @@ impl CtreeBuilder {
         // no node is reached twice and `visited` is an exact count.
         debug_assert_eq!(
             visited,
-            self.exprs.len() + self.stmts.len(),
+            self.expressions.len() + self.statements.len(),
             "ctree has nodes unreachable from the root"
         );
         Ctree {
-            exprs: self.exprs,
-            stmts: self.stmts,
+            expressions: self.expressions,
+            statements: self.statements,
             types: self.types,
             lvars: self.lvars,
             root,
@@ -409,31 +445,35 @@ impl CtreeBuilder {
 #[bon::bon]
 impl CtreeBuilder {
     /// Allocate an expression node (parent set later by [`finish`](Self::finish)). `ty` and
-    /// `kind` are positional; `ea` defaults to `None` (a synthetic node) and is set with
-    /// `.ea(addr)` for a node with a backing instruction. The per-variant constructors
+    /// `kind` are positional; `address` defaults to `None` (a synthetic node) and is set with
+    /// `.address(addr)` for a node with a backing instruction. The per-variant constructors
     /// (e.g. [`var`](Self::var), [`assign`](Self::assign)) are sugar over this for the
-    /// common `ea`-less case.
+    /// common `address`-less case.
     #[builder]
-    pub fn expr(
+    pub fn expression(
         &mut self,
         #[builder(start_fn)] ty: TypeId,
-        #[builder(start_fn)] kind: Cexpr,
-        ea: Option<Ea>,
-    ) -> ExprId {
-        self.exprs.alloc(ExprNode {
-            ea,
+        #[builder(start_fn)] kind: ExpressionKind,
+        address: Option<Address>,
+    ) -> ExpressionId {
+        self.expressions.alloc(ExpressionNode {
+            address,
             ty,
             parent: None,
             kind,
         })
     }
 
-    /// Allocate a statement node (parent set later by [`finish`](Self::finish)). `ea`
-    /// defaults to `None`; set it with `.ea(addr)` for a node with a backing instruction.
+    /// Allocate a statement node (parent set later by [`finish`](Self::finish)). `address`
+    /// defaults to `None`; set it with `.address(addr)` for a node with a backing instruction.
     #[builder]
-    pub fn stmt(&mut self, #[builder(start_fn)] kind: Cinsn, ea: Option<Ea>) -> StmtId {
-        self.stmts.alloc(StmtNode {
-            ea,
+    pub fn statement(
+        &mut self,
+        #[builder(start_fn)] kind: StatementKind,
+        address: Option<Address>,
+    ) -> StatementId {
+        self.statements.alloc(StatementNode {
+            address,
             parent: None,
             kind,
         })
@@ -449,7 +489,7 @@ impl Default for CtreeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ctree::node::{Lvar, LvarId, LvarLocation};
+    use crate::ctree::node::{Local, LocalId, LocalLocation};
     use crate::ctree::ops::{AssignOp, BinOp};
     use crate::ctree::types::TypeKind;
     use assert2::assert;
@@ -464,8 +504,8 @@ mod tests {
         }
     }
 
-    fn lvar(name: &str, ty: TypeId, is_arg: bool) -> Lvar {
-        Lvar {
+    fn lvar(name: &str, ty: TypeId, is_arg: bool) -> Local {
+        Local {
             name: name.into(),
             ty,
             is_arg,
@@ -473,16 +513,23 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: None,
-            location: LvarLocation::Other,
+            location: LocalLocation::Other,
         }
     }
 
     /// Build `{ return a + b; }` and return the tree plus its handles.
-    fn sample() -> (Ctree, StmtId, StmtId, ExprId, ExprId, ExprId) {
+    fn sample() -> (
+        Ctree,
+        StatementId,
+        StatementId,
+        ExpressionId,
+        ExpressionId,
+        ExpressionId,
+    ) {
         let mut b = CtreeBuilder::new();
         let int = b.intern_type(int32());
-        let va = b.var(int, LvarId(0));
-        let vb = b.var(int, LvarId(1));
+        let va = b.var(int, LocalId(0));
+        let vb = b.var(int, LocalId(1));
         let add = b.binary(int, BinOp::Add, va, vb);
         let ret = b.ret(Some(add));
         let block = b.block(vec![ret]);
@@ -494,24 +541,24 @@ mod tests {
     fn finish_wires_parent_links() {
         let (tree, block, ret, add, va, vb) = sample();
         assert!(tree.root() == block);
-        assert!(let None = tree.parent(NodeRef::Stmt(block)));
-        assert!(tree.parent(NodeRef::Stmt(ret)) == Some(NodeRef::Stmt(block)));
-        assert!(tree.parent(NodeRef::Expr(add)) == Some(NodeRef::Stmt(ret)));
-        assert!(tree.parent(NodeRef::Expr(va)) == Some(NodeRef::Expr(add)));
-        assert!(tree.parent(NodeRef::Expr(vb)) == Some(NodeRef::Expr(add)));
+        assert!(let None = tree.parent(NodeRef::Statement(block)));
+        assert!(tree.parent(NodeRef::Statement(ret)) == Some(NodeRef::Statement(block)));
+        assert!(tree.parent(NodeRef::Expression(add)) == Some(NodeRef::Statement(ret)));
+        assert!(tree.parent(NodeRef::Expression(va)) == Some(NodeRef::Expression(add)));
+        assert!(tree.parent(NodeRef::Expression(vb)) == Some(NodeRef::Expression(add)));
     }
 
     #[test]
     fn descendants_are_pre_order() {
         let (tree, block, ret, add, va, vb) = sample();
-        let walk: Vec<NodeRef> = tree.descendants(NodeRef::Stmt(block)).collect();
+        let walk: Vec<NodeRef> = tree.descendants(NodeRef::Statement(block)).collect();
         assert!(
             walk == vec![
-                NodeRef::Stmt(block),
-                NodeRef::Stmt(ret),
-                NodeRef::Expr(add),
-                NodeRef::Expr(va),
-                NodeRef::Expr(vb),
+                NodeRef::Statement(block),
+                NodeRef::Statement(ret),
+                NodeRef::Expression(add),
+                NodeRef::Expression(va),
+                NodeRef::Expression(vb),
             ]
         );
     }
@@ -519,26 +566,28 @@ mod tests {
     #[test]
     fn children_of_a_leaf_are_empty() {
         let (tree, _block, _ret, _add, va, _vb) = sample();
-        assert!(tree.children(NodeRef::Expr(va)).is_empty());
+        assert!(tree.children(NodeRef::Expression(va)).is_empty());
     }
 
     #[test]
-    fn expr_descendants_skips_statements() {
+    fn expression_descendants_skips_statements() {
         let (tree, block, _ret, add, va, vb) = sample();
-        // Statements (block, return) are filtered out; the three exprs survive in pre-order.
-        let exprs: Vec<ExprId> = tree.expr_descendants(NodeRef::Stmt(block)).collect();
-        assert!(exprs == vec![add, va, vb]);
+        // Statements (block, return) are filtered out; the three expressions survive in pre-order.
+        let expressions: Vec<ExpressionId> = tree
+            .expression_descendants(NodeRef::Statement(block))
+            .collect();
+        assert!(expressions == vec![add, va, vb]);
     }
 
-    /// `kind`/`stmt_kind` resolve a handle straight to its node kind -- the shorthand the
+    /// `kind`/`statement_kind` resolve a handle straight to its node kind -- the shorthand the
     /// matchers project from.
     #[test]
     fn kind_resolves_handles_to_their_node_kind() {
         let (tree, block, ret, add, va, _vb) = sample();
-        assert!(let Cexpr::Binary { .. } = tree.kind(add));
-        assert!(let Cexpr::Var(_) = tree.kind(va));
-        assert!(let Cinsn::Block(_) = tree.stmt_kind(block));
-        assert!(let Cinsn::Return(_) = tree.stmt_kind(ret));
+        assert!(let ExpressionKind::Binary { .. } = tree.kind(add));
+        assert!(let ExpressionKind::Var(_) = tree.kind(va));
+        assert!(let StatementKind::Block(_) = tree.statement_kind(block));
+        assert!(let StatementKind::Return(_) = tree.statement_kind(ret));
     }
 
     /// The semantic iterators enumerate every call/assign/var in the tree; building the
@@ -547,12 +596,12 @@ mod tests {
     fn semantic_iterators_enumerate_their_kind() {
         let mut b = CtreeBuilder::new();
         let int = b.intern_type(int32());
-        let x = b.var(int, LvarId(0));
-        let a = b.var(int, LvarId(1));
-        let f = b.obj(int, Ea::new_const(0x40), Some("f"));
-        let call = b.call_expr(int, f, vec![a]);
+        let x = b.var(int, LocalId(0));
+        let a = b.var(int, LocalId(1));
+        let f = b.obj(int, Address::new_const(0x40), Some("f"));
+        let call = b.call_expression(int, f, vec![a]);
         let asg = b.assign(int, AssignOp::Assign, x, call);
-        let st = b.expr_stmt(asg);
+        let st = b.expression_statement(asg);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
 
@@ -560,27 +609,27 @@ mod tests {
         assert!(calls == vec![(call, f, [a].as_slice())]);
         assert!(tree.assigns().collect::<Vec<_>>() == vec![(asg, AssignOp::Assign, x, call)]);
         // Both `Var` references surface, in allocation order.
-        assert!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>() == vec![LvarId(0), LvarId(1)]);
+        assert!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>() == vec![LocalId(0), LocalId(1)]);
     }
 
     #[test]
     fn flat_iteration_covers_every_node() {
         let (tree, _block, _ret, _add, _va, _vb) = sample();
-        // 3 exprs (va, vb, add), 2 stmts (ret, block), 1 type (int, deduped across exprs).
-        assert!(tree.exprs().count() == 3);
-        assert!(tree.stmts().count() == 2);
+        // 3 expressions (va, vb, add), 2 statements (ret, block), 1 type (int, deduped across expressions).
+        assert!(tree.expressions().count() == 3);
+        assert!(tree.statements().count() == 2);
         assert!(tree.types().count() == 1);
         let binaries = tree
-            .exprs()
-            .filter(|(_, e)| matches!(e.kind, Cexpr::Binary { .. }))
+            .expressions()
+            .filter(|(_, e)| matches!(e.kind, ExpressionKind::Binary { .. }))
             .count();
         assert!(binaries == 1);
     }
 
     #[test]
-    fn expr_carries_its_resolved_type() {
+    fn expression_carries_its_resolved_type() {
         let (tree, _block, _ret, add, _va, _vb) = sample();
-        let ty = tree.expr(add).ty;
+        let ty = tree.expression(add).ty;
         assert!(
             tree.type_of(ty).kind
                 == TypeKind::Int {
@@ -601,7 +650,7 @@ mod tests {
         let this = b.push_lvar(lvar("this", int, true));
         b.push_lvar(lvar("arg2", int, true));
         let v = b.var(int, this);
-        let st = b.expr_stmt(v);
+        let st = b.expression_statement(v);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(tree.this_lvar() == Some(this));

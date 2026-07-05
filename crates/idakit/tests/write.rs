@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::{Ea, Error};
+use idakit::{Address, Error};
 
 #[test]
 fn write() {
@@ -23,55 +23,55 @@ fn write() {
 fn run(idb: &mut idakit::Idb, db: &str) {
     idb.open(db).call().expect("open failed");
 
-    let ea = idb.functions().next().expect("a function").ea();
+    let address = idb.functions().next().expect("a function").address();
 
-    comment_round_trips(idb, ea);
-    patch_round_trips(idb, ea);
+    comment_round_trips(idb, address);
+    patch_round_trips(idb, address);
     patch_rejects_unmapped(idb);
 
     idb.close(false);
     println!("write OK: comment round-trip, patch round-trip, unmapped patch rejected");
 }
 
-/// A regular and a repeatable comment set on `ea` read back verbatim on their own channels.
-fn comment_round_trips(idb: &mut idakit::Idb, ea: Ea) {
-    idb.set_comment(ea, "idakit regular", false)
+/// A regular and a repeatable comment set on `address` read back verbatim on their own channels.
+fn comment_round_trips(idb: &mut idakit::Idb, address: Address) {
+    idb.set_comment(address, "idakit regular", false)
         .expect("set regular comment");
-    idb.set_comment(ea, "idakit repeatable", true)
+    idb.set_comment(address, "idakit repeatable", true)
         .expect("set repeatable comment");
 
-    assert!(idb.comment(ea, false).as_deref() == Some("idakit regular"));
-    assert!(idb.comment(ea, true).as_deref() == Some("idakit repeatable"));
+    assert!(idb.comment(address, false).as_deref() == Some("idakit regular"));
+    assert!(idb.comment(address, true).as_deref() == Some("idakit repeatable"));
     // The two channels are independent -- reading one never returns the other.
     assert!(
-        idb.comment(ea, false) != idb.comment(ea, true),
+        idb.comment(address, false) != idb.comment(address, true),
         "regular and repeatable channels should be distinct"
     );
 }
 
 /// Patching bytes is visible to a read-back, and restoring returns the originals.
-fn patch_round_trips(idb: &mut idakit::Idb, ea: Ea) {
-    let original = idb.bytes(ea, 4);
+fn patch_round_trips(idb: &mut idakit::Idb, address: Address) {
+    let original = idb.bytes(address, 4);
     assert!(original.len() == 4, "need 4 readable bytes at the entry");
 
     // Bitwise-not is guaranteed to differ from the original in every byte.
     let flipped: Vec<u8> = original.iter().map(|b| !b).collect();
-    idb.patch(ea, &flipped).expect("patch failed");
+    idb.patch(address, &flipped).expect("patch failed");
     assert!(
-        idb.bytes(ea, 4) == flipped,
+        idb.bytes(address, 4) == flipped,
         "read-back should show patched bytes"
     );
 
-    idb.patch(ea, &original).expect("restore failed");
+    idb.patch(address, &original).expect("restore failed");
     assert!(
-        idb.bytes(ea, 4) == original,
+        idb.bytes(address, 4) == original,
         "restore should return the originals"
     );
 }
 
 /// A patch targeting an unmapped address is rejected whole, as a typed `WriteRejected`.
 fn patch_rejects_unmapped(idb: &mut idakit::Idb) {
-    let nowhere = Ea::new_const(0xffff_ffff_f000);
+    let nowhere = Address::new_const(0xffff_ffff_f000);
     let r = idb.patch(nowhere, &[0x90, 0x90]);
     assert!(
         matches!(r, Err(Error::WriteRejected { op: "patch", .. })),

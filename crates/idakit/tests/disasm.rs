@@ -5,16 +5,16 @@
 //! toes. Runs against `IDAKIT_TEST_DB` or `$IDADIR/libida.so.i64` (see [`common::test_db`]);
 //! skips when neither is present. It decodes a
 //! slice of each function's instruction stream, asserts structural invariants, and
-//! cross-checks direct-branch targets against IDA's own xref graph -- two independent sources
+//! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
 //! that must agree. Read-only; never opens for write.
 
-use idakit::{CodeRef, Ida, Idb, Offset, Operand, OperandKind, XrefKind};
+use idakit::{CodeReference, Ida, Idb, Offset, Operand, OperandKind, ReferenceKind};
 
 mod common;
 
 fn fmt_op(op: &Operand) -> String {
     match &op.kind {
-        OperandKind::Reg(r) => r.name.to_string(),
+        OperandKind::Register(r) => r.name.to_string(),
         OperandKind::Imm { value } => format!("{value:#x}"),
         OperandKind::Near(t) => format!("{t:#x}"),
         OperandKind::Far { selector, offset } => format!("{selector:#x}:{offset:#x}"),
@@ -37,12 +37,12 @@ fn fmt_op(op: &Operand) -> String {
     }
 }
 
-fn fmt_insn(insn: &idakit::Insn) -> String {
-    let ops: Vec<String> = insn.ops.iter().map(fmt_op).collect();
+fn fmt_insn(instruction: &idakit::Instruction) -> String {
+    let ops: Vec<String> = instruction.ops.iter().map(fmt_op).collect();
     format!(
         "{:#x}  {:<8} {}",
-        insn.ea.get(),
-        insn.mnemonic,
+        instruction.address.get(),
+        instruction.mnemonic,
         ops.join(", ")
     )
 }
@@ -69,10 +69,10 @@ fn run(idb: &mut Idb, db: &str) {
     let mut with_ops = 0usize;
     let mut checked_target = false;
 
-    'outer: for func in idb.functions() {
-        let mut ea = func.ea();
+    'outer: for function in idb.functions() {
+        let mut address = function.address();
         for _ in 0..256 {
-            let insn = match idb.decode(ea) {
+            let instruction = match idb.decode(address) {
                 Ok(i) => i,
                 // NotCode ends the run of this function's straight-line decode (data,
                 // alignment, or the function tail); move on to the next function.
@@ -80,59 +80,69 @@ fn run(idb: &mut Idb, db: &str) {
             };
 
             // Structural invariants that must hold for every decoded instruction.
-            assert!(insn.len > 0, "zero-length instruction at {ea:#x}");
-            assert!(insn.ea == ea, "decoded ea disagrees at {ea:#x}");
             assert!(
-                !insn.mnemonic.is_empty(),
-                "empty mnemonic at {ea:#x} (itype {})",
-                insn.itype
+                instruction.len > 0,
+                "zero-length instruction at {address:#x}"
+            );
+            assert!(
+                instruction.address == address,
+                "decoded address disagrees at {address:#x}"
+            );
+            assert!(
+                !instruction.mnemonic.is_empty(),
+                "empty mnemonic at {address:#x} (itype {})",
+                instruction.itype
             );
             // Every operand's original slot index stays within IDA's operand array.
-            for op in &insn.ops {
+            for op in &instruction.ops {
                 assert!(
                     op.idx < 8,
-                    "operand index {} out of range at {ea:#x}",
+                    "operand index {} out of range at {address:#x}",
                     op.idx
                 );
             }
-            if !insn.ops.is_empty() {
+            if !instruction.ops.is_empty() {
                 with_ops += 1;
             }
 
             // Cross-check: a direct (non-indirect) branch/call with a static target must
-            // have that target recorded as a code xref from this address. Positive check --
+            // have that target recorded as a code reference from this address. Positive check --
             // proving the mechanism works on at least one real branch is enough, and it
             // tolerates the rare target IDA didn't record as a cref.
             if !checked_target
-                && !insn.flow.is_indirect
-                && (insn.flow.is_call || insn.flow.is_jump)
-                && let Some(target) = insn.flow.target
+                && !instruction.flow.is_indirect
+                && (instruction.flow.is_call || instruction.flow.is_jump)
+                && let Some(target) = instruction.flow.target
             {
-                let matched = idb.xrefs_from(ea).any(|x| {
+                let matched = idb.references_from(address).any(|x| {
                     x.to == target
                         && matches!(
                             x.kind,
-                            XrefKind::Code(
-                                CodeRef::CallNear
-                                    | CodeRef::CallFar
-                                    | CodeRef::JumpNear
-                                    | CodeRef::JumpFar
+                            ReferenceKind::Code(
+                                CodeReference::CallNear
+                                    | CodeReference::CallFar
+                                    | CodeReference::JumpNear
+                                    | CodeReference::JumpFar
                             )
                         )
                 });
                 if matched {
                     checked_target = true;
                     println!(
-                        "cross-checked direct {} at {:#x} -> {:#x} against xref graph",
-                        if insn.flow.is_call { "call" } else { "jump" },
-                        ea.get(),
+                        "cross-checked direct {} at {:#x} -> {:#x} against reference graph",
+                        if instruction.flow.is_call {
+                            "call"
+                        } else {
+                            "jump"
+                        },
+                        address.get(),
                         target.get()
                     );
                 }
             }
 
             total += 1;
-            ea = ea + Offset::new(i64::from(insn.len));
+            address = address + Offset::new(i64::from(instruction.len));
             if total >= BUDGET {
                 break 'outer;
             }
@@ -146,39 +156,41 @@ fn run(idb: &mut Idb, db: &str) {
     );
     assert!(
         checked_target,
-        "no direct branch target matched the xref graph -- flow.target is likely wrong"
+        "no direct branch target matched the reference graph -- flow.target is likely wrong"
     );
 
     println!("decoded {total} instructions ({with_ops} with operands); invariants held");
 
-    // Code-gated iteration: `Func::instructions()` must yield only real instructions, unlike
+    // Code-gated iteration: `Function::instructions()` must yield only real instructions, unlike
     // the straight-line decode above that runs off a function's tail into adjacent bytes.
     // Every yielded instruction sits at a code address inside one of the function's chunks
     // and does not spill past that chunk's end.
     let mut iter_total = 0usize;
     let mut first_fn: Vec<String> = Vec::new();
-    'iter: for (fi, func) in idb.functions().enumerate() {
-        let chunks: Vec<_> = func.chunks().collect();
+    'iter: for (fi, function) in idb.functions().enumerate() {
+        let chunks: Vec<_> = function.chunks().collect();
         assert!(
             !chunks.is_empty(),
             "function {:#x} reports no chunks",
-            func.ea().get()
+            function.address().get()
         );
-        for insn in func.instructions() {
+        for instruction in function.instructions() {
             assert!(
-                idb.is_code(insn.ea),
+                idb.is_code(instruction.address),
                 "instructions() yielded a non-code address {:#x}",
-                insn.ea.get()
+                instruction.address.get()
             );
-            let end = insn.ea + Offset::new(i64::from(insn.len));
-            let in_chunk = chunks.iter().any(|c| insn.ea >= c.start && end <= c.end);
+            let end = instruction.address + Offset::new(i64::from(instruction.len));
+            let in_chunk = chunks
+                .iter()
+                .any(|c| instruction.address >= c.start && end <= c.end);
             assert!(
                 in_chunk,
                 "instruction {:#x} escapes its function's chunks",
-                insn.ea.get()
+                instruction.address.get()
             );
             if fi == 0 && first_fn.len() < 12 {
-                first_fn.push(fmt_insn(&insn));
+                first_fn.push(fmt_insn(&instruction));
             }
             iter_total += 1;
             if iter_total >= BUDGET {
@@ -194,7 +206,7 @@ fn run(idb: &mut Idb, db: &str) {
     }
 
     // Decode is a pure read: the same address must decode identically twice.
-    let entry = idb.functions().next().expect("a function").ea();
+    let entry = idb.functions().next().expect("a function").address();
     let a = idb.decode(entry).expect("entry decodes");
     let b = idb.decode(entry).expect("entry decodes again");
     assert!(a == b, "decode is not deterministic");

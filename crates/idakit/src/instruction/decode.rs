@@ -1,4 +1,4 @@
-//! Mapping from the facade's flat `InsnRaw` POD into the owned [`Insn`] ADT.
+//! Mapping from the facade's flat `InstructionRaw` POD into the owned [`Instruction`] ADT.
 //!
 //! The facade has already done the processor-specific work on the kernel thread (folding
 //! raw operand types into semantic kinds, resolving register names and control flow); this
@@ -9,8 +9,10 @@ use std::ffi::{CStr, c_char};
 
 use idakit_sys as sys;
 
-use super::{Access, Dtype, Flow, Insn, Isa, Mem, Operand, OperandKind, Reg, RegClass};
-use crate::ea::Ea;
+use super::{
+    Access, DataType, Flow, Instruction, Isa, Mem, Operand, OperandKind, Register, RegisterClass,
+};
+use crate::address::Address;
 
 /// Copy a NUL-terminated facade name buffer into an owned string. Register names and
 /// mnemonics are ASCII; a malformed byte degrades lossily rather than failing.
@@ -22,35 +24,35 @@ fn name(buf: &[c_char]) -> Box<str> {
 }
 
 /// Rebuild a register slot; `None` for the absent-register sentinel.
-fn reg(r: &sys::InsnReg) -> Option<Reg> {
+fn register(r: &sys::InstructionRegister) -> Option<Register> {
     if r.num == sys::IDAKIT_REG_NONE {
         return None;
     }
-    Some(Reg {
+    Some(Register {
         num: r.num,
-        class: RegClass::from_raw(r.cls).unwrap_or(RegClass::Gpr),
+        class: RegisterClass::from_raw(r.cls).unwrap_or(RegisterClass::Gpr),
         width: r.width,
         name: name(&r.name),
     })
 }
 
-fn operand(o: &sys::InsnOp) -> Operand {
+fn operand(o: &sys::InstructionOperand) -> Operand {
     let kind = match o.kind {
-        sys::IDAKIT_OP_REG => {
-            OperandKind::Reg(reg(&o.reg).expect("a REG operand always carries a register"))
-        }
+        sys::IDAKIT_OP_REG => OperandKind::Register(
+            register(&o.register).expect("a REG operand always carries a register"),
+        ),
         sys::IDAKIT_OP_MEM => OperandKind::Mem(Mem {
-            base: reg(&o.base),
-            index: reg(&o.index),
+            base: register(&o.base),
+            index: register(&o.index),
             scale: o.scale,
             disp: o.disp,
             segment: None,
-            target: Ea::try_new(o.addr),
+            target: Address::try_new(o.addr),
         }),
         sys::IDAKIT_OP_IMM => OperandKind::Imm { value: o.value },
-        sys::IDAKIT_OP_NEAR => {
-            OperandKind::Near(Ea::try_new(o.addr).expect("a NEAR operand has a resolved target"))
-        }
+        sys::IDAKIT_OP_NEAR => OperandKind::Near(
+            Address::try_new(o.addr).expect("a NEAR operand has a resolved target"),
+        ),
         sys::IDAKIT_OP_FAR => OperandKind::Far {
             selector: o.sel,
             offset: o.value,
@@ -62,7 +64,7 @@ fn operand(o: &sys::InsnOp) -> Operand {
     Operand {
         idx: o.idx,
         kind,
-        dtype: Dtype::from_raw(o.dtype).unwrap_or(Dtype::Void),
+        data_type: DataType::from_raw(o.data_type).unwrap_or(DataType::Void),
         access: Access {
             read: o.access & 1 != 0,
             written: o.access & 2 != 0,
@@ -70,12 +72,12 @@ fn operand(o: &sys::InsnOp) -> Operand {
     }
 }
 
-/// Rebuild an owned [`Insn`] from a successfully-decoded (`rc == 0`) raw POD.
-pub(crate) fn insn_from_raw(raw: &sys::InsnRaw) -> Insn {
+/// Rebuild an owned [`Instruction`] from a successfully-decoded (`rc == 0`) raw POD.
+pub(crate) fn insn_from_raw(raw: &sys::InstructionRaw) -> Instruction {
     let n = (raw.nops as usize).min(sys::IDAKIT_MAX_OPS);
     let ops = raw.ops[..n].iter().map(operand).collect();
-    Insn {
-        ea: Ea::try_new(raw.ea).expect("a decoded instruction has a valid ea"),
+    Instruction {
+        address: Address::try_new(raw.address).expect("a decoded instruction has a valid address"),
         len: raw.len,
         isa: if raw.isa == 1 { Isa::X64 } else { Isa::X86 },
         itype: raw.itype,
@@ -87,7 +89,7 @@ pub(crate) fn insn_from_raw(raw: &sys::InsnRaw) -> Insn {
             is_jump: raw.flow & sys::IDAKIT_FLOW_JUMP != 0,
             is_indirect: raw.flow & sys::IDAKIT_FLOW_INDIRECT != 0,
             stops: raw.flow & sys::IDAKIT_FLOW_STOPS != 0,
-            target: Ea::try_new(raw.target),
+            target: Address::try_new(raw.target),
         },
     }
 }
@@ -114,8 +116,8 @@ mod tests {
         a
     }
 
-    fn none_reg() -> sys::InsnReg {
-        sys::InsnReg {
+    fn none_reg() -> sys::InstructionRegister {
+        sys::InstructionRegister {
             num: sys::IDAKIT_REG_NONE,
             cls: 0,
             width: 0,
@@ -123,36 +125,36 @@ mod tests {
         }
     }
 
-    fn gpr(num: u16, width: u8, nm: &str) -> sys::InsnReg {
-        sys::InsnReg {
+    fn gpr(num: u16, width: u8, nm: &str) -> sys::InstructionRegister {
+        sys::InstructionRegister {
             num,
-            cls: RegClass::Gpr.raw(),
+            cls: RegisterClass::Gpr.raw(),
             width,
             name: name16(nm),
         }
     }
 
-    fn blank_op() -> sys::InsnOp {
-        sys::InsnOp {
+    fn blank_op() -> sys::InstructionOperand {
+        sys::InstructionOperand {
             kind: 0,
             idx: 0,
-            dtype: 0,
+            data_type: 0,
             access: 0,
             scale: 0,
-            reg: none_reg(),
+            register: none_reg(),
             base: none_reg(),
             index: none_reg(),
             disp: 0,
             value: 0,
-            addr: crate::ea::BADADDR,
+            addr: crate::address::BADADDR,
             sel: 0,
         }
     }
 
-    fn blank_insn() -> sys::InsnRaw {
-        sys::InsnRaw {
-            ea: 0x1000,
-            target: crate::ea::BADADDR,
+    fn blank_insn() -> sys::InstructionRaw {
+        sys::InstructionRaw {
+            address: 0x1000,
+            target: crate::address::BADADDR,
             itype: 0,
             len: 0,
             isa: 1,
@@ -169,16 +171,16 @@ mod tests {
     fn register_operand_carries_name_and_class() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_REG;
-        op.dtype = Dtype::Qword.raw();
+        op.data_type = DataType::Qword.raw();
         op.access = 0b11; // read + written
-        op.reg = gpr(0, 8, "rax");
+        op.register = gpr(0, 8, "rax");
 
         let mapped = operand(&op);
-        assert!(let OperandKind::Reg(r) = &mapped.kind);
+        assert!(let OperandKind::Register(r) = &mapped.kind);
         assert!(r.name.as_ref() == "rax");
-        assert!(r.class == RegClass::Gpr);
+        assert!(r.class == RegisterClass::Gpr);
         assert!(r.width == 8);
-        assert!(mapped.dtype == Dtype::Qword);
+        assert!(mapped.data_type == DataType::Qword);
         assert!(
             mapped.access
                 == Access {
@@ -192,12 +194,12 @@ mod tests {
     fn memory_operand_decodes_base_index_scale_disp() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_MEM;
-        op.dtype = Dtype::Dword.raw();
+        op.data_type = DataType::Dword.raw();
         op.base = gpr(5, 8, "rbp");
         op.index = gpr(0, 8, "rax");
         op.scale = 4;
         op.disp = 8;
-        op.addr = crate::ea::BADADDR; // no static target for [rbp+rax*4+8]
+        op.addr = crate::address::BADADDR; // no static target for [rbp+rax*4+8]
 
         let mapped = operand(&op);
         assert!(let OperandKind::Mem(m) = &mapped.kind);
@@ -260,17 +262,17 @@ mod tests {
         raw.mnemonic = name24("lea");
         raw.nops = 2;
         raw.ops[0].kind = sys::IDAKIT_OP_REG;
-        raw.ops[0].reg = gpr(0, 8, "rax");
+        raw.ops[0].register = gpr(0, 8, "rax");
         raw.ops[1].kind = sys::IDAKIT_OP_MEM;
         raw.ops[1].base = gpr(5, 8, "rbp");
         // ops[2..] stay blank and must not be included.
 
-        let insn = insn_from_raw(&raw);
-        assert!(insn.ea.get() == 0x1000);
-        assert!(insn.len == 3);
-        assert!(insn.isa == Isa::X64);
-        assert!(insn.mnemonic.as_ref() == "lea");
-        assert!(insn.ops.len() == 2);
+        let instruction = insn_from_raw(&raw);
+        assert!(instruction.address.get() == 0x1000);
+        assert!(instruction.len == 3);
+        assert!(instruction.isa == Isa::X64);
+        assert!(instruction.mnemonic.as_ref() == "lea");
+        assert!(instruction.ops.len() == 2);
     }
 
     #[test]
@@ -278,20 +280,20 @@ mod tests {
         let mut raw = blank_insn();
         raw.flow = sys::IDAKIT_FLOW_CALL | sys::IDAKIT_FLOW_STOPS;
         raw.target = 0x2000;
-        let insn = insn_from_raw(&raw);
-        assert!(insn.flow.is_call);
-        assert!(insn.flow.stops);
-        assert!(!insn.flow.is_ret);
-        assert!(!insn.flow.is_jump);
-        assert!(let Some(t) = insn.flow.target);
+        let instruction = insn_from_raw(&raw);
+        assert!(instruction.flow.is_call);
+        assert!(instruction.flow.stops);
+        assert!(!instruction.flow.is_ret);
+        assert!(!instruction.flow.is_jump);
+        assert!(let Some(t) = instruction.flow.target);
         assert!(t.get() == 0x2000);
 
         // A branch with no static target reports None.
         let mut ind = blank_insn();
         ind.flow = sys::IDAKIT_FLOW_JUMP | sys::IDAKIT_FLOW_INDIRECT | sys::IDAKIT_FLOW_STOPS;
-        let insn = insn_from_raw(&ind);
-        assert!(insn.flow.is_jump);
-        assert!(insn.flow.is_indirect);
-        assert!(insn.flow.target.is_none());
+        let instruction = insn_from_raw(&ind);
+        assert!(instruction.flow.is_jump);
+        assert!(instruction.flow.is_indirect);
+        assert!(instruction.flow.target.is_none());
     }
 }

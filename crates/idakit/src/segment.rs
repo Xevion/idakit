@@ -3,7 +3,7 @@
 use idakit_sys as sys;
 
 use crate::Idb;
-use crate::ea::Ea;
+use crate::address::Address;
 use crate::ffi::read_string;
 
 impl Idb {
@@ -44,15 +44,15 @@ impl<'db> Segment<'db> {
     /// First address of the segment.
     #[inline]
     #[must_use]
-    pub fn start(&self) -> Option<Ea> {
-        Ea::try_new(self.db.seg_start(self.index))
+    pub fn start(&self) -> Option<Address> {
+        Address::try_new(self.db.seg_start(self.index))
     }
 
     /// One-past-the-last address of the segment.
     #[inline]
     #[must_use]
-    pub fn end(&self) -> Option<Ea> {
-        Ea::try_new(self.db.seg_end(self.index))
+    pub fn end(&self) -> Option<Address> {
+        Address::try_new(self.db.seg_end(self.index))
     }
 
     /// The whole segment's bytes (`[start, end)`), or `None` if bounds are absent.

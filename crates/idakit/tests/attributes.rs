@@ -24,14 +24,14 @@ fn run(idb: &mut Idb, db: &str) {
     idb.open(db).call().expect("open failed");
 
     let first = idb.functions().next().expect("a function");
-    let ea = first.ea();
+    let address = first.address();
     let end = first.end().expect("function has an end");
     assert!(
-        end > ea,
-        "function end {end:#x} should be past its start {ea:#x}"
+        end > address,
+        "function end {end:#x} should be past its start {address:#x}"
     );
     assert!(
-        first.size() == (end - ea).max(0) as u64,
+        first.size() == (end - address).max(0) as u64,
         "size should equal end - start"
     );
     assert!(first.size() > 0, "the first function should be non-empty");
@@ -44,7 +44,7 @@ fn run(idb: &mut Idb, db: &str) {
         thunks += usize::from(f.is_thunk());
         norets += usize::from(f.is_noreturn());
     }
-    println!("func flags over <=2000: {libs} lib, {thunks} thunk, {norets} noreturn");
+    println!("function flags over <=2000: {libs} lib, {thunks} thunk, {norets} noreturn");
 
     let segs: Vec<_> = idb.segments().collect();
     assert!(!segs.is_empty(), "the database has segments");
@@ -76,7 +76,7 @@ fn run(idb: &mut Idb, db: &str) {
     // Cross-invariant: the entry function lives inside an executable segment.
     let entry_seg = segs
         .iter()
-        .find(|s| matches!((s.start(), s.end()), (Some(st), Some(en)) if st <= ea && ea < en))
+        .find(|s| matches!((s.start(), s.end()), (Some(st), Some(en)) if st <= address && address < en))
         .expect("the entry function is inside a segment");
     assert!(
         entry_seg.is_executable(),
@@ -85,5 +85,5 @@ fn run(idb: &mut Idb, db: &str) {
     );
 
     idb.close(false);
-    println!("attributes OK: func sizes/flags, segment perms/bitness/class verified");
+    println!("attributes OK: function sizes/flags, segment perms/bitness/class verified");
 }

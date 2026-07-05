@@ -152,7 +152,7 @@ pub enum UnOp {
 }
 
 /// Wraps the derived `From<Self> for u16` / `TryFrom<u16>` in the crate's `raw()` /
-/// `from_raw()` naming (cf. [`Xref::from_raw`](crate::Xref)). The `$reject` text names
+/// `from_raw()` naming (cf. [`Reference::from_raw`](crate::Reference)). The `$reject` text names
 /// what falls outside this group so each `from_raw` doc explains its own gaps.
 macro_rules! ctype_op {
     ($ty:ident, $reject:literal) => {

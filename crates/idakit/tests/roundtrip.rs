@@ -30,60 +30,60 @@ fn run(idb: &mut idakit::Idb, db: &str) {
     assert!(seg_count > 0, "expected at least one segment");
 
     let first = idb.functions().next().expect("a function");
-    let ea = first.ea();
+    let address = first.address();
     let original = first.name().expect("function has a name");
     assert!(!original.is_empty());
 
-    let bytes = idb.bytes(ea, 16);
+    let bytes = idb.bytes(address, 16);
     assert!(!bytes.is_empty(), "expected readable bytes at the entry");
 
-    // Best-effort; just exercise the paths (consume the lazy xref cursors).
-    let _ = first.xrefs_to().count();
-    let _ = first.xrefs_from().count();
+    // Best-effort; just exercise the paths (consume the lazy reference cursors).
+    let _ = first.references_to().count();
+    let _ = first.references_from().count();
     let _ = first.prototype();
 
     // Exercise the RAII owned-handle path (best-effort).
     match first.decompile() {
         Ok(cf) => {
             let c = cf.counts();
-            assert!(c.exprs >= 0 && c.insns >= 0);
+            assert!(c.expressions >= 0 && c.insns >= 0);
             println!(
-                "decompiled first fn: {} insns, {} exprs, {} calls",
-                c.insns, c.exprs, c.calls
+                "decompiled first fn: {} insns, {} expressions, {} calls",
+                c.insns, c.expressions, c.calls
             );
 
             // Materialize the whole ctree and cross-check it against the
             // independent visitor counts: two separate traversals of the same
             // cfunc must agree, node-for-node.
-            use idakit::ctree::{Cexpr, Cinsn, NodeRef};
+            use idakit::ctree::{ExpressionKind, NodeRef, StatementKind};
             let tree = cf.ctree().expect("ctree extraction");
             let root = tree.root();
             assert!(
-                matches!(tree.stmt(root).kind, Cinsn::Block(_)),
+                matches!(tree.statement(root).kind, StatementKind::Block(_)),
                 "ctree root should be a block"
             );
             assert_eq!(
-                tree.exprs().count(),
-                c.exprs as usize,
-                "extracted expr count should match the visitor"
+                tree.expressions().count(),
+                c.expressions as usize,
+                "extracted expression count should match the visitor"
             );
             assert_eq!(
-                tree.stmts().count(),
+                tree.statements().count(),
                 c.insns as usize,
-                "extracted stmt count should match the visitor"
+                "extracted statement count should match the visitor"
             );
             // Every allocated node is reachable from the root: confirms the
             // post-order image and parent wiring are sound.
-            let reachable = tree.descendants(NodeRef::Stmt(root)).count();
+            let reachable = tree.descendants(NodeRef::Statement(root)).count();
             assert_eq!(
                 reachable,
-                tree.exprs().count() + tree.stmts().count(),
+                tree.expressions().count() + tree.statements().count(),
                 "every node should be reachable from the root"
             );
             println!(
-                "ctree extracted: {} exprs, {} stmts, {} types; root is a block",
-                tree.exprs().count(),
-                tree.stmts().count(),
+                "ctree extracted: {} expressions, {} statements, {} types; root is a block",
+                tree.expressions().count(),
+                tree.statements().count(),
                 tree.types().count()
             );
 
@@ -95,9 +95,9 @@ fn run(idb: &mut idakit::Idb, db: &str) {
             let rendered = tree.to_pseudocode();
             if let Some(ida_pc) = cf.pseudocode() {
                 let mut referenced: Vec<String> = tree
-                    .exprs()
+                    .expressions()
                     .filter_map(|(_, e)| match &e.kind {
-                        Cexpr::Var(v) => Some(tree.lvar(*v).name.clone()),
+                        ExpressionKind::Var(v) => Some(tree.lvar(*v).name.clone()),
                         _ => None,
                     })
                     .collect();
@@ -127,7 +127,7 @@ fn run(idb: &mut idakit::Idb, db: &str) {
     // Decompile-failure path: an unmapped address has no function, so the
     // kernel returns null and the facade reports the reason. Confirm a real
     // reason (sourced from the facade buffer, not a stale qerrno) propagates.
-    let nowhere = idakit::Ea::new_const(0xffff_ffff_f000);
+    let nowhere = idakit::Address::new_const(0xffff_ffff_f000);
     match idb.decompile(nowhere) {
         Ok(_) => panic!("expected decompile to fail at unmapped {nowhere:#x}"),
         Err(e) => {
@@ -142,15 +142,16 @@ fn run(idb: &mut idakit::Idb, db: &str) {
 
     // Rename via &mut (first's borrow has ended), then confirm.
     let renamed = "idakit_roundtrip_probe";
-    idb.rename(ea, renamed).expect("rename failed");
-    let after = idb.func(ea).name().expect("name after rename");
+    idb.rename(address, renamed).expect("rename failed");
+    let after = idb.function(address).name().expect("name after rename");
     assert_eq!(after, renamed, "rename did not stick");
 
-    idb.set_comment(ea, "touched by idakit roundtrip", false)
+    idb.set_comment(address, "touched by idakit roundtrip", false)
         .expect("set_comment failed");
 
     // Leave the DB as found.
-    idb.rename(ea, &original).expect("restore rename failed");
+    idb.rename(address, &original)
+        .expect("restore rename failed");
 
     idb.close(false);
 

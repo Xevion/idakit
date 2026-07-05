@@ -11,15 +11,15 @@
 //! composes them into higher-level matchers -- recovering C++ vtable installs and base-ctor
 //! calls from real decompiler output -- as a worked example.
 
-use super::node::{Cexpr, ExprId, LvarId};
+use super::node::{ExpressionId, ExpressionKind, LocalId};
 use super::ops::{BinOp, UnOp};
 use super::tree::Ctree;
-use crate::Ea;
+use crate::Address;
 
 /// A reference to a global/static the decompiler named, as surfaced by [`global_target`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GlobalRef {
-    pub ea: Ea,
+    pub address: Address,
     pub name: Option<String>,
 }
 
@@ -27,17 +27,17 @@ pub struct GlobalRef {
 /// expression that is neither. Does not look through a dereference `*x`, which names the
 /// pointee: whether to follow that is the matcher's call. Shared by [`base_var`] and
 /// [`global_target`], and public so custom matchers peel the same way.
-pub fn strip_casts(tree: &Ctree, mut e: ExprId) -> ExprId {
+pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
     loop {
         match tree.kind(e) {
-            Cexpr::Cast { x } | Cexpr::Unary { op: UnOp::Ref, x } => e = *x,
+            ExpressionKind::Cast { x } | ExpressionKind::Unary { op: UnOp::Ref, x } => e = *x,
             _ => return e,
         }
     }
 }
 
 /// Follow `e` through place/address wrappers (`MemberRef`/`MemberPtr`/`Deref`/`&`/`Cast`)
-/// and pointer arithmetic down to the root [`Cexpr::Var`], accumulating the byte offset.
+/// and pointer arithmetic down to the root [`ExpressionKind::Var`], accumulating the byte offset.
 /// Returns the local and the total offset from its base, or `None` if the expression isn't
 /// rooted at a variable.
 ///
@@ -45,28 +45,29 @@ pub fn strip_casts(tree: &Ctree, mut e: ExprId) -> ExprId {
 /// layout -- and the untyped shape -- `*((_QWORD *)this + 2)` or `(char *)this + 16` as raw
 /// pointer arithmetic -- resolve to the same `(this, 16)`. The untyped form is what shows up
 /// in stripped binaries, so threading it is what makes these matchers useful there.
-pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
+pub fn base_var(tree: &Ctree, e: ExpressionId) -> Option<(LocalId, i64)> {
     // Casts and `&` rename nothing; peel them first so the match below sees the place node.
     let e = strip_casts(tree, e);
     match tree.kind(e) {
-        Cexpr::Var(v) => Some((*v, 0)),
-        Cexpr::MemberRef { obj, byte_offset } | Cexpr::MemberPtr { obj, byte_offset } => {
+        ExpressionKind::Var(v) => Some((*v, 0)),
+        ExpressionKind::MemberRef { obj, byte_offset }
+        | ExpressionKind::MemberPtr { obj, byte_offset } => {
             base_var(tree, *obj).map(|(v, off)| (v, off + i64::from(*byte_offset)))
         }
         // `*p` keeps the same root and offset; the load itself is not navigation.
-        Cexpr::Deref { x, .. } => base_var(tree, *x),
+        ExpressionKind::Deref { x, .. } => base_var(tree, *x),
         // Pointer arithmetic `base + k`: the byte delta is the constant index scaled by the
         // pointee size of `base`, exactly as C scales it -- so a `_QWORD*` index of 2 and a
         // `char*` index of 16 both advance 16 bytes. The `pointee_size` guard means plain
         // integer addition (no pointer type) is not mistaken for navigation.
-        Cexpr::Binary {
+        ExpressionKind::Binary {
             op: BinOp::Add,
             x,
             y,
         } => {
             let (base, k) = match (tree.kind(*x), tree.kind(*y)) {
-                (_, Cexpr::Num(k)) => (*x, *k),
-                (Cexpr::Num(k), _) => (*y, *k),
+                (_, ExpressionKind::Num(k)) => (*x, *k),
+                (ExpressionKind::Num(k), _) => (*y, *k),
                 _ => return None,
             };
             let elem = pointee_size(tree, base)?;
@@ -78,16 +79,16 @@ pub fn base_var(tree: &Ctree, e: ExprId) -> Option<(LvarId, i64)> {
 
 /// The byte size of what `e`'s pointer type addresses, used to scale pointer arithmetic.
 /// `None` unless `e` is a pointer whose element size is known.
-fn pointee_size(tree: &Ctree, e: ExprId) -> Option<i64> {
-    let elem = tree.type_of(tree.expr(e).ty).kind.pointee()?;
+fn pointee_size(tree: &Ctree, e: ExpressionId) -> Option<i64> {
+    let elem = tree.type_of(tree.expression(e).ty).kind.pointee()?;
     tree.type_of(elem).size.map(|s| s as i64)
 }
 
-/// Follow `e` through `Cast`/`&` down to a [`Cexpr::Obj`], returning the global it names.
-pub fn global_target(tree: &Ctree, e: ExprId) -> Option<GlobalRef> {
-    let (ea, name) = tree.kind(strip_casts(tree, e)).as_obj()?;
+/// Follow `e` through `Cast`/`&` down to a [`ExpressionKind::Obj`], returning the global it names.
+pub fn global_target(tree: &Ctree, e: ExpressionId) -> Option<GlobalRef> {
+    let (address, name) = tree.kind(strip_casts(tree, e)).as_obj()?;
     Some(GlobalRef {
-        ea,
+        address,
         name: name.map(str::to_owned),
     })
 }
@@ -96,7 +97,7 @@ pub fn global_target(tree: &Ctree, e: ExprId) -> Option<GlobalRef> {
 mod tests {
     use super::*;
     use crate::ctree::AssignOp;
-    use crate::ctree::node::{Lvar, LvarLocation};
+    use crate::ctree::node::{Local, LocalLocation};
     use crate::ctree::tree::CtreeBuilder;
     use crate::ctree::types::{TypeData, TypeKind};
     use assert2::assert;
@@ -109,8 +110,8 @@ mod tests {
         })
     }
 
-    fn this_lvar_def(name: &str, t: crate::ctree::TypeId) -> Lvar {
-        Lvar {
+    fn this_lvar_def(name: &str, t: crate::ctree::TypeId) -> Local {
+        Local {
             name: name.into(),
             ty: t,
             is_arg: true,
@@ -118,7 +119,7 @@ mod tests {
             is_byref: false,
             width: 8,
             comment: None,
-            location: LvarLocation::Register(0),
+            location: LocalLocation::Register(0),
         }
     }
 
@@ -139,7 +140,7 @@ mod tests {
         let v0 = b.var(t, this);
         let mp0 = b.member_ptr(t, v0, 0);
         let mr0 = b.member_ref(t, mp0, 0);
-        let o1 = b.obj(t, Ea::new_const(0x1000), Some("vtbl_primary"));
+        let o1 = b.obj(t, Address::new_const(0x1000), Some("vtbl_primary"));
         let c1 = b.cast(t, o1);
         let a1 = b.assign(t, AssignOp::Assign, mr0, c1);
 
@@ -147,22 +148,22 @@ mod tests {
         let v1 = b.var(t, this);
         let mp16 = b.member_ptr(t, v1, 16);
         let mr0b = b.member_ref(t, mp16, 0);
-        let o2 = b.obj(t, Ea::new_const(0x2000), Some("vtbl_sub"));
+        let o2 = b.obj(t, Address::new_const(0x2000), Some("vtbl_sub"));
         let r2 = b.unary(t, UnOp::Ref, o2);
         let c2 = b.cast(t, r2);
         let a2 = b.assign(t, AssignOp::Assign, mr0b, c2);
 
         // base ctor call: BaseCtor(this)  (offset 0)
         let v2 = b.var(t, this);
-        let oc1 = b.obj(t, Ea::new_const(0x3000), Some("BaseCtor"));
-        let call1 = b.call_expr(t, oc1, vec![v2]);
+        let oc1 = b.obj(t, Address::new_const(0x3000), Some("BaseCtor"));
+        let call1 = b.call_expression(t, oc1, vec![v2]);
 
         // subobject ctor call: OtherCtor(&this->Other)  (offset 16)
         let v3 = b.var(t, this);
         let mp16b = b.member_ptr(t, v3, 16);
         let r4 = b.unary(t, UnOp::Ref, mp16b);
-        let oc2 = b.obj(t, Ea::new_const(0x4000), Some("OtherCtor"));
-        let call2 = b.call_expr(t, oc2, vec![r4]);
+        let oc2 = b.obj(t, Address::new_const(0x4000), Some("OtherCtor"));
+        let call2 = b.call_expression(t, oc2, vec![r4]);
 
         // field init: this->d = 4  (NOT a vtable install)
         let v4 = b.var(t, this);
@@ -170,18 +171,18 @@ mod tests {
         let num = b.num(t, 4);
         let a3 = b.assign(t, AssignOp::Assign, mp28, num);
 
-        let stmts: Vec<_> = [a1, a2, call1, call2, a3]
+        let statements: Vec<_> = [a1, a2, call1, call2, a3]
             .into_iter()
-            .map(|e| b.expr_stmt(e))
+            .map(|e| b.expression_statement(e))
             .collect();
-        let block = b.block(stmts);
+        let block = b.block(statements);
         b.finish(block)
     }
 
     #[test]
     fn this_lvar_is_the_first_arg() {
         let tree = ctor_tree();
-        assert!(tree.this_lvar() == Some(LvarId(0)));
+        assert!(tree.this_lvar() == Some(LocalId(0)));
     }
 
     /// Peels `(T)x` and `&x`, but stops at a dereference (a load names a different object).
@@ -189,10 +190,10 @@ mod tests {
     fn strip_casts_peels_cast_and_ref_but_stops_at_deref() {
         let mut b = CtreeBuilder::new();
         let t = ty(&mut b);
-        let obj = b.obj(t, Ea::new_const(0x10), None);
+        let obj = b.obj(t, Address::new_const(0x10), None);
         let deref = b.deref(t, obj, 8);
         let cast = b.cast(t, deref);
-        let st = b.expr_stmt(cast);
+        let st = b.expression_statement(cast);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         // `(T)(*obj)`: the cast peels, the deref does not.
@@ -208,10 +209,10 @@ mod tests {
         let (_, _, args) = tree
             .calls()
             .find(|(_, callee, _)| {
-                matches!(tree.kind(*callee), Cexpr::Obj { name: Some(n), .. } if n == "OtherCtor")
+                matches!(tree.kind(*callee), ExpressionKind::Obj { name: Some(n), .. } if n == "OtherCtor")
             })
             .expect("OtherCtor call");
-        assert!(base_var(&tree, args[0]) == Some((LvarId(0), 16)));
+        assert!(base_var(&tree, args[0]) == Some((LocalId(0), 16)));
     }
 
     /// Untyped pointer arithmetic threads to the same offset a member access would: the
@@ -246,7 +247,7 @@ mod tests {
         // The install/arg shapes wrap the arithmetic in a `*(...)` or `(T)(...)`; resolving
         // through that wrapper is the whole point.
         let deref = b.deref(elem, add, u32::from(elem_bytes));
-        let st = b.expr_stmt(deref);
+        let st = b.expression_statement(deref);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(base_var(&tree, deref) == Some((this, expect)));
@@ -267,7 +268,7 @@ mod tests {
         let v = b.var(int, this);
         let num = b.num(int, 4);
         let add = b.binary(int, BinOp::Add, v, num);
-        let st = b.expr_stmt(add);
+        let st = b.expression_statement(add);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(let None = base_var(&tree, add));

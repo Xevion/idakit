@@ -5,7 +5,7 @@
 //!
 //!   decompile   -- Hex-Rays, kernel thread, serial and unavoidable
 //!   extract     -- `cfunc.ctree()`, the facade DFS + Rust rebuild, kernel thread
-//!   resolve     -- turning `Obj(ea)` callees into names, kernel thread (needs `&Idb`)
+//!   resolve     -- turning `Obj(address)` callees into names, kernel thread (needs `&Idb`)
 //!   analyze     -- the pure taint pass over the Send image (no kernel access)
 //!
 //! The split answers the live question: how much of the work is the serial kernel
@@ -21,8 +21,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use idakit::ctree::{Ctree, ExprId, LvarId, NodeRef};
-use idakit::{Ea, Idb};
+use idakit::ctree::{Ctree, ExpressionId, LocalId, NodeRef};
+use idakit::{Address, Idb};
 
 /// Calls whose return value introduces taint (matched as a substring of the name).
 const SOURCES: &[&str] = &["recv", "read", "fgets", "getenv", "scanf", "gets"];
@@ -36,19 +36,19 @@ fn matches(name: &str, set: &[&str]) -> bool {
 }
 
 /// A function lifted into a Send-able analysis input. The callee-name map is the
-/// telling part: the ctree's `Call` carries only an `Obj(ea)`/`Helper`, so the names
+/// telling part: the ctree's `Call` carries only an `Obj(address)`/`Helper`, so the names
 /// every analysis actually keys on have to be resolved *here*, on the kernel thread,
 /// and folded in -- the bare tree cannot answer "what does this call?" off-thread.
-struct FuncImage {
+struct FunctionImage {
     tree: Ctree,
-    /// Call expr -> resolved callee name (only the ones that resolve to a symbol).
-    callees: HashMap<ExprId, String>,
+    /// Call expression -> resolved callee name (only the ones that resolve to a symbol).
+    callees: HashMap<ExpressionId, String>,
 }
 
 /// Resolve a call's callee to a name, if it is a direct symbol or a decompiler helper.
 /// Indirect calls (through a variable or computed pointer) stay unresolved. Enrichment
 /// win: the symbol name now rides on the `Obj` node, so this no longer needs the kernel.
-fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
+fn callee_name(tree: &Ctree, callee: ExpressionId) -> Option<String> {
     let kind = tree.kind(callee);
     if let Some((_, name)) = kind.as_obj() {
         return name.map(str::to_owned);
@@ -58,7 +58,7 @@ fn callee_name(tree: &Ctree, callee: ExprId) -> Option<String> {
 
 /// Build the callee-name map for a tree. Now that the tree carries callee names, this is
 /// pure (no `Idb`) -- the kernel-thread name resolution that used to dominate is gone.
-fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
+fn resolve_callees(tree: &Ctree) -> HashMap<ExpressionId, String> {
     let mut map = HashMap::new();
     for (id, callee, _) in tree.calls() {
         if let Some(name) = callee_name(tree, callee) {
@@ -70,24 +70,24 @@ fn resolve_callees(tree: &Ctree) -> HashMap<ExprId, String> {
 
 /// Does `e`'s subtree read a tainted lvar or call a source directly? Flow-insensitive
 /// and deliberately crude -- the point is to do real work proportional to tree size.
-fn expr_tainted(img: &FuncImage, e: ExprId, tainted: &HashSet<u32>) -> bool {
+fn expression_tainted(img: &FunctionImage, e: ExpressionId, tainted: &HashSet<u32>) -> bool {
     img.tree
-        .expr_descendants(NodeRef::Expr(e))
+        .expression_descendants(NodeRef::Expression(e))
         .any(|id| match img.tree.kind(id).as_var() {
-            Some(LvarId(i)) => tainted.contains(&i),
+            Some(LocalId(i)) => tainted.contains(&i),
             None => img.callees.get(&id).is_some_and(|n| matches(n, SOURCES)),
         })
 }
 
 /// The pure phase: returns the number of source->sink flows found. No `Idb` access,
 /// so this is exactly the work that could move to a worker thread.
-fn analyze(img: &FuncImage) -> usize {
+fn analyze(img: &FunctionImage) -> usize {
     // Collect `Var(i) = rhs` definitions once.
-    let defs: Vec<(u32, ExprId)> = img
+    let defs: Vec<(u32, ExpressionId)> = img
         .tree
         .assigns()
         .filter_map(|(_, _, x, y)| {
-            let LvarId(i) = img.tree.kind(x).as_var()?;
+            let LocalId(i) = img.tree.kind(x).as_var()?;
             Some((i, y))
         })
         .collect();
@@ -97,7 +97,7 @@ fn analyze(img: &FuncImage) -> usize {
     loop {
         let before = tainted.len();
         for &(lv, rhs) in &defs {
-            if !tainted.contains(&lv) && expr_tainted(img, rhs, &tainted) {
+            if !tainted.contains(&lv) && expression_tainted(img, rhs, &tainted) {
                 tainted.insert(lv);
             }
         }
@@ -111,7 +111,7 @@ fn analyze(img: &FuncImage) -> usize {
         .calls()
         .filter(|(id, _, args)| {
             img.callees.get(id).is_some_and(|n| matches(n, SINKS))
-                && args.iter().any(|a| expr_tainted(img, *a, &tainted))
+                && args.iter().any(|a| expression_tainted(img, *a, &tainted))
         })
         .count()
 }
@@ -137,15 +137,15 @@ fn run(idb: &mut Idb, db: &str) -> Result<(), idakit::Error> {
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(usize::MAX);
 
-    let eas: Vec<Ea> = idb.functions().map(|f| f.ea()).take(limit).collect();
+    let eas: Vec<Address> = idb.functions().map(|f| f.address()).take(limit).collect();
     println!("[taint] sweeping {} functions", eas.len());
 
     let mut t = Totals::default();
     let wall = Instant::now();
 
-    for (i, &ea) in eas.iter().enumerate() {
+    for (i, &address) in eas.iter().enumerate() {
         let started = Instant::now();
-        let cf = match idb.decompile(ea) {
+        let cf = match idb.decompile(address) {
             Ok(cf) => cf,
             Err(_) => {
                 t.decompile_failed += 1;
@@ -168,8 +168,8 @@ fn run(idb: &mut Idb, db: &str) -> Result<(), idakit::Error> {
         let callees = resolve_callees(&tree);
         t.resolve += started.elapsed();
 
-        t.nodes += (tree.exprs().count() + tree.stmts().count()) as u64;
-        let img = FuncImage { tree, callees };
+        t.nodes += (tree.expressions().count() + tree.statements().count()) as u64;
+        let img = FunctionImage { tree, callees };
 
         let started = Instant::now();
         t.flows += analyze(&img);

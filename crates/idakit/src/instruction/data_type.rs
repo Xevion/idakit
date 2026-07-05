@@ -3,11 +3,11 @@
 //! Discriminants are the raw `dt_*` values from `ua.hpp` (IDA 9.3), so the
 //! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the SDK
 //! mapping. `#[non_exhaustive]` because a future SDK may add a value (as 9.x already grew
-//! `dt_half`); a new dtype should widen this, not break every `match`.
+//! `dt_half`); a new data_type should widen this, not break every `match`.
 //!
-//! `dtype` is the *value* type, distinct from the addressing-mode size: `dt_float` and
+//! `data_type` is the *value* type, distinct from the addressing-mode size: `dt_float` and
 //! `dt_dword` are both four bytes but differ here, which is exactly why the operand keeps
-//! the dtype rather than only a byte count.
+//! the data_type rather than only a byte count.
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
@@ -18,7 +18,7 @@ use strum::VariantArray;
 )]
 #[repr(u8)]
 #[non_exhaustive]
-pub enum Dtype {
+pub enum DataType {
     /// 8-bit integer.
     Byte = 0,
     /// 16-bit integer.
@@ -59,7 +59,7 @@ pub enum Dtype {
     Half = 18,
 }
 
-impl Dtype {
+impl DataType {
     /// The raw `op_dtype_t` byte.
     #[inline]
     #[must_use]
@@ -82,14 +82,14 @@ impl Dtype {
     #[must_use]
     pub fn bytes(self) -> Option<u32> {
         Some(match self {
-            Dtype::Byte => 1,
-            Dtype::Word | Dtype::Half => 2,
-            Dtype::Dword | Dtype::Float => 4,
-            Dtype::Fword => 6,
-            Dtype::Double | Dtype::Qword => 8,
-            Dtype::Byte16 => 16,
-            Dtype::Byte32 => 32,
-            Dtype::Byte64 => 64,
+            DataType::Byte => 1,
+            DataType::Word | DataType::Half => 2,
+            DataType::Dword | DataType::Float => 4,
+            DataType::Fword => 6,
+            DataType::Double | DataType::Qword => 8,
+            DataType::Byte16 => 16,
+            DataType::Byte32 => 32,
+            DataType::Byte64 => 64,
             _ => return None,
         })
     }
@@ -100,7 +100,7 @@ impl Dtype {
     pub fn is_float(self) -> bool {
         matches!(
             self,
-            Dtype::Float | Dtype::Double | Dtype::Tbyte | Dtype::Ldbl | Dtype::Half
+            DataType::Float | DataType::Double | DataType::Tbyte | DataType::Ldbl | DataType::Half
         )
     }
 }
@@ -113,35 +113,35 @@ mod tests {
 
     #[test]
     fn raw_roundtrips_every_variant() {
-        for &d in Dtype::VARIANTS {
-            assert!(Dtype::from_raw(d.raw()) == Some(d));
+        for &d in DataType::VARIANTS {
+            assert!(DataType::from_raw(d.raw()) == Some(d));
         }
     }
 
     #[test]
     fn from_raw_rejects_unknown() {
-        assert!(Dtype::from_raw(19).is_none());
-        assert!(Dtype::from_raw(255).is_none());
+        assert!(DataType::from_raw(19).is_none());
+        assert!(DataType::from_raw(255).is_none());
     }
 
     #[test]
     fn fixed_sizes_match_the_isa() {
-        assert!(Dtype::Byte.bytes() == Some(1));
-        assert!(Dtype::Qword.bytes() == Some(8));
-        assert!(Dtype::Byte16.bytes() == Some(16));
-        assert!(Dtype::Half.bytes() == Some(2));
+        assert!(DataType::Byte.bytes() == Some(1));
+        assert!(DataType::Qword.bytes() == Some(8));
+        assert!(DataType::Byte16.bytes() == Some(16));
+        assert!(DataType::Half.bytes() == Some(2));
         // Variable / pointer / sizeless types report no fixed width.
-        assert!(Dtype::Tbyte.bytes().is_none());
-        assert!(Dtype::Code.bytes().is_none());
-        assert!(Dtype::Void.bytes().is_none());
+        assert!(DataType::Tbyte.bytes().is_none());
+        assert!(DataType::Code.bytes().is_none());
+        assert!(DataType::Void.bytes().is_none());
     }
 
     #[test]
     fn float_classification() {
-        assert!(Dtype::Float.is_float());
-        assert!(Dtype::Half.is_float());
-        assert!(Dtype::Ldbl.is_float());
-        assert!(!Dtype::Dword.is_float());
-        assert!(!Dtype::Qword.is_float());
+        assert!(DataType::Float.is_float());
+        assert!(DataType::Half.is_float());
+        assert!(DataType::Ldbl.is_float());
+        assert!(!DataType::Dword.is_float());
+        assert!(!DataType::Qword.is_float());
     }
 }

@@ -27,11 +27,11 @@ fn main() {
             "open_database failed"
         );
 
-        // (1) function prototype of func[7] via print_type(ea).
-        let ea = idakit_func_ea(7);
+        // (1) function prototype of function[7] via print_type(address).
+        let address = idakit_func_ea(7);
         let mut buf = [0 as c_char; 1024];
-        let n = idakit_func_type(ea, buf.as_mut_ptr(), buf.len());
-        println!("func[7] {ea:#012x} prototype:");
+        let n = idakit_func_type(address, buf.as_mut_ptr(), buf.len());
+        println!("function[7] {address:#012x} prototype:");
         println!(
             "  {}",
             if n > 0 {

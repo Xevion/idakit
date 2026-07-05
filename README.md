@@ -19,7 +19,7 @@ crates:
 
 The IDA kernel is single-threaded and thread-affine -- it must be driven from the one
 thread that initialized it. The open database `Idb` is `!Send + !Sync`: reads borrow
-`&Idb` and return lightweight views (`Func`, `Segment`, ...), writes take `&mut Idb`, so the
+`&Idb` and return lightweight views (`Function`, `Segment`, ...), writes take `&mut Idb`, so the
 borrow checker keeps a read view from outliving a mutation.
 
 If your program owns its thread -- a script, a test, a CLI -- `Ida::here` brings the kernel
@@ -46,7 +46,7 @@ Ida::run(|ida| {
     ida.call(|idb: &mut Idb| -> idakit::Result<()> {
         idb.open("/path/to/db.i64").call()?;
         for func in idb.functions() {
-            println!("{:#x} {}", func.ea().get(), func.name().unwrap_or_default());
+            println!("{:#x} {}", func.address().get(), func.name().unwrap_or_default());
         }
         idb.close(false);
         Ok(())

@@ -1,25 +1,26 @@
-//! Name lookup and enumeration: [`Idb::name`], [`Idb::name_ea`], [`Idb::demangle`], and the
+//! Name lookup and enumeration: [`Idb::name`], [`Idb::address_of`], [`Idb::demangle`], and the
 //! [`Names`] iterator over the database's name list.
 
 use crate::Idb;
-use crate::ea::Ea;
+use crate::address::Address;
 use crate::error::{Error, Result};
 use crate::ffi::{read_string, with_cstr};
 
 impl Idb {
-    /// The name at `ea` -- a label, function, or data name -- or `None` if the address is
-    /// unnamed. This is the whole-database counterpart to [`Func::name`](crate::Func::name),
+    /// The name at `address` -- a label, function, or data name -- or `None` if the address is
+    /// unnamed. This is the whole-database counterpart to [`Function::name`](crate::Function::name),
     /// which is specific to a function entry.
     #[must_use]
-    pub fn name(&self, ea: Ea) -> Option<String> {
-        read_string(|buf, cap| self.get_ea_name(ea, buf, cap))
+    pub fn name(&self, address: Address) -> Option<String> {
+        read_string(|buf, cap| self.get_ea_name(address, buf, cap))
     }
 
     /// The address a name resolves to, or `None` if no such name exists. A name with an
-    /// interior NUL can name nothing, so it too yields `None`.
+    /// interior NUL can name nothing, so it too yields `None`. The inverse of
+    /// [`name`](Self::name).
     #[must_use]
-    pub fn name_ea(&self, name: &str) -> Option<Ea> {
-        with_cstr(name, "name", |p| Ea::try_new(self.get_name_ea(p)))
+    pub fn address_of(&self, name: &str) -> Option<Address> {
+        with_cstr(name, "name", |p| Address::try_new(self.get_name_ea(p)))
             .ok()
             .flatten()
     }
@@ -42,16 +43,16 @@ impl Idb {
         Names::new(self)
     }
 
-    /// Rename the item at `ea`.
-    pub fn rename(&mut self, ea: Ea, name: &str) -> Result<()> {
-        let ok = with_cstr(name, "name", |p| self.set_name(ea, p))?;
+    /// Rename the item at `address`.
+    pub fn rename(&mut self, address: Address, name: &str) -> Result<()> {
+        let ok = with_cstr(name, "name", |p| self.set_name(address, p))?;
         if ok {
             Ok(())
         } else {
             let (qerrno, reason) = self.last_reason();
             Err(Error::WriteRejected {
                 op: "rename",
-                ea: ea.get(),
+                address: address.get(),
                 qerrno,
                 reason,
             })
@@ -65,7 +66,7 @@ impl Idb {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Name {
     /// The named address.
-    pub ea: Ea,
+    pub address: Address,
     /// The name at that address.
     pub name: String,
 }
@@ -96,10 +97,10 @@ impl Iterator for Names<'_> {
         while self.next < self.count {
             let idx = self.next;
             self.next += 1;
-            if let Some(ea) = Ea::try_new(self.db.nlist_ea(idx)) {
+            if let Some(address) = Address::try_new(self.db.nlist_ea(idx)) {
                 let name =
                     read_string(|buf, cap| self.db.nlist_name(idx, buf, cap)).unwrap_or_default();
-                return Some(Name { ea, name });
+                return Some(Name { address, name });
             }
         }
         None

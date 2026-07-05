@@ -1,6 +1,6 @@
 //! [`Pattern`]: a compiled binary search pattern, and [`Matches`], the lazy iterator over
 //! its occurrences. A `Pattern` owns a kernel handle freed on [`Drop`]; being `!Send`, it
-//! (like [`TypeInfo`](crate::TypeInfo)/[`Cfunc`](crate::Cfunc)) stays on the kernel thread.
+//! (like [`TypeInfo`](crate::TypeInfo)/[`DecompiledFunction`](crate::DecompiledFunction)) stays on the kernel thread.
 //!
 //! Four constructors name their grammar so intent is explicit at the call site:
 //! [`hex`](Pattern::hex) (`"48 8B 4? ? 90"`, nibble + byte wildcards, parsed here),
@@ -17,7 +17,7 @@ use std::ptr;
 use idakit_sys as sys;
 
 use crate::Idb;
-use crate::ea::{Ea, Offset};
+use crate::address::{Address, Offset};
 use crate::error::{Error, PatternRejection, Result};
 use crate::ffi::{cstr, with_cstr};
 
@@ -38,7 +38,7 @@ impl Idb {
     #[must_use]
     pub fn search_in<'p, 'db>(
         &self,
-        range: Range<Ea>,
+        range: Range<Address>,
         pattern: &'p Pattern<'db>,
     ) -> Matches<'p, 'db> {
         Matches {
@@ -305,8 +305,8 @@ fn render(bytes: &[u8]) -> String {
 pub struct Matches<'p, 'db> {
     pat: &'p Pattern<'db>,
     /// Next address to search from; `None` once the range is exhausted.
-    cur: Option<Ea>,
-    end: Ea,
+    cur: Option<Address>,
+    end: Address,
 }
 
 impl<'p, 'db> Matches<'p, 'db> {
@@ -316,15 +316,15 @@ impl<'p, 'db> Matches<'p, 'db> {
         Self {
             pat,
             cur: None,
-            end: Ea::new_const(0),
+            end: Address::new_const(0),
         }
     }
 }
 
 impl Iterator for Matches<'_, '_> {
-    type Item = Ea;
+    type Item = Address;
 
-    fn next(&mut self) -> Option<Ea> {
+    fn next(&mut self) -> Option<Address> {
         let start = self.cur?;
         if start >= self.end {
             self.cur = None;
@@ -335,10 +335,10 @@ impl Iterator for Matches<'_, '_> {
         let hit = unsafe {
             sys::idakit_bin_search(start.get(), self.end.get(), self.pat.handle, self.pat.flags)
         };
-        match Ea::try_new(hit) {
-            Some(ea) => {
-                self.cur = Some(ea + Offset::new(1));
-                Some(ea)
+        match Address::try_new(hit) {
+            Some(address) => {
+                self.cur = Some(address + Offset::new(1));
+                Some(address)
             }
             None => {
                 self.cur = None;

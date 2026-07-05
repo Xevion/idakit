@@ -2,10 +2,10 @@
 
 use std::ffi::{c_char, c_int, c_void};
 
-use crate::Ea;
+use crate::Address;
 
 unsafe extern "C" {
-    pub fn idakit_func_type(ea: Ea, buf: *mut c_char, cap: usize) -> i64;
+    pub fn idakit_func_type(address: Address, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_type_ordinal_count() -> usize;
     pub fn idakit_type_ordinal_name(ordinal: u32, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_type_open(name: *const c_char) -> *mut c_void;

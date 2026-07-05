@@ -1,5 +1,5 @@
-//! [`Cfunc`]: an owned decompiled function; disposes its handle on [`Drop`].
-//! Exposes pseudocode and ctree counts (the borrowed `Cexpr` AST is a later phase).
+//! [`DecompiledFunction`]: an owned decompiled function; disposes its handle on [`Drop`].
+//! Exposes pseudocode and ctree counts (the borrowed `ExpressionKind` AST is a later phase).
 
 use std::ffi::c_void;
 use std::marker::PhantomData;
@@ -7,20 +7,20 @@ use std::marker::PhantomData;
 use idakit_sys as sys;
 
 use crate::Idb;
+use crate::address::Address;
 use crate::ctree::{Ctree, ExtractError, walk};
-use crate::ea::Ea;
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
 
 impl Idb {
-    /// Decompile the function at `ea` and materialize its ctree. Sugar for
-    /// [`func(ea)`](Self::func)`.`[`ctree()`](crate::Func::ctree).
-    pub fn ctree(&self, ea: Ea) -> Result<Ctree> {
-        self.func(ea).ctree()
+    /// Decompile the function at `address` and materialize its ctree. Sugar for
+    /// [`function(address)`](Self::function)`.`[`ctree()`](crate::Function::ctree).
+    pub fn ctree(&self, address: Address) -> Result<Ctree> {
+        self.function(address).ctree()
     }
 
-    /// Decompile the function containing `ea` (inits Hex-Rays on first use).
-    pub fn decompile(&self, ea: Ea) -> Result<Cfunc<'_>> {
+    /// Decompile the function containing `address` (inits Hex-Rays on first use).
+    pub fn decompile(&self, address: Address) -> Result<DecompiledFunction<'_>> {
         if !self.hexrays_ready.get() {
             let rc = self.hexrays_init();
             if rc != 1 {
@@ -28,7 +28,7 @@ impl Idb {
             }
             self.hexrays_ready.set(true);
         }
-        let (handle, reason) = self.decompile_at(ea);
+        let (handle, reason) = self.decompile_at(address);
         if handle.is_null() {
             // A trapped fatal exit() during decompilation is a dead kernel, not an ordinary
             // decompile miss -- surface it as such.
@@ -36,21 +36,21 @@ impl Idb {
                 return Err(self.kernel_exit_error());
             }
             return Err(Error::Decompile {
-                ea: ea.get(),
+                address: address.get(),
                 reason,
             });
         }
-        Ok(Cfunc::from_handle(handle, self))
+        Ok(DecompiledFunction::from_handle(handle, self))
     }
 }
 
 /// Statement / expression / call-site counts of a decompiled function's ctree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CtreeCounts {
-    /// Number of statement nodes (`Cinsn`).
+    /// Number of statement nodes (`StatementKind`).
     pub insns: i32,
-    /// Number of expression nodes (`Cexpr`).
-    pub exprs: i32,
+    /// Number of expression nodes (`ExpressionKind`).
+    pub expressions: i32,
     /// Number of call sites.
     pub calls: i32,
 }
@@ -59,17 +59,20 @@ pub struct CtreeCounts {
 ///
 /// `handle` is the safety invariant for every call below: non-null (checked at
 /// construction), from `idakit_decompile`, disposed exactly once on [`Drop`]. The
-/// raw pointer makes `Cfunc` `!Send`, so it lives only on the kernel thread.
-pub struct Cfunc<'db> {
+/// raw pointer makes `DecompiledFunction` `!Send`, so it lives only on the kernel thread.
+pub struct DecompiledFunction<'db> {
     handle: *mut c_void,
     _db: PhantomData<&'db Idb>,
 }
 
-impl<'db> Cfunc<'db> {
+impl<'db> DecompiledFunction<'db> {
     /// Take ownership of a non-null `idakit_decompile` handle.
     #[inline]
     pub(crate) fn from_handle(handle: *mut c_void, _db: &'db Idb) -> Self {
-        debug_assert!(!handle.is_null(), "Cfunc handle must be non-null");
+        debug_assert!(
+            !handle.is_null(),
+            "DecompiledFunction handle must be non-null"
+        );
         Self {
             handle,
             _db: PhantomData,
@@ -86,14 +89,14 @@ impl<'db> Cfunc<'db> {
     /// Counts of statements, expressions, and call sites in the ctree.
     #[must_use]
     pub fn counts(&self) -> CtreeCounts {
-        let (mut insns, mut exprs, mut calls) = (0, 0, 0);
+        let (mut insns, mut expressions, mut calls) = (0, 0, 0);
         // SAFETY: live handle (see type docs); out-params are valid locals.
         unsafe {
-            sys::idakit_cfunc_ctree_counts(self.handle, &mut insns, &mut exprs, &mut calls);
+            sys::idakit_cfunc_ctree_counts(self.handle, &mut insns, &mut expressions, &mut calls);
         }
         CtreeCounts {
             insns,
-            exprs,
+            expressions,
             calls,
         }
     }
@@ -108,7 +111,7 @@ impl<'db> Cfunc<'db> {
     }
 }
 
-impl Drop for Cfunc<'_> {
+impl Drop for DecompiledFunction<'_> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: live handle (see type docs); disposed exactly once, here.
@@ -116,9 +119,9 @@ impl Drop for Cfunc<'_> {
     }
 }
 
-impl std::fmt::Debug for Cfunc<'_> {
+impl std::fmt::Debug for DecompiledFunction<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Cfunc")
+        f.debug_struct("DecompiledFunction")
             .field("counts", &self.counts())
             .finish()
     }

@@ -2,17 +2,17 @@
 
 use std::ffi::{c_int, c_void};
 
-use crate::Ea;
+use crate::Address;
 
 unsafe extern "C" {
-    pub fn idakit_cfg_build(ea: Ea, flags: c_int) -> *mut c_void;
+    pub fn idakit_cfg_build(address: Address, flags: c_int) -> *mut c_void;
     pub fn idakit_cfg_nblocks(h: *const c_void) -> c_int;
     pub fn idakit_cfg_nproper(h: *const c_void) -> c_int;
     pub fn idakit_cfg_block(
         h: *const c_void,
         n: c_int,
-        start: *mut Ea,
-        end: *mut Ea,
+        start: *mut Address,
+        end: *mut Address,
         kind: *mut c_int,
     ) -> c_int;
     pub fn idakit_cfg_nsucc(h: *const c_void, n: c_int) -> c_int;

@@ -7,9 +7,9 @@ use std::ptr;
 
 use idakit_sys::*;
 
-fn func_name(ea: Ea) -> String {
+fn func_name(address: Address) -> String {
     let mut buf = [0 as c_char; 512];
-    let n = unsafe { idakit_func_name(ea, buf.as_mut_ptr(), buf.len()) };
+    let n = unsafe { idakit_func_name(address, buf.as_mut_ptr(), buf.len()) };
     if n <= 0 {
         return String::new();
     }
@@ -18,11 +18,11 @@ fn func_name(ea: Ea) -> String {
         .into_owned()
 }
 
-/// Walk the xref cursor for every reference targeting `ea`, collecting `(from, type, iscode)`.
-fn xrefs_to(ea: Ea) -> Vec<(Ea, u8, u8)> {
+/// Walk the reference cursor for every reference targeting `address`, collecting `(from, type, iscode)`.
+fn references_to(address: Address) -> Vec<(Address, u8, u8)> {
     let mut out = Vec::new();
     unsafe {
-        let cursor = idakit_xref_open(ea, 1);
+        let cursor = idakit_xref_open(address, 1);
         let (mut from, mut to, mut ty, mut iscode) = (0u64, 0u64, 0u8, 0u8);
         while idakit_xref_next(cursor, &mut from, &mut to, &mut ty, &mut iscode) != 0 {
             out.push((from, ty, iscode));
@@ -49,25 +49,25 @@ fn main() {
         let nf = idakit_func_qty();
         assert!(nf > 0, "no functions in db");
 
-        // bytes: hex-dump the first 16 bytes of func[7]'s entry.
-        let ea = idakit_func_ea(7);
+        // bytes: hex-dump the first 16 bytes of function[7]'s entry.
+        let address = idakit_func_ea(7);
         let mut bytes = [0u8; 16];
-        let got = idakit_get_bytes(ea, bytes.as_mut_ptr() as *mut c_void, bytes.len());
-        println!("func[7] {ea:#012x}  {}", func_name(ea));
+        let got = idakit_get_bytes(address, bytes.as_mut_ptr() as *mut c_void, bytes.len());
+        println!("function[7] {address:#012x}  {}", func_name(address));
         print!("  first {got} bytes:");
         for b in &bytes[..got.max(0) as usize] {
             print!(" {b:02x}");
         }
         println!();
 
-        // xrefs: who references func[7]? If it has no callers, scan forward for a function
+        // xrefs: who references function[7]? If it has no callers, scan forward for a function
         // that does, so the demo always shows real cross-references.
-        let mut target = ea;
-        let mut refs = xrefs_to(target);
+        let mut target = address;
+        let mut refs = references_to(target);
         if refs.is_empty() {
             for i in 0..nf {
                 let e = idakit_func_ea(i);
-                let r = xrefs_to(e);
+                let r = references_to(e);
                 if !r.is_empty() {
                     target = e;
                     refs = r;

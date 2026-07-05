@@ -18,7 +18,8 @@ pub use crate::arena::{Arena, Idx};
 pub use extract::ExtractError;
 pub(crate) use extract::walk;
 pub use node::{
-    Case, Cexpr, Cinsn, ExprId, ExprNode, Lvar, LvarId, LvarLocation, NodeRef, StmtId, StmtNode,
+    Case, ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, LocalLocation, NodeRef,
+    StatementId, StatementKind, StatementNode,
 };
 pub use ops::{AssignOp, BinOp, UnOp};
 pub use tree::{Ctree, CtreeBuilder, Descendants};

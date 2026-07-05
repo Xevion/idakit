@@ -10,8 +10,8 @@ fn dump(tree: &idakit::ctree::Ctree, node: idakit::ctree::NodeRef, depth: usize)
     use idakit::ctree::NodeRef;
     let pad = "  ".repeat(depth);
     let label = match node {
-        NodeRef::Expr(id) => format!("{:?}", tree.kind(id)),
-        NodeRef::Stmt(id) => format!("{:?}", tree.stmt_kind(id)),
+        NodeRef::Expression(id) => format!("{:?}", tree.kind(id)),
+        NodeRef::Statement(id) => format!("{:?}", tree.statement_kind(id)),
     };
     let line: String = label
         .lines()
@@ -38,22 +38,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             idb.open(&bin).run_auto(true).call()?;
 
             let mut matched = 0;
-            let eas: Vec<_> = idb.functions().map(|f| (f.ea(), f.name())).collect();
-            for (ea, name) in eas {
+            let eas: Vec<_> = idb.functions().map(|f| (f.address(), f.name())).collect();
+            for (address, name) in eas {
                 let name = name.unwrap_or_default();
                 if !filter.is_empty() && !name.contains(&filter) {
                     continue;
                 }
-                let Ok(cf) = idb.decompile(ea) else { continue };
+                let Ok(cf) = idb.decompile(address) else {
+                    continue;
+                };
                 let Ok(tree) = cf.ctree() else { continue };
                 matched += 1;
-                println!("\n========== {name}  @ {ea:#x} ==========");
+                println!("\n========== {name}  @ {address:#x} ==========");
                 if let Some(pc) = cf.pseudocode() {
                     println!("--- IDA ---\n{pc}");
                 }
                 println!("--- idakit ---\n{}", tree.to_pseudocode());
                 println!("--- structure ---");
-                dump(&tree, idakit::ctree::NodeRef::Stmt(tree.root()), 0);
+                dump(&tree, idakit::ctree::NodeRef::Statement(tree.root()), 0);
             }
             println!("\n[ctree_dump] {matched} function(s) matched filter {filter:?}");
 

@@ -47,26 +47,29 @@ fn run(idb: &mut Idb, db: &str) {
         meta.bitness, meta.file_type, meta.image_base, meta.root_filename
     );
 
-    // The name list is non-empty and each name round-trips ea -> name -> ea for at least some
+    // The name list is non-empty and each name round-trips address -> name -> address for at least some
     // entries (local/duplicate names need not resolve from BADADDR, so this is a positive
     // check rather than a universal one).
     let mut listed = 0usize;
     let mut round_tripped = 0usize;
-    for Name { ea, name } in idb.names().take(500) {
-        assert!(!name.is_empty(), "empty name at {:#x}", ea.get());
+    for Name { address, name } in idb.names().take(500) {
+        assert!(!name.is_empty(), "empty name at {:#x}", address.get());
         assert!(
-            idb.name(ea).as_deref() == Some(name.as_str()),
+            idb.name(address).as_deref() == Some(name.as_str()),
             "name({:#x}) disagrees with the name list",
-            ea.get()
+            address.get()
         );
-        if idb.name_ea(&name) == Some(ea) {
+        if idb.address_of(&name) == Some(address) {
             round_tripped += 1;
         }
         listed += 1;
     }
     assert!(listed > 0, "the name list is empty");
-    assert!(round_tripped > 0, "no name round-tripped ea -> name -> ea");
-    println!("names: {round_tripped}/{listed} round-tripped name -> ea");
+    assert!(
+        round_tripped > 0,
+        "no name round-tripped address -> name -> address"
+    );
+    println!("names: {round_tripped}/{listed} round-tripped name -> address");
 
     // A plainly unmangled string is not a mangled name. If the binary carries a mangled
     // symbol, show that it demangles (informational -- some inputs store no mangled names).

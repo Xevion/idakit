@@ -7,7 +7,7 @@
 //! `is_main_thread` re-claim it for us, before `init_library`.
 //!
 //! `g_main` is private, so we recover its address by decoding the PC-relative load
-//! in `is_main_thread`'s prologue instead of hardcoding an offset: `mov reg,
+//! in `is_main_thread`'s prologue instead of hardcoding an offset: `mov register,
 //! [rip+disp32]` on x86-64, an `adrp`+`ldr` pair on aarch64.
 
 use std::ffi::c_void;
@@ -43,11 +43,11 @@ impl MainClaim {
     }
 }
 
-/// x86-64: `is_main_thread` loads `g_main` with `mov reg, [rip+disp32]` (REX.W `48 8b`,
+/// x86-64: `is_main_thread` loads `g_main` with `mov register, [rip+disp32]` (REX.W `48 8b`,
 /// ModRM mod=00 rm=101). The Linux build emits it as the first instruction; the macOS and
 /// Windows builds push a stack frame first, so scan a short window for the first such load
 /// (the aarch64 path scans for the same reason). `g_main` sits at rip (past the 7-byte
-/// insn) + disp32. On Windows the function's address is first an import/incremental-link
+/// instruction) + disp32. On Windows the function's address is first an import/incremental-link
 /// thunk (`jmp qword [rip+disp32]`, `ff 25`); [`follow_jmp_thunk`] resolves it to the body.
 #[cfg(target_arch = "x86_64")]
 fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
@@ -60,7 +60,7 @@ fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
     let head: [u8; WINDOW] = unsafe { ptr::read(entry.cast()) };
 
     for k in 0..=WINDOW - 7 {
-        // REX.W, opcode 0x8b, ModRM mod=00 rm=101 (rip-relative); reg field ignored.
+        // REX.W, opcode 0x8b, ModRM mod=00 rm=101 (rip-relative); register field ignored.
         if head[k] == 0x48 && head[k + 1] == 0x8b && head[k + 2] & 0xc7 == 0x05 {
             let disp = i32::from_le_bytes([head[k + 3], head[k + 4], head[k + 5], head[k + 6]]);
             // rip points past the 7-byte instruction at offset k.
@@ -86,7 +86,7 @@ unsafe fn follow_jmp_thunk(entry: *const u8) -> *const u8 {
     let head: [u8; 6] = unsafe { ptr::read(entry.cast()) };
     if head[0] == 0xff && head[1] == 0x25 {
         let disp = i32::from_le_bytes([head[2], head[3], head[4], head[5]]);
-        // rip points past the 6-byte insn; the slot there holds the real target.
+        // rip points past the 6-byte instruction; the slot there holds the real target.
         let slot = entry.wrapping_offset(6 + disp as isize) as *const *const u8;
         // SAFETY: a real `ff 25` thunk's slot is a mapped pointer into the same image.
         return unsafe { *slot };
@@ -148,7 +148,7 @@ mod x86_64_tests {
 
     use super::*;
 
-    /// A 32-byte (WINDOW) code buffer padded with `0x90` nops, holding `mov reg,[rip+disp]`
+    /// A 32-byte (WINDOW) code buffer padded with `0x90` nops, holding `mov register,[rip+disp]`
     /// (`48 8b 05 <disp32>`) at `offset`.
     fn code_at(offset: usize, disp: i32) -> [u8; 32] {
         let mut buf = [0x90u8; 32];
@@ -163,7 +163,7 @@ mod x86_64_tests {
     fn decodes_load_at_prologue_start() {
         let code = code_at(0, 0x1234);
         let entry = code.as_ptr();
-        // g_main sits at rip (past the 7-byte insn) + disp.
+        // g_main sits at rip (past the 7-byte instruction) + disp.
         assert!(decode_g_main(entry).unwrap() == entry.wrapping_offset(7 + 0x1234));
     }
 
@@ -182,7 +182,7 @@ mod x86_64_tests {
 
     #[test]
     fn follows_thunk_to_slot_target() {
-        // The slot at (insn end + disp) holds the real body pointer; keep it 8-aligned.
+        // The slot at (instruction end + disp) holds the real body pointer; keep it 8-aligned.
         #[repr(align(8))]
         struct Aligned([u8; 16]);
         let target = 0u8;

@@ -1,7 +1,7 @@
 //! [`Cfg`]: an owned, `Send` control-flow graph of one function.
 //!
 //! IDA builds a function's whole flow chart eagerly (`qflow_chart_t`), so -- unlike the lazy
-//! [`Func`]/[`Segment`](crate::Segment) views that re-query per accessor -- a CFG is a
+//! [`Function`]/[`Segment`](crate::Segment) views that re-query per accessor -- a CFG is a
 //! snapshot from the start. It is materialized on the kernel thread and handed back as an
 //! owned [`Cfg`] any worker can traverse: an append-only arena of [`Block`]s keyed by
 //! [`BlockId`], with successor/predecessor edges as block handles. A [`Block`] carries only
@@ -22,8 +22,8 @@ use strum::VariantArray;
 use idakit_sys as sys;
 
 use crate::Idb;
+use crate::address::Address;
 use crate::arena::{Arena, Idx};
-use crate::ea::Ea;
 use crate::error::{Error, Result};
 
 /// A handle into a [`Cfg`]'s block arena. Edges are lists of these; block 0 is the entry.
@@ -99,7 +99,7 @@ impl BlockKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ExternalExit {
     /// The out-of-function address this block transfers to.
-    pub target: Ea,
+    pub target: Address,
     /// Whether IDA knows the target never returns -- a tail call to `exit`/`abort`
     /// (`fcb_enoret`).
     pub noreturn: bool,
@@ -110,7 +110,7 @@ pub struct ExternalExit {
 /// non-empty -- external stubs are [`ExternalExit`]s, not blocks.
 #[derive(Clone, Debug)]
 pub struct Block {
-    range: Range<Ea>,
+    range: Range<Address>,
     kind: BlockKind,
     succ: Vec<BlockId>,
     pred: Vec<BlockId>,
@@ -121,21 +121,21 @@ impl Block {
     /// The block's half-open address range `[start, end)`.
     #[inline]
     #[must_use]
-    pub fn range(&self) -> Range<Ea> {
+    pub fn range(&self) -> Range<Address> {
         self.range.clone()
     }
 
     /// First address of the block.
     #[inline]
     #[must_use]
-    pub fn start(&self) -> Ea {
+    pub fn start(&self) -> Address {
         self.range.start
     }
 
     /// One-past-the-last address of the block.
     #[inline]
     #[must_use]
-    pub fn end(&self) -> Ea {
+    pub fn end(&self) -> Address {
         self.range.end
     }
 
@@ -173,21 +173,21 @@ impl Block {
 }
 
 /// An owned, `Send` control-flow graph of one function. Materialize with
-/// [`Func::cfg`](crate::Func::cfg)/[`Idb::cfg`], then traverse the [`Block`] arena by
+/// [`Function::cfg`](crate::Function::cfg)/[`Idb::cfg`], then traverse the [`Block`] arena by
 /// [`BlockId`]. Detached from the kernel, so it analyzes on any thread.
 #[derive(Debug)]
 pub struct Cfg {
     blocks: Arena<Block>,
     entry: BlockId,
-    func: Ea,
+    function: Address,
 }
 
 impl Cfg {
     /// The entry address of the function this graph was built from.
     #[inline]
     #[must_use]
-    pub fn func(&self) -> Ea {
-        self.func
+    pub fn function(&self) -> Address {
+        self.function
     }
 
     /// The entry block, where execution enters the function (always block 0).
@@ -223,44 +223,46 @@ impl Cfg {
         self.blocks.iter()
     }
 
-    /// The block whose range contains `ea`, if any.
+    /// The block whose range contains `address`, if any.
     #[must_use]
-    pub fn block_at(&self, ea: Ea) -> Option<BlockId> {
+    pub fn block_at(&self, address: Address) -> Option<BlockId> {
         self.blocks
             .iter()
-            .find_map(|(id, b)| (b.range.start <= ea && ea < b.range.end).then_some(id))
+            .find_map(|(id, b)| (b.range.start <= address && address < b.range.end).then_some(id))
     }
 }
 
 impl Idb {
-    /// Build the control-flow graph of the function containing `ea` with default options:
+    /// Build the control-flow graph of the function containing `address` with default options:
     /// external exits recorded, predecessors computed, calls do not split a block. `Err` with
-    /// [`Error::NoFunction`] when no function covers `ea`. For the knobs, use
-    /// [`Func::cfg_with`](crate::Func::cfg_with).
-    pub fn cfg(&self, ea: Ea) -> Result<Cfg> {
-        self.build_cfg(ea, 0)
+    /// [`Error::NoFunction`] when no function covers `address`. For the knobs, use
+    /// [`Function::cfg_with`](crate::Function::cfg_with).
+    pub fn cfg(&self, address: Address) -> Result<Cfg> {
+        self.build_cfg(address, 0)
     }
 
     /// The shared build path behind [`cfg`](Self::cfg) and the `cfg_with` builder: constructs
     /// the flow chart, extracts every block and edge into an owned arena, and frees the
     /// kernel object before returning -- so the result is a detached `Send` snapshot.
-    pub(crate) fn build_cfg(&self, ea: Ea, flags: c_int) -> Result<Cfg> {
+    pub(crate) fn build_cfg(&self, address: Address, flags: c_int) -> Result<Cfg> {
         // SAFETY: the kernel is claimed for the lifetime of `&self`. The returned handle is
         // owned by this call and freed once, below.
-        let handle = unsafe { sys::idakit_cfg_build(ea.get(), flags) };
+        let handle = unsafe { sys::idakit_cfg_build(address.get(), flags) };
         if handle.is_null() {
-            return Err(Error::NoFunction { ea: ea.get() });
+            return Err(Error::NoFunction {
+                address: address.get(),
+            });
         }
         let blocks = extract(handle);
         // SAFETY: `handle` came from `idakit_cfg_build`, is non-null, and is freed exactly
         // once here; nothing borrows it afterwards.
         unsafe { sys::idakit_cfg_free(handle) };
 
-        let func = blocks.iter().next().map_or(ea, |(_, b)| b.start());
+        let function = blocks.iter().next().map_or(address, |(_, b)| b.start());
         Ok(Cfg {
             blocks,
             entry: BlockId::from_raw(0),
-            func,
+            function,
         })
     }
 }
@@ -335,7 +337,7 @@ fn successors(
             let (mut start, mut end, mut kind) = (0u64, 0u64, 0i32);
             unsafe { sys::idakit_cfg_block(handle, j, &mut start, &mut end, &mut kind) };
             exits.push(ExternalExit {
-                target: Ea::try_new(start).expect("external stub start is BADADDR"),
+                target: Address::try_new(start).expect("external stub start is BADADDR"),
                 noreturn: kind as u8 == FCB_ENORET,
             });
         }
@@ -361,9 +363,9 @@ fn predecessors(handle: *const c_void, n: c_int, nproper: c_int) -> Vec<BlockId>
 
 /// A basic block's `[start, end)` as typed addresses. Real flow-chart blocks always have
 /// valid bounds; a `BADADDR` here would mean a corrupt chart, so the niche is asserted.
-fn block_range(start: u64, end: u64) -> Range<Ea> {
-    let start = Ea::try_new(start).expect("flow-chart block start is BADADDR");
-    let end = Ea::try_new(end).expect("flow-chart block end is BADADDR");
+fn block_range(start: u64, end: u64) -> Range<Address> {
+    let start = Address::try_new(start).expect("flow-chart block start is BADADDR");
+    let end = Address::try_new(end).expect("flow-chart block end is BADADDR");
     start..end
 }
 

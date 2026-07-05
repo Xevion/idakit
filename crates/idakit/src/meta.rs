@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use crate::Idb;
-use crate::ea::Ea;
+use crate::address::Address;
 use crate::ffi::read_string;
 
 /// An owned, `Send` snapshot of database-wide metadata, from [`Idb::meta`].
@@ -16,7 +16,7 @@ pub struct Meta {
     /// Application bitness: 16, 32, or 64.
     pub bitness: u8,
     /// Preferred load address (image base), when the format records one.
-    pub image_base: Option<Ea>,
+    pub image_base: Option<Address>,
     /// Processor module id (e.g. `metapc`).
     pub processor: Option<String>,
     /// Human-readable input file format (e.g. `Portable executable for 80386 (PE)`).
@@ -32,9 +32,9 @@ impl Idb {
     /// range for a whole-image [`search`](Self::search); `None` for a database with no
     /// mapped content.
     #[must_use]
-    pub fn address_range(&self) -> Option<Range<Ea>> {
-        let min = Ea::try_new(self.min_ea())?;
-        let max = Ea::try_new(self.max_ea())?;
+    pub fn address_range(&self) -> Option<Range<Address>> {
+        let min = Address::try_new(self.min_ea())?;
+        let max = Address::try_new(self.max_ea())?;
         Some(min..max)
     }
 
@@ -43,7 +43,7 @@ impl Idb {
     pub fn meta(&self) -> Meta {
         Meta {
             bitness: self.bitness().max(0) as u8,
-            image_base: Ea::try_new(self.image_base()),
+            image_base: Address::try_new(self.image_base()),
             processor: read_string(|buf, cap| self.proc_name(buf, cap)),
             file_type: read_string(|buf, cap| self.file_type_name(buf, cap)),
             input_path: read_string(|buf, cap| self.input_path(buf, cap)),

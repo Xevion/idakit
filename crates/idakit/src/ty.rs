@@ -1,5 +1,5 @@
 //! [`TypeInfo`]: an owned resolved named type and its members; disposes on
-//! [`Drop`]. Being `!Send`, it (like [`crate::Cfunc`]) can't leave the kernel
+//! [`Drop`]. Being `!Send`, it (like [`crate::DecompiledFunction`]) can't leave the kernel
 //! thread, so its kernel-touching `Drop` always runs there. Member offsets/sizes
 //! are in bytes.
 

@@ -19,7 +19,7 @@ use std::process::{Command, Stdio};
 use assert2::assert;
 use idakit::ctree::Ctree;
 use idakit::ctree::query::{base_var, global_target};
-use idakit::{AssignOp, Ea};
+use idakit::{Address, AssignOp};
 
 /// A store of a global's address into a `this`-relative slot -- a vtable install in a
 /// constructor (`this->__vftable = &vtbl`). `this_offset` is the byte offset within the
@@ -27,7 +27,7 @@ use idakit::{AssignOp, Ea};
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct VtableInstall {
     this_offset: i64,
-    vtable: Ea,
+    vtable: Address,
     vtable_name: Option<String>,
 }
 
@@ -35,7 +35,7 @@ struct VtableInstall {
 /// constructor call. `this_offset` is the byte offset of the subobject it applies to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ThisCall {
-    callee: Ea,
+    callee: Address,
     callee_name: Option<String>,
     this_offset: i64,
 }
@@ -59,7 +59,7 @@ fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
             let g = global_target(tree, y)?;
             Some(VtableInstall {
                 this_offset: off,
-                vtable: g.ea,
+                vtable: g.address,
                 vtable_name: g.name,
             })
         })
@@ -80,7 +80,7 @@ fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
                 return None;
             }
             Some(ThisCall {
-                callee: g.ea,
+                callee: g.address,
                 callee_name: g.name,
                 this_offset: off,
             })
@@ -129,11 +129,13 @@ fn ctor() {
             // Run the constructor matchers over every function's ctree. Decompilation can
             // fail for thunks/imports -- skip those. Keep only functions that install at
             // least one vtable, with their this-arg calls, for the assertions below.
-            let eas: Vec<_> = idb.functions().map(|f| (f.ea(), f.name())).collect();
+            let eas: Vec<_> = idb.functions().map(|f| (f.address(), f.name())).collect();
             let mut analyzed = Vec::new();
-            for (ea, name) in eas {
+            for (address, name) in eas {
                 // One-shot decompile + extract: this test only wants the owned tree.
-                let Ok(tree) = idb.ctree(ea) else { continue };
+                let Ok(tree) = idb.ctree(address) else {
+                    continue;
+                };
                 let installs = vtable_installs(&tree);
                 if installs.is_empty() {
                     continue;

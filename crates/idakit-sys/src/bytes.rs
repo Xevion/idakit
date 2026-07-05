@@ -3,20 +3,20 @@
 
 use std::ffi::{c_char, c_int, c_void};
 
-use crate::Ea;
+use crate::Address;
 
 // raw bytes
 unsafe extern "C" {
-    pub fn idakit_get_bytes(ea: Ea, buf: *mut c_void, size: usize) -> i64;
+    pub fn idakit_get_bytes(address: Address, buf: *mut c_void, size: usize) -> i64;
 }
 
 // binary pattern search (bytes.hpp). A compiled pattern is an opaque handle; `binpat_free`
 // releases it. `bin_search` returns BADADDR when the pattern is absent from [start, end).
 unsafe extern "C" {
-    pub fn idakit_min_ea() -> Ea;
-    pub fn idakit_max_ea() -> Ea;
+    pub fn idakit_min_ea() -> Address;
+    pub fn idakit_max_ea() -> Address;
     pub fn idakit_binpat_compile(
-        ea: Ea,
+        address: Address,
         pattern: *const c_char,
         radix: c_int,
         errbuf: *mut c_char,
@@ -25,7 +25,12 @@ unsafe extern "C" {
     pub fn idakit_binpat_from_bytes(bytes: *const u8, mask: *const u8, len: usize) -> *mut c_void;
     pub fn idakit_binpat_free(pat: *mut c_void);
     pub fn idakit_binpat_stats(pat: *const c_void, total: *mut usize, anchors: *mut usize);
-    pub fn idakit_bin_search(start: Ea, end: Ea, pat: *const c_void, flags: c_int) -> Ea;
+    pub fn idakit_bin_search(
+        start: Address,
+        end: Address,
+        pat: *const c_void,
+        flags: c_int,
+    ) -> Address;
 }
 
 /// `BIN_SEARCH_CASE` from `bytes.hpp` (IDA 9.3): match `"..."` string literals
@@ -45,21 +50,21 @@ pub const FF_DATA: u64 = 0x0000_0400;
 
 // byte/item classification and navigation (bytes.hpp)
 unsafe extern "C" {
-    pub fn idakit_get_flags(ea: Ea) -> u64;
-    pub fn idakit_get_item_head(ea: Ea) -> Ea;
-    pub fn idakit_get_item_end(ea: Ea) -> Ea;
-    pub fn idakit_get_next_head(ea: Ea, maxea: Ea) -> Ea;
-    pub fn idakit_get_prev_head(ea: Ea, minea: Ea) -> Ea;
+    pub fn idakit_get_flags(address: Address) -> u64;
+    pub fn idakit_get_item_head(address: Address) -> Address;
+    pub fn idakit_get_item_end(address: Address) -> Address;
+    pub fn idakit_get_next_head(address: Address, maxea: Address) -> Address;
+    pub fn idakit_get_prev_head(address: Address, minea: Address) -> Address;
 }
 
 // byte patching (bytes.hpp patch_bytes). Returns 0 without writing if any target byte is
 // unmapped, 1 on success.
 unsafe extern "C" {
-    pub fn idakit_patch_bytes(ea: Ea, buf: *const c_void, size: usize) -> c_int;
+    pub fn idakit_patch_bytes(address: Address, buf: *const c_void, size: usize) -> c_int;
 }
 
 // comment read (facade get_cmt, snprintf-style, -1 if none) and write (plain libida `set_cmt`).
 unsafe extern "C" {
-    pub fn idakit_get_cmt(ea: Ea, rptble: u8, buf: *mut c_char, cap: usize) -> i64;
-    pub fn set_cmt(ea: Ea, comm: *const c_char, rptble: bool) -> bool;
+    pub fn idakit_get_cmt(address: Address, rptble: u8, buf: *mut c_char, cap: usize) -> i64;
+    pub fn set_cmt(address: Address, comm: *const c_char, rptble: bool) -> bool;
 }

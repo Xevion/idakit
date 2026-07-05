@@ -22,17 +22,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Control-flow shape: over a bounded prefix, find the function with the most
             // basic blocks and summarize its graph (blocks, edges, return blocks) plus the
             // entry block's instruction count via the ranged `instructions_in` walk.
-            if let Some((ea, cfg)) = idb
+            if let Some((address, cfg)) = idb
                 .functions()
                 .take(2000)
-                .filter_map(|f| f.cfg().ok().map(|c| (f.ea(), c)))
+                .filter_map(|f| f.cfg().ok().map(|c| (f.address(), c)))
                 .max_by_key(|(_, c)| c.len())
             {
                 let edges: usize = cfg.blocks().map(|(_, b)| b.successors().len()).sum();
                 let returns = cfg.blocks().filter(|(_, b)| b.kind().is_return()).count();
                 let entry_insns = idb.instructions_in(cfg.block(cfg.entry()).range()).count();
                 println!(
-                    "largest CFG @ {ea:#x}: {} blocks, {edges} edges, {returns} return block(s); \
+                    "largest CFG @ {address:#x}: {} blocks, {edges} edges, {returns} return block(s); \
                      entry block has {entry_insns} instruction(s)",
                     cfg.len()
                 );

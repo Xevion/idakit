@@ -11,13 +11,13 @@
 
 use std::fmt::Write;
 
-use super::node::{Case, Cexpr, Cinsn, ExprId, LvarId, StmtId};
+use super::node::{Case, ExpressionId, ExpressionKind, LocalId, StatementId, StatementKind};
 use super::ops::{BinOp, UnOp};
 use super::tree::Ctree;
 use super::types::{TypeId, TypeKind};
 
 // C operator precedence, higher binds tighter. A child is parenthesized when its own
-// precedence is below the minimum its position requires (see `Printer::expr`).
+// precedence is below the minimum its position requires (see `Printer::expression`).
 const P_COMMA: u8 = 1;
 const P_ASSIGN: u8 = 2;
 const P_TERNARY: u8 = 3;
@@ -44,7 +44,7 @@ impl Ctree {
             out: String::new(),
             indent: 0,
         };
-        p.stmt(self.root());
+        p.statement(self.root());
         p.out
     }
 }
@@ -69,38 +69,38 @@ impl Printer<'_> {
         self.out.push('\n');
     }
 
-    fn stmt(&mut self, id: StmtId) {
+    fn statement(&mut self, id: StatementId) {
         let tree = self.tree;
-        match &tree.stmt(id).kind {
-            Cinsn::Block(stmts) => {
-                let stmts = stmts.clone();
+        match &tree.statement(id).kind {
+            StatementKind::Block(statements) => {
+                let statements = statements.clone();
                 self.line("{");
                 self.indent += 1;
-                for s in stmts {
-                    self.stmt(s);
+                for s in statements {
+                    self.statement(s);
                 }
                 self.indent -= 1;
                 self.line("}");
             }
-            Cinsn::Expr(e) => {
+            StatementKind::Expression(e) => {
                 let e = *e;
                 self.push_indent();
-                self.expr(e, 0);
+                self.expression(e, 0);
                 self.out.push_str(";\n");
             }
-            Cinsn::If { cond, then_, else_ } => {
+            StatementKind::If { cond, then_, else_ } => {
                 let (cond, then_, else_) = (*cond, *then_, *else_);
                 self.push_indent();
                 self.out.push_str("if ( ");
-                self.expr(cond, 0);
+                self.expression(cond, 0);
                 self.out.push_str(" )\n");
-                self.stmt(then_);
+                self.statement(then_);
                 if let Some(e) = else_ {
                     self.line("else");
-                    self.stmt(e);
+                    self.statement(e);
                 }
             }
-            Cinsn::For {
+            StatementKind::For {
                 init,
                 cond,
                 step,
@@ -110,42 +110,42 @@ impl Printer<'_> {
                 self.push_indent();
                 self.out.push_str("for ( ");
                 if let Some(e) = init {
-                    self.expr(e, 0);
+                    self.expression(e, 0);
                 }
                 self.out.push_str("; ");
                 if let Some(e) = cond {
-                    self.expr(e, 0);
+                    self.expression(e, 0);
                 }
                 self.out.push_str("; ");
                 if let Some(e) = step {
-                    self.expr(e, 0);
+                    self.expression(e, 0);
                 }
                 self.out.push_str(" )\n");
-                self.stmt(body);
+                self.statement(body);
             }
-            Cinsn::While { cond, body } => {
+            StatementKind::While { cond, body } => {
                 let (cond, body) = (*cond, *body);
                 self.push_indent();
                 self.out.push_str("while ( ");
-                self.expr(cond, 0);
+                self.expression(cond, 0);
                 self.out.push_str(" )\n");
-                self.stmt(body);
+                self.statement(body);
             }
-            Cinsn::Do { body, cond } => {
+            StatementKind::Do { body, cond } => {
                 let (body, cond) = (*body, *cond);
                 self.line("do");
-                self.stmt(body);
+                self.statement(body);
                 self.push_indent();
                 self.out.push_str("while ( ");
-                self.expr(cond, 0);
+                self.expression(cond, 0);
                 self.out.push_str(" );\n");
             }
-            Cinsn::Switch { expr, cases } => {
-                let expr = *expr;
+            StatementKind::Switch { expression, cases } => {
+                let expression = *expression;
                 let cases = cases.clone();
                 self.push_indent();
                 self.out.push_str("switch ( ");
-                self.expr(expr, 0);
+                self.expression(expression, 0);
                 self.out.push_str(" )\n");
                 self.line("{");
                 for case in &cases {
@@ -153,48 +153,48 @@ impl Printer<'_> {
                 }
                 self.line("}");
             }
-            Cinsn::Break => self.line("break;"),
-            Cinsn::Continue => self.line("continue;"),
-            Cinsn::Return(e) => {
+            StatementKind::Break => self.line("break;"),
+            StatementKind::Continue => self.line("continue;"),
+            StatementKind::Return(e) => {
                 let e = *e;
                 self.push_indent();
                 self.out.push_str("return");
                 if let Some(e) = e {
                     self.out.push(' ');
-                    self.expr(e, 0);
+                    self.expression(e, 0);
                 }
                 self.out.push_str(";\n");
             }
-            Cinsn::Goto { label } => {
+            StatementKind::Goto { label } => {
                 let label = *label;
                 self.push_indent();
                 writeln!(self.out, "goto LABEL_{label};").unwrap();
             }
-            Cinsn::Asm(eas) => {
+            StatementKind::Asm(eas) => {
                 let n = eas.len();
                 self.push_indent();
                 writeln!(self.out, "__asm {{ /* {n} insns */ }}").unwrap();
             }
-            Cinsn::Try { body, catches } => {
+            StatementKind::Try { body, catches } => {
                 let (body, catches) = (*body, catches.clone());
                 self.line("try");
-                self.stmt(body);
+                self.statement(body);
                 for c in catches {
                     self.line("catch");
-                    self.stmt(c);
+                    self.statement(c);
                 }
             }
-            Cinsn::Throw(e) => {
+            StatementKind::Throw(e) => {
                 let e = *e;
                 self.push_indent();
                 self.out.push_str("throw");
                 if let Some(e) = e {
                     self.out.push(' ');
-                    self.expr(e, 0);
+                    self.expression(e, 0);
                 }
                 self.out.push_str(";\n");
             }
-            Cinsn::Empty => self.line(";"),
+            StatementKind::Empty => self.line(";"),
         }
     }
 
@@ -207,117 +207,117 @@ impl Printer<'_> {
                 writeln!(self.out, "case {v}:").unwrap();
             }
         }
-        self.stmt(case.body);
+        self.statement(case.body);
     }
 
     /// Render `id`, parenthesizing it when its own precedence is below `min_prec` -- the
     /// minimum the surrounding operator position requires.
-    fn expr(&mut self, id: ExprId, min_prec: u8) {
+    fn expression(&mut self, id: ExpressionId, min_prec: u8) {
         let paren = self.prec(id) < min_prec;
         if paren {
             self.out.push('(');
         }
-        self.expr_inner(id);
+        self.expression_inner(id);
         if paren {
             self.out.push(')');
         }
     }
 
-    fn expr_inner(&mut self, id: ExprId) {
+    fn expression_inner(&mut self, id: ExpressionId) {
         let tree = self.tree;
         match tree.kind(id) {
-            Cexpr::Binary { op, x, y } => {
+            ExpressionKind::Binary { op, x, y } => {
                 let (op, x, y) = (*op, *x, *y);
                 if op == BinOp::Comma {
-                    self.expr(x, P_COMMA);
+                    self.expression(x, P_COMMA);
                     self.out.push_str(", ");
-                    self.expr(y, P_COMMA + 1);
+                    self.expression(y, P_COMMA + 1);
                 } else {
                     let p = bin_prec(op);
-                    self.expr(x, p);
+                    self.expression(x, p);
                     write!(self.out, " {} ", op.symbol()).unwrap();
-                    self.expr(y, p + 1);
+                    self.expression(y, p + 1);
                 }
             }
-            Cexpr::Assign { op, x, y } => {
+            ExpressionKind::Assign { op, x, y } => {
                 let (op, x, y) = (*op, *x, *y);
-                self.expr(x, P_ASSIGN + 1);
+                self.expression(x, P_ASSIGN + 1);
                 write!(self.out, " {} ", op.symbol()).unwrap();
-                self.expr(y, P_ASSIGN);
+                self.expression(y, P_ASSIGN);
             }
-            Cexpr::Unary { op, x } => {
+            ExpressionKind::Unary { op, x } => {
                 let (op, x) = (*op, *x);
                 match op {
                     UnOp::PostInc | UnOp::PostDec => {
-                        self.expr(x, P_POSTFIX);
+                        self.expression(x, P_POSTFIX);
                         self.out.push_str(op.symbol());
                     }
                     _ => {
                         self.out.push_str(op.symbol());
-                        self.expr(x, P_UNARY);
+                        self.expression(x, P_UNARY);
                     }
                 }
             }
-            Cexpr::Ternary { cond, then_, else_ } => {
+            ExpressionKind::Ternary { cond, then_, else_ } => {
                 let (cond, then_, else_) = (*cond, *then_, *else_);
-                self.expr(cond, P_TERNARY + 1);
+                self.expression(cond, P_TERNARY + 1);
                 self.out.push_str(" ? ");
-                self.expr(then_, 0);
+                self.expression(then_, 0);
                 self.out.push_str(" : ");
-                self.expr(else_, P_TERNARY);
+                self.expression(else_, P_TERNARY);
             }
-            Cexpr::Call { callee, args } => {
+            ExpressionKind::Call { callee, args } => {
                 let callee = *callee;
                 let args = args.clone();
-                self.expr(callee, P_POSTFIX);
+                self.expression(callee, P_POSTFIX);
                 self.out.push('(');
                 for (i, a) in args.into_iter().enumerate() {
                     if i > 0 {
                         self.out.push_str(", ");
                     }
-                    self.expr(a, P_ASSIGN);
+                    self.expression(a, P_ASSIGN);
                 }
                 self.out.push(')');
             }
-            Cexpr::Index { array, index } => {
+            ExpressionKind::Index { array, index } => {
                 let (array, index) = (*array, *index);
-                self.expr(array, P_POSTFIX);
+                self.expression(array, P_POSTFIX);
                 self.out.push('[');
-                self.expr(index, 0);
+                self.expression(index, 0);
                 self.out.push(']');
             }
-            Cexpr::MemberRef { obj, byte_offset } => {
+            ExpressionKind::MemberRef { obj, byte_offset } => {
                 let (obj, offset) = (*obj, *byte_offset);
                 let name = self.field_name(obj, offset, false);
-                self.expr(obj, P_POSTFIX);
+                self.expression(obj, P_POSTFIX);
                 self.out.push('.');
                 self.out.push_str(&name);
             }
-            Cexpr::MemberPtr { obj, byte_offset } => {
+            ExpressionKind::MemberPtr { obj, byte_offset } => {
                 let (obj, offset) = (*obj, *byte_offset);
                 let name = self.field_name(obj, offset, true);
-                self.expr(obj, P_POSTFIX);
+                self.expression(obj, P_POSTFIX);
                 self.out.push_str("->");
                 self.out.push_str(&name);
             }
-            Cexpr::Cast { x } => {
+            ExpressionKind::Cast { x } => {
                 let x = *x;
-                let ts = self.print_type(tree.expr(id).ty);
+                let ts = self.print_type(tree.expression(id).ty);
                 write!(self.out, "({ts})").unwrap();
-                self.expr(x, P_UNARY);
+                self.expression(x, P_UNARY);
             }
-            Cexpr::Deref { x, .. } => {
+            ExpressionKind::Deref { x, .. } => {
                 let x = *x;
                 self.out.push('*');
-                self.expr(x, P_UNARY);
+                self.expression(x, P_UNARY);
             }
-            Cexpr::Sizeof(x) => {
+            ExpressionKind::Sizeof(x) => {
                 let x = *x;
                 self.out.push_str("sizeof(");
-                self.expr(x, 0);
+                self.expression(x, 0);
                 self.out.push(')');
             }
-            Cexpr::Num(v) => {
+            ExpressionKind::Num(v) => {
                 let v = *v;
                 if v < 10 {
                     write!(self.out, "{v}").unwrap();
@@ -325,49 +325,51 @@ impl Printer<'_> {
                     write!(self.out, "{v:#x}").unwrap();
                 }
             }
-            Cexpr::Fnum(f) => write!(self.out, "{f}").unwrap(),
-            Cexpr::Str(s) => write!(self.out, "{s:?}").unwrap(),
-            Cexpr::Obj { ea, name } => match name {
+            ExpressionKind::Fnum(f) => write!(self.out, "{f}").unwrap(),
+            ExpressionKind::Str(s) => write!(self.out, "{s:?}").unwrap(),
+            ExpressionKind::Obj { address, name } => match name {
                 Some(n) => self.out.push_str(n),
-                None => write!(self.out, "{ea:#x}").unwrap(),
+                None => write!(self.out, "{address:#x}").unwrap(),
             },
-            Cexpr::Var(v) => {
+            ExpressionKind::Var(v) => {
                 let name = self.lvar_name(*v);
                 self.out.push_str(&name);
             }
-            Cexpr::Helper(s) => self.out.push_str(s),
-            Cexpr::TypeExpr => {
-                let ts = self.print_type(tree.expr(id).ty);
+            ExpressionKind::Helper(s) => self.out.push_str(s),
+            ExpressionKind::TypeExpression => {
+                let ts = self.print_type(tree.expression(id).ty);
                 self.out.push_str(&ts);
             }
-            Cexpr::Empty => {}
-            Cexpr::Internal => self.out.push_str("/* internal */"),
+            ExpressionKind::Empty => {}
+            ExpressionKind::Internal => self.out.push_str("/* internal */"),
         }
     }
 
     /// The precedence of the operator at the root of `id` (primary for leaves).
-    fn prec(&self, id: ExprId) -> u8 {
+    fn prec(&self, id: ExpressionId) -> u8 {
         match self.tree.kind(id) {
-            Cexpr::Binary { op, .. } => bin_prec(*op),
-            Cexpr::Assign { .. } => P_ASSIGN,
-            Cexpr::Ternary { .. } => P_TERNARY,
-            Cexpr::Unary { op, .. } => match op {
+            ExpressionKind::Binary { op, .. } => bin_prec(*op),
+            ExpressionKind::Assign { .. } => P_ASSIGN,
+            ExpressionKind::Ternary { .. } => P_TERNARY,
+            ExpressionKind::Unary { op, .. } => match op {
                 UnOp::PostInc | UnOp::PostDec => P_POSTFIX,
                 _ => P_UNARY,
             },
-            Cexpr::Call { .. }
-            | Cexpr::Index { .. }
-            | Cexpr::MemberRef { .. }
-            | Cexpr::MemberPtr { .. } => P_POSTFIX,
-            Cexpr::Cast { .. } | Cexpr::Deref { .. } | Cexpr::Sizeof(_) => P_UNARY,
+            ExpressionKind::Call { .. }
+            | ExpressionKind::Index { .. }
+            | ExpressionKind::MemberRef { .. }
+            | ExpressionKind::MemberPtr { .. } => P_POSTFIX,
+            ExpressionKind::Cast { .. }
+            | ExpressionKind::Deref { .. }
+            | ExpressionKind::Sizeof(_) => P_UNARY,
             _ => P_PRIMARY,
         }
     }
 
     /// A struct/union member name at `byte_off`, resolved through the object's type; falls
     /// back to a synthetic `field_<off>` when the type isn't an aggregate we can index.
-    fn field_name(&self, obj: ExprId, byte_off: u32, through_ptr: bool) -> String {
-        let mut ty = self.tree.type_of(self.tree.expr(obj).ty);
+    fn field_name(&self, obj: ExpressionId, byte_off: u32, through_ptr: bool) -> String {
+        let mut ty = self.tree.type_of(self.tree.expression(obj).ty);
         if through_ptr && let TypeKind::Ptr(p) = &ty.kind {
             ty = self.tree.type_of(*p);
         }
@@ -403,7 +405,7 @@ impl Printer<'_> {
         }
     }
 
-    fn lvar_name(&self, v: LvarId) -> String {
+    fn lvar_name(&self, v: LocalId) -> String {
         self.tree
             .lvars()
             .nth(v.0 as usize)
@@ -434,7 +436,7 @@ impl Printer<'_> {
             TypeKind::Struct { name, .. } => name.clone().unwrap_or_else(|| "struct".into()),
             TypeKind::Union { name, .. } => name.clone().unwrap_or_else(|| "union".into()),
             TypeKind::Enum { name, .. } => name.clone().unwrap_or_else(|| "enum".into()),
-            TypeKind::Func {
+            TypeKind::Function {
                 ret,
                 params,
                 varargs,
@@ -483,8 +485,8 @@ fn bin_prec(op: BinOp) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Ea;
-    use crate::ctree::node::{Lvar, LvarLocation};
+    use crate::Address;
+    use crate::ctree::node::{Local, LocalLocation};
     use crate::ctree::ops::AssignOp;
     use crate::ctree::tree::CtreeBuilder;
     use crate::ctree::types::{TypeData, TypeKind, TypeMember};
@@ -501,8 +503,8 @@ mod tests {
         })
     }
 
-    fn lvar(name: &str, ty: TypeId) -> Lvar {
-        Lvar {
+    fn lvar(name: &str, ty: TypeId) -> Local {
+        Local {
             name: name.into(),
             ty,
             is_arg: false,
@@ -510,7 +512,7 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: None,
-            location: LvarLocation::Other,
+            location: LocalLocation::Other,
         }
     }
 
@@ -545,7 +547,7 @@ mod tests {
         let this = b.push_lvar(lvar("this", pderived));
         let v = b.var(pderived, this);
         let mp = b.member_ptr(base, v, 0);
-        let st = b.expr_stmt(mp);
+        let st = b.expression_statement(mp);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
@@ -584,7 +586,7 @@ mod tests {
         let va = b.var(int, a);
         let vb = b.var(int, bb);
         let bin = b.binary(int, op, va, vb);
-        let st = b.expr_stmt(bin);
+        let st = b.expression_statement(bin);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
@@ -642,10 +644,10 @@ mod tests {
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
         let va = b.var(int, a);
-        let callee = b.obj(int, Ea::new_const(0x2000), Some("foo"));
+        let callee = b.obj(int, Address::new_const(0x2000), Some("foo"));
         let n = b.num(int, 3);
-        let call = b.call_expr(int, callee, vec![va, n]);
-        let st = b.expr_stmt(call);
+        let call = b.call_expression(int, callee, vec![va, n]);
+        let st = b.expression_statement(call);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(
@@ -666,7 +668,7 @@ mod tests {
         let r = b.push_lvar(lvar("r", int));
         let asg = b.var(int, r);
         let assign = b.assign(int, AssignOp::Assign, asg, neg);
-        let st = b.expr_stmt(assign);
+        let st = b.expression_statement(assign);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(
@@ -684,9 +686,9 @@ mod tests {
         let s = b.string(int, "hi");
         let big = b.num(int, 255);
         let small = b.num(int, 7);
-        let st1 = b.expr_stmt(s);
-        let st2 = b.expr_stmt(big);
-        let st3 = b.expr_stmt(small);
+        let st1 = b.expression_statement(s);
+        let st2 = b.expression_statement(big);
+        let st3 = b.expression_statement(small);
         let block = b.block(vec![st1, st2, st3]);
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
@@ -704,10 +706,10 @@ mod tests {
         let cond = b.var(int, a);
         let r1 = b.ret(None);
         let then_ = b.block(vec![r1]);
-        let r2 = b.stmt(Cinsn::Break).call();
+        let r2 = b.statement(StatementKind::Break).call();
         let else_ = b.block(vec![r2]);
         let iff = b
-            .stmt(Cinsn::If {
+            .statement(StatementKind::If {
                 cond,
                 then_,
                 else_: Some(else_),
@@ -726,8 +728,8 @@ mod tests {
     fn missing_lvar_does_not_panic() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let v = b.var(int, LvarId(7));
-        let st = b.expr_stmt(v);
+        let v = b.var(int, LocalId(7));
+        let st = b.expression_statement(v);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(

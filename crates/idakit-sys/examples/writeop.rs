@@ -11,9 +11,9 @@ use idakit_sys::*;
 const SN_NOWARN: i32 = 0x100;
 const SN_FORCE: i32 = 0x800;
 
-fn func_name(ea: Ea) -> String {
+fn func_name(address: Address) -> String {
     let mut buf = [0 as c_char; 512];
-    let n = unsafe { idakit_func_name(ea, buf.as_mut_ptr(), buf.len()) };
+    let n = unsafe { idakit_func_name(address, buf.as_mut_ptr(), buf.len()) };
     if n <= 0 {
         return String::new();
     }
@@ -38,14 +38,14 @@ fn main() {
             "open failed"
         );
 
-        let ea = idakit_func_ea(7);
-        let old = func_name(ea);
-        println!("func[7] @ {ea:#x}  old name = {old}");
+        let address = idakit_func_ea(7);
+        let old = func_name(address);
+        println!("function[7] @ {address:#x}  old name = {old}");
 
         let nm = CString::new(new_name).unwrap();
-        let ok = set_name(ea, nm.as_ptr(), SN_NOWARN | SN_FORCE);
+        let ok = set_name(address, nm.as_ptr(), SN_NOWARN | SN_FORCE);
         let cmt = CString::new("renamed by idakit write-op test").unwrap();
-        let ok_cmt = set_cmt(ea, cmt.as_ptr(), false);
+        let ok_cmt = set_cmt(address, cmt.as_ptr(), false);
         println!("set_name -> {ok}   set_cmt -> {ok_cmt}");
 
         close_database(true); // SAVE into the copy
@@ -60,9 +60,9 @@ fn main() {
             0,
             "reopen failed"
         );
-        let ea = idakit_func_ea(7);
-        let now = func_name(ea);
-        println!("after reopen, func[7] name = {now}");
+        let address = idakit_func_ea(7);
+        let now = func_name(address);
+        println!("after reopen, function[7] name = {now}");
         close_database(false);
 
         assert_eq!(now, new_name, "rename did not persist!");

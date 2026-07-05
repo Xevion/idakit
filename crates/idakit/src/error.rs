@@ -8,7 +8,7 @@ use std::fmt;
 use snafu::Snafu;
 
 use crate::ctree::ExtractError;
-use crate::insn::DecodeError;
+use crate::instruction::DecodeError;
 
 /// IDA's `error_t` code, with the documented generic values named. Carried by the
 /// operational errors below; the raw integer is available via [`Qerrno::code`].
@@ -166,19 +166,19 @@ pub enum Error {
 
     /// `reason` comes from Hex-Rays' `hexrays_failure_t` (the real decompile-error
     /// channel; the kernel's `qerrno` is not set on this path).
-    #[snafu(display("decompilation failed at {ea:#x}: {reason}"))]
+    #[snafu(display("decompilation failed at {address:#x}: {reason}"))]
     Decompile {
         /// Address that failed to decompile.
-        ea: u64,
+        address: u64,
         /// Hex-Rays failure description.
         reason: String,
     },
 
     /// Decompiled, but the ctree could not be materialized; carries the [`ExtractError`].
-    #[snafu(display("ctree extraction failed at {ea:#x}: {source}"))]
+    #[snafu(display("ctree extraction failed at {address:#x}: {source}"))]
     Extract {
         /// Address whose ctree failed to materialize.
-        ea: u64,
+        address: u64,
         /// The underlying extraction error.
         source: ExtractError,
     },
@@ -208,10 +208,10 @@ pub enum Error {
 
     /// No function covers the requested address -- e.g. building a
     /// [`Cfg`](crate::Cfg) at an address IDA has not attributed to any function.
-    #[snafu(display("no function at {ea:#x}"))]
+    #[snafu(display("no function at {address:#x}"))]
     NoFunction {
         /// The address that lies in no function.
-        ea: u64,
+        address: u64,
     },
 
     /// A binary search pattern was rejected by [`Pattern::compile`](crate::Pattern::compile).
@@ -227,12 +227,12 @@ pub enum Error {
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is
     /// present only when the kernel left a usable `error_t` -- best-effort, since not
     /// every rejection path sets one.
-    #[snafu(display("{op} failed at {ea:#x}{}", ReasonTail(reason)))]
+    #[snafu(display("{op} failed at {address:#x}{}", ReasonTail(reason)))]
     WriteRejected {
         /// The kernel operation that was rejected (e.g. `"rename"`).
         op: &'static str,
         /// Address the write targeted.
-        ea: u64,
+        address: u64,
         /// IDA's `error_t`, when one was set.
         qerrno: Qerrno,
         /// Human-readable reason, when the kernel left one.
@@ -393,20 +393,20 @@ mod tests {
     /// reason clause when there is none.
     #[rstest]
     #[case::decompile(
-        Error::Decompile { ea: 0x1400_1000, reason: "no function".to_owned() },
+        Error::Decompile { address: 0x1400_1000, reason: "no function".to_owned() },
         "decompilation failed at 0x14001000: no function",
     )]
     #[case::write_rejected_with_reason(
         Error::WriteRejected {
             op: "set_comment",
-            ea: 0x40_1000,
+            address: 0x40_1000,
             qerrno: Qerrno::Os,
             reason: Some("permission denied".to_owned()),
         },
         "set_comment failed at 0x401000: permission denied",
     )]
     #[case::write_rejected_no_reason(
-        Error::WriteRejected { op: "rename", ea: 0x40_1000, qerrno: Qerrno::Ok, reason: None },
+        Error::WriteRejected { op: "rename", address: 0x40_1000, qerrno: Qerrno::Ok, reason: None },
         "rename failed at 0x401000",
     )]
     #[case::open(
@@ -418,7 +418,7 @@ mod tests {
         "failed to open database \"/tmp/x.i64\": No such file or directory",
     )]
     #[case::extract(
-        Error::Extract { ea: 0x1400_1000, source: ExtractError::WalkFailed },
+        Error::Extract { address: 0x1400_1000, source: ExtractError::WalkFailed },
         "ctree extraction failed at 0x14001000: the facade could not walk the ctree (null cfunc)",
     )]
     #[case::kernel(

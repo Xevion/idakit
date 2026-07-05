@@ -10,8 +10,8 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut idb = idakit::Ida::here()?;
 //! idb.open("/path/to/db.i64").call()?;
-//! for func in idb.functions() {
-//!     println!("{:#x} {}", func.ea().get(), func.name().unwrap_or_default());
+//! for function in idb.functions() {
+//!     println!("{:#x} {}", function.address().get(), function.name().unwrap_or_default());
 //! }
 //! idb.close(false);
 //! # Ok(())
@@ -43,7 +43,7 @@
 //! # Read/write separation
 //!
 //! [`Idb`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Idb` and
-//! return lightweight views ([`Func`], [`Segment`], ...); writes take `&mut Idb`, so a read
+//! return lightweight views ([`Function`], [`Segment`], ...); writes take `&mut Idb`, so a read
 //! view can't be held across a mutation.
 //!
 //! # Building
@@ -59,47 +59,50 @@ use std::marker::PhantomData;
 
 use idakit_sys as sys;
 
+mod address;
 mod arena;
 mod bytes;
 mod cfg;
 mod claim;
 pub mod ctree;
 mod decompile;
-mod ea;
 mod error;
 mod ffi;
-mod func;
-mod insn;
+mod function;
+mod instruction;
 mod kernel;
 mod meta;
 mod name;
 mod raw;
+mod reference;
 mod search;
 mod segment;
 mod ty;
-mod xref;
 
+pub use address::{Address, BADADDR, Offset};
 pub use cfg::{Block, BlockId, BlockKind, Cfg, ExternalExit};
 pub use ctree::{AssignOp, BinOp, UnOp};
-pub use decompile::{Cfunc, CtreeCounts};
-pub use ea::{BADADDR, Ea, Offset};
+pub use decompile::{CtreeCounts, DecompiledFunction};
 pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
-pub use func::{Chunk, Chunks, Func, FuncImage, Functions, Instructions, InstructionsIn};
-pub use insn::{
-    Access, DecodeError, Dtype, Flow, Insn, Isa, Mem, Operand, OperandKind, Reg, RegClass,
+pub use function::{
+    Chunk, Chunks, Function, FunctionImage, Functions, Instructions, InstructionsIn,
+};
+pub use instruction::{
+    Access, DataType, DecodeError, Flow, Instruction, Isa, Mem, Operand, OperandKind, Register,
+    RegisterClass,
 };
 pub use kernel::{Ida, IdaConfig, IdaConfigBuilder};
 pub use meta::Meta;
 pub use name::{Name, Names};
+pub use reference::{CodeReference, DataReference, Reference, ReferenceKind, References};
 pub use search::{Matches, Pattern};
 pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
-pub use xref::{CodeRef, DataRef, Xref, XrefKind, Xrefs};
 
 use crate::kernel::KernelClaim;
 
 /// The open database. `!Send + !Sync`, so it stays on the kernel thread. Reads borrow
-/// `&Idb` (returning [`Func`]/[`Segment`] views); writes take `&mut Idb`, so a read
+/// `&Idb` (returning [`Function`]/[`Segment`] views); writes take `&mut Idb`, so a read
 /// view can't be held across a write.
 pub struct Idb {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.

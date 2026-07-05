@@ -22,11 +22,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // how often that exact sequence recurs across the image. A `Pattern` borrows the
         // `Idb`, so it is built, searched, and dropped inside a single kernel call.
         let hits = ida.call(|idb| {
-            let Some(ea) = idb.functions().next().map(|f| f.ea()) else {
+            let Some(address) = idb.functions().next().map(|f| f.address()) else {
                 return 0;
             };
             let sig = idb
-                .bytes(ea, 8)
+                .bytes(address, 8)
                 .iter()
                 .map(|b| format!("{b:02X}"))
                 .collect::<Vec<_>>()
@@ -44,16 +44,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ida = ida.clone();
             hs.push(thread::spawn(move || {
                 let idx = t * 1000;
-                let (ea, name) = ida
+                let (address, name) = ida
                     .call(move |idb| {
                         idb.functions()
                             .nth(idx)
-                            .map_or((None, None), |f| (Some(f.ea()), f.name()))
+                            .map_or((None, None), |f| (Some(f.address()), f.name()))
                     })
                     .expect("kernel call");
-                let ea = ea.map_or_else(|| "<none>".into(), |e| format!("{e:#012x}"));
+                let address = address.map_or_else(|| "<none>".into(), |e| format!("{e:#012x}"));
                 let name = name.unwrap_or_else(|| "<unnamed>".into());
-                println!("[worker {t}] func[{idx}] @ {ea}  {name}");
+                println!("[worker {t}] function[{idx}] @ {address}  {name}");
             }));
         }
         for h in hs {

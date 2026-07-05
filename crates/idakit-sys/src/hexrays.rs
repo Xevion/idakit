@@ -3,7 +3,7 @@
 
 use std::ffi::{c_char, c_int, c_void};
 
-use crate::Ea;
+use crate::Address;
 
 /// Absent optional child / sentinel, matching `IDAKIT_NONE` in the facade.
 pub const IDAKIT_NONE: u32 = 0xFFFF_FFFF;
@@ -48,33 +48,34 @@ pub struct CaseDesc {
 /// the callback returns, so a callback must copy any data it needs to outlive the call.
 #[repr(C)]
 pub struct EmitVtbl {
-    pub e_num: unsafe extern "C" fn(*mut c_void, Ea, u64, u32) -> u32,
-    pub e_fnum: unsafe extern "C" fn(*mut c_void, Ea, f64, u32) -> u32,
-    pub e_obj: unsafe extern "C" fn(*mut c_void, Ea, Ea, *const c_char, usize, u32) -> u32,
-    pub e_var: unsafe extern "C" fn(*mut c_void, Ea, u32, u32) -> u32,
-    pub e_str: unsafe extern "C" fn(*mut c_void, Ea, *const c_char, usize, u32) -> u32,
-    pub e_helper: unsafe extern "C" fn(*mut c_void, Ea, *const c_char, usize, u32) -> u32,
-    pub e_call: unsafe extern "C" fn(*mut c_void, Ea, u32, *const u32, usize, u32) -> u32,
-    pub e_memref: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
-    pub e_memptr: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
-    pub e_deref: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
-    pub e_op: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32, u32, u32) -> u32,
+    pub e_num: unsafe extern "C" fn(*mut c_void, Address, u64, u32) -> u32,
+    pub e_fnum: unsafe extern "C" fn(*mut c_void, Address, f64, u32) -> u32,
+    pub e_obj:
+        unsafe extern "C" fn(*mut c_void, Address, Address, *const c_char, usize, u32) -> u32,
+    pub e_var: unsafe extern "C" fn(*mut c_void, Address, u32, u32) -> u32,
+    pub e_str: unsafe extern "C" fn(*mut c_void, Address, *const c_char, usize, u32) -> u32,
+    pub e_helper: unsafe extern "C" fn(*mut c_void, Address, *const c_char, usize, u32) -> u32,
+    pub e_call: unsafe extern "C" fn(*mut c_void, Address, u32, *const u32, usize, u32) -> u32,
+    pub e_memref: unsafe extern "C" fn(*mut c_void, Address, u32, u32, u32) -> u32,
+    pub e_memptr: unsafe extern "C" fn(*mut c_void, Address, u32, u32, u32) -> u32,
+    pub e_deref: unsafe extern "C" fn(*mut c_void, Address, u32, u32, u32) -> u32,
+    pub e_op: unsafe extern "C" fn(*mut c_void, Address, u32, u32, u32, u32, u32) -> u32,
 
-    pub s_block: unsafe extern "C" fn(*mut c_void, Ea, *const u32, usize) -> u32,
-    pub s_expr: unsafe extern "C" fn(*mut c_void, Ea, u32) -> u32,
-    pub s_if: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32) -> u32,
-    pub s_for: unsafe extern "C" fn(*mut c_void, Ea, u32, u32, u32, u32) -> u32,
-    pub s_while: unsafe extern "C" fn(*mut c_void, Ea, u32, u32) -> u32,
-    pub s_do: unsafe extern "C" fn(*mut c_void, Ea, u32, u32) -> u32,
-    pub s_switch: unsafe extern "C" fn(*mut c_void, Ea, u32, *const CaseDesc, usize) -> u32,
-    pub s_break: unsafe extern "C" fn(*mut c_void, Ea) -> u32,
-    pub s_continue: unsafe extern "C" fn(*mut c_void, Ea) -> u32,
-    pub s_return: unsafe extern "C" fn(*mut c_void, Ea, u32) -> u32,
-    pub s_goto: unsafe extern "C" fn(*mut c_void, Ea, i32) -> u32,
-    pub s_asm: unsafe extern "C" fn(*mut c_void, Ea, *const u64, usize) -> u32,
-    pub s_try: unsafe extern "C" fn(*mut c_void, Ea, u32, *const u32, usize) -> u32,
-    pub s_throw: unsafe extern "C" fn(*mut c_void, Ea, u32) -> u32,
-    pub s_empty: unsafe extern "C" fn(*mut c_void, Ea) -> u32,
+    pub s_block: unsafe extern "C" fn(*mut c_void, Address, *const u32, usize) -> u32,
+    pub s_expr: unsafe extern "C" fn(*mut c_void, Address, u32) -> u32,
+    pub s_if: unsafe extern "C" fn(*mut c_void, Address, u32, u32, u32) -> u32,
+    pub s_for: unsafe extern "C" fn(*mut c_void, Address, u32, u32, u32, u32) -> u32,
+    pub s_while: unsafe extern "C" fn(*mut c_void, Address, u32, u32) -> u32,
+    pub s_do: unsafe extern "C" fn(*mut c_void, Address, u32, u32) -> u32,
+    pub s_switch: unsafe extern "C" fn(*mut c_void, Address, u32, *const CaseDesc, usize) -> u32,
+    pub s_break: unsafe extern "C" fn(*mut c_void, Address) -> u32,
+    pub s_continue: unsafe extern "C" fn(*mut c_void, Address) -> u32,
+    pub s_return: unsafe extern "C" fn(*mut c_void, Address, u32) -> u32,
+    pub s_goto: unsafe extern "C" fn(*mut c_void, Address, i32) -> u32,
+    pub s_asm: unsafe extern "C" fn(*mut c_void, Address, *const u64, usize) -> u32,
+    pub s_try: unsafe extern "C" fn(*mut c_void, Address, u32, *const u32, usize) -> u32,
+    pub s_throw: unsafe extern "C" fn(*mut c_void, Address, u32) -> u32,
+    pub s_empty: unsafe extern "C" fn(*mut c_void, Address) -> u32,
 
     pub t_scalar: unsafe extern "C" fn(*mut c_void, u32, u32, u32, u64, u32) -> u32,
     pub t_ptr: unsafe extern "C" fn(*mut c_void, u32, u64, u32) -> u32,
@@ -105,7 +106,7 @@ pub struct EmitVtbl {
 // hex-rays decompiler
 unsafe extern "C" {
     pub fn idakit_hexrays_init() -> c_int;
-    pub fn idakit_decompile(ea: Ea, errbuf: *mut c_char, cap: usize) -> *mut c_void;
+    pub fn idakit_decompile(address: Address, errbuf: *mut c_char, cap: usize) -> *mut c_void;
     pub fn idakit_cfunc_dispose(cfunc: *mut c_void);
     pub fn idakit_cfunc_pseudocode(cfunc: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_cfunc_ctree_counts(

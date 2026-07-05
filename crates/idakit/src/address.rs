@@ -1,14 +1,14 @@
-//! Typed effective addresses: [`Ea`] and [`Offset`].
+//! Typed effective addresses: [`Address`] and [`Offset`].
 //!
-//! An `Ea` is any `ea_t` except the [`BADADDR`] sentinel (`0` is a valid
+//! An `Address` is any `ea_t` except the [`BADADDR`] sentinel (`0` is a valid
 //! address). It stores `!raw` in a [`NonZeroU64`], so the niche sits on the
-//! sentinel and `Option<Ea>` is `u64`-sized -- `BADADDR`-on-failure maps straight
+//! sentinel and `Option<Address>` is `u64`-sized -- `BADADDR`-on-failure maps straight
 //! to `None`.
 
 use std::num::NonZeroU64;
 use std::ops::Add;
 
-/// The IDA "no address" sentinel. An [`Ea`] never holds this.
+/// The IDA "no address" sentinel. An [`Address`] never holds this.
 pub const BADADDR: u64 = u64::MAX;
 
 const MAX_EA: u64 = BADADDR - 1;
@@ -16,18 +16,18 @@ const MAX_EA: u64 = BADADDR - 1;
 /// A validated effective address: any `ea_t` except [`BADADDR`].
 ///
 /// Ordering is by the real address: the niche stores `!raw`, so a *derived* `Ord` would
-/// compare inverted bits and reverse the order. Callers expect an `Ea` to sort like the
+/// compare inverted bits and reverse the order. Callers expect an `Address` to sort like the
 /// `ea_t` it wraps -- linear walks, chunk bounds, `BTreeMap` keys -- so `Ord`/`PartialOrd`
 /// are hand-written over [`get`](Self::get).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Ea(NonZeroU64);
+pub struct Address(NonZeroU64);
 
-impl Ea {
+impl Address {
     /// Wrap a raw `ea_t`. `None` only when `raw == BADADDR`.
     #[inline]
     #[must_use]
     pub const fn try_new(raw: u64) -> Option<Self> {
-        // !BADADDR == 0, rejected by NonZeroU64; every other ea is non-zero.
+        // !BADADDR == 0, rejected by NonZeroU64; every other address is non-zero.
         match NonZeroU64::new(!raw) {
             Some(n) => Some(Self(n)),
             None => None,
@@ -39,8 +39,8 @@ impl Ea {
     #[must_use]
     pub const fn new_const(raw: u64) -> Self {
         match Self::try_new(raw) {
-            Some(ea) => ea,
-            None => panic!("Ea::new_const: value is BADADDR"),
+            Some(address) => address,
+            None => panic!("Address::new_const: value is BADADDR"),
         }
     }
 
@@ -52,49 +52,49 @@ impl Ea {
     }
 }
 
-impl std::fmt::Debug for Ea {
+impl std::fmt::Debug for Address {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Ea({:#x})", self.get())
+        write!(f, "Address({:#x})", self.get())
     }
 }
 
-impl std::fmt::Display for Ea {
+impl std::fmt::Display for Address {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:#x}", self.get())
     }
 }
 
-impl std::fmt::LowerHex for Ea {
+impl std::fmt::LowerHex for Address {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::LowerHex::fmt(&self.get(), f)
     }
 }
 
-impl std::fmt::UpperHex for Ea {
+impl std::fmt::UpperHex for Address {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::UpperHex::fmt(&self.get(), f)
     }
 }
 
-impl From<Ea> for u64 {
+impl From<Address> for u64 {
     #[inline]
-    fn from(ea: Ea) -> Self {
-        ea.get()
+    fn from(address: Address) -> Self {
+        address.get()
     }
 }
 
-impl Ord for Ea {
+impl Ord for Address {
     #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.get().cmp(&other.get())
     }
 }
 
-impl PartialOrd for Ea {
+impl PartialOrd for Address {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -128,19 +128,19 @@ impl From<i64> for Offset {
     }
 }
 
-impl Add<Offset> for Ea {
-    type Output = Ea;
+impl Add<Offset> for Address {
+    type Output = Address;
 
     /// Saturating signed displacement, clamped into `[0, BADADDR)`.
     #[inline]
-    fn add(self, rhs: Offset) -> Ea {
+    fn add(self, rhs: Offset) -> Address {
         let clamped = self.get().saturating_add_signed(rhs.get()).min(MAX_EA);
-        Ea::try_new(clamped).expect("clamped below BADADDR")
+        Address::try_new(clamped).expect("clamped below BADADDR")
     }
 }
 
-impl std::ops::Sub<Offset> for Ea {
-    type Output = Ea;
+impl std::ops::Sub<Offset> for Address {
+    type Output = Address;
 
     /// Saturating signed displacement, sharing [`Add<Offset>`]'s clamp. Negating
     /// saturates because `i64::MIN.checked_neg()` is `None`; without it, subtracting
@@ -149,17 +149,17 @@ impl std::ops::Sub<Offset> for Ea {
     // clamp by design (clippy::suspicious_arithmetic_impl).
     #[allow(clippy::suspicious_arithmetic_impl)]
     #[inline]
-    fn sub(self, rhs: Offset) -> Ea {
+    fn sub(self, rhs: Offset) -> Address {
         self + Offset::new(rhs.get().saturating_neg())
     }
 }
 
-impl std::ops::Sub<Ea> for Ea {
+impl std::ops::Sub<Address> for Address {
     type Output = i64;
 
     /// Signed distance `self - rhs`.
     #[inline]
-    fn sub(self, rhs: Ea) -> i64 {
+    fn sub(self, rhs: Address) -> i64 {
         self.get().wrapping_sub(rhs.get()) as i64
     }
 }
@@ -172,43 +172,43 @@ mod tests {
 
     #[test]
     fn rejects_only_badaddr() {
-        assert!(Ea::try_new(BADADDR).is_none());
-        assert!(Ea::try_new(0).is_some());
-        assert!(Ea::try_new(1).is_some());
-        assert!(Ea::try_new(BADADDR - 1).is_some());
+        assert!(Address::try_new(BADADDR).is_none());
+        assert!(Address::try_new(0).is_some());
+        assert!(Address::try_new(1).is_some());
+        assert!(Address::try_new(BADADDR - 1).is_some());
     }
 
     #[test]
     fn zero_is_a_valid_address() {
-        assert!(Ea::try_new(0).unwrap().get() == 0);
+        assert!(Address::try_new(0).unwrap().get() == 0);
     }
 
     #[test]
     fn option_ea_is_niche_optimized() {
-        assert!(size_of::<Option<Ea>>() == size_of::<u64>());
+        assert!(size_of::<Option<Address>>() == size_of::<u64>());
     }
 
     #[test]
     fn add_offset_normal() {
-        let a = Ea::new_const(0x1400_1000);
+        let a = Address::new_const(0x1400_1000);
         assert!((a + Offset::new(0x40)).get() == 0x1400_1040);
         assert!((a + Offset::new(-0x40)).get() == 0x1400_0fc0);
     }
 
     #[test]
     fn add_saturates_below_sentinel() {
-        let a = Ea::new_const(BADADDR - 1);
+        let a = Address::new_const(BADADDR - 1);
         // Pushing past the top clamps to BADADDR-1, never the sentinel.
         assert!((a + Offset::new(100)).get() == BADADDR - 1);
-        let z = Ea::new_const(0);
+        let z = Address::new_const(0);
         assert!((z + Offset::new(-100)).get() == 0);
     }
 
     #[test]
     fn order_follows_address_not_niche() {
         // The niche stores `!raw`, so a derived `Ord` would sort these backwards.
-        let lo = Ea::new_const(0x1000);
-        let hi = Ea::new_const(0x2000);
+        let lo = Address::new_const(0x1000);
+        let hi = Address::new_const(0x2000);
         assert!(lo < hi);
         assert!(hi > lo);
         assert!(lo.min(hi) == lo);
@@ -217,17 +217,17 @@ mod tests {
 
     #[test]
     fn sub_is_signed_distance() {
-        let a = Ea::new_const(0x2000);
-        let b = Ea::new_const(0x1f00);
+        let a = Address::new_const(0x2000);
+        let b = Address::new_const(0x1f00);
         assert!(a - b == 0x100);
         assert!(b - a == -0x100);
     }
 
     #[test]
     fn hex_formatting() {
-        let a = Ea::new_const(0xdead_beef);
+        let a = Address::new_const(0xdead_beef);
         assert!(format!("{a:#x}") == "0xdeadbeef");
-        assert!(format!("{a:?}") == "Ea(0xdeadbeef)");
+        assert!(format!("{a:?}") == "Address(0xdeadbeef)");
     }
 
     mod proptests {
@@ -238,12 +238,12 @@ mod tests {
         proptest! {
             #[test]
             fn try_new_get_roundtrips(raw in 0u64..BADADDR) {
-                prop_assert_eq!(Ea::try_new(raw).unwrap().get(), raw);
+                prop_assert_eq!(Address::try_new(raw).unwrap().get(), raw);
             }
 
             #[test]
             fn add_never_yields_sentinel(base in 0u64..BADADDR, off in i64::MIN..i64::MAX) {
-                let r = Ea::new_const(base) + Offset::new(off);
+                let r = Address::new_const(base) + Offset::new(off);
                 prop_assert!(r.get() < BADADDR);
             }
 
@@ -252,20 +252,20 @@ mod tests {
                 base in 0u64..(1u64 << 40),
                 off in -(1i64 << 30)..(1i64 << 30),
             ) {
-                let r = Ea::new_const(base) + Offset::new(off);
+                let r = Address::new_const(base) + Offset::new(off);
                 prop_assert_eq!(r.get(), base.saturating_add_signed(off).min(BADADDR - 1));
             }
 
             #[test]
             fn sub_inverts_add(base in 0u64..(1u64 << 40), off in 0i64..(1i64 << 30)) {
-                let a = Ea::new_const(base);
+                let a = Address::new_const(base);
                 let b = a + Offset::new(off);
                 prop_assert_eq!(b - a, off);
             }
 
             #[test]
             fn order_matches_raw(a in 0u64..BADADDR, b in 0u64..BADADDR) {
-                prop_assert_eq!(Ea::new_const(a).cmp(&Ea::new_const(b)), a.cmp(&b));
+                prop_assert_eq!(Address::new_const(a).cmp(&Address::new_const(b)), a.cmp(&b));
             }
         }
     }

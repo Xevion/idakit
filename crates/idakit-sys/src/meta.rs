@@ -3,11 +3,11 @@
 
 use std::ffi::{c_char, c_int};
 
-use crate::Ea;
+use crate::Address;
 
 unsafe extern "C" {
     pub fn idakit_bitness() -> c_int;
-    pub fn idakit_image_base() -> Ea;
+    pub fn idakit_image_base() -> Address;
     pub fn idakit_proc_name(buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_file_type_name(buf: *mut c_char, cap: usize) -> i64;
     pub fn idakit_input_path(buf: *mut c_char, cap: usize) -> i64;

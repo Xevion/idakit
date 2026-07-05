@@ -7,9 +7,9 @@ use std::ptr;
 
 use idakit_sys::*;
 
-fn func_name(ea: Ea) -> String {
+fn func_name(address: Address) -> String {
     let mut buf = [0 as c_char; 512];
-    let n = unsafe { idakit_func_name(ea, buf.as_mut_ptr(), buf.len()) };
+    let n = unsafe { idakit_func_name(address, buf.as_mut_ptr(), buf.len()) };
     if n <= 0 {
         return String::new();
     }
@@ -48,8 +48,8 @@ fn main() {
         println!("functions: {nf}");
         println!("first 12 by index:");
         for i in 0..12.min(nf) {
-            let ea = idakit_func_ea(i);
-            println!("  [{i:>2}] {ea:#012x}  {}", func_name(ea));
+            let address = idakit_func_ea(i);
+            println!("  [{i:>2}] {address:#012x}  {}", func_name(address));
         }
 
         let ns = idakit_seg_qty();
