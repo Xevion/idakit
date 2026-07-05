@@ -151,7 +151,7 @@ struct walker_t {
     uint32_t bytes = has_size ? (uint32_t)sz : 0;
 
     if (t.empty())
-      return v->t_scalar(ctx, 0, 0, 0, size, has_size);
+      return ty_opaque(t);
     if (t.is_ptr())
       return v->t_ptr(ctx, ty(t.get_pointed_object()), size, has_size);
     if (t.is_array())
@@ -171,7 +171,34 @@ struct walker_t {
       return v->t_scalar(ctx, 4, bytes, 0, size, has_size);
     if (t.is_integral())
       return v->t_scalar(ctx, 3, bytes, t.is_signed() ? 1 : 0, size, has_size);
-    return v->t_scalar(ctx, 0, 0, 0, size, has_size); // unknown
+    if (t.is_bitfield())
+      return ty_bitfield(t);
+    return ty_opaque(t); // named-but-bodyless / unresolved
+  }
+
+  // A bitfield's storage is an integer of nbytes; its bit width lives at the member level
+  // (udm_t::size), so the type itself resolves to that base integer.
+  uint32_t ty_bitfield(const tinfo_t &t) {
+    bitfield_type_data_t bi;
+    if (t.get_bitfield_details(&bi)) {
+      uint32_t nb = (uint32_t)bi.nbytes;
+      return v->t_scalar(ctx, 3, nb, bi.is_unsigned ? 0 : 1, nb, nb != 0 ? 1 : 0);
+    }
+    return ty_opaque(t);
+  }
+
+  // A named type IDA can name but not structurally describe here (a forward-declared or
+  // incomplete aggregate, an unresolved reference): emit it as a leaf carrying the resolved
+  // name. get_type_name resolves an ordinal reference to its real name (no `#256` form);
+  // print() is the nameless fallback, and `?` the last resort.
+  uint32_t ty_opaque(const tinfo_t &t) {
+    qstring nm;
+    if (t.get_type_name(&nm) && !nm.empty())
+      return v->t_opaque(ctx, nm.c_str(), nm.length());
+    if (t.print(&nm) && !nm.empty())
+      return v->t_opaque(ctx, nm.c_str(), nm.length());
+    static const char unk[] = "?";
+    return v->t_opaque(ctx, unk, 1);
   }
 
   // Mint a placeholder: by name (deduped, recursion-safe) for a named aggregate, fresh

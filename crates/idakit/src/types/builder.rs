@@ -12,8 +12,9 @@ use std::collections::HashMap;
 
 use super::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
 
-/// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeKind`]; any other
-/// value (including `0`) is the catch-all that maps to [`TypeKind::Unknown`].
+/// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeKind`]. The walker
+/// emits only these four (a non-structural type is routed to [`opaque`](TypeBuilder::opaque)
+/// instead), so the catch-all is a defensive fallback it never triggers.
 mod scalar_kind {
     pub const VOID: u32 = 1;
     pub const BOOL: u32 = 2;
@@ -116,6 +117,15 @@ impl TypeBuilder {
                 params,
                 varargs: vararg != 0,
             },
+            size: None,
+        })
+    }
+
+    /// A named type IDA can name but not describe here (a forward-decl/incomplete aggregate
+    /// or unresolved reference): a bodyless, sizeless leaf carrying just the resolved name.
+    pub(crate) fn opaque(&mut self, name: String) -> TypeId {
+        self.intern(TypeData {
+            kind: TypeKind::Opaque(name),
             size: None,
         })
     }

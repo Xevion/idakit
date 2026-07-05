@@ -385,6 +385,10 @@ impl CallbackBuilder {
         raw(self.b.types_mut().function(tid(ret), params, vararg))
     }
 
+    fn opaque(&mut self, name: String) -> u32 {
+        raw(self.b.types_mut().opaque(name))
+    }
+
     fn named_ref(&mut self, name: String) -> u32 {
         raw(self.b.types_mut().named_ref(name))
     }
@@ -690,6 +694,10 @@ unsafe extern "C" fn cb_func(
     let params = unsafe { slice(&params, n) };
     unsafe { builder(&ctx) }.function(ret, params, vararg)
 }
+unsafe extern "C" fn cb_opaque(ctx: *mut c_void, name: *const c_char, name_len: usize) -> u32 {
+    let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
+    unsafe { builder(&ctx) }.opaque(name)
+}
 unsafe extern "C" fn cb_named_ref(ctx: *mut c_void, name: *const c_char, name_len: usize) -> u32 {
     let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
     unsafe { builder(&ctx) }.named_ref(name)
@@ -802,6 +810,7 @@ static VTBL: EmitVtbl = EmitVtbl {
     t_ptr: cb_ptr,
     t_array: cb_array,
     t_func: cb_func,
+    t_opaque: cb_opaque,
     t_named_ref: cb_named_ref,
     t_anon: cb_anon,
     t_fill_struct: cb_fill_struct,
@@ -1080,6 +1089,24 @@ mod tests {
         let a = cb.named_ref("Foo".into());
         let b = cb.named_ref("Foo".into());
         assert!(a == b);
+    }
+
+    /// A bodyless named type resolves to an `Opaque` leaf carrying its name -- a complete,
+    /// non-placeholder type, so `finish` accepts it (no leftover `Unknown`) and a repeat
+    /// name dedups to one handle.
+    #[test]
+    fn opaque_type_carries_its_name() {
+        let mut cb = CallbackBuilder::new();
+        let fwd = cb.opaque("SomeHandle".into());
+        assert!(fwd == cb.opaque("SomeHandle".into()));
+
+        let v = cb.var(0, 0, fwd);
+        let s = cb.expression_statement(0, v);
+        let blk = cb.block(0, &[s]);
+        let tree = cb.finish(blk).expect("opaque is a complete type");
+
+        assert!(let TypeKind::Opaque(name) = &tree.type_of(tid(fwd)).kind);
+        assert!(name == "SomeHandle");
     }
 
     /// An unmodeled ctype is a loud error (the `Internal` fallback is reserved for

@@ -401,6 +401,7 @@ impl Printer<'_> {
             | TypeKind::Union { name, .. }
             | TypeKind::Enum { name, .. } => name.clone(),
             TypeKind::Typedef { name, .. } => Some(name.clone()),
+            TypeKind::Opaque(name) => Some(name.clone()),
             _ => None,
         }
     }
@@ -448,6 +449,7 @@ impl Printer<'_> {
                 format!("{} (*)({})", self.print_type(*ret), parts.join(", "))
             }
             TypeKind::Typedef { name, .. } => name.clone(),
+            TypeKind::Opaque(name) => name.clone(),
             TypeKind::Unknown => "_UNKNOWN".into(),
         }
     }

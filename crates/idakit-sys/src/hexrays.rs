@@ -81,6 +81,7 @@ pub struct EmitVtbl {
     pub t_ptr: unsafe extern "C" fn(*mut c_void, u32, u64, u32) -> u32,
     pub t_array: unsafe extern "C" fn(*mut c_void, u32, u64, u64, u32) -> u32,
     pub t_func: unsafe extern "C" fn(*mut c_void, u32, *const u32, usize, u32) -> u32,
+    pub t_opaque: unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> u32,
     pub t_named_ref: unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> u32,
     pub t_anon: unsafe extern "C" fn(*mut c_void) -> u32,
     pub t_fill_struct:

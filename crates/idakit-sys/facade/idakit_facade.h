@@ -323,12 +323,16 @@ typedef struct idakit_emit_vtbl_t {
   uint32_t (*s_throw)(void *ctx, idakit_ea_t ea, uint32_t expr /* or IDAKIT_NONE */);
   uint32_t (*s_empty)(void *ctx, idakit_ea_t ea);
 
-  /* types. kind: 0 unknown, 1 void, 2 bool, 3 int, 4 float. */
+  /* types. kind: 1 void, 2 bool, 3 int, 4 float (int also carries enum-underlying and
+   * bitfield base). A non-structural type is emitted via t_opaque, never t_scalar. */
   uint32_t (*t_scalar)(void *ctx, uint32_t kind, uint32_t bytes, uint32_t is_signed, uint64_t size,
                        uint32_t has_size);
   uint32_t (*t_ptr)(void *ctx, uint32_t target, uint64_t size, uint32_t has_size);
   uint32_t (*t_array)(void *ctx, uint32_t elem, uint64_t nelems, uint64_t size, uint32_t has_size);
   uint32_t (*t_func)(void *ctx, uint32_t ret, const uint32_t *params, size_t n, uint32_t vararg);
+  /* A named type IDA can name but not structurally describe here (a forward-declared or
+   * incomplete aggregate, an unresolved reference): a bodyless leaf carrying just the name. */
+  uint32_t (*t_opaque)(void *ctx, const char *name, size_t name_len);
   /* Reference a named aggregate/typedef; mints (or returns the existing) placeholder so a
    * recursive member can point back before the definition is filled. */
   uint32_t (*t_named_ref)(void *ctx, const char *name, size_t name_len);

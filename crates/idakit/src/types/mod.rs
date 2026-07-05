@@ -119,8 +119,13 @@ pub enum TypeKind {
         /// The aliased type.
         underlying: TypeId,
     },
-    /// a type IDA could not describe, and the transient state of an aggregate placeholder
-    /// before its body is filled (see [`TypeTable::alloc_placeholder`]).
+    /// a named type IDA can name but not structurally describe here: a forward-declared or
+    /// otherwise incomplete aggregate, or an unresolved reference. Carries the resolved
+    /// name so the node still identifies what it points at, just without a body.
+    Opaque(String),
+    /// the transient state of an aggregate placeholder before its body is filled (see
+    /// [`TypeTable::alloc_placeholder`]); a well-formed table never carries it, so a
+    /// leftover `Unknown` means an unfilled placeholder the caller must reject.
     Unknown,
 }
 
