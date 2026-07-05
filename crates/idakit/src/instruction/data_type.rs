@@ -61,20 +61,6 @@ pub enum DataType {
 }
 
 impl DataType {
-    /// The raw `op_dtype_t` byte.
-    #[inline]
-    #[must_use]
-    pub fn raw(self) -> u8 {
-        self.into()
-    }
-
-    /// Wrap a raw `op_dtype_t`; `None` for a value this SDK build doesn't define.
-    #[inline]
-    #[must_use]
-    pub fn from_raw(v: u8) -> Option<Self> {
-        Self::try_from(v).ok()
-    }
-
     /// Fixed byte width, when the type has one. `None` for variable-size
     /// ([`Tbyte`](Self::Tbyte), [`Ldbl`](Self::Ldbl), [`PackReal`](Self::PackReal)),
     /// pointer ([`Code`](Self::Code), [`String`](Self::String), [`Unicode`](Self::Unicode)),
@@ -116,7 +102,7 @@ mod tests {
     #[test]
     fn raw_roundtrips_every_variant() {
         for &d in DataType::VARIANTS {
-            assert!(DataType::from_raw(d.raw()) == Some(d));
+            assert!(DataType::try_from(u8::from(d)).ok() == Some(d));
         }
     }
 
@@ -131,18 +117,18 @@ mod tests {
         unsafe { sys::idakit_op_dtype_ids(ids.as_mut_ptr()) };
         for (i, &d) in DataType::VARIANTS.iter().enumerate() {
             assert!(
-                ids[i] == d.raw(),
+                ids[i] == u8::from(d),
                 "data type {d:?}: facade dt_ {} != discriminant {}",
                 ids[i],
-                d.raw()
+                u8::from(d)
             );
         }
     }
 
     #[test]
-    fn from_raw_rejects_unknown() {
-        assert!(DataType::from_raw(19).is_none());
-        assert!(DataType::from_raw(255).is_none());
+    fn try_from_rejects_unknown() {
+        assert!(DataType::try_from(19).is_err());
+        assert!(DataType::try_from(255).is_err());
     }
 
     #[test]

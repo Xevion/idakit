@@ -243,15 +243,6 @@ impl FunctionName {
         }
     }
 
-    /// Consume into the owned name string.
-    #[inline]
-    #[must_use]
-    pub fn into_string(self) -> String {
-        match self {
-            Self::User(s) | Self::Auto(s) | Self::Dummy(s) => s,
-        }
-    }
-
     /// Whether this is an explicit name -- user-assigned or an imported symbol.
     #[inline]
     #[must_use]
@@ -286,6 +277,16 @@ impl FunctionName {
             (true, false) => Self::User(text),
             (true, true) => Self::Auto(text),
             _ => Self::Dummy(text),
+        }
+    }
+}
+
+/// Consume the classification into the owned name string it carries.
+impl From<FunctionName> for String {
+    #[inline]
+    fn from(name: FunctionName) -> Self {
+        match name {
+            FunctionName::User(s) | FunctionName::Auto(s) | FunctionName::Dummy(s) => s,
         }
     }
 }
@@ -579,7 +580,7 @@ mod tests {
         assert!(u.as_str() == "main");
         assert!(&*u == "main");
         assert!(format!("{u}") == "main");
-        assert!(u.clone().into_string() == "main");
+        assert!(String::from(u.clone()) == "main");
         assert!(u.is_user() && !u.is_auto() && !u.is_dummy());
         assert!(FunctionName::Dummy("sub_1000".into()).is_dummy());
         assert!(FunctionName::Auto("nullsub_0".into()).is_auto());

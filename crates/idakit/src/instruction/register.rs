@@ -57,20 +57,6 @@ pub enum RegisterClass {
 }
 
 impl RegisterClass {
-    /// The raw idakit RegisterClass byte.
-    #[inline]
-    #[must_use]
-    pub fn raw(self) -> u8 {
-        self.into()
-    }
-
-    /// Wrap a raw RegisterClass byte; `None` for a value this build doesn't define.
-    #[inline]
-    #[must_use]
-    pub fn from_raw(v: u8) -> Option<Self> {
-        Self::try_from(v).ok()
-    }
-
     /// The fixed spelling prefix every register in this class shares (`xmm`, `cr`, `k`, ...),
     /// or `None` for the classes whose names are irregular or width-varied and so share no
     /// common prefix: GPR (`al`/`ax`/`eax`/`rax`), segment (`cs`..), and the instruction
@@ -121,14 +107,14 @@ mod tests {
     #[test]
     fn raw_roundtrips_every_variant() {
         for &c in RegisterClass::VARIANTS {
-            assert!(RegisterClass::from_raw(c.raw()) == Some(c));
+            assert!(RegisterClass::try_from(u8::from(c)).ok() == Some(c));
         }
     }
 
     #[test]
-    fn from_raw_rejects_unknown() {
-        assert!(RegisterClass::from_raw(13).is_none());
-        assert!(RegisterClass::from_raw(255).is_none());
+    fn try_from_rejects_unknown() {
+        assert!(RegisterClass::try_from(13).is_err());
+        assert!(RegisterClass::try_from(255).is_err());
     }
 
     // A prefix is exactly the regularly-spelled classes; GPR/segment/ip have none.
@@ -199,10 +185,10 @@ mod tests {
         unsafe { sys::idakit_reg_class_ids(ids.as_mut_ptr()) };
         for (i, cls) in expected.iter().enumerate() {
             assert!(
-                ids[i] == cls.raw(),
+                ids[i] == u8::from(*cls),
                 "reg class {cls:?}: facade {} != discriminant {}",
                 ids[i],
-                cls.raw()
+                u8::from(*cls)
             );
         }
     }

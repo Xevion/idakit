@@ -19,18 +19,20 @@ impl Idb {
     /// interior NUL can name nothing, so it too yields `None`. The inverse of
     /// [`name`](Self::name).
     #[must_use]
-    pub fn address_of(&self, name: &str) -> Option<Address> {
-        with_cstr(name, "name", |p| Address::try_new(self.get_name_ea(p)))
-            .ok()
-            .flatten()
+    pub fn address_of(&self, name: impl AsRef<str>) -> Option<Address> {
+        with_cstr(name.as_ref(), "name", |p| {
+            Address::try_new(self.get_name_ea(p))
+        })
+        .ok()
+        .flatten()
     }
 
     /// Demangle a mangled symbol into readable form, or `None` if `name` is not a mangled
     /// name (or carries an interior NUL). Names read from the database are already display
     /// form; this is for turning a raw linker symbol back into source-level text.
     #[must_use]
-    pub fn demangle(&self, name: &str) -> Option<String> {
-        with_cstr(name, "name", |p| {
+    pub fn demangle(&self, name: impl AsRef<str>) -> Option<String> {
+        with_cstr(name.as_ref(), "name", |p| {
             read_string(|buf, cap| self.demangle_name(p, buf, cap))
         })
         .ok()

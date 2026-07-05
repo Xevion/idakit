@@ -49,7 +49,7 @@ fn run(idb: &mut Idb, db: &str) {
                         Ok(insn) => {
                             for register in insn.registers() {
                                 register.assert_name_matches_class(address.get());
-                                classes[register.class.raw() as usize] += 1;
+                                classes[u8::from(register.class) as usize] += 1;
                             }
                             insns += 1;
                         }
@@ -77,7 +77,7 @@ fn run(idb: &mut Idb, db: &str) {
     );
 
     idb.close(false);
-    let named = |c: RegisterClass| classes[c.raw() as usize];
+    let named = |c: RegisterClass| classes[u8::from(c) as usize];
     println!(
         "decode sweep OK: {insns} instructions, {regs} register operands -- \
          gpr {} seg {} xmm {} ymm {} zmm {} mask {} st {} mmx {} ctrl {} dbg {} test {} ip {} bnd {}",

@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .call(move |idb| idb.functions().nth(idx).map(|f| (f.address(), f.name())))
                     .expect("kernel call");
                 let (address, name) = match found {
-                    Some((address, name)) => (format!("{address:#012x}"), name.into_string()),
+                    Some((address, name)) => (format!("{address:#012x}"), String::from(name)),
                     None => ("<none>".into(), "<unnamed>".into()),
                 };
                 println!("[worker {t}] function[{idx}] @ {address}  {name}");

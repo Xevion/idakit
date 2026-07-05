@@ -141,7 +141,7 @@ fn ctor() {
                     continue;
                 }
                 let calls = this_arg_calls(&tree);
-                analyzed.push((name.into_string(), installs, calls));
+                analyzed.push((String::from(name), installs, calls));
             }
 
             // The Derived ctor is the function installing two vtables: the primary at

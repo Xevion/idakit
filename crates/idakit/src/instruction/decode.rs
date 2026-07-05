@@ -32,8 +32,8 @@ fn register(r: &sys::InstructionRegister) -> Option<Register> {
     if r.num == sys::IDAKIT_REG_NONE {
         return None;
     }
-    let class = RegisterClass::from_raw(r.cls)
-        .unwrap_or_else(|| unreachable!("facade emitted an out-of-range reg class {}", r.cls));
+    let class = RegisterClass::try_from(r.cls)
+        .unwrap_or_else(|_| unreachable!("facade emitted an out-of-range reg class {}", r.cls));
     Some(Register {
         num: r.num,
         class,
@@ -75,11 +75,12 @@ fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, Dec
         // ABI drifted, which is a build-time bug, not runtime data.
         other => unreachable!("facade emitted unknown operand kind {other}"),
     };
-    let data_type = DataType::from_raw(o.data_type).ok_or(DecodeError::UnsupportedDataType {
-        address: address.get(),
-        op: o.idx,
-        dtype: o.data_type,
-    })?;
+    let data_type =
+        DataType::try_from(o.data_type).map_err(|_| DecodeError::UnsupportedDataType {
+            address: address.get(),
+            op: o.idx,
+            dtype: o.data_type,
+        })?;
     Ok(Operand {
         idx: o.idx,
         kind,
@@ -161,7 +162,7 @@ mod tests {
     fn gpr(num: u16, width: u8, nm: &str) -> sys::InstructionRegister {
         sys::InstructionRegister {
             num,
-            cls: RegisterClass::Gpr.raw(),
+            cls: u8::from(RegisterClass::Gpr),
             width,
             name: name16(nm),
         }
@@ -204,7 +205,7 @@ mod tests {
     fn register_operand_carries_name_and_class() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_REG;
-        op.data_type = DataType::Qword.raw();
+        op.data_type = u8::from(DataType::Qword);
         op.access = 0b11; // read + written
         op.register = gpr(0, 8, "rax");
 
@@ -227,7 +228,7 @@ mod tests {
     fn memory_operand_decodes_base_index_scale_disp() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_MEM;
-        op.data_type = DataType::Dword.raw();
+        op.data_type = u8::from(DataType::Dword);
         op.base = gpr(5, 8, "rbp");
         op.index = gpr(0, 8, "rax");
         op.scale = 4;
