@@ -1,4 +1,4 @@
-//! Typed effective addresses: [`Address`] and [`Offset`].
+//! Typed effective addresses: [`Address`].
 //!
 //! An `Address` is any `ea_t` except the [`BADADDR`] sentinel (`0` is a valid
 //! address). It stores `!raw` in a [`NonZeroU64`], so the niche sits on the
@@ -101,66 +101,26 @@ impl PartialOrd for Address {
     }
 }
 
-/// A signed byte delta between two addresses.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Offset(i64);
-
-impl Offset {
-    /// Wrap a raw signed byte delta.
-    #[inline]
-    #[must_use]
-    pub const fn new(v: i64) -> Self {
-        Self(v)
-    }
-
-    /// The raw signed byte delta.
-    #[inline]
-    #[must_use]
-    pub const fn get(self) -> i64 {
-        self.0
-    }
-}
-
-impl From<i64> for Offset {
-    #[inline]
-    fn from(v: i64) -> Self {
-        Self(v)
-    }
-}
-
-impl Add<Offset> for Address {
+impl Add<u64> for Address {
     type Output = Address;
 
-    /// Saturating signed displacement, clamped into `[0, BADADDR)`.
+    /// Advance by a byte count, saturating into `[0, BADADDR)` so the result is always a
+    /// valid [`Address`], never the sentinel.
     #[inline]
-    fn add(self, rhs: Offset) -> Address {
-        let clamped = self.get().saturating_add_signed(rhs.get()).min(MAX_EA);
+    fn add(self, bytes: u64) -> Address {
+        let clamped = self.get().saturating_add(bytes).min(MAX_EA);
         Address::try_new(clamped).expect("clamped below BADADDR")
     }
 }
 
-impl std::ops::Sub<Offset> for Address {
-    type Output = Address;
-
-    /// Saturating signed displacement, sharing [`Add<Offset>`]'s clamp. Negating
-    /// saturates because `i64::MIN.checked_neg()` is `None`; without it, subtracting
-    /// the minimum offset would overflow.
-    // Subtracting an offset is adding its negation, so this `Sub` impl reuses `Add`'s
-    // clamp by design (clippy::suspicious_arithmetic_impl).
-    #[allow(clippy::suspicious_arithmetic_impl)]
+impl Address {
+    /// The non-negative byte span `end - self`, saturating to `0` when `end` is below
+    /// `self`. The natural length of a `[self, end)` range, so a caller reads
+    /// `start.distance_to(end)` rather than an unsigned-cast subtraction.
     #[inline]
-    fn sub(self, rhs: Offset) -> Address {
-        self + Offset::new(rhs.get().saturating_neg())
-    }
-}
-
-impl std::ops::Sub<Address> for Address {
-    type Output = i64;
-
-    /// Signed distance `self - rhs`.
-    #[inline]
-    fn sub(self, rhs: Address) -> i64 {
-        self.get().wrapping_sub(rhs.get()) as i64
+    #[must_use]
+    pub const fn distance_to(self, end: Address) -> u64 {
+        end.get().saturating_sub(self.get())
     }
 }
 
@@ -184,24 +144,23 @@ mod tests {
     }
 
     #[test]
-    fn option_ea_is_niche_optimized() {
+    fn option_address_is_niche_optimized() {
         assert!(size_of::<Option<Address>>() == size_of::<u64>());
     }
 
     #[test]
-    fn add_offset_normal() {
+    fn advance_normal() {
         let a = Address::new_const(0x1400_1000);
-        assert!((a + Offset::new(0x40)).get() == 0x1400_1040);
-        assert!((a + Offset::new(-0x40)).get() == 0x1400_0fc0);
+        assert!((a + 0x40).get() == 0x1400_1040);
+        assert!((a + 0).get() == 0x1400_1000);
     }
 
     #[test]
-    fn add_saturates_below_sentinel() {
+    fn advance_saturates_below_sentinel() {
         let a = Address::new_const(BADADDR - 1);
         // Pushing past the top clamps to BADADDR-1, never the sentinel.
-        assert!((a + Offset::new(100)).get() == BADADDR - 1);
-        let z = Address::new_const(0);
-        assert!((z + Offset::new(-100)).get() == 0);
+        assert!((a + 100).get() == BADADDR - 1);
+        assert!((a + u64::MAX).get() == BADADDR - 1);
     }
 
     #[test]
@@ -216,11 +175,12 @@ mod tests {
     }
 
     #[test]
-    fn sub_is_signed_distance() {
-        let a = Address::new_const(0x2000);
-        let b = Address::new_const(0x1f00);
-        assert!(a - b == 0x100);
-        assert!(b - a == -0x100);
+    fn distance_to_is_a_saturating_span() {
+        let lo = Address::new_const(0x1f00);
+        let hi = Address::new_const(0x2000);
+        assert!(lo.distance_to(hi) == 0x100);
+        // Below-self saturates to zero rather than wrapping.
+        assert!(hi.distance_to(lo) == 0);
     }
 
     #[test]
@@ -242,25 +202,25 @@ mod tests {
             }
 
             #[test]
-            fn add_never_yields_sentinel(base in 0u64..BADADDR, off in i64::MIN..i64::MAX) {
-                let r = Address::new_const(base) + Offset::new(off);
+            fn advance_never_yields_sentinel(base in 0u64..BADADDR, bytes in 0u64..=u64::MAX) {
+                let r = Address::new_const(base) + bytes;
                 prop_assert!(r.get() < BADADDR);
             }
 
             #[test]
-            fn add_matches_saturating_within_range(
+            fn advance_matches_saturating_within_range(
                 base in 0u64..(1u64 << 40),
-                off in -(1i64 << 30)..(1i64 << 30),
+                bytes in 0u64..(1u64 << 30),
             ) {
-                let r = Address::new_const(base) + Offset::new(off);
-                prop_assert_eq!(r.get(), base.saturating_add_signed(off).min(BADADDR - 1));
+                let r = Address::new_const(base) + bytes;
+                prop_assert_eq!(r.get(), base.saturating_add(bytes).min(BADADDR - 1));
             }
 
             #[test]
-            fn sub_inverts_add(base in 0u64..(1u64 << 40), off in 0i64..(1i64 << 30)) {
+            fn distance_to_inverts_advance(base in 0u64..(1u64 << 40), bytes in 0u64..(1u64 << 30)) {
                 let a = Address::new_const(base);
-                let b = a + Offset::new(off);
-                prop_assert_eq!(b - a, off);
+                let b = a + bytes;
+                prop_assert_eq!(a.distance_to(b), bytes);
             }
 
             #[test]

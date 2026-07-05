@@ -59,7 +59,7 @@ impl<'db> Segment<'db> {
     #[must_use]
     pub fn bytes(&self) -> Option<Vec<u8>> {
         let (start, end) = (self.start()?, self.end()?);
-        let len = (end - start).max(0) as usize;
+        let len = start.distance_to(end) as usize;
         Some(self.db.bytes(start, len))
     }
 

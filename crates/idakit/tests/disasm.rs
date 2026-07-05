@@ -8,7 +8,7 @@
 //! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
 //! that must agree. Read-only; never opens for write.
 
-use idakit::{CodeReference, Ida, Idb, Offset, Operand, OperandKind, ReferenceKind};
+use idakit::{CodeReference, Ida, Idb, Operand, OperandKind, ReferenceKind};
 
 mod common;
 
@@ -142,7 +142,7 @@ fn run(idb: &mut Idb, db: &str) {
             }
 
             total += 1;
-            address = address + Offset::new(i64::from(instruction.len));
+            address = address + u64::from(instruction.len);
             if total >= BUDGET {
                 break 'outer;
             }
@@ -180,7 +180,7 @@ fn run(idb: &mut Idb, db: &str) {
                 "instructions() yielded a non-code address {:#x}",
                 instruction.address.get()
             );
-            let end = instruction.address + Offset::new(i64::from(instruction.len));
+            let end = instruction.address + u64::from(instruction.len);
             let in_chunk = chunks
                 .iter()
                 .any(|c| instruction.address >= c.start && end <= c.end);

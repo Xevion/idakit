@@ -79,7 +79,7 @@ mod search;
 mod segment;
 mod ty;
 
-pub use address::{Address, BADADDR, Offset};
+pub use address::{Address, BADADDR};
 pub use cfg::{Block, BlockId, BlockKind, Cfg, ExternalExit};
 pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{CtreeCounts, DecompiledFunction};

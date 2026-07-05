@@ -92,8 +92,7 @@ impl<'db> Function<'db> {
     /// for the full extent.
     #[must_use]
     pub fn size(&self) -> u64 {
-        self.end()
-            .map_or(0, |end| (end - self.address).max(0) as u64)
+        self.end().map_or(0, |end| self.address.distance_to(end))
     }
 
     /// Whether IDA flags this as a library function (`FUNC_LIB`).

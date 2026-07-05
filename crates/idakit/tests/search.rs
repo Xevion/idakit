@@ -7,7 +7,7 @@
 
 mod common;
 
-use idakit::{Address, Error, Offset, Pattern, PatternRejection};
+use idakit::{Address, Error, Pattern, PatternRejection};
 
 #[test]
 fn search() {
@@ -103,9 +103,7 @@ fn range_excludes_start(idb: &idakit::Idb, address: Address, bytes: &[u8]) {
     let bounds = idb
         .address_range()
         .expect("open database has an address range");
-    let after: Vec<Address> = idb
-        .search_in((address + Offset::new(1))..bounds.end, &pat)
-        .collect();
+    let after: Vec<Address> = idb.search_in((address + 1)..bounds.end, &pat).collect();
     assert!(
         !after.contains(&address),
         "range after {address:#x} should exclude it"

@@ -17,7 +17,7 @@ use std::ptr;
 use idakit_sys as sys;
 
 use crate::Idb;
-use crate::address::{Address, Offset};
+use crate::address::Address;
 use crate::error::{Error, PatternRejection, Result};
 use crate::ffi::{cstr, with_cstr};
 
@@ -337,7 +337,7 @@ impl Iterator for Matches<'_, '_> {
         };
         match Address::try_new(hit) {
             Some(address) => {
-                self.cur = Some(address + Offset::new(1));
+                self.cur = Some(address + 1);
                 Some(address)
             }
             None => {

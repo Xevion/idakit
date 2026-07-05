@@ -31,7 +31,7 @@ fn run(idb: &mut Idb, db: &str) {
         "function end {end:#x} should be past its start {address:#x}"
     );
     assert!(
-        first.size() == (end - address).max(0) as u64,
+        first.size() == address.distance_to(end),
         "size should equal end - start"
     );
     assert!(first.size() > 0, "the first function should be non-empty");
