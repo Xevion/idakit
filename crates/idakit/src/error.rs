@@ -215,6 +215,17 @@ pub enum Error {
         address: u64,
     },
 
+    /// A basic block reported an `fc_block_type_t` outside the modelled set -- a newer IDA SDK
+    /// added a block terminator, or the flow chart is corrupt. Empirically unreachable on 9.3;
+    /// a loud version-drift guard rather than a silently absorbed catch-all value.
+    #[snafu(display("unmodeled block kind {raw} in the flow chart at {block:#x}"))]
+    UnknownBlockKind {
+        /// Start address of the block whose kind did not map.
+        block: u64,
+        /// The raw `fc_block_type_t` byte outside the modelled set.
+        raw: u8,
+    },
+
     /// A binary search pattern was rejected while building a [`Pattern`](crate::Pattern)
     /// (e.g. via [`hex`](crate::Pattern::hex)). `kind` is a typed reason; see [`PatternRejection`].
     #[snafu(display("invalid search pattern {pattern:?}: {kind}"))]

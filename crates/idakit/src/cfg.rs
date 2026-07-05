@@ -16,7 +16,7 @@
 use std::ffi::{c_int, c_void};
 use std::ops::Range;
 
-use num_enum::{FromPrimitive, IntoPrimitive};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
 
 use idakit_sys as sys;
@@ -36,11 +36,14 @@ pub type BlockId = Idx<Block>;
 /// `fcb_enoret`) name zero-length stubs for out-of-function targets, which idakit lifts to
 /// [`ExternalExit`]s rather than blocks -- so a real [`Block`] is never one of them.
 ///
-/// `#[non_exhaustive]` and defaulting to [`Unknown`](Self::Unknown): a future SDK that adds a
-/// block type widens this enum rather than breaking every downstream `match`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, FromPrimitive, IntoPrimitive, VariantArray)]
+/// A closed set: `TryFrom<u8>` rejects any `fc_block_type_t` outside it (a newer SDK's value
+/// surfaces as [`Error::UnknownBlockKind`](crate::Error::UnknownBlockKind) at CFG build, a
+/// deliberate version-drift break) rather than absorbing it into a catch-all every downstream
+/// `match` would then have to carry.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, TryFromPrimitive, IntoPrimitive, VariantArray,
+)]
 #[repr(u8)]
-#[non_exhaustive]
 pub enum BlockKind {
     /// `fcb_normal`: falls through or branches within the function.
     Normal = 0,
@@ -54,27 +57,9 @@ pub enum BlockKind {
     NoReturn = 4,
     /// `fcb_error`: control runs past the function's end (a decoding/analysis error).
     Error = 7,
-    /// A block type outside the known `fc_block_type_t` set (a newer SDK).
-    #[num_enum(default)]
-    Unknown = 0xff,
 }
 
 impl BlockKind {
-    /// The raw `fc_block_type_t` discriminant.
-    #[inline]
-    #[must_use]
-    pub fn raw(self) -> u8 {
-        self.into()
-    }
-
-    /// The block kind for a raw `fc_block_type_t`; [`Unknown`](Self::Unknown) for a value
-    /// outside the known set.
-    #[inline]
-    #[must_use]
-    pub fn from_raw(v: u8) -> Self {
-        Self::from(v)
-    }
-
     /// Whether the block returns from the function (`fcb_ret`/`fcb_cndret`).
     #[inline]
     #[must_use]
@@ -255,8 +240,10 @@ impl Idb {
         }
         let blocks = extract(handle);
         // SAFETY: `handle` came from `idakit_cfg_build`, is non-null, and is freed exactly
-        // once here; nothing borrows it afterwards.
+        // once here; nothing borrows it afterwards. Freed before propagating an extract error
+        // so the handle never leaks on the unmodeled-kind path.
         unsafe { sys::idakit_cfg_free(handle) };
+        let blocks = blocks?;
 
         let function = blocks.iter().next().map_or(address, |(_, b)| b.start());
         Ok(Cfg {
@@ -291,7 +278,7 @@ const FCB_ENORET: u8 = 5;
 /// the function's own -- allocated in order, so allocation `i` is `BlockId::from_raw(i)`,
 /// matching the raw edge indices. The rest are zero-length external stubs: never allocated,
 /// only read (their `start` is a jump target) when a proper block's edge points at one.
-fn extract(handle: *const c_void) -> Arena<Block> {
+fn extract(handle: *const c_void) -> Result<Arena<Block>> {
     // SAFETY (every call below): `handle` is a live flow chart; indices are kept in range by
     // the loop bounds and the facade's own checks; out-params are valid locals.
     let nproper = unsafe { sys::idakit_cfg_nproper(handle) };
@@ -299,16 +286,19 @@ fn extract(handle: *const c_void) -> Arena<Block> {
     for i in 0..nproper {
         let (mut start, mut end, mut kind) = (0u64, 0u64, 0i32);
         unsafe { sys::idakit_cfg_block(handle, i, &mut start, &mut end, &mut kind) };
+        let raw = kind as u8;
+        let kind =
+            BlockKind::try_from(raw).map_err(|_| Error::UnknownBlockKind { block: start, raw })?;
         let (succ, exits) = successors(handle, i, nproper);
         blocks.alloc(Block {
             range: block_range(start, end),
-            kind: BlockKind::from_raw(kind as u8),
+            kind,
             succ,
             pred: predecessors(handle, i, nproper),
             exits,
         });
     }
-    blocks
+    Ok(blocks)
 }
 
 /// Split block `n`'s successor edges: targets below `nproper` are internal [`BlockId`]s, the
@@ -382,8 +372,7 @@ mod tests {
     // thread. A later non-Send field would fail this.
     const _: () = assert_send::<Cfg>();
 
-    /// Discriminants match `fc_block_type_t` (gdl.hpp, IDA 9.3), and `raw`/`from_raw`
-    /// round-trip.
+    /// Discriminants match `fc_block_type_t` (gdl.hpp, IDA 9.3), and `u8`/`TryFrom` round-trip.
     #[rstest]
     #[case(BlockKind::Normal, 0)]
     #[case(BlockKind::IndirectJump, 1)]
@@ -392,27 +381,20 @@ mod tests {
     #[case(BlockKind::NoReturn, 4)]
     #[case(BlockKind::Error, 7)]
     fn block_kind_raw_matches_sdk(#[case] kind: BlockKind, #[case] raw: u8) {
-        assert!(kind.raw() == raw);
-        assert!(BlockKind::from_raw(raw) == kind);
+        assert!(u8::from(kind) == raw);
+        assert!(BlockKind::try_from(raw).ok() == Some(kind));
     }
 
-    /// The SDK's external kinds (`fcb_enoret` = 5, `fcb_extern` = 6) are lifted to
-    /// [`ExternalExit`]s, so they never decode to a real [`BlockKind`] -- they fall to
-    /// `Unknown` like any other value idakit doesn't model as a block terminator.
+    /// A byte outside the modelled set is rejected, not absorbed: the SDK's external kinds
+    /// (`fcb_enoret` = 5, `fcb_extern` = 6, lifted to [`ExternalExit`]s) and any other value.
     #[rstest]
     #[case(5)]
     #[case(6)]
-    fn external_kinds_are_not_blocks(#[case] raw: u8) {
-        assert!(BlockKind::from_raw(raw) == BlockKind::Unknown);
-    }
-
-    /// An out-of-set value maps to `Unknown` rather than failing.
-    #[rstest]
     #[case(8)]
     #[case(200)]
     #[case(0xff)]
-    fn block_kind_unknown_is_the_catch_all(#[case] raw: u8) {
-        assert!(BlockKind::from_raw(raw) == BlockKind::Unknown);
+    fn unmodeled_block_kinds_are_rejected(#[case] raw: u8) {
+        assert!(BlockKind::try_from(raw).is_err());
     }
 
     /// The folded predicates agree with the raw variants they group.
@@ -428,15 +410,12 @@ mod tests {
         assert!(kind.is_noreturn() == noret);
     }
 
-    /// Completeness: every non-`Unknown` variant round-trips through its raw discriminant, so
-    /// a newly added variant that forgets a discriminant fails here.
+    /// Completeness: every variant round-trips through its raw discriminant, so a newly added
+    /// variant that forgets a discriminant fails here.
     #[test]
-    fn every_known_variant_round_trips() {
+    fn every_variant_round_trips() {
         for &kind in BlockKind::VARIANTS {
-            if kind == BlockKind::Unknown {
-                continue;
-            }
-            assert!(BlockKind::from_raw(kind.raw()) == kind);
+            assert!(BlockKind::try_from(u8::from(kind)).ok() == Some(kind));
         }
     }
 
