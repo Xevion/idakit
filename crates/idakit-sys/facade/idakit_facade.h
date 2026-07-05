@@ -53,11 +53,16 @@ int idakit_func_chunk_qty(idakit_ea_t ea); /* # chunks (entry + tails), 0 if not
 int idakit_func_chunk(
     idakit_ea_t ea, int idx, idakit_ea_t *start,
     idakit_ea_t *end); /* 1 + fills [start,end) if chunk idx exists (entry chunk = idx 0) */
+idakit_ea_t idakit_func_end(idakit_ea_t ea); /* entry-chunk end_ea, or BADADDR if not a func */
+uint64_t idakit_func_flags(idakit_ea_t ea);  /* func_t.flags (\ref FUNC_), 0 if not a func */
 
 int idakit_seg_qty(void);
 int64_t idakit_seg_name(int n, char *buf, size_t cap);
 idakit_ea_t idakit_seg_start(int n);
 idakit_ea_t idakit_seg_end(int n);
+int idakit_seg_perm(int n);    /* SEGPERM_ bits (0 = no info) */
+int idakit_seg_bitness(int n); /* addressing bits: 16, 32, or 64 (0 if no such segment) */
+int64_t idakit_seg_class(int n, char *buf, size_t cap); /* class name length, -1 if none */
 
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size); /* bytes read, <0 on fail */
 

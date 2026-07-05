@@ -73,7 +73,43 @@ extern "C" int idakit_func_chunk(idakit_ea_t ea, int idx, idakit_ea_t *start, id
   return 0;
 }
 
+extern "C" idakit_ea_t idakit_func_end(idakit_ea_t ea) {
+  func_t *f = get_func((ea_t)ea);
+  return f != nullptr ? (idakit_ea_t)f->end_ea : (idakit_ea_t)BADADDR;
+}
+
+extern "C" uint64_t idakit_func_flags(idakit_ea_t ea) {
+  func_t *f = get_func((ea_t)ea);
+  return f != nullptr ? (uint64_t)f->flags : 0;
+}
+
 extern "C" int idakit_seg_qty(void) { return get_segm_qty(); }
+
+extern "C" int idakit_seg_perm(int n) {
+  segment_t *s = getnseg(n);
+  return s != nullptr ? (int)s->perm : 0;
+}
+
+extern "C" int idakit_seg_bitness(int n) {
+  segment_t *s = getnseg(n);
+  return s != nullptr ? (int)s->abits() : 0;
+}
+
+extern "C" int64_t idakit_seg_class(int n, char *buf, size_t cap) {
+  try {
+    segment_t *s = getnseg(n);
+    qstring out;
+    if (s == nullptr || get_segm_class(&out, s) <= 0) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  } catch (...) {
+    std::abort();
+  }
+}
 
 extern "C" int64_t idakit_seg_name(int n, char *buf, size_t cap) {
   try {

@@ -1,5 +1,7 @@
 //! [`Segment`]: a borrowed view of one segment, keyed by kernel index.
 
+use idakit_sys as sys;
+
 use crate::Idb;
 use crate::ea::Ea;
 use crate::ffi::read_string;
@@ -61,7 +63,36 @@ impl<'db> Segment<'db> {
         Some(self.db.bytes(start, len))
     }
 
-    // TODO: attributes -- permissions, class, and bitness.
+    /// The segment's class (e.g. `CODE`, `DATA`, `BSS`), or `None` if it has none.
+    #[must_use]
+    pub fn class(&self) -> Option<String> {
+        read_string(|buf, cap| self.db.seg_class(self.index, buf, cap))
+    }
+
+    /// Addressing width in bits: 16, 32, or 64.
+    #[must_use]
+    pub fn bitness(&self) -> u8 {
+        self.db.seg_bitness(self.index).max(0) as u8
+    }
+
+    /// Whether the segment is readable (`SEGPERM_READ`). All three permission predicates
+    /// read `false` when the input format recorded no permission bits.
+    #[must_use]
+    pub fn is_readable(&self) -> bool {
+        self.db.seg_perm(self.index) & sys::SEGPERM_READ != 0
+    }
+
+    /// Whether the segment is writable (`SEGPERM_WRITE`).
+    #[must_use]
+    pub fn is_writable(&self) -> bool {
+        self.db.seg_perm(self.index) & sys::SEGPERM_WRITE != 0
+    }
+
+    /// Whether the segment is executable (`SEGPERM_EXEC`).
+    #[must_use]
+    pub fn is_executable(&self) -> bool {
+        self.db.seg_perm(self.index) & sys::SEGPERM_EXEC != 0
+    }
 }
 
 impl std::fmt::Debug for Segment<'_> {

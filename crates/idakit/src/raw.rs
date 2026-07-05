@@ -256,6 +256,14 @@ impl Idb {
         unsafe { sys::idakit_func_type(ea.get(), buf, cap) }
     }
 
+    pub(crate) fn func_end(&self, ea: Ea) -> sys::Ea {
+        unsafe { sys::idakit_func_end(ea.get()) }
+    }
+
+    pub(crate) fn func_flags(&self, ea: Ea) -> u64 {
+        unsafe { sys::idakit_func_flags(ea.get()) }
+    }
+
     pub(crate) fn seg_qty(&self) -> c_int {
         unsafe { sys::idakit_seg_qty() }
     }
@@ -270,5 +278,17 @@ impl Idb {
 
     pub(crate) fn seg_end(&self, n: c_int) -> sys::Ea {
         unsafe { sys::idakit_seg_end(n) }
+    }
+
+    pub(crate) fn seg_perm(&self, n: c_int) -> c_int {
+        unsafe { sys::idakit_seg_perm(n) }
+    }
+
+    pub(crate) fn seg_bitness(&self, n: c_int) -> c_int {
+        unsafe { sys::idakit_seg_bitness(n) }
+    }
+
+    pub(crate) fn seg_class(&self, n: c_int, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_seg_class(n, buf, cap) }
     }
 }

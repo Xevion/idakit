@@ -1,5 +1,7 @@
 //! [`Func`]: a borrowed view of one function, keyed by its entry [`Ea`].
 
+use idakit_sys as sys;
+
 use crate::Idb;
 use crate::ctree::Ctree;
 use crate::decompile::Cfunc;
@@ -75,7 +77,39 @@ impl<'db> Func<'db> {
         Instructions::new(self.db, self.ea)
     }
 
-    // TODO: attributes -- end/size and flags (lib/thunk/noreturn).
+    /// The function's exclusive end address -- the entry chunk's `end_ea`. `None` only if
+    /// the entry is no longer a function.
+    #[must_use]
+    pub fn end(&self) -> Option<Ea> {
+        Ea::try_new(self.db.func_end(self.ea))
+    }
+
+    /// The entry chunk's size in bytes (`end - start`), or `0` if the end is unavailable.
+    /// A chunked function's tail chunks lie outside this span -- walk [`chunks`](Self::chunks)
+    /// for the full extent.
+    #[must_use]
+    pub fn size(&self) -> u64 {
+        self.end().map_or(0, |end| (end - self.ea).max(0) as u64)
+    }
+
+    /// Whether IDA flags this as a library function (`FUNC_LIB`).
+    #[must_use]
+    pub fn is_lib(&self) -> bool {
+        self.db.func_flags(self.ea) & sys::FUNC_LIB != 0
+    }
+
+    /// Whether this is a thunk -- a trampoline that jumps straight to another function
+    /// (`FUNC_THUNK`).
+    #[must_use]
+    pub fn is_thunk(&self) -> bool {
+        self.db.func_flags(self.ea) & sys::FUNC_THUNK != 0
+    }
+
+    /// Whether this function does not return (`FUNC_NORET`) -- e.g. `exit`, `abort`.
+    #[must_use]
+    pub fn is_noreturn(&self) -> bool {
+        self.db.func_flags(self.ea) & sys::FUNC_NORET != 0
+    }
 
     /// Lazily iterate cross-references targeting this function's entry.
     #[must_use]
