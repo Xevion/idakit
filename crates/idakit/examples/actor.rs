@@ -44,15 +44,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ida = ida.clone();
             hs.push(thread::spawn(move || {
                 let idx = t * 1000;
-                let (address, name) = ida
-                    .call(move |idb| {
-                        idb.functions()
-                            .nth(idx)
-                            .map_or((None, None), |f| (Some(f.address()), f.name()))
-                    })
+                let found = ida
+                    .call(move |idb| idb.functions().nth(idx).map(|f| (f.address(), f.name())))
                     .expect("kernel call");
-                let address = address.map_or_else(|| "<none>".into(), |e| format!("{e:#012x}"));
-                let name = name.unwrap_or_else(|| "<unnamed>".into());
+                let (address, name) = match found {
+                    Some((address, name)) => (format!("{address:#012x}"), name.into_string()),
+                    None => ("<none>".into(), "<unnamed>".into()),
+                };
                 println!("[worker {t}] function[{idx}] @ {address}  {name}");
             }));
         }

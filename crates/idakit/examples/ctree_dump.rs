@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut matched = 0;
             let eas: Vec<_> = idb.functions().map(|f| (f.address(), f.name())).collect();
             for (address, name) in eas {
-                let name = name.unwrap_or_default();
+                let name = name.into_string();
                 if !filter.is_empty() && !name.contains(&filter) {
                     continue;
                 }

@@ -20,7 +20,7 @@ fn run(idb: &mut idakit::Idb) {
 
     let first = idb.functions().next().expect("a function");
     let address = first.address();
-    let original = first.name().expect("function has a name");
+    let original = first.name();
     assert!(!original.is_empty());
 
     let bytes = idb.bytes(address, 16);
@@ -164,8 +164,9 @@ fn run(idb: &mut idakit::Idb) {
     // Rename via &mut (first's borrow has ended), then confirm.
     let renamed = "idakit_roundtrip_probe";
     idb.rename(address, renamed).expect("rename failed");
-    let after = idb.function(address).name().expect("name after rename");
-    assert_eq!(after, renamed, "rename did not stick");
+    let after = idb.function(address).name();
+    assert_eq!(after.as_str(), renamed, "rename did not stick");
+    assert!(after.is_user(), "a user rename yields a user name");
 
     idb.set_comment(address, "touched by idakit roundtrip", false)
         .expect("set_comment failed");

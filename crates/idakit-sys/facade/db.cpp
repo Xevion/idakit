@@ -637,6 +637,21 @@ extern "C" int64_t idakit_nlist_name(size_t idx, char *buf, size_t cap) {
   return (int64_t)qstrlen(nm);
 }
 
+// Name classification over an address's flags word. has_*_name are pure bit tests (inline in
+// bytes.hpp, no kernel state), exposed so the Rust side can pin its own FF_NAME/FF_LABL
+// derivation against IDA's own logic.
+extern "C" int idakit_has_user_name(uint64_t flags) {
+  return has_user_name((flags64_t)flags) ? 1 : 0;
+}
+
+extern "C" int idakit_has_auto_name(uint64_t flags) {
+  return has_auto_name((flags64_t)flags) ? 1 : 0;
+}
+
+extern "C" int idakit_has_dummy_name(uint64_t flags) {
+  return has_dummy_name((flags64_t)flags) ? 1 : 0;
+}
+
 // Cursor state for a streaming xref walk. `started` distinguishes the first_* call
 // (which seeds the block) from subsequent next_* steps.
 struct idakit_xref_cursor {

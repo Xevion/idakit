@@ -53,10 +53,13 @@ impl<'db> Function<'db> {
         self.address
     }
 
-    /// The function's display name, or `None` if unavailable.
+    /// The function's name and how IDA assigned it -- see [`FunctionName`]. A function entry
+    /// always has a name (an address-derived placeholder at worst), so this is not optional.
     #[must_use]
-    pub fn name(&self) -> Option<String> {
-        read_string(|buf, cap| self.db.func_name(self.address, buf, cap))
+    pub fn name(&self) -> FunctionName {
+        let text =
+            read_string(|buf, cap| self.db.func_name(self.address, buf, cap)).unwrap_or_default();
+        FunctionName::from_flags(self.db.get_flags(self.address), text)
     }
 
     /// The one-line C prototype, or `None` if the kernel has no type info.
@@ -207,10 +210,99 @@ impl<'db> Function<'db> {
 pub struct FunctionImage {
     /// Entry address.
     pub address: Address,
-    /// Display name, if the kernel had one.
-    pub name: Option<String>,
+    /// Name and how IDA assigned it.
+    pub name: FunctionName,
     /// One-line C prototype, if the kernel had type info.
     pub prototype: Option<String>,
+}
+
+/// A function's name together with how IDA assigned it, from [`Function::name`].
+///
+/// Derefs to the name text, so it reads as the `str` it carries; match the variant to branch
+/// on provenance. Every function entry has a name -- IDA names even an unnamed one, at least
+/// with an address-derived placeholder -- so `name()` yields this directly, never an `Option`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum FunctionName {
+    /// An explicit name: user-assigned, or an imported/mangled symbol (`FF_NAME`).
+    User(String),
+    /// A name IDA generated from analysis -- a recognized stub, library match, or thunk, e.g.
+    /// `nullsub_0` or `j_malloc` (`FF_NAME | FF_LABL`).
+    Auto(String),
+    /// An address-derived placeholder for an otherwise-unnamed function, e.g. `sub_401000`
+    /// (`FF_LABL`).
+    Dummy(String),
+}
+
+impl FunctionName {
+    /// The name text, whatever its provenance.
+    #[inline]
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::User(s) | Self::Auto(s) | Self::Dummy(s) => s,
+        }
+    }
+
+    /// Consume into the owned name string.
+    #[inline]
+    #[must_use]
+    pub fn into_string(self) -> String {
+        match self {
+            Self::User(s) | Self::Auto(s) | Self::Dummy(s) => s,
+        }
+    }
+
+    /// Whether this is an explicit name -- user-assigned or an imported symbol.
+    #[inline]
+    #[must_use]
+    pub fn is_user(&self) -> bool {
+        matches!(self, Self::User(_))
+    }
+
+    /// Whether IDA generated this name from analysis.
+    #[inline]
+    #[must_use]
+    pub fn is_auto(&self) -> bool {
+        matches!(self, Self::Auto(_))
+    }
+
+    /// Whether this is an address-derived placeholder.
+    #[inline]
+    #[must_use]
+    pub fn is_dummy(&self) -> bool {
+        matches!(self, Self::Dummy(_))
+    }
+
+    /// Classify from an address's flags and its resolved name text. The two name bits
+    /// partition cleanly: `FF_NAME` alone is an explicit name, both bits an IDA-generated
+    /// one, `FF_LABL` alone a placeholder. A function entry always carries one of the three,
+    /// so the flag-less case folds to [`Dummy`](Self::Dummy) -- unreachable in practice,
+    /// pinned by the name sweep test. The bit logic mirrors IDA's `has_user_name`/
+    /// `has_auto_name`/`has_dummy_name`, held in step by the alignment test.
+    fn from_flags(flags: u64, text: String) -> Self {
+        let named = flags & sys::FF_NAME != 0;
+        let labeled = flags & sys::FF_LABL != 0;
+        match (named, labeled) {
+            (true, false) => Self::User(text),
+            (true, true) => Self::Auto(text),
+            _ => Self::Dummy(text),
+        }
+    }
+}
+
+impl std::ops::Deref for FunctionName {
+    type Target = str;
+    #[inline]
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for FunctionName {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl std::fmt::Debug for Function<'_> {
@@ -441,10 +533,85 @@ impl Iterator for InstructionsIn<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::FunctionImage;
+    use assert2::assert;
+
+    use super::*;
 
     const fn assert_send<T: Send>() {}
 
-    // The reason FunctionImage exists: unlike Function, it can cross the kernel-thread boundary.
+    // Both owned so they can cross the kernel-thread boundary, unlike the borrowed Function view.
     const _: () = assert_send::<FunctionImage>();
+    const _: () = assert_send::<FunctionName>();
+
+    #[test]
+    fn from_flags_classifies_by_the_two_name_bits() {
+        assert!(
+            FunctionName::from_flags(sys::FF_NAME, "s".into()) == FunctionName::User("s".into())
+        );
+        assert!(
+            FunctionName::from_flags(sys::FF_NAME | sys::FF_LABL, "s".into())
+                == FunctionName::Auto("s".into())
+        );
+        assert!(
+            FunctionName::from_flags(sys::FF_LABL, "s".into()) == FunctionName::Dummy("s".into())
+        );
+        // No name flag at all folds to a placeholder (unreachable for a function entry).
+        assert!(FunctionName::from_flags(0, "s".into()) == FunctionName::Dummy("s".into()));
+    }
+
+    #[test]
+    fn from_flags_ignores_unrelated_bits() {
+        // Bits outside the two name bits (code/data class, etc.) must not perturb it.
+        let noise = 0xFFFF_FFFF_FFFF_3FFFu64; // every bit except FF_NAME (0x4000) and FF_LABL (0x8000)
+        assert!(
+            FunctionName::from_flags(noise | sys::FF_NAME, "x".into())
+                == FunctionName::User("x".into())
+        );
+        assert!(
+            FunctionName::from_flags(noise | sys::FF_LABL, "x".into())
+                == FunctionName::Dummy("x".into())
+        );
+    }
+
+    #[test]
+    fn accessors_project_text_and_kind() {
+        let u = FunctionName::User("main".into());
+        assert!(u.as_str() == "main");
+        assert!(&*u == "main");
+        assert!(format!("{u}") == "main");
+        assert!(u.clone().into_string() == "main");
+        assert!(u.is_user() && !u.is_auto() && !u.is_dummy());
+        assert!(FunctionName::Dummy("sub_1000".into()).is_dummy());
+        assert!(FunctionName::Auto("nullsub_0".into()).is_auto());
+    }
+
+    #[test]
+    fn from_flags_matches_ida_predicates() {
+        // Our FF_NAME/FF_LABL derivation must agree with IDA's own has_*_name predicates for
+        // every combination of the two name bits, regardless of surrounding flag bits -- so a
+        // future SDK that redefines the bits, or a typo in our constants, fails here.
+        for extra in [0u64, 0x1234_5678, u64::MAX] {
+            let extra = extra & !(sys::FF_NAME | sys::FF_LABL);
+            for &bits in &[0, sys::FF_NAME, sys::FF_LABL, sys::FF_NAME | sys::FF_LABL] {
+                let flags = extra | bits;
+                let ours = FunctionName::from_flags(flags, String::new());
+                // SAFETY: has_*_name are pure bit tests over `flags` -- no kernel state, no
+                // open database required.
+                let (user, auto, dummy) = unsafe {
+                    (
+                        sys::idakit_has_user_name(flags) != 0,
+                        sys::idakit_has_auto_name(flags) != 0,
+                        sys::idakit_has_dummy_name(flags) != 0,
+                    )
+                };
+                assert!(ours.is_user() == user);
+                assert!(ours.is_auto() == auto);
+                // IDA's dummy always maps to ours; ours additionally absorbs the no-name case.
+                assert!(ours.is_dummy() == (!user && !auto));
+                if dummy {
+                    assert!(ours.is_dummy());
+                }
+            }
+        }
+    }
 }

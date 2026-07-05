@@ -176,6 +176,13 @@ size_t idakit_nlist_size(void);
 idakit_ea_t idakit_nlist_ea(size_t idx);
 int64_t idakit_nlist_name(size_t idx, char *buf, size_t cap);
 
+/* Name classification predicates (bytes.hpp has_*_name) over an address's flags word
+ * (idakit_get_flags): 1/0 for user (explicit), auto (IDA-generated), dummy (address-derived).
+ * Exposed so idakit can pin its FF_NAME/FF_LABL derivation to IDA's own logic. */
+int idakit_has_user_name(uint64_t flags);
+int idakit_has_auto_name(uint64_t flags);
+int idakit_has_dummy_name(uint64_t flags);
+
 /* Cross-reference cursor (ordinary flow excluded). `is_to` selects xrefs TO ea (callers
  * of ea) vs FROM ea (what ea references). Open returns an opaque cursor; step it with
  * next (writes from/to/type/iscode, returns 1 until exhausted, then 0); release with

@@ -11,7 +11,7 @@
 //! let mut idb = idakit::Ida::here()?;
 //! idb.open("/path/to/db.i64").call()?;
 //! for function in idb.functions() {
-//!     println!("{:#x} {}", function.address().get(), function.name().unwrap_or_default());
+//!     println!("{:#x} {}", function.address().get(), function.name());
 //! }
 //! idb.close(false);
 //! # Ok(())
@@ -105,7 +105,7 @@ pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
 pub use export::{Export, Exports};
 pub use frame::{Frame, FrameVar, FrameVarKind};
 pub use function::{
-    Chunk, Chunks, Function, FunctionImage, Functions, Instructions, InstructionsIn,
+    Chunk, Chunks, Function, FunctionImage, FunctionName, Functions, Instructions, InstructionsIn,
 };
 pub use import::{Import, Imports};
 pub use instruction::{

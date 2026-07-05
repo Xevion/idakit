@@ -26,7 +26,7 @@ pub fn structure(idb: &Idb) -> String {
     assert!(funcs > 0, "no functions");
     assert!(segs > 0, "no segments");
     let first = idb.functions().next().expect("a function");
-    let name = first.name().expect("first function has a name");
+    let name = first.name();
     assert!(!name.is_empty(), "first function name is empty");
     let bytes = idb.bytes(first.address(), 16);
     assert!(!bytes.is_empty(), "entry bytes unreadable");
