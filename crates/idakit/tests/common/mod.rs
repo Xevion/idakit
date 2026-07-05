@@ -2,6 +2,9 @@
 // Each test binary pulls in this whole module but uses only a subset of it.
 #![allow(dead_code)]
 
+pub mod checks;
+pub mod corpus;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 

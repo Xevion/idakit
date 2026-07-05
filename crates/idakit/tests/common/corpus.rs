@@ -1,0 +1,159 @@
+//! Corpus discovery for the fan-out matrix, driven by the corpus manifest.
+//!
+//! The corpus is machine-specific and out-of-tree, so its location is not hardcoded: a git-ignored
+//! `.env` (loaded automatically) sets `IDAKIT_CORPUS_MANIFEST` to the manifest path, and every
+//! machine (and CI) provides its own. So `just test` fans the matrix out with no per-run flags.
+//! Absent the `.env` / manifest, [`fixtures`] returns empty and the matrix runs zero cases.
+//!
+//! The manifest ([`manifest.toml`]) is the source of truth: each `[[fixture]]` gives a `path`
+//! (relative to the manifest), whether it `opens` under our 64-bit build, and an optional
+//! `skip_checks` list naming invariants that legitimately do not apply (e.g. a raw ROM has no
+//! symbols). Only openable fixtures are returned; unknown manifest fields are ignored.
+
+use std::path::{Path, PathBuf};
+use std::sync::Once;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use serde::Deserialize;
+
+static LOAD_ENV: Once = Once::new();
+static NEXT_COPY: AtomicU32 = AtomicU32::new(0);
+
+/// A discovered fixture: a display name, its absolute path, and the checks it opts out of.
+pub struct Fixture {
+    pub name: String,
+    pub path: PathBuf,
+    pub skip_checks: Vec<String>,
+}
+
+impl Fixture {
+    /// Whether `check` is declared inapplicable to this fixture in the manifest.
+    pub fn skips(&self, check: &str) -> bool {
+        self.skip_checks.iter().any(|c| c == check)
+    }
+}
+
+/// Every openable fixture in the manifest, resolved to an absolute path and sorted by name.
+/// Empty when no corpus is configured.
+pub fn fixtures() -> Vec<Fixture> {
+    LOAD_ENV.call_once(|| {
+        let _ = dotenvy::dotenv();
+    });
+
+    let Some(manifest) = manifest_path() else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read_to_string(&manifest) else {
+        return Vec::new();
+    };
+    let Ok(parsed) = toml::from_str::<Manifest>(&text) else {
+        return Vec::new();
+    };
+    let root = manifest.parent().unwrap_or_else(|| Path::new("."));
+
+    let mut out: Vec<Fixture> = parsed
+        .fixture
+        .into_iter()
+        .filter(|e| e.opens.runnable())
+        .map(|e| Fixture {
+            name: display_name(&e.path),
+            path: root.join(&e.path),
+            skip_checks: e.skip_checks,
+        })
+        .filter(|f| f.path.is_file())
+        .collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+fn manifest_path() -> Option<PathBuf> {
+    let raw = std::env::var("IDAKIT_CORPUS_MANIFEST").ok()?;
+    let path = PathBuf::from(raw);
+    (!path.as_os_str().is_empty() && path.is_file()).then_some(path)
+}
+
+/// A private, disposable copy of a fixture, removed on drop. idalib mutates a database in place
+/// and locks it, so every case opens its own copy rather than the read-only master.
+pub struct WorkingCopy {
+    dir: PathBuf,
+    path: PathBuf,
+}
+
+impl WorkingCopy {
+    /// Path to the copy, to hand to `Idb::open`.
+    pub fn path(&self) -> &str {
+        self.path.to_str().expect("scratch path is valid UTF-8")
+    }
+}
+
+impl Drop for WorkingCopy {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// Copy `src` into a scratch dir co-located with the corpus, so large fixtures never land in a
+/// RAM-backed `/tmp` or `/dev/shm` (which would compete with the kernel's working set under
+/// fan-out). The location is derived from the manifest, not hardcoded or configured.
+pub fn working_copy(src: &Path) -> std::io::Result<WorkingCopy> {
+    let unique = format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT_COPY.fetch_add(1, Ordering::Relaxed)
+    );
+    let dir = scratch_root().join(unique);
+    std::fs::create_dir_all(&dir)?;
+    let file_name = src.file_name().expect("fixture has a file name");
+    let path = dir.join(file_name);
+    std::fs::copy(src, &path)?;
+    Ok(WorkingCopy { dir, path })
+}
+
+fn scratch_root() -> PathBuf {
+    manifest_path()
+        .and_then(|m| m.parent().map(|p| p.join(".scratch")))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+fn display_name(rel: &str) -> String {
+    Path::new(rel)
+        .file_stem()
+        .map(|s| s.to_string_lossy().replace('.', "_"))
+        .unwrap_or_else(|| "unknown".into())
+}
+
+#[derive(Deserialize)]
+struct Manifest {
+    #[serde(default)]
+    fixture: Vec<Entry>,
+}
+
+#[derive(Deserialize)]
+struct Entry {
+    path: String,
+    #[serde(default)]
+    opens: Opens,
+    #[serde(default)]
+    skip_checks: Vec<String>,
+}
+
+/// `opens` is `true`/`false` for 64-bit fixtures and the string `"parked"` for 32-bit ones our
+/// build can't open yet, so it deserializes as either shape.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Opens {
+    Bool(bool),
+    Word(String),
+}
+
+impl Default for Opens {
+    fn default() -> Self {
+        Opens::Bool(false)
+    }
+}
+
+impl Opens {
+    fn runnable(&self) -> bool {
+        matches!(self, Opens::Bool(true))
+    }
+}

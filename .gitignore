@@ -1,6 +1,9 @@
 /target
 # Optional local IDA SDK checkout used via IDA_SDK_DIR (the build otherwise fetches).
 /vendor
+# Local-only machine/CI config: corpus location, R2 credentials. Never tracked.
+.env
+.env.*
 compile_commands.json
 **/*.i64
 **/*.id0

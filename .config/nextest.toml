@@ -1,14 +1,16 @@
-# The integration tests (`kind(test)`) each bring up the IDA kernel: `init_library` is a
-# process global run once per process, and idalib opens the database file in place and locks
-# it. nextest isolates tests in their own processes, but still runs them concurrently -- so
-# two kernel tests would race on that on-disk database. Cap the whole set to one at a time.
+# Kernel tests open the *same* file and lock it, so serialize them. The corpus matrix opens a
+# private copy per case, so it fans out; `corpus.max-threads` is a memory budget (~0.75 GiB/slot
+# measured, so cap ~= budget_GiB / 0.75). 8 is the knee: ~3.8 GiB peak, ~20s; higher buys no
+# wall-clock. slow-timeout kills a kernel test that wedges on a leaked qmutex instead of hanging.
 [test-groups]
 serial-kernel = { max-threads = 1 }
+corpus = { max-threads = 8 }
 
-# A kernel fatal that the facade traps but that leaks a held qmutex turns "clean crash" into a
-# silent deadlock on the next kernel call. terminate-after bounds that: a wedged kernel test is
-# killed (and fails) rather than hanging the suite. The period is generous so a legitimately
-# slow open/analysis on a large database is not mistaken for a hang.
+[[profile.default.overrides]]
+filter = 'binary(corpus_matrix)'
+test-group = 'corpus'
+slow-timeout = { period = "120s", terminate-after = 3 }
+
 [[profile.default.overrides]]
 filter = 'kind(test)'
 test-group = 'serial-kernel'
