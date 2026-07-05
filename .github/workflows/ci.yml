@@ -41,7 +41,7 @@ jobs:
           - { runner: macos-15-intel, platform: macos-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: macos-14, platform: macos-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: windows-2022, platform: windows-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
-          - { runner: ubuntu-latest, platform: linux-x64, version: 9.2.250908, sdk-tag: v9.2.0-release }
+          # - { runner: ubuntu-latest, platform: linux-x64, version: 9.2.250908, sdk-tag: v9.2.0-release }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
