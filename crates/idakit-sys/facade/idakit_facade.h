@@ -232,6 +232,8 @@ int idakit_frame_var(const void *h, size_t i, int64_t *offset, uint64_t *size, u
 int64_t idakit_frame_var_name(const void *h, size_t i, char *buf, size_t cap);
 int64_t idakit_frame_var_type(const void *h, size_t i, char *buf, size_t cap);
 void idakit_frame_free(void *h);
+/* The structured frame-type walk (idakit_frame_type_walk) lives with the shared type vtbl
+ * below, since it drives that machinery. */
 
 int idakit_hexrays_init(void); /* 1 = decompiler ready, 0 = unavailable */
 void *idakit_decompile(idakit_ea_t ea, char *errbuf,
@@ -274,6 +276,52 @@ typedef struct {
   size_t nvalues;
   uint32_t body;
 } idakit_case_t;
+
+/* The type-emit callbacks, shared by every walk that builds an interned type table: the
+ * ctree walk and the bare-tinfo walks (frame/member). Each returns the handle of the type it
+ * minted; children are emitted before their container. kind: 1 void, 2 bool, 3 int, 4 float
+ * (int also carries enum-underlying and bitfield base). A non-structural type is emitted via
+ * t_opaque, never t_scalar. `name`/member-name spans borrow a C++ stack temporary valid only
+ * for that single call (see the lifetime note on idakit_emit_vtbl_t). */
+typedef struct idakit_type_vtbl_t {
+  uint32_t (*t_scalar)(void *ctx, uint32_t kind, uint32_t bytes, uint32_t is_signed, uint64_t size,
+                       uint32_t has_size);
+  uint32_t (*t_ptr)(void *ctx, uint32_t target, uint64_t size, uint32_t has_size);
+  uint32_t (*t_array)(void *ctx, uint32_t elem, uint64_t nelems, uint64_t size, uint32_t has_size);
+  uint32_t (*t_func)(void *ctx, uint32_t ret, const uint32_t *params, size_t n, uint32_t vararg);
+  /* A named type IDA can name but not structurally describe here (a forward-declared or
+   * incomplete aggregate, an unresolved reference): a bodyless leaf carrying just the name. */
+  uint32_t (*t_opaque)(void *ctx, const char *name, size_t name_len);
+  /* Reference a named aggregate/typedef; mints (or returns the existing) placeholder so a
+   * recursive member can point back before the definition is filled. */
+  uint32_t (*t_named_ref)(void *ctx, const char *name, size_t name_len);
+  /* Mint an anonymous (un-deduped) placeholder for an unnamed struct/union/enum. */
+  uint32_t (*t_anon)(void *ctx);
+  /* Fill a placeholder `id` minted by t_named_ref/t_anon. */
+  void (*t_fill_struct)(void *ctx, uint32_t id, uint32_t is_union, const idakit_member_t *members,
+                        size_t n, uint64_t size, uint32_t has_size);
+  void (*t_fill_enum)(void *ctx, uint32_t id, uint32_t underlying,
+                      const idakit_enum_const_t *consts, size_t n, uint64_t size,
+                      uint32_t has_size);
+  void (*t_fill_typedef)(void *ctx, uint32_t id, uint32_t underlying);
+} idakit_type_vtbl_t;
+
+/* Structured frame-type walk. `types` drives the shared tinfo walker to mint each variable's
+ * type on the consumer side (building one interned table); `f_var` then reports the variable,
+ * with its resolved type handle `ty` and the same offset/size/flags as idakit_frame_var. */
+typedef struct idakit_frame_vtbl_t {
+  idakit_type_vtbl_t types;
+  void (*f_var)(void *ctx, const char *name, size_t name_len, int64_t offset, uint64_t size,
+                uint32_t flags, uint32_t ty);
+} idakit_frame_vtbl_t;
+
+/* Walk the frame of the function at `ea` in one pass, driving `v` (with `ctx`): each variable's
+ * type is emitted through `v->types` and the variable reported via `v->f_var`, and the frame's
+ * total byte size written to `*frame_size`. A named type shared by two variables is emitted
+ * once. Returns 0 on success, non-zero (leaving `*frame_size` untouched) if there is no function
+ * or no frame at `ea`. */
+int idakit_frame_type_walk(idakit_ea_t ea, const idakit_frame_vtbl_t *v, void *ctx,
+                           uint64_t *frame_size);
 
 /* The callbacks the facade invokes while walking. Every function returns the handle of
  * the node/type it minted (except the void ones). Scalar `kind` codes and `ctype` values
@@ -323,28 +371,8 @@ typedef struct idakit_emit_vtbl_t {
   uint32_t (*s_throw)(void *ctx, idakit_ea_t ea, uint32_t expr /* or IDAKIT_NONE */);
   uint32_t (*s_empty)(void *ctx, idakit_ea_t ea);
 
-  /* types. kind: 1 void, 2 bool, 3 int, 4 float (int also carries enum-underlying and
-   * bitfield base). A non-structural type is emitted via t_opaque, never t_scalar. */
-  uint32_t (*t_scalar)(void *ctx, uint32_t kind, uint32_t bytes, uint32_t is_signed, uint64_t size,
-                       uint32_t has_size);
-  uint32_t (*t_ptr)(void *ctx, uint32_t target, uint64_t size, uint32_t has_size);
-  uint32_t (*t_array)(void *ctx, uint32_t elem, uint64_t nelems, uint64_t size, uint32_t has_size);
-  uint32_t (*t_func)(void *ctx, uint32_t ret, const uint32_t *params, size_t n, uint32_t vararg);
-  /* A named type IDA can name but not structurally describe here (a forward-declared or
-   * incomplete aggregate, an unresolved reference): a bodyless leaf carrying just the name. */
-  uint32_t (*t_opaque)(void *ctx, const char *name, size_t name_len);
-  /* Reference a named aggregate/typedef; mints (or returns the existing) placeholder so a
-   * recursive member can point back before the definition is filled. */
-  uint32_t (*t_named_ref)(void *ctx, const char *name, size_t name_len);
-  /* Mint an anonymous (un-deduped) placeholder for an unnamed struct/union/enum. */
-  uint32_t (*t_anon)(void *ctx);
-  /* Fill a placeholder `id` minted by t_named_ref/t_anon. */
-  void (*t_fill_struct)(void *ctx, uint32_t id, uint32_t is_union, const idakit_member_t *members,
-                        size_t n, uint64_t size, uint32_t has_size);
-  void (*t_fill_enum)(void *ctx, uint32_t id, uint32_t underlying,
-                      const idakit_enum_const_t *consts, size_t n, uint64_t size,
-                      uint32_t has_size);
-  void (*t_fill_typedef)(void *ctx, uint32_t id, uint32_t underlying);
+  /* type-emit callbacks, shared with the bare-tinfo walks (see idakit_type_vtbl_t). */
+  idakit_type_vtbl_t types;
 
   /* locals. Append one lvar; the call order is the lvar index that `e_var.idx` refers to. flags:
    * bit0 is_arg, bit1 is_result, bit2 is_byref. loc_kind: 0 other, 1 register, 2 stack. */

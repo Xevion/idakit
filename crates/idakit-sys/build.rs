@@ -44,6 +44,7 @@ const FACADE_SOURCES: &[&str] = &[
     "facade/runtime.cpp",
     "facade/db.cpp",
     "facade/types.cpp",
+    "facade/type_walk.cpp",
     "facade/hexrays.cpp",
     "facade/decode.cpp",
 ];
@@ -122,6 +123,7 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
+    println!("cargo:rerun-if-changed=facade/type_walk.hpp");
     println!("cargo:rerun-if-env-changed=IDADIR");
     println!("cargo:rerun-if-env-changed=IDAKIT_EMIT_COMPILE_COMMANDS");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");

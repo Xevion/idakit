@@ -14,7 +14,7 @@
 
 use std::ffi::{c_char, c_void};
 
-use idakit_sys::{CaseDesc, EmitVtbl, EnumConstDesc, IDAKIT_NONE, MemberDesc};
+use idakit_sys::{CaseDesc, EmitVtbl, IDAKIT_NONE};
 use snafu::Snafu;
 
 use super::node::{
@@ -24,7 +24,8 @@ use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::{Ctree, CtreeBuilder};
 use crate::Address;
 use crate::arena::Idx;
-use crate::types::{EnumMember, TypeId, TypeMember};
+use crate::ffi::{lossy, slice};
+use crate::types::{TypeBuilder, TypeSink, raw, tid, type_vtbl};
 
 /// Structural `ctype_t` values the generic operator callback dispatches by name
 /// (operators proper go through `from_raw`).
@@ -72,20 +73,12 @@ fn sid(raw: u32) -> StatementId {
     Idx::from_raw(raw)
 }
 
-fn tid(raw: u32) -> TypeId {
-    Idx::from_raw(raw)
-}
-
 fn opt_e(raw: u32) -> Option<ExpressionId> {
     (raw != IDAKIT_NONE).then(|| eid(raw))
 }
 
 fn opt_s(raw: u32) -> Option<StatementId> {
     (raw != IDAKIT_NONE).then(|| sid(raw))
-}
-
-fn raw<T>(id: Idx<T>) -> u32 {
-    id.index() as u32
 }
 
 /// Accumulates the owned ctree as the facade walks. Its methods are the safe surface the
@@ -365,68 +358,6 @@ impl CallbackBuilder {
         self.push_statement(address, StatementKind::Empty)
     }
 
-    fn scalar(&mut self, kind: u32, bytes: u32, signed: u32, size: u64, has_size: u32) -> u32 {
-        raw(self
-            .b
-            .types_mut()
-            .scalar(kind, bytes, signed, size, has_size))
-    }
-
-    fn ptr(&mut self, target: u32, size: u64, has_size: u32) -> u32 {
-        raw(self.b.types_mut().ptr(tid(target), size, has_size))
-    }
-
-    fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
-        raw(self.b.types_mut().array(tid(elem), nelems, size, has_size))
-    }
-
-    fn function(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
-        let params = params.iter().map(|&p| tid(p)).collect();
-        raw(self.b.types_mut().function(tid(ret), params, vararg))
-    }
-
-    fn opaque(&mut self, name: String) -> u32 {
-        raw(self.b.types_mut().opaque(name))
-    }
-
-    fn named_ref(&mut self, name: String) -> u32 {
-        raw(self.b.types_mut().named_ref(name))
-    }
-
-    fn anon(&mut self) -> u32 {
-        raw(self.b.types_mut().anon())
-    }
-
-    fn fill_struct(
-        &mut self,
-        id: u32,
-        is_union: bool,
-        members: Vec<TypeMember>,
-        size: u64,
-        has_size: u32,
-    ) {
-        self.b
-            .types_mut()
-            .fill_struct(tid(id), is_union, members, size, has_size);
-    }
-
-    fn fill_enum(
-        &mut self,
-        id: u32,
-        underlying: u32,
-        members: Vec<EnumMember>,
-        size: u64,
-        has_size: u32,
-    ) {
-        self.b
-            .types_mut()
-            .fill_enum(tid(id), tid(underlying), members, size, has_size);
-    }
-
-    fn fill_typedef(&mut self, id: u32, underlying: u32) {
-        self.b.types_mut().fill_typedef(tid(id), tid(underlying));
-    }
-
     fn push_lvar(&mut self, lvar: Local) {
         self.b.push_lvar(lvar);
     }
@@ -449,31 +380,10 @@ impl CallbackBuilder {
     }
 }
 
-/// Borrow a facade array as a slice; a zero length yields an empty slice without
-/// dereferencing the (possibly null) pointer. The pointer is taken by reference so the
-/// returned lifetime is tied to its (stack) holder and cannot be chosen as `'static`.
-///
-/// # Safety
-/// For a non-zero `len`, `*ptr` must point to `len` initialized `T` valid for the borrow.
-unsafe fn slice<T>(ptr: &*const T, len: usize) -> &[T] {
-    if len == 0 {
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(*ptr, len) }
+impl TypeSink for CallbackBuilder {
+    fn type_builder(&mut self) -> &mut TypeBuilder {
+        self.b.types_mut()
     }
-}
-
-/// Decode a pooled string lossily (IDA names and literals are not guaranteed UTF-8);
-/// `None` for an empty/null span.
-///
-/// # Safety
-/// For a non-zero `len`, `ptr` must point to `len` readable bytes.
-unsafe fn lossy(ptr: *const c_char, len: usize) -> Option<String> {
-    if ptr.is_null() || len == 0 {
-        return None;
-    }
-    let bytes = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), len) };
-    Some(String::from_utf8_lossy(bytes).into_owned())
 }
 
 /// Reborrow the opaque context as the builder the walk threads through every callback. The
@@ -662,91 +572,6 @@ unsafe extern "C" fn cb_empty(ctx: *mut c_void, address: u64) -> u32 {
     unsafe { builder(&ctx) }.empty_statement(address)
 }
 
-unsafe extern "C" fn cb_scalar(
-    ctx: *mut c_void,
-    kind: u32,
-    bytes: u32,
-    signed: u32,
-    size: u64,
-    has_size: u32,
-) -> u32 {
-    unsafe { builder(&ctx) }.scalar(kind, bytes, signed, size, has_size)
-}
-unsafe extern "C" fn cb_ptr(ctx: *mut c_void, target: u32, size: u64, has_size: u32) -> u32 {
-    unsafe { builder(&ctx) }.ptr(target, size, has_size)
-}
-unsafe extern "C" fn cb_array(
-    ctx: *mut c_void,
-    elem: u32,
-    nelems: u64,
-    size: u64,
-    has_size: u32,
-) -> u32 {
-    unsafe { builder(&ctx) }.array(elem, nelems, size, has_size)
-}
-unsafe extern "C" fn cb_func(
-    ctx: *mut c_void,
-    ret: u32,
-    params: *const u32,
-    n: usize,
-    vararg: u32,
-) -> u32 {
-    let params = unsafe { slice(&params, n) };
-    unsafe { builder(&ctx) }.function(ret, params, vararg)
-}
-unsafe extern "C" fn cb_opaque(ctx: *mut c_void, name: *const c_char, name_len: usize) -> u32 {
-    let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
-    unsafe { builder(&ctx) }.opaque(name)
-}
-unsafe extern "C" fn cb_named_ref(ctx: *mut c_void, name: *const c_char, name_len: usize) -> u32 {
-    let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
-    unsafe { builder(&ctx) }.named_ref(name)
-}
-unsafe extern "C" fn cb_anon(ctx: *mut c_void) -> u32 {
-    unsafe { builder(&ctx) }.anon()
-}
-unsafe extern "C" fn cb_fill_struct(
-    ctx: *mut c_void,
-    id: u32,
-    is_union: u32,
-    members: *const MemberDesc,
-    n: usize,
-    size: u64,
-    has_size: u32,
-) {
-    let members = unsafe { slice(&members, n) }
-        .iter()
-        .map(|m| TypeMember {
-            name: unsafe { lossy(m.name, m.name_len) }.unwrap_or_default(),
-            bit_offset: m.bit_offset,
-            ty: tid(m.ty),
-            bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
-        })
-        .collect();
-    unsafe { builder(&ctx) }.fill_struct(id, is_union != 0, members, size, has_size);
-}
-unsafe extern "C" fn cb_fill_enum(
-    ctx: *mut c_void,
-    id: u32,
-    underlying: u32,
-    consts: *const EnumConstDesc,
-    n: usize,
-    size: u64,
-    has_size: u32,
-) {
-    let members = unsafe { slice(&consts, n) }
-        .iter()
-        .map(|c| EnumMember {
-            name: unsafe { lossy(c.name, c.name_len) }.unwrap_or_default(),
-            value: c.value,
-        })
-        .collect();
-    unsafe { builder(&ctx) }.fill_enum(id, underlying, members, size, has_size);
-}
-unsafe extern "C" fn cb_fill_typedef(ctx: *mut c_void, id: u32, underlying: u32) {
-    unsafe { builder(&ctx) }.fill_typedef(id, underlying);
-}
-
 #[allow(clippy::too_many_arguments)]
 unsafe extern "C" fn cb_lvar(
     ctx: *mut c_void,
@@ -806,16 +631,7 @@ static VTBL: EmitVtbl = EmitVtbl {
     s_try: cb_try,
     s_throw: cb_throw,
     s_empty: cb_empty,
-    t_scalar: cb_scalar,
-    t_ptr: cb_ptr,
-    t_array: cb_array,
-    t_func: cb_func,
-    t_opaque: cb_opaque,
-    t_named_ref: cb_named_ref,
-    t_anon: cb_anon,
-    t_fill_struct: cb_fill_struct,
-    t_fill_enum: cb_fill_enum,
-    t_fill_typedef: cb_fill_typedef,
+    types: type_vtbl::<CallbackBuilder>(),
     l_lvar: cb_lvar,
 };
 
@@ -846,7 +662,7 @@ mod tests {
     use assert2::assert;
 
     use super::*;
-    use crate::types::TypeKind;
+    use crate::types::{TypeKind, TypeMember};
 
     /// `cot_*` discriminants used by the operator tests (from hexrays.hpp).
     const COT_ASGADD: u32 = 6;

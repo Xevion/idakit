@@ -21,6 +21,7 @@
 #include <cstring>
 
 #include "idakit_facade.h"
+#include "type_walk.hpp"
 
 extern "C" size_t idakit_func_qty(void) { return get_func_qty(); }
 
@@ -772,3 +773,39 @@ extern "C" int64_t idakit_frame_var_type(const void *h, size_t i, char *buf, siz
 }
 
 extern "C" void idakit_frame_free(void *h) { delete (frame_data *)h; }
+
+// Structured counterpart to idakit_frame_build: one shared type walk over the frame UDT, so a
+// named type used by two variables is emitted once, reporting each variable with its resolved
+// type handle instead of a printed string.
+extern "C" int idakit_frame_type_walk(idakit_ea_t ea, const idakit_frame_vtbl_t *v, void *ctx,
+                                      uint64_t *frame_size) {
+  if (v == nullptr || frame_size == nullptr)
+    return 1;
+  try {
+    func_t *pfn = get_func((ea_t)ea);
+    if (pfn == nullptr)
+      return 1;
+    tinfo_t tif;
+    udt_type_data_t udt;
+    if (!get_func_frame(&tif, pfn) || !tif.get_udt_details(&udt))
+      return 1;
+    *frame_size = (uint64_t)get_frame_size(pfn);
+    idakit_facade::type_walker_t tw;
+    tw.v = &v->types;
+    tw.ctx = ctx;
+    for (const udm_t &m : udt) {
+      uint32_t flags =
+          (m.is_retaddr() ? FRAME_VAR_RETADDR : 0) | (m.is_savregs() ? FRAME_VAR_SAVREGS : 0);
+      // Only a real, typed variable carries a structured type; reserved slots and untyped
+      // stack slots report IDAKIT_NONE, so the table holds only types a variable references.
+      uint32_t ty = (flags == 0 && !m.type.empty()) ? tw.ty(m.type) : IDAKIT_NONE;
+      // udm offset/size are in bits; soff_to_fpoff wants the byte struct offset.
+      int64_t offset = (int64_t)soff_to_fpoff(pfn, (uval_t)(m.offset / 8));
+      uint64_t size = m.size / 8;
+      v->f_var(ctx, m.name.c_str(), m.name.length(), offset, size, flags, ty);
+    }
+    return 0;
+  } catch (...) {
+    std::abort();
+  }
+}

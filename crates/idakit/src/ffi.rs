@@ -42,6 +42,33 @@ pub(crate) fn read_string(f: impl Fn(*mut c_char, usize) -> i64) -> Option<Strin
     Some(String::from_utf8_lossy(&heap[..len2]).into_owned())
 }
 
+/// Borrow a facade array as a slice; a zero length yields an empty slice without dereferencing
+/// the (possibly null) pointer. The pointer is taken by reference so the returned lifetime is
+/// tied to its (stack) holder and cannot be chosen as `'static`.
+///
+/// # Safety
+/// For a non-zero `len`, `*ptr` must point to `len` initialized `T` valid for the borrow.
+pub(crate) unsafe fn slice<T>(ptr: &*const T, len: usize) -> &[T] {
+    if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(*ptr, len) }
+    }
+}
+
+/// Decode a pooled string lossily (IDA names and literals are not guaranteed UTF-8); `None`
+/// for an empty/null span.
+///
+/// # Safety
+/// For a non-zero `len`, `ptr` must point to `len` readable bytes.
+pub(crate) unsafe fn lossy(ptr: *const c_char, len: usize) -> Option<String> {
+    if ptr.is_null() || len == 0 {
+        return None;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), len) };
+    Some(String::from_utf8_lossy(bytes).into_owned())
+}
+
 /// Pass `s` to `f` as a C string, or [`Error::InteriorNul`] if it has a NUL.
 pub(crate) fn with_cstr<R>(
     s: &str,

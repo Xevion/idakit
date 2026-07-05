@@ -37,6 +37,26 @@ pub struct CaseDesc {
     pub body: u32,
 }
 
+/// The type-emit callbacks, shared by every walk that builds an interned type table (the
+/// ctree walk via [`EmitVtbl::types`] and the bare-tinfo walks). `#[repr(C)]` and field order
+/// mirror `idakit_type_vtbl_t`. Every name/member-name span borrows a C++ stack temporary
+/// valid only for that single callback (see [`EmitVtbl`]).
+#[repr(C)]
+pub struct TypeVtbl {
+    pub t_scalar: unsafe extern "C" fn(*mut c_void, u32, u32, u32, u64, u32) -> u32,
+    pub t_ptr: unsafe extern "C" fn(*mut c_void, u32, u64, u32) -> u32,
+    pub t_array: unsafe extern "C" fn(*mut c_void, u32, u64, u64, u32) -> u32,
+    pub t_func: unsafe extern "C" fn(*mut c_void, u32, *const u32, usize, u32) -> u32,
+    pub t_opaque: unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> u32,
+    pub t_named_ref: unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> u32,
+    pub t_anon: unsafe extern "C" fn(*mut c_void) -> u32,
+    pub t_fill_struct:
+        unsafe extern "C" fn(*mut c_void, u32, u32, *const MemberDesc, usize, u64, u32),
+    pub t_fill_enum:
+        unsafe extern "C" fn(*mut c_void, u32, u32, *const EnumConstDesc, usize, u64, u32),
+    pub t_fill_typedef: unsafe extern "C" fn(*mut c_void, u32, u32),
+}
+
 /// The callbacks the facade invokes while streaming a ctree walk. The consumer (idakit)
 /// builds owned nodes inside each callback and returns the handle the parent will
 /// reference; children are emitted before parents. `#[repr(C)]` and field order mirror
@@ -77,18 +97,7 @@ pub struct EmitVtbl {
     pub s_throw: unsafe extern "C" fn(*mut c_void, Address, u32) -> u32,
     pub s_empty: unsafe extern "C" fn(*mut c_void, Address) -> u32,
 
-    pub t_scalar: unsafe extern "C" fn(*mut c_void, u32, u32, u32, u64, u32) -> u32,
-    pub t_ptr: unsafe extern "C" fn(*mut c_void, u32, u64, u32) -> u32,
-    pub t_array: unsafe extern "C" fn(*mut c_void, u32, u64, u64, u32) -> u32,
-    pub t_func: unsafe extern "C" fn(*mut c_void, u32, *const u32, usize, u32) -> u32,
-    pub t_opaque: unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> u32,
-    pub t_named_ref: unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> u32,
-    pub t_anon: unsafe extern "C" fn(*mut c_void) -> u32,
-    pub t_fill_struct:
-        unsafe extern "C" fn(*mut c_void, u32, u32, *const MemberDesc, usize, u64, u32),
-    pub t_fill_enum:
-        unsafe extern "C" fn(*mut c_void, u32, u32, *const EnumConstDesc, usize, u64, u32),
-    pub t_fill_typedef: unsafe extern "C" fn(*mut c_void, u32, u32),
+    pub types: TypeVtbl,
 
     pub l_lvar: unsafe extern "C" fn(
         *mut c_void,

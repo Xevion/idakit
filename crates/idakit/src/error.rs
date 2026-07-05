@@ -174,10 +174,11 @@ pub enum Error {
         reason: String,
     },
 
-    /// Decompiled, but the ctree could not be materialized; carries the [`ExtractError`].
-    #[snafu(display("ctree extraction failed at {address:#x}: {source}"))]
+    /// A structured type walk (a ctree or a stack frame) could not be materialized; carries the
+    /// [`ExtractError`].
+    #[snafu(display("type extraction failed at {address:#x}: {source}"))]
     Extract {
-        /// Address whose ctree failed to materialize.
+        /// Address whose types failed to materialize.
         address: u64,
         /// The underlying extraction error.
         source: ExtractError,
@@ -419,7 +420,7 @@ mod tests {
     )]
     #[case::extract(
         Error::Extract { address: 0x1400_1000, source: ExtractError::WalkFailed },
-        "ctree extraction failed at 0x14001000: the facade could not walk the ctree (null cfunc)",
+        "type extraction failed at 0x14001000: the facade could not walk the ctree (null cfunc)",
     )]
     #[case::kernel(
         Error::Kernel { reason: "the kernel thread is gone".to_owned() },

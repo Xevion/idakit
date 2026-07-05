@@ -13,8 +13,10 @@ use std::collections::HashMap;
 use crate::arena::{Arena, Idx};
 
 mod builder;
+mod sink;
 
 pub(crate) use builder::TypeBuilder;
+pub(crate) use sink::{TypeSink, raw, reborrow, tid, type_vtbl};
 
 /// Handle to a [`TypeData`] in a [`TypeTable`].
 pub type TypeId = Idx<TypeData>;

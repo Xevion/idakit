@@ -14,13 +14,16 @@
 //! name (`__return_address`) carries no information the [`kind`](FrameVar::kind) doesn't, so it is
 //! dropped rather than surfaced as a placeholder.
 
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void};
 
 use idakit_sys as sys;
 
 use crate::Idb;
 use crate::address::Address;
-use crate::ffi::read_string;
+use crate::ctree::ExtractError;
+use crate::error::{Error, Result};
+use crate::ffi::lossy;
+use crate::types::{TypeBuilder, TypeData, TypeId, TypeSink, TypeTable, reborrow, tid, type_vtbl};
 
 /// What a [`FrameVar`] is: a real stack variable (carrying its name and type), or one of the two
 /// slots IDA reserves in every frame.
@@ -31,11 +34,10 @@ pub enum FrameVarKind {
     Variable {
         /// The variable's name (e.g. `var_18`, `arg_4`); empty if IDA assigned none.
         name: String,
-        /// The variable's type, rendered as IDA prints it (e.g. `int`, `char[16]`); empty if
-        /// untyped. A rendered string, not a structured type -- the same representation
-        /// [`Member::type_repr`](crate::Member) uses at the disassembly level (the structured form
-        /// lives only in the decompiler's [`TypeTable`](crate::ctree::TypeTable)).
-        type_repr: String,
+        /// The variable's structured type as a [`TypeId`] into the [`Frame`]'s
+        /// [`types`](Frame::types) table, or `None` for an untyped stack slot. Resolve it with
+        /// [`Frame::type_of`].
+        ty: Option<TypeId>,
     },
     /// IDA's reserved return-address slot.
     ReturnAddress,
@@ -44,16 +46,16 @@ pub enum FrameVarKind {
 }
 
 impl FrameVarKind {
-    /// Build from the facade's `(flags, name, type)` triple. A reserved slot (either flag set)
-    /// drops the synthetic name/type; return-address wins a (never-real) tie so the mapping stays
-    /// total and deterministic.
-    fn from_parts(flags: u32, name: String, type_repr: String) -> Self {
+    /// Build from the facade's `(flags, name, ty)` parts. A reserved slot (either flag set) drops
+    /// the synthetic name/type; return-address wins a (never-real) tie so the mapping stays total
+    /// and deterministic.
+    fn from_parts(flags: u32, name: String, ty: Option<TypeId>) -> Self {
         if flags & sys::FRAME_VAR_RETADDR != 0 {
             Self::ReturnAddress
         } else if flags & sys::FRAME_VAR_SAVREGS != 0 {
             Self::SavedRegisters
         } else {
-            Self::Variable { name, type_repr }
+            Self::Variable { name, ty }
         }
     }
 }
@@ -101,14 +103,14 @@ impl FrameVar {
         }
     }
 
-    /// The variable's rendered type, or `None` for a reserved slot (the `Option` marks
-    /// variable-vs-reserved, not a missing type -- a real variable's type is empty at worst).
-    /// Shortcut into [`kind`](Self::kind).
+    /// The variable's structured type handle, or `None` for a reserved slot or an untyped stack
+    /// slot. Resolve it against the owning [`Frame`] with [`Frame::type_of`]. Shortcut into
+    /// [`kind`](Self::kind).
     #[inline]
     #[must_use]
-    pub fn type_repr(&self) -> Option<&str> {
+    pub fn ty(&self) -> Option<TypeId> {
         match &self.kind {
-            FrameVarKind::Variable { type_repr, .. } => Some(type_repr),
+            FrameVarKind::Variable { ty, .. } => *ty,
             _ => None,
         }
     }
@@ -125,9 +127,10 @@ impl FrameVar {
 /// An owned, `Send` snapshot of a function's stack frame. Build with
 /// [`Function::frame`](crate::Function::frame)/[`Idb::frame`], then read its [`size`](Self::size)
 /// and [`vars`](Self::vars). Detached from the kernel, so it inspects on any thread.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Frame {
     size: u64,
+    types: TypeTable,
     vars: Vec<FrameVar>,
 }
 
@@ -137,6 +140,22 @@ impl Frame {
     #[must_use]
     pub const fn size(&self) -> u64 {
         self.size
+    }
+
+    /// The interned type table backing every [`FrameVar::ty`] handle. The frame's own arena,
+    /// materialized on the kernel thread, so it resolves types on any thread.
+    #[inline]
+    #[must_use]
+    pub const fn types(&self) -> &TypeTable {
+        &self.types
+    }
+
+    /// Resolve a [`FrameVar::ty`] handle to its type. Handles come from this frame's own
+    /// [`types`](Self::types) table, so this never panics on a handle taken from `self`.
+    #[inline]
+    #[must_use]
+    pub fn type_of(&self, id: TypeId) -> &TypeData {
+        self.types.get(id)
     }
 
     /// Every slot in the frame, in IDA's member order (low to high offset) -- real variables and
@@ -161,56 +180,92 @@ impl Frame {
     pub fn is_empty(&self) -> bool {
         self.vars.is_empty()
     }
+}
 
-    /// Drain a built frame snapshot handle into an owned [`Frame`]. The caller owns `handle` and
-    /// frees it afterward; this only reads through it.
-    fn from_handle(handle: *const c_void) -> Self {
-        // SAFETY (every call below): `handle` is a live frame snapshot; `i` stays in `[0, nvars)`;
-        // out-params are valid locals.
-        let size = unsafe { sys::idakit_frame_size(handle) };
-        let n = unsafe { sys::idakit_frame_nvars(handle) };
-        let mut vars = Vec::with_capacity(n);
-        for i in 0..n {
-            let (mut offset, mut var_size, mut flags) = (0i64, 0u64, 0u32);
-            if unsafe { sys::idakit_frame_var(handle, i, &mut offset, &mut var_size, &mut flags) }
-                == 0
-            {
-                continue;
-            }
-            let name =
-                read_string(|buf, cap| unsafe { sys::idakit_frame_var_name(handle, i, buf, cap) })
-                    .unwrap_or_default();
-            let type_repr =
-                read_string(|buf, cap| unsafe { sys::idakit_frame_var_type(handle, i, buf, cap) })
-                    .unwrap_or_default();
-            vars.push(FrameVar {
-                offset,
-                size: var_size,
-                kind: FrameVarKind::from_parts(flags, name, type_repr),
-            });
-        }
-        Self { size, vars }
+/// Accumulates the frame walk: the shared [`TypeBuilder`] every variable's type is interned in,
+/// plus the variable rows themselves (their `ty` handles into that builder's table).
+struct FrameBuilder {
+    types: TypeBuilder,
+    vars: Vec<FrameVar>,
+}
+
+impl TypeSink for FrameBuilder {
+    fn type_builder(&mut self) -> &mut TypeBuilder {
+        &mut self.types
     }
 }
 
+/// Append one frame variable. `ty` is [`IDAKIT_NONE`](sys::IDAKIT_NONE) for a reserved or
+/// untyped slot, otherwise a handle into the shared table.
+unsafe extern "C" fn cb_f_var(
+    ctx: *mut c_void,
+    name: *const c_char,
+    name_len: usize,
+    offset: i64,
+    size: u64,
+    flags: u32,
+    ty: u32,
+) {
+    let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
+    let ty = (ty != sys::IDAKIT_NONE).then(|| tid(ty));
+    // SAFETY: `ctx` is the `*mut FrameBuilder` passed to the walk, unaliased for this call.
+    unsafe { reborrow::<FrameBuilder>(&ctx) }
+        .vars
+        .push(FrameVar {
+            offset,
+            size,
+            kind: FrameVarKind::from_parts(flags, name, ty),
+        });
+}
+
 impl Idb {
-    /// Snapshot the stack frame of the function containing `address`, or `None` if no function
-    /// covers it or the function has no frame. The disassembly-level view of the function's stack
-    /// layout -- no decompilation needed. For the decompiler's richer locals, see
-    /// [`ctree`](Self::ctree).
-    #[must_use]
-    pub fn frame(&self, address: Address) -> Option<Frame> {
-        // SAFETY: the kernel is claimed for `&self`; the handle is owned by this call and freed
-        // once, below.
-        let handle = unsafe { sys::idakit_frame_build(address.get()) };
-        if handle.is_null() {
-            return None;
+    /// Snapshot the stack frame of the function containing `address`: `Ok(None)` if no function
+    /// covers it or the function has no frame, `Err` only if a variable's type could not be
+    /// structured. The disassembly-level view of the function's stack layout -- no decompilation
+    /// needed. For the decompiler's richer locals, see [`ctree`](Self::ctree).
+    pub fn frame(&self, address: Address) -> Result<Option<Frame>> {
+        let mut fb = FrameBuilder {
+            types: TypeBuilder::new(),
+            vars: Vec::new(),
+        };
+        let vtbl = sys::FrameVtbl {
+            types: type_vtbl::<FrameBuilder>(),
+            f_var: cb_f_var,
+        };
+        let mut size = 0u64;
+        // SAFETY: the kernel is claimed for `&self`; `vtbl`'s callbacks are static and `fb` is a
+        // valid out-context borrowed only for this call; `size` is a valid out-param.
+        let rc = unsafe {
+            sys::idakit_frame_type_walk(
+                address.get(),
+                &vtbl,
+                (&mut fb as *mut FrameBuilder).cast(),
+                &mut size,
+            )
+        };
+        if rc != 0 {
+            return Ok(None);
         }
-        let frame = Frame::from_handle(handle);
-        // SAFETY: `handle` came from `idakit_frame_build`, is non-null, and is freed exactly once
-        // here; nothing borrows it afterwards.
-        unsafe { sys::idakit_frame_free(handle) };
-        Some(frame)
+        // The builder is error-type-agnostic (see the ctree walk): surface an over-wide scalar or
+        // an unfilled placeholder as an extraction failure rather than shipping a malformed table.
+        if let Some(bytes) = fb.types.too_wide() {
+            return Err(Error::Extract {
+                address: address.get(),
+                source: ExtractError::ScalarTooWide { bytes },
+            });
+        }
+        let unfilled = fb.types.unfilled();
+        if unfilled != 0 {
+            return Err(Error::Extract {
+                address: address.get(),
+                source: ExtractError::UnfilledType { count: unfilled },
+            });
+        }
+        Ok(Some(Frame {
+            size,
+            types: fb.types.into_table(),
+            vars: fb.vars,
+        }))
     }
 }
 
@@ -229,26 +284,27 @@ mod tests {
     /// the matching special kind and drops the name/type, with return-address winning a tie.
     #[test]
     fn kind_from_parts() {
+        let ty = Some(tid(0));
         assert!(
-            FrameVarKind::from_parts(0, "var_18".to_owned(), "int".to_owned())
+            FrameVarKind::from_parts(0, "var_18".to_owned(), ty)
                 == FrameVarKind::Variable {
                     name: "var_18".to_owned(),
-                    type_repr: "int".to_owned(),
+                    ty,
                 }
         );
         assert!(
-            FrameVarKind::from_parts(sys::FRAME_VAR_RETADDR, "r".to_owned(), String::new())
+            FrameVarKind::from_parts(sys::FRAME_VAR_RETADDR, "r".to_owned(), ty)
                 == FrameVarKind::ReturnAddress
         );
         assert!(
-            FrameVarKind::from_parts(sys::FRAME_VAR_SAVREGS, "s".to_owned(), String::new())
+            FrameVarKind::from_parts(sys::FRAME_VAR_SAVREGS, "s".to_owned(), None)
                 == FrameVarKind::SavedRegisters
         );
         assert!(
             FrameVarKind::from_parts(
                 sys::FRAME_VAR_RETADDR | sys::FRAME_VAR_SAVREGS,
                 String::new(),
-                String::new()
+                None
             ) == FrameVarKind::ReturnAddress
         );
     }
@@ -256,17 +312,18 @@ mod tests {
     /// A real variable exposes its name/type and is not special; a reserved slot is the reverse.
     #[test]
     fn accessors_follow_the_kind() {
+        let ty = Some(tid(3));
         let var = FrameVar {
             offset: -0x18,
             size: 4,
             kind: FrameVarKind::Variable {
                 name: "var_18".to_owned(),
-                type_repr: "int".to_owned(),
+                ty,
             },
         };
         assert!(!var.is_special());
         assert!(var.name() == Some("var_18"));
-        assert!(var.type_repr() == Some("int"));
+        assert!(var.ty() == ty);
 
         let retaddr = FrameVar {
             offset: 0,
@@ -275,6 +332,6 @@ mod tests {
         };
         assert!(retaddr.is_special());
         assert!(retaddr.name().is_none());
-        assert!(retaddr.type_repr().is_none());
+        assert!(retaddr.ty().is_none());
     }
 }

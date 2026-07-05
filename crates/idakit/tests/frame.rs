@@ -25,14 +25,18 @@ fn run(idb: &mut Idb, db: &str) {
 
     let mut with_frame = 0usize;
     let mut with_special = 0usize;
+    let mut with_typed = 0usize;
     let mut example = None;
     for f in idb.functions().take(4000) {
-        let Some(frame) = f.frame().filter(|fr| !fr.is_empty()) else {
+        let Some(frame) = f.frame().expect("frame walk").filter(|fr| !fr.is_empty()) else {
             continue;
         };
         with_frame += 1;
         if frame.vars().iter().any(FrameVar::is_special) {
             with_special += 1;
+        }
+        if frame.vars().iter().any(|v| v.ty().is_some()) {
+            with_typed += 1;
         }
         if example.is_none() {
             example = Some((f.address(), frame));
@@ -51,15 +55,19 @@ fn run(idb: &mut Idb, db: &str) {
         frame.len()
     );
     for v in frame.vars() {
+        let kind = v.ty().map(|id| &frame.type_of(id).kind);
         println!(
-            "  {:>14} @ {:>+#8x} size={:<3} type={:?}",
+            "  {:>14} @ {:>+#8x} size={:<3} ty={:?}",
             v.name().unwrap_or("<reserved>"),
             v.offset(),
             v.size(),
-            v.type_repr(),
+            kind,
         );
     }
-    println!("{with_frame} framed functions in sample, {with_special} with reserved slots");
+    println!(
+        "{with_frame} framed functions in sample, {with_special} with reserved slots, \
+         {with_typed} with a structured-typed variable"
+    );
 
     assert!(
         frame.size() > 0,
@@ -68,6 +76,10 @@ fn run(idb: &mut Idb, db: &str) {
     assert!(
         with_special > 0,
         "IDA's reserved return-address/saved-register slots should be classified"
+    );
+    assert!(
+        with_typed > 0,
+        "some frame variable in the sample should carry a structured type"
     );
 
     idb.close(false);

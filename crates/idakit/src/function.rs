@@ -142,10 +142,9 @@ impl<'db> Function<'db> {
         })
     }
 
-    /// Snapshot this function's stack frame, or `None` if it has none. The disassembly-level
+    /// Snapshot this function's stack frame, or `Ok(None)` if it has none. The disassembly-level
     /// stack layout, no decompilation needed; see [`Idb::frame`].
-    #[must_use]
-    pub fn frame(&self) -> Option<Frame> {
+    pub fn frame(&self) -> Result<Option<Frame>> {
         self.db.frame(self.address)
     }
 
