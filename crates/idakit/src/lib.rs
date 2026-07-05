@@ -80,6 +80,7 @@ mod raw;
 mod reference;
 mod search;
 mod segment;
+mod strings;
 mod ty;
 
 pub use address::{Address, BADADDR};
@@ -103,6 +104,7 @@ pub use name::{Name, Names};
 pub use reference::{CodeReference, DataReference, Reference, ReferenceKind, References};
 pub use search::{Matches, Pattern};
 pub use segment::{Segment, Segments};
+pub use strings::{StringLiteral, Strings};
 pub use ty::{Member, Members, TypeInfo};
 
 use crate::kernel::KernelClaim;

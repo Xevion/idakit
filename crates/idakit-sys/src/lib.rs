@@ -40,6 +40,7 @@ mod name;
 mod reference;
 mod runtime;
 mod segment;
+mod strings;
 mod ty;
 
 pub use bytes::*;
@@ -54,4 +55,5 @@ pub use name::*;
 pub use reference::*;
 pub use runtime::*;
 pub use segment::*;
+pub use strings::*;
 pub use ty::*;

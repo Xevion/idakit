@@ -336,4 +336,34 @@ impl Idb {
     pub(crate) fn imports_build(&self) -> *mut c_void {
         unsafe { sys::idakit_imports_build() }
     }
+
+    /// (Re)build IDA's global string list; a query-time scan, not a database mutation.
+    pub(crate) fn strlist_build(&self) {
+        unsafe { sys::idakit_strlist_build() };
+    }
+
+    pub(crate) fn strlist_qty(&self) -> usize {
+        unsafe { sys::idakit_strlist_qty() }
+    }
+
+    pub(crate) fn strlist_item(
+        &self,
+        n: usize,
+        ea: *mut sys::Address,
+        length: *mut c_int,
+        ty: *mut c_int,
+    ) -> c_int {
+        unsafe { sys::idakit_strlist_item(n, ea, length, ty) }
+    }
+
+    pub(crate) fn strlit_contents(
+        &self,
+        address: Address,
+        len: usize,
+        ty: c_int,
+        buf: *mut c_char,
+        cap: usize,
+    ) -> i64 {
+        unsafe { sys::idakit_strlit_contents(address.get(), len, ty, buf, cap) }
+    }
 }

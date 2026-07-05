@@ -13,7 +13,8 @@
 #include <nalt.hpp>   // get_input_file_path, get_root_filename, enum_import_names
 #include <name.hpp>
 #include <segment.hpp>
-#include <xref.hpp> // xrefblk_t
+#include <strlist.hpp> // build_strlist, get_strlist_item
+#include <xref.hpp>    // xrefblk_t
 
 #include <cstring>
 
@@ -336,6 +337,43 @@ extern "C" int64_t idakit_imports_module(const void *h, size_t n, char *buf, siz
 }
 
 extern "C" void idakit_imports_free(void *h) { delete (import_list_t *)h; }
+
+extern "C" void idakit_strlist_build(void) {
+  try {
+    build_strlist();
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" size_t idakit_strlist_qty(void) { return get_strlist_qty(); }
+
+extern "C" int idakit_strlist_item(size_t n, idakit_ea_t *ea, int *length, int *type) {
+  string_info_t si;
+  if (!get_strlist_item(&si, n))
+    return 0;
+  *ea = (idakit_ea_t)si.ea;
+  *length = si.length;
+  *type = si.type;
+  return 1;
+}
+
+extern "C" int64_t idakit_strlit_contents(idakit_ea_t ea, size_t len, int type, char *buf,
+                                          size_t cap) {
+  try {
+    qstring out;
+    ssize_t r = get_strlit_contents(&out, (ea_t)ea, len, type, nullptr, STRCONV_REPLCHAR);
+    if (r < 0) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  } catch (...) {
+    std::abort();
+  }
+}
 
 extern "C" int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size) {
   return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);

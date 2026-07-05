@@ -86,6 +86,16 @@ int64_t idakit_imports_name(const void *h, size_t n, char *buf, size_t cap);
 int64_t idakit_imports_module(const void *h, size_t n, char *buf, size_t cap);
 void idakit_imports_free(void *h);
 
+/* Strings (strlist.hpp + bytes.hpp). strlist_build (re)builds IDA's string list (an
+ * O(database) scan); strlist_qty is its length and strlist_item fills the nth entry's address,
+ * octet length, and STRTYPE code (1 ok / 0 out of range). strlit_contents decodes the string
+ * at (ea, len, type) to UTF-8, snprintf-style (<0 = undecodable), replacing undecodable units
+ * with U+FFFD. */
+void idakit_strlist_build(void);
+size_t idakit_strlist_qty(void);
+int idakit_strlist_item(size_t n, idakit_ea_t *ea, int *length, int *type);
+int64_t idakit_strlit_contents(idakit_ea_t ea, size_t len, int type, char *buf, size_t cap);
+
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size); /* bytes read, <0 on fail */
 
 /* Byte/item classification and navigation (bytes.hpp). `flags` is IDA's per-address class
