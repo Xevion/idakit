@@ -4,9 +4,10 @@
 //! It walks every code head in every function's chunks, decodes it, and asserts the decode
 //! *succeeds* -- a register or value type the model cannot represent exactly is a loud error,
 //! never a `Gpr`/`Void` guess -- then cross-checks each register's resolved name against its
-//! assigned [`RegisterClass`]. That name <-> class check is the tripwire for a misclassified
-//! register: `bnd0` classed as anything but [`RegisterClass::Bnd`] fails here. Read-only; opens
-//! `save = false`. Skips when no test database is present.
+//! assigned [`RegisterClass`] in *both* directions. That name <-> class check is the tripwire
+//! for a misclassified register (`bnd0` classed as anything but [`RegisterClass::Bnd`]) and for
+//! a mis-named one (a `St` register spelled `rsp`). Read-only; opens `save = false`. Skips when
+//! no test database is present.
 
 mod common;
 
@@ -26,12 +27,28 @@ fn decode_is_strict_and_consistent() {
     .expect("kernel init failed");
 }
 
-/// The register classes whose resolved name has a fixed prefix, so name and class must agree.
-/// GPR/segment names are irregular, and st/control/debug/test names are a known, separate gap
-/// (the optype-register path still mis-names them), so those classes are tallied but not
-/// name-checked here.
-fn expected_class(name: &str) -> Option<RegisterClass> {
-    // Order matters: xmm/ymm/zmm are checked before the bare `mm` prefix.
+/// The fixed name prefix of a register class whose spelling is regular. GPR/segment/ip names
+/// are irregular or width-varied (`rax`/`eax`/`al`, `rip`), so they carry no prefix and are
+/// tallied but not name-checked.
+fn class_prefix(class: RegisterClass) -> Option<&'static str> {
+    Some(match class {
+        RegisterClass::Xmm => "xmm",
+        RegisterClass::Ymm => "ymm",
+        RegisterClass::Zmm => "zmm",
+        RegisterClass::Mmx => "mm",
+        RegisterClass::Mask => "k",
+        RegisterClass::Bnd => "bnd",
+        RegisterClass::St => "st",
+        RegisterClass::Control => "cr",
+        RegisterClass::Debug => "dr",
+        RegisterClass::Test => "tr",
+        _ => return None,
+    })
+}
+
+/// The class a register name implies, by prefix. `xmm`/`ymm`/`zmm` are matched before the bare
+/// `mm`; `k` requires a following digit so it does not swallow other spellings.
+fn name_to_class(name: &str) -> Option<RegisterClass> {
     if name.starts_with("xmm") {
         Some(RegisterClass::Xmm)
     } else if name.starts_with("ymm") {
@@ -42,7 +59,15 @@ fn expected_class(name: &str) -> Option<RegisterClass> {
         Some(RegisterClass::Bnd)
     } else if name.starts_with("mm") {
         Some(RegisterClass::Mmx)
-    } else if name.len() == 2 && name.starts_with('k') && name.as_bytes()[1].is_ascii_digit() {
+    } else if name.starts_with("st") {
+        Some(RegisterClass::St)
+    } else if name.starts_with("cr") {
+        Some(RegisterClass::Control)
+    } else if name.starts_with("dr") {
+        Some(RegisterClass::Debug)
+    } else if name.starts_with("tr") {
+        Some(RegisterClass::Test)
+    } else if name.len() >= 2 && name.starts_with('k') && name.as_bytes()[1].is_ascii_digit() {
         Some(RegisterClass::Mask)
     } else {
         None
@@ -51,11 +76,22 @@ fn expected_class(name: &str) -> Option<RegisterClass> {
 
 fn check_register(reg: &Register, address: u64, classes: &mut [usize; 13]) {
     classes[reg.class.raw() as usize] += 1;
-    if let Some(expected) = expected_class(&reg.name) {
+    let name = reg.name.as_ref();
+    // class -> name: a regularly-spelled class must produce that spelling (catches a St
+    // register mis-named `rsp`).
+    if let Some(prefix) = class_prefix(reg.class) {
+        assert!(
+            name.starts_with(prefix),
+            "register {name:?} at {address:#x} is class {:?} but not named {prefix}*",
+            reg.class,
+        );
+    }
+    // name -> class: a name that reads as a special register must carry that class (catches a
+    // `bnd0` classed as Gpr).
+    if let Some(expected) = name_to_class(name) {
         assert!(
             reg.class == expected,
-            "register {:?} at {address:#x} classed {:?}, name implies {expected:?}",
-            reg.name.as_ref(),
+            "register {name:?} at {address:#x} classed {:?}, name implies {expected:?}",
             reg.class,
         );
     }

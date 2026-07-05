@@ -63,41 +63,34 @@ uint8_t reg_class_of(int r) {
   return RC_BAD;
 }
 
-// Class for a register carried by a processor-specific operand type, where op.reg is a
-// class-relative index (control/debug/test) rather than a RegNo.
-uint8_t reg_class_for_optype(uint8_t t) {
-  switch (t) {
-  case o_trreg:
-    return RC_TEST;
-  case o_dbreg:
-    return RC_DEBUG;
-  case o_crreg:
-    return RC_CONTROL;
-  case o_fpreg:
-    return RC_ST;
-  case o_mmxreg:
-    return RC_MMX;
-  case o_xmmreg:
-    return RC_XMM;
-  case o_ymmreg:
-    return RC_YMM;
-  case o_zmmreg:
-    return RC_ZMM;
-  case o_kreg:
-    return RC_MASK;
-  default:
-    return RC_GPR;
-  }
-}
-
+// Spell a register from its global RegNo. The wide integer GPRs and the instruction pointer
+// alias by width (rax/eax/ax/al, rip/eip/ip), so those go through get_reg_name(reg, width);
+// every other register has a single spelling in the processor's own name table, which is
+// width-independent and robust where get_reg_name's width match is finicky (st is catalogued
+// at 8 bytes, not its 10-byte extent; byte regs resolve only at width 1).
 void fill_reg(idakit_reg_t *r, int num, uint8_t cls, int width) {
   r->num = (uint16_t)num;
   r->cls = cls;
   r->width = (uint8_t)width;
   r->name[0] = 0;
-  qstring nm;
-  if (num >= 0 && get_reg_name(&nm, num, width > 0 ? (size_t)width : 8) > 0)
-    qstrncpy(r->name, nm.c_str(), sizeof(r->name));
+  if ((num >= R_ax && num <= R_r15) || num == R_ip) {
+    qstring nm;
+    if (get_reg_name(&nm, num, width > 0 ? (size_t)width : 8) > 0)
+      qstrncpy(r->name, nm.c_str(), sizeof(r->name));
+  } else if (num >= 0 && num < PH.regs_num && PH.reg_names[num] != nullptr) {
+    qstrncpy(r->name, PH.reg_names[num], sizeof(r->name));
+  }
+}
+
+// Name a control/debug/test register. These carry a class-relative index in op.reg and have
+// no global RegNo or name-table entry: their text exists only in IDA's out routine, so
+// reconstruct the canonical "cr2"/"dr4"/"tr7" spelling from the index. `prefix` is the class
+// letter ('c'/'d'/'t'); cr8 (only) takes a "d" suffix via the cr_suff flag ("cr8d").
+void fill_special_reg(idakit_reg_t *r, char prefix, int index, uint8_t cls, bool d_suffix) {
+  r->num = (uint16_t)index;
+  r->cls = cls;
+  r->width = 0;
+  qsnprintf(r->name, sizeof(r->name), "%cr%d%s", prefix, index, d_suffix ? "d" : "");
 }
 
 void clear_reg(idakit_reg_t *r) {
@@ -148,17 +141,46 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, idakit_op_t *dst) {
     fill_reg(&dst->reg, op.reg, rc, (int)get_dtype_size(op.dtype));
     return 0;
   }
-  case o_trreg:
-  case o_dbreg:
-  case o_crreg:
+  // Register operands whose op.reg is a class-relative index into a global RegNo block: map
+  // it to the RegNo so fill_reg names it from the processor table. On x86-64 only o_fpreg
+  // actually occurs here (SIMD registers arrive as plain o_reg); the others are kept so a
+  // future/32-bit encoding does not fall through to the -3 reject.
   case o_fpreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_reg(&dst->reg, R_st0 + op.reg, RC_ST, (int)get_dtype_size(op.dtype));
+    return 0;
   case o_mmxreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_reg(&dst->reg, R_mm0 + op.reg, RC_MMX, (int)get_dtype_size(op.dtype));
+    return 0;
   case o_xmmreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_reg(&dst->reg, R_xmm0 + op.reg, RC_XMM, (int)get_dtype_size(op.dtype));
+    return 0;
   case o_ymmreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_reg(&dst->reg, R_ymm0 + op.reg, RC_YMM, (int)get_dtype_size(op.dtype));
+    return 0;
   case o_zmmreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_reg(&dst->reg, R_zmm0 + op.reg, RC_ZMM, (int)get_dtype_size(op.dtype));
+    return 0;
   case o_kreg:
     dst->kind = IDAKIT_OP_REG;
-    fill_reg(&dst->reg, op.reg, reg_class_for_optype(op.type), (int)get_dtype_size(op.dtype));
+    fill_reg(&dst->reg, R_k0 + op.reg, RC_MASK, (int)get_dtype_size(op.dtype));
+    return 0;
+  // Control/debug/test registers have no global RegNo -- synthesize their canonical spelling.
+  case o_crreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_special_reg(&dst->reg, 'c', op.reg, RC_CONTROL, op.specflag1 != 0);
+    return 0;
+  case o_dbreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_special_reg(&dst->reg, 'd', op.reg, RC_DEBUG, false);
+    return 0;
+  case o_trreg:
+    dst->kind = IDAKIT_OP_REG;
+    fill_special_reg(&dst->reg, 't', op.reg, RC_TEST, false);
     return 0;
   case o_mem:
   case o_phrase:
