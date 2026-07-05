@@ -1,9 +1,7 @@
-# Kernel tests open the *same* file and lock it, so serialize them. The corpus matrix opens a
-# private copy per case, so it fans out; `corpus.max-threads` is a memory budget (~0.75 GiB/slot
-# measured, so cap ~= budget_GiB / 0.75). 8 is the knee: ~3.8 GiB peak, ~20s; higher buys no
-# wall-clock. slow-timeout kills a kernel test that wedges on a leaked qmutex instead of hanging.
+# Every test opens a private DB copy, so RAM is the only limit; caps ADD (~0.85 GiB/slot, so
+# peak = (corpus + kernel) slots). Lower on a RAM-tight runner. slow-timeout kills a wedged test.
 [test-groups]
-serial-kernel = { max-threads = 1 }
+kernel = { max-threads = 4 }
 corpus = { max-threads = 8 }
 
 [[profile.default.overrides]]
@@ -13,5 +11,5 @@ slow-timeout = { period = "120s", terminate-after = 3 }
 
 [[profile.default.overrides]]
 filter = 'kind(test)'
-test-group = 'serial-kernel'
+test-group = 'kernel'
 slow-timeout = { period = "60s", terminate-after = 3 }
