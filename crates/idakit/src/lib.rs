@@ -68,8 +68,10 @@ mod claim;
 pub mod ctree;
 mod decompile;
 mod error;
+mod export;
 mod ffi;
 mod function;
+mod import;
 mod instruction;
 mod kernel;
 mod meta;
@@ -86,9 +88,11 @@ pub use cfg::{Block, BlockId, BlockKind, Cfg, ExternalExit};
 pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{CtreeCounts, DecompiledFunction};
 pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
+pub use export::{Export, Exports};
 pub use function::{
     Chunk, Chunks, Function, FunctionImage, Functions, Instructions, InstructionsIn,
 };
+pub use import::{Import, Imports};
 pub use instruction::{
     Access, DataType, DecodeError, Flow, Instruction, Isa, Mem, Operand, OperandKind, Register,
     RegisterClass,

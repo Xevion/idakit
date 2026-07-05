@@ -30,8 +30,10 @@ pub const BADADDR: Address = u64::MAX;
 
 mod bytes;
 mod cfg;
+mod export;
 mod function;
 mod hexrays;
+mod import;
 mod instruction;
 mod meta;
 mod name;
@@ -42,8 +44,10 @@ mod ty;
 
 pub use bytes::*;
 pub use cfg::*;
+pub use export::*;
 pub use function::*;
 pub use hexrays::*;
+pub use import::*;
 pub use instruction::*;
 pub use meta::*;
 pub use name::*;

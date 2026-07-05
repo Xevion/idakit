@@ -6,10 +6,11 @@
 #include <ida.hpp>
 
 #include <bytes.hpp>
+#include <entry.hpp> // get_entry_qty, get_entry, get_entry_name
 #include <funcs.hpp>
 #include <gdl.hpp>    // qflow_chart_t
 #include <loader.hpp> // get_file_type_name
-#include <nalt.hpp>   // get_input_file_path, get_root_filename, get_imagebase
+#include <nalt.hpp>   // get_input_file_path, get_root_filename, enum_import_names
 #include <name.hpp>
 #include <segment.hpp>
 #include <xref.hpp> // xrefblk_t
@@ -204,6 +205,137 @@ extern "C" idakit_ea_t idakit_seg_end(int n) {
   segment_t *s = getnseg(n);
   return s != nullptr ? (idakit_ea_t)s->end_ea : (idakit_ea_t)BADADDR;
 }
+
+extern "C" size_t idakit_export_qty(void) { return get_entry_qty(); }
+
+extern "C" idakit_ea_t idakit_export_ea(size_t idx) {
+  return (idakit_ea_t)get_entry(get_entry_ordinal(idx));
+}
+
+extern "C" uint64_t idakit_export_ordinal(size_t idx) { return (uint64_t)get_entry_ordinal(idx); }
+
+extern "C" int64_t idakit_export_name(size_t idx, char *buf, size_t cap) {
+  try {
+    qstring out;
+    ssize_t r = get_entry_name(&out, get_entry_ordinal(idx));
+    if (r <= 0) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int64_t idakit_export_forwarder(size_t idx, char *buf, size_t cap) {
+  try {
+    qstring out;
+    ssize_t r = get_entry_forwarder(&out, get_entry_ordinal(idx));
+    if (r <= 0) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  } catch (...) {
+    std::abort();
+  }
+}
+
+// Imports reach the caller only through enum_import_names' per-name callback, so there is no
+// random-access index to expose lazily. The build collects every module's names into one flat,
+// owned snapshot the Rust side indexes and then frees.
+namespace {
+
+struct import_row_t {
+  ea_t ea;
+  uval_t ord;   // 0 when imported by name
+  qstring name; // empty when imported by ordinal
+  qstring module;
+};
+
+struct import_list_t {
+  qvector<import_row_t> rows;
+};
+
+struct import_ctx_t {
+  import_list_t *list;
+  const qstring *module;
+};
+
+int idaapi collect_import(ea_t ea, const char *name, uval_t ord, void *param) {
+  import_ctx_t *ctx = (import_ctx_t *)param;
+  import_row_t &row = ctx->list->rows.push_back();
+  row.ea = ea;
+  row.ord = ord;
+  if (name != nullptr)
+    row.name = name;
+  row.module = *ctx->module;
+  return 1; // continue enumeration
+}
+
+} // namespace
+
+extern "C" void *idakit_imports_build(void) {
+  try {
+    import_list_t *list = new import_list_t;
+    uint nmods = get_import_module_qty();
+    for (uint m = 0; m < nmods; m++) {
+      qstring module;
+      get_import_module_name(&module, (int)m);
+      import_ctx_t ctx{list, &module};
+      enum_import_names((int)m, collect_import, &ctx);
+    }
+    return list;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" size_t idakit_imports_qty(const void *h) {
+  const import_list_t *list = (const import_list_t *)h;
+  return list != nullptr ? list->rows.size() : 0;
+}
+
+extern "C" int idakit_imports_item(const void *h, size_t n, idakit_ea_t *ea, uint64_t *ord) {
+  const import_list_t *list = (const import_list_t *)h;
+  if (list == nullptr || n >= list->rows.size())
+    return 0;
+  const import_row_t &row = list->rows[n];
+  *ea = (idakit_ea_t)row.ea;
+  *ord = (uint64_t)row.ord;
+  return 1;
+}
+
+extern "C" int64_t idakit_imports_name(const void *h, size_t n, char *buf, size_t cap) {
+  const import_list_t *list = (const import_list_t *)h;
+  if (list == nullptr || n >= list->rows.size() || list->rows[n].name.empty()) {
+    if (cap > 0)
+      buf[0] = 0;
+    return -1;
+  }
+  const qstring &name = list->rows[n].name;
+  qstrncpy(buf, name.c_str(), cap);
+  return (int64_t)name.length();
+}
+
+extern "C" int64_t idakit_imports_module(const void *h, size_t n, char *buf, size_t cap) {
+  const import_list_t *list = (const import_list_t *)h;
+  if (list == nullptr || n >= list->rows.size()) {
+    if (cap > 0)
+      buf[0] = 0;
+    return -1;
+  }
+  const qstring &module = list->rows[n].module;
+  qstrncpy(buf, module.c_str(), cap);
+  return (int64_t)module.length();
+}
+
+extern "C" void idakit_imports_free(void *h) { delete (import_list_t *)h; }
 
 extern "C" int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size) {
   return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);

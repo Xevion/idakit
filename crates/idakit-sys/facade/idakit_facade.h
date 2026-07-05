@@ -64,6 +64,28 @@ int idakit_seg_perm(int n);    /* SEGPERM_ bits (0 = no info) */
 int idakit_seg_bitness(int n); /* addressing bits: 16, 32, or 64 (0 if no such segment) */
 int64_t idakit_seg_class(int n, char *buf, size_t cap); /* class name length, -1 if none */
 
+/* Exports / entry points (entry.hpp). Indexed [0, export_qty); each row is one entry point.
+ * export_ea is its address (BADADDR for a pure forwarder), export_ordinal its ordinal (or,
+ * for a name-only entry, its entry index); name/forwarder are snprintf-style (<0 = none, and
+ * most exports have no forwarder). */
+size_t idakit_export_qty(void);
+idakit_ea_t idakit_export_ea(size_t idx);
+uint64_t idakit_export_ordinal(size_t idx);
+int64_t idakit_export_name(size_t idx, char *buf, size_t cap);
+int64_t idakit_export_forwarder(size_t idx, char *buf, size_t cap);
+
+/* Imports (nalt.hpp). Import addresses have no stable random-access index, so imports_build
+ * walks every module's names into one owned snapshot handle (never NULL; empty if none),
+ * released with imports_free. qty is its length; item n fills the thunk address and ordinal
+ * (0 = imported by name); name/module copy snprintf-style (name is absent, -1, for an
+ * import-by-ordinal). */
+void *idakit_imports_build(void);
+size_t idakit_imports_qty(const void *h);
+int idakit_imports_item(const void *h, size_t n, idakit_ea_t *ea, uint64_t *ord);
+int64_t idakit_imports_name(const void *h, size_t n, char *buf, size_t cap);
+int64_t idakit_imports_module(const void *h, size_t n, char *buf, size_t cap);
+void idakit_imports_free(void *h);
+
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size); /* bytes read, <0 on fail */
 
 /* Byte/item classification and navigation (bytes.hpp). `flags` is IDA's per-address class

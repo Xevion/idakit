@@ -308,4 +308,32 @@ impl Idb {
     pub(crate) fn seg_class(&self, n: c_int, buf: *mut c_char, cap: usize) -> i64 {
         unsafe { sys::idakit_seg_class(n, buf, cap) }
     }
+
+    pub(crate) fn export_qty(&self) -> usize {
+        unsafe { sys::idakit_export_qty() }
+    }
+
+    pub(crate) fn export_ea(&self, idx: usize) -> sys::Address {
+        unsafe { sys::idakit_export_ea(idx) }
+    }
+
+    pub(crate) fn export_ordinal(&self, idx: usize) -> u64 {
+        unsafe { sys::idakit_export_ordinal(idx) }
+    }
+
+    pub(crate) fn export_name(&self, idx: usize, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_export_name(idx, buf, cap) }
+    }
+
+    pub(crate) fn export_forwarder(&self, idx: usize, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_export_forwarder(idx, buf, cap) }
+    }
+
+    /// Materialize the import table into an owned snapshot handle; the [`Imports`] iterator owns
+    /// it and frees it on drop.
+    ///
+    /// [`Imports`]: crate::Imports
+    pub(crate) fn imports_build(&self) -> *mut c_void {
+        unsafe { sys::idakit_imports_build() }
+    }
 }
