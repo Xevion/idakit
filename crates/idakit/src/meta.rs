@@ -1,5 +1,7 @@
 //! [`Meta`]: an owned snapshot of database-wide metadata.
 
+use std::ops::Range;
+
 use crate::Idb;
 use crate::ea::Ea;
 use crate::ffi::read_string;
@@ -26,6 +28,16 @@ pub struct Meta {
 }
 
 impl Idb {
+    /// The database's address bounds as `min..max` (max exclusive), the natural default
+    /// range for a whole-image [`search`](Self::search); `None` for a database with no
+    /// mapped content.
+    #[must_use]
+    pub fn address_range(&self) -> Option<Range<Ea>> {
+        let min = Ea::try_new(self.min_ea())?;
+        let max = Ea::try_new(self.max_ea())?;
+        Some(min..max)
+    }
+
     /// Snapshot the database's metadata into an owned, `Send` [`Meta`].
     #[must_use]
     pub fn meta(&self) -> Meta {

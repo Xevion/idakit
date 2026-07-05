@@ -124,6 +124,40 @@ extern "C" idakit_ea_t idakit_get_prev_head(idakit_ea_t ea, idakit_ea_t minea) {
   return (idakit_ea_t)prev_head((ea_t)ea, (ea_t)minea);
 }
 
+extern "C" idakit_ea_t idakit_min_ea(void) { return (idakit_ea_t)inf_get_min_ea(); }
+
+extern "C" idakit_ea_t idakit_max_ea(void) { return (idakit_ea_t)inf_get_max_ea(); }
+
+extern "C" void *idakit_binpat_compile(idakit_ea_t ea, const char *pattern, int radix, char *errbuf,
+                                       size_t errcap) {
+  try {
+    compiled_binpat_vec_t *out = new compiled_binpat_vec_t;
+    qstring err;
+    if (!parse_binpat_str(out, (ea_t)ea, pattern, radix, PBSENC_DEF1BPU, &err)) {
+      if (errcap > 0)
+        qstrncpy(errbuf, err.c_str(), errcap);
+      delete out;
+      return nullptr;
+    }
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" void idakit_binpat_free(void *pat) {
+  delete reinterpret_cast<compiled_binpat_vec_t *>(pat);
+}
+
+extern "C" idakit_ea_t idakit_bin_search(idakit_ea_t start, idakit_ea_t end, const void *pat,
+                                         int flags) {
+  const compiled_binpat_vec_t *data = reinterpret_cast<const compiled_binpat_vec_t *>(pat);
+  // NOBREAK/NOSHOW are mandatory headless: no Ctrl-Break polling, no UI progress.
+  ea_t hit =
+      bin_search((ea_t)start, (ea_t)end, *data, flags | BIN_SEARCH_NOBREAK | BIN_SEARCH_NOSHOW);
+  return (idakit_ea_t)hit;
+}
+
 extern "C" int idakit_bitness(void) { return (int)inf_get_app_bitness(); }
 
 extern "C" idakit_ea_t idakit_image_base(void) { return (idakit_ea_t)get_imagebase(); }

@@ -72,6 +72,7 @@ mod kernel;
 mod meta;
 mod name;
 mod raw;
+mod search;
 mod segment;
 mod ty;
 mod xref;
@@ -87,6 +88,7 @@ pub use insn::{
 pub use kernel::{Ida, IdaConfig, IdaConfigBuilder};
 pub use meta::Meta;
 pub use name::{Name, Names};
+pub use search::{Matches, Pattern};
 pub use segment::{Segment, Segments};
 pub use ty::{Member, Members, TypeInfo};
 pub use xref::{CodeRef, DataRef, Xref, XrefKind, Xrefs};

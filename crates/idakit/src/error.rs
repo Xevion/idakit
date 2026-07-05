@@ -128,6 +128,16 @@ pub enum Error {
         name: String,
     },
 
+    /// A binary search pattern did not parse. `reason` is IDA's own `parse_binpat_str`
+    /// diagnostic (e.g. a token that is neither a number, a `"..."` literal, nor `?`).
+    #[snafu(display("invalid search pattern {pattern:?}: {reason}"))]
+    PatternParse {
+        /// The pattern string that failed to parse.
+        pattern: String,
+        /// IDA's parse diagnostic.
+        reason: String,
+    },
+
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is
     /// present only when the kernel left a usable `error_t` -- best-effort, since not
     /// every rejection path sets one.

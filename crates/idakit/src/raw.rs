@@ -133,6 +133,14 @@ impl Idb {
         unsafe { sys::idakit_image_base() }
     }
 
+    pub(crate) fn min_ea(&self) -> sys::Ea {
+        unsafe { sys::idakit_min_ea() }
+    }
+
+    pub(crate) fn max_ea(&self) -> sys::Ea {
+        unsafe { sys::idakit_max_ea() }
+    }
+
     pub(crate) fn proc_name(&self, buf: *mut c_char, cap: usize) -> i64 {
         unsafe { sys::idakit_proc_name(buf, cap) }
     }

@@ -73,6 +73,20 @@ idakit_ea_t idakit_get_next_head(idakit_ea_t ea,
 idakit_ea_t idakit_get_prev_head(idakit_ea_t ea,
                                  idakit_ea_t minea); /* prev head at/after minea, or BADADDR */
 
+/* Binary pattern search (bytes.hpp). binpat_compile parses an IDA-style pattern string
+ * ("B8 ? ? ? ? 90", ? = wildcard byte) at radix `radix` into an opaque handle bound to
+ * `ea`'s byte width; returns NULL on a parse error, with the reason written to errbuf.
+ * bin_search scans [start,end) for a compiled pattern, returning the match address or
+ * BADADDR when none is found (the headless NOBREAK/NOSHOW flags are always applied); `flags`
+ * adds BIN_SEARCH_* semantics (case, bitmask). Release the handle with binpat_free.
+ * min_ea/max_ea are the database's address bounds, the natural default search range. */
+idakit_ea_t idakit_min_ea(void);
+idakit_ea_t idakit_max_ea(void);
+void *idakit_binpat_compile(idakit_ea_t ea, const char *pattern, int radix, char *errbuf,
+                            size_t errcap);
+void idakit_binpat_free(void *pat);
+idakit_ea_t idakit_bin_search(idakit_ea_t start, idakit_ea_t end, const void *pat, int flags);
+
 /* Database-wide metadata. String getters are snprintf-style (return the full length). */
 int idakit_bitness(void);                             /* 16, 32, or 64 */
 idakit_ea_t idakit_image_base(void);                  /* preferred load address */
