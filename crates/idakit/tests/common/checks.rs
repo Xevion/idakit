@@ -2,7 +2,9 @@
 //! summary and panics (via `assert!`) on a violation, so it works as a `#[test]` body and as a
 //! `libtest-mimic` trial alike. The registry [`CHECKS`] is the corpus matrix's check axis.
 
-use idakit::{CodeReference, Error, Idb, ReferenceKind, TypeKind};
+use idakit::{
+    CodeReference, DecodeError, Error, Idb, ReferenceKind, Register, RegisterClass, TypeKind,
+};
 
 /// One named invariant over an open database.
 pub type Check = fn(&Idb) -> String;
@@ -13,6 +15,7 @@ pub const CHECKS: &[(&str, Check)] = &[
     ("symbols", symbols),
     ("strings", strings),
     ("disasm", disasm),
+    ("decode", decode),
     ("cfg", cfg),
     ("decompile", decompile),
     ("types", types),
@@ -278,6 +281,83 @@ pub fn types(idb: &Idb) -> String {
         return "no typed prototypes in prefix".to_string();
     }
     format!("{typed} typed prototypes, {named} named round-trips")
+}
+
+/// Strict decode over a bounded prefix of real code: every code head decodes with no silent
+/// fallback, and every register operand's resolved name agrees with its [`RegisterClass`] in
+/// both directions. Unlike [`disasm`], a decode *rejection* is a failure here, not a silent
+/// stop -- this is the axis that actually exercises operand classification and register naming
+/// (`st`/`cr`/`dr`/`tr` and the SIMD widths) across the corpus. x86-only: our register model is
+/// x86 `RegNo`-based, so a non-x86 fixture opts out of this check in the manifest.
+pub fn decode(idb: &Idb) -> String {
+    const BUDGET: usize = 20000;
+    let mut insns = 0usize;
+    let mut regs = 0usize;
+
+    let functions: Vec<_> = idb.functions().map(|f| f.address()).collect();
+    'outer: for fea in functions {
+        let function = idb.function(fea);
+        let chunks: Vec<_> = function.chunks().collect();
+        for chunk in chunks {
+            let mut address = chunk.start;
+            while address < chunk.end {
+                if idb.is_code(address) {
+                    match idb.decode(address) {
+                        Ok(insn) => {
+                            for register in insn.registers() {
+                                register.assert_name_matches_class(address.get());
+                                regs += 1;
+                            }
+                            insns += 1;
+                            if insns >= BUDGET {
+                                break 'outer;
+                            }
+                        }
+                        Err(DecodeError::NotCode { .. }) => {}
+                        Err(other) => panic!(
+                            "strict decode rejected a real instruction at {address:#x}: {other}"
+                        ),
+                    }
+                }
+                match idb.next_head(address, chunk.end) {
+                    Some(next) if next > address => address = next,
+                    _ => break,
+                }
+            }
+        }
+    }
+    assert!(insns > 0, "decoded no instructions");
+    assert!(regs > 0, "no register operands checked");
+    format!("{insns} insns, {regs} regs")
+}
+
+/// The register-consistency oracle for the decode checks. Cross-checks decode's structural
+/// classification against the name IDA independently resolved, both directions.
+pub trait RegisterCheck {
+    /// Assert this register's name and class agree: a regularly-spelled class produces that
+    /// spelling (a `St` register named `rsp` is a bug), and a name that reads as a special
+    /// register carries that class (a `bnd0` classed `Gpr` is a bug). `address` labels failures.
+    fn assert_name_matches_class(&self, address: u64);
+}
+
+impl RegisterCheck for Register {
+    fn assert_name_matches_class(&self, address: u64) {
+        let name = self.name.as_ref();
+        if let Some(prefix) = self.class.name_prefix() {
+            assert!(
+                name.starts_with(prefix),
+                "register {name:?} at {address:#x} is class {:?} but not named {prefix}*",
+                self.class,
+            );
+        }
+        if let Some(implied) = RegisterClass::from_name(name) {
+            assert!(
+                self.class == implied,
+                "register {name:?} at {address:#x} classed {:?}, name implies {implied:?}",
+                self.class,
+            );
+        }
+    }
 }
 
 // A non-function address is rejected -- kept out of the corpus battery (it needs a specific

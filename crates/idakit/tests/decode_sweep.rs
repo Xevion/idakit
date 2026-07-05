@@ -4,14 +4,15 @@
 //! It walks every code head in every function's chunks, decodes it, and asserts the decode
 //! *succeeds* -- a register or value type the model cannot represent exactly is a loud error,
 //! never a `Gpr`/`Void` guess -- then cross-checks each register's resolved name against its
-//! assigned [`RegisterClass`] in *both* directions. That name <-> class check is the tripwire
-//! for a misclassified register (`bnd0` classed as anything but [`RegisterClass::Bnd`]) and for
-//! a mis-named one (a `St` register spelled `rsp`). Read-only; opens `save = false`. Skips when
-//! no test database is present.
+//! assigned [`RegisterClass`] with the shared `RegisterCheck` oracle. This is the exhaustive,
+//! single-database counterpart to the budget-bounded `decode` check the corpus matrix fans out
+//! across every fixture; both hold the same invariant through the same oracle. Read-only; opens
+//! `save = false`. Skips when no test database is present.
 
 mod common;
 
-use idakit::{DecodeError, Idb, Instruction, OperandKind, Register, RegisterClass};
+use common::checks::RegisterCheck;
+use idakit::{DecodeError, Idb, RegisterClass};
 
 #[test]
 fn decode_is_strict_and_consistent() {
@@ -25,94 +26,6 @@ fn decode_is_strict_and_consistent() {
             .unwrap_or_else(|e| e.resume())
     })
     .expect("kernel init failed");
-}
-
-/// The fixed name prefix of a register class whose spelling is regular. GPR/segment/ip names
-/// are irregular or width-varied (`rax`/`eax`/`al`, `rip`), so they carry no prefix and are
-/// tallied but not name-checked.
-fn class_prefix(class: RegisterClass) -> Option<&'static str> {
-    Some(match class {
-        RegisterClass::Xmm => "xmm",
-        RegisterClass::Ymm => "ymm",
-        RegisterClass::Zmm => "zmm",
-        RegisterClass::Mmx => "mm",
-        RegisterClass::Mask => "k",
-        RegisterClass::Bnd => "bnd",
-        RegisterClass::St => "st",
-        RegisterClass::Control => "cr",
-        RegisterClass::Debug => "dr",
-        RegisterClass::Test => "tr",
-        _ => return None,
-    })
-}
-
-/// The class a register name implies, by prefix. `xmm`/`ymm`/`zmm` are matched before the bare
-/// `mm`; `k` requires a following digit so it does not swallow other spellings.
-fn name_to_class(name: &str) -> Option<RegisterClass> {
-    if name.starts_with("xmm") {
-        Some(RegisterClass::Xmm)
-    } else if name.starts_with("ymm") {
-        Some(RegisterClass::Ymm)
-    } else if name.starts_with("zmm") {
-        Some(RegisterClass::Zmm)
-    } else if name.starts_with("bnd") {
-        Some(RegisterClass::Bnd)
-    } else if name.starts_with("mm") {
-        Some(RegisterClass::Mmx)
-    } else if name.starts_with("st") {
-        Some(RegisterClass::St)
-    } else if name.starts_with("cr") {
-        Some(RegisterClass::Control)
-    } else if name.starts_with("dr") {
-        Some(RegisterClass::Debug)
-    } else if name.starts_with("tr") {
-        Some(RegisterClass::Test)
-    } else if name.len() >= 2 && name.starts_with('k') && name.as_bytes()[1].is_ascii_digit() {
-        Some(RegisterClass::Mask)
-    } else {
-        None
-    }
-}
-
-fn check_register(reg: &Register, address: u64, classes: &mut [usize; 13]) {
-    classes[reg.class.raw() as usize] += 1;
-    let name = reg.name.as_ref();
-    // class -> name: a regularly-spelled class must produce that spelling (catches a St
-    // register mis-named `rsp`).
-    if let Some(prefix) = class_prefix(reg.class) {
-        assert!(
-            name.starts_with(prefix),
-            "register {name:?} at {address:#x} is class {:?} but not named {prefix}*",
-            reg.class,
-        );
-    }
-    // name -> class: a name that reads as a special register must carry that class (catches a
-    // `bnd0` classed as Gpr).
-    if let Some(expected) = name_to_class(name) {
-        assert!(
-            reg.class == expected,
-            "register {name:?} at {address:#x} classed {:?}, name implies {expected:?}",
-            reg.class,
-        );
-    }
-}
-
-fn check_instruction(insn: &Instruction, classes: &mut [usize; 13]) {
-    let at = insn.address.get();
-    for op in &insn.ops {
-        match &op.kind {
-            OperandKind::Register(r) => check_register(r, at, classes),
-            OperandKind::Mem(m) => {
-                if let Some(b) = &m.base {
-                    check_register(b, at, classes);
-                }
-                if let Some(i) = &m.index {
-                    check_register(i, at, classes);
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
 fn run(idb: &mut Idb, db: &str) {
@@ -134,7 +47,10 @@ fn run(idb: &mut Idb, db: &str) {
                 if idb.is_code(address) {
                     match idb.decode(address) {
                         Ok(insn) => {
-                            check_instruction(&insn, &mut classes);
+                            for register in insn.registers() {
+                                register.assert_name_matches_class(address.get());
+                                classes[register.class.raw() as usize] += 1;
+                            }
                             insns += 1;
                         }
                         Err(DecodeError::NotCode { .. }) => {}

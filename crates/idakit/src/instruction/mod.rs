@@ -181,6 +181,22 @@ pub struct Instruction {
     pub flow: Flow,
 }
 
+impl Instruction {
+    /// Every register this instruction references, in operand order: each register operand,
+    /// then the base, index, and segment registers of each memory operand. Immediates and
+    /// branch targets contribute none.
+    pub fn registers(&self) -> impl Iterator<Item = &Register> {
+        self.ops.iter().flat_map(|op| {
+            let regs: [Option<&Register>; 3] = match &op.kind {
+                OperandKind::Register(r) => [Some(r), None, None],
+                OperandKind::Mem(m) => [m.base.as_ref(), m.index.as_ref(), m.segment.as_ref()],
+                _ => [None, None, None],
+            };
+            regs.into_iter().flatten()
+        })
+    }
+}
+
 /// One operand of an [`Instruction`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Operand {
@@ -291,11 +307,67 @@ pub struct Flow {
 
 #[cfg(test)]
 mod tests {
+    use assert2::assert;
+
     use super::*;
+    use crate::address::Address;
 
     const fn assert_send<T: Send>() {}
 
     // `Instruction` is owned precisely so it can leave the kernel thread; a later non-`Send` field
     // would defeat that, so pin the guarantee at compile time.
     const _: () = assert_send::<Instruction>();
+
+    fn reg(name: &str) -> Register {
+        Register {
+            num: 0,
+            class: RegisterClass::Gpr,
+            width: 8,
+            name: name.into(),
+        }
+    }
+
+    fn op(kind: OperandKind) -> Operand {
+        Operand {
+            idx: 0,
+            kind,
+            data_type: DataType::Qword,
+            access: Access::default(),
+        }
+    }
+
+    // `registers()` yields register operands first, then each memory operand's base, index, and
+    // segment in that order; immediates and branch targets contribute nothing.
+    #[test]
+    fn registers_walks_operand_and_memory_components_in_order() {
+        let insn = Instruction {
+            address: Address::try_new(0x1000).expect("valid"),
+            len: 4,
+            isa: Isa::X64,
+            itype: 0,
+            mnemonic: "lea".into(),
+            ops: vec![
+                op(OperandKind::Register(reg("rax"))),
+                op(OperandKind::Mem(Mem {
+                    base: Some(reg("rbx")),
+                    index: Some(reg("rcx")),
+                    scale: 1,
+                    disp: 0,
+                    segment: None,
+                    target: None,
+                })),
+                op(OperandKind::Imm { value: 5 }),
+            ],
+            flow: Flow {
+                is_call: false,
+                is_ret: false,
+                is_jump: false,
+                is_indirect: false,
+                stops: false,
+                target: None,
+            },
+        };
+        let names: Vec<&str> = insn.registers().map(|r| r.name.as_ref()).collect();
+        assert!(names == ["rax", "rbx", "rcx"]);
+    }
 }

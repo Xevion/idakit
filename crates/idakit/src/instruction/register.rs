@@ -70,6 +70,45 @@ impl RegisterClass {
     pub fn from_raw(v: u8) -> Option<Self> {
         Self::try_from(v).ok()
     }
+
+    /// The fixed spelling prefix every register in this class shares (`xmm`, `cr`, `k`, ...),
+    /// or `None` for the classes whose names are irregular or width-varied and so share no
+    /// common prefix: GPR (`al`/`ax`/`eax`/`rax`), segment (`cs`..), and the instruction
+    /// pointer (`rip`/`eip`).
+    #[must_use]
+    pub const fn name_prefix(self) -> Option<&'static str> {
+        Some(match self {
+            Self::Xmm => "xmm",
+            Self::Ymm => "ymm",
+            Self::Zmm => "zmm",
+            Self::Mmx => "mm",
+            Self::Mask => "k",
+            Self::Bnd => "bnd",
+            Self::St => "st",
+            Self::Control => "cr",
+            Self::Debug => "dr",
+            Self::Test => "tr",
+            Self::Gpr | Self::Segment | Self::Ip => return None,
+        })
+    }
+
+    /// The class implied by a register name's spelling. A class-prefixed name is its
+    /// [`name_prefix`](Self::name_prefix) followed by an index (`xmm0`, `cr2`, `st7`), so a
+    /// name maps to the unique class whose prefix it carries ahead of a digit; `None` for GPR,
+    /// segment, and ip names, which have no class prefix.
+    ///
+    /// This *infers* class from spelling. The authoritative class is [`Register::class`],
+    /// assigned structurally at decode -- use this for parsing or as an independent cross-check,
+    /// never as a decode substitute.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::VARIANTS.iter().copied().find(|class| {
+            class.name_prefix().is_some_and(|prefix| {
+                name.strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+            })
+        })
+    }
 }
 
 #[cfg(test)]
@@ -90,6 +129,46 @@ mod tests {
     fn from_raw_rejects_unknown() {
         assert!(RegisterClass::from_raw(13).is_none());
         assert!(RegisterClass::from_raw(255).is_none());
+    }
+
+    // A prefix is exactly the regularly-spelled classes; GPR/segment/ip have none.
+    #[test]
+    fn name_prefix_present_for_exactly_the_regular_classes() {
+        for &c in RegisterClass::VARIANTS {
+            let irregular = matches!(
+                c,
+                RegisterClass::Gpr | RegisterClass::Segment | RegisterClass::Ip
+            );
+            assert!(c.name_prefix().is_some() != irregular, "{c:?}");
+        }
+    }
+
+    // `from_name` inverts `name_prefix` for every prefixed class: `<prefix>0` recovers it.
+    #[test]
+    fn from_name_inverts_name_prefix() {
+        for &c in RegisterClass::VARIANTS {
+            if let Some(prefix) = c.name_prefix() {
+                let name = format!("{prefix}0");
+                assert!(RegisterClass::from_name(&name) == Some(c), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn from_name_rejects_unprefixed_names() {
+        for n in ["rax", "eax", "al", "es", "cs", "rip", "eip", "r8", "r15"] {
+            assert!(RegisterClass::from_name(n).is_none(), "{n}");
+        }
+    }
+
+    // Suffixed (`cr8d`) and multi-digit (`zmm31`) names still resolve to their class; a bare
+    // prefix with no index does not.
+    #[test]
+    fn from_name_handles_suffixed_multidigit_and_bare() {
+        assert!(RegisterClass::from_name("cr8d") == Some(RegisterClass::Control));
+        assert!(RegisterClass::from_name("zmm31") == Some(RegisterClass::Zmm));
+        assert!(RegisterClass::from_name("k7") == Some(RegisterClass::Mask));
+        assert!(RegisterClass::from_name("st").is_none());
     }
 
     // The facade fills its RegClass codes by position in this enum's declaration order, so a
