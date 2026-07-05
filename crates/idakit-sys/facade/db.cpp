@@ -193,6 +193,32 @@ extern "C" idakit_ea_t idakit_bin_search(idakit_ea_t start, idakit_ea_t end, con
   return (idakit_ea_t)hit;
 }
 
+extern "C" int64_t idakit_get_cmt(idakit_ea_t ea, uint8_t rptble, char *buf, size_t cap) {
+  try {
+    qstring out;
+    if (get_cmt(&out, (ea_t)ea, rptble != 0) < 0) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_patch_bytes(idakit_ea_t ea, const void *buf, size_t size) {
+  // Reject the whole write if any target byte is outside the address space, so a bad address
+  // fails cleanly instead of silently patching a truncated prefix.
+  for (size_t i = 0; i < size; i++) {
+    if (!is_mapped((ea_t)ea + i))
+      return 0;
+  }
+  patch_bytes((ea_t)ea, buf, size);
+  return 1;
+}
+
 extern "C" int idakit_bitness(void) { return (int)inf_get_app_bitness(); }
 
 extern "C" idakit_ea_t idakit_image_base(void) { return (idakit_ea_t)get_imagebase(); }

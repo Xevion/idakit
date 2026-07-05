@@ -96,6 +96,17 @@ void idakit_binpat_free(void *pat);
 void idakit_binpat_stats(const void *pat, size_t *total, size_t *anchors);
 idakit_ea_t idakit_bin_search(idakit_ea_t start, idakit_ea_t end, const void *pat, int flags);
 
+/* Comment read (bytes.hpp get_cmt): fills buf snprintf-style with the comment at ea, regular
+ * (rptble 0) or repeatable (rptble 1); returns its length, or -1 if there is none. The write
+ * half is the plain libida `set_cmt`. */
+int64_t idakit_get_cmt(idakit_ea_t ea, uint8_t rptble, char *buf, size_t cap);
+
+/* Patch `size` bytes at ea (bytes.hpp patch_bytes; originals are saved and recoverable via
+ * IDA's get_original_*). Returns 0 without patching anything when any target byte is
+ * unmapped -- so a bad address fails cleanly instead of patching a truncated prefix -- and 1
+ * on success. */
+int idakit_patch_bytes(idakit_ea_t ea, const void *buf, size_t size);
+
 /* Database-wide metadata. String getters are snprintf-style (return the full length). */
 int idakit_bitness(void);                             /* 16, 32, or 64 */
 idakit_ea_t idakit_image_base(void);                  /* preferred load address */

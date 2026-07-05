@@ -7,7 +7,7 @@ use idakit_sys as sys;
 use crate::Idb;
 use crate::ea::Ea;
 use crate::error::{Error, Result};
-use crate::ffi::with_cstr;
+use crate::ffi::{read_string, with_cstr};
 
 impl Idb {
     /// Whether the kernel classifies the item at `ea` as an instruction. This is the gate
@@ -61,7 +61,27 @@ impl Idb {
         (got.max(0) as usize).min(buf.len())
     }
 
-    // TODO: patch_bytes (the write half of read_into) and binary/pattern search over the image.
+    /// Patch `bytes` over the image at `ea`, saving the originals (IDA can recover them and
+    /// a later save writes the patch into the `.i64`). `Err` if any target byte is unmapped:
+    /// the write is all-or-nothing, so a bad address leaves the database untouched.
+    pub fn patch(&mut self, ea: Ea, bytes: &[u8]) -> Result<()> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let ok = self.patch_bytes(ea, bytes.as_ptr().cast(), bytes.len());
+        if ok != 0 {
+            return Ok(());
+        }
+        // patch_bytes has no kernel error channel; the facade rejects an unmapped range, so
+        // there is usually no qerrno -- fall back to naming the actual failure.
+        let (qerrno, reason) = self.last_reason();
+        Err(Error::WriteRejected {
+            op: "patch",
+            ea: ea.get(),
+            qerrno,
+            reason: reason.or_else(|| Some("target range is not fully mapped".to_owned())),
+        })
+    }
 
     /// Read up to `len` bytes at `ea` into a fresh vector (empty on failure).
     #[must_use]
@@ -72,7 +92,13 @@ impl Idb {
         buf
     }
 
-    // TODO: read comments back (the read half of set_comment).
+    /// Read the comment at `ea` -- `repeatable` selects the repeatable channel over the
+    /// regular one -- or `None` when that channel carries none. The write half is
+    /// [`set_comment`](Self::set_comment).
+    #[must_use]
+    pub fn comment(&self, ea: Ea, repeatable: bool) -> Option<String> {
+        read_string(|buf, cap| self.get_cmt(ea, repeatable, buf, cap))
+    }
 
     /// Set the comment at `ea`. `repeatable` repeats it at every reference.
     pub fn set_comment(&mut self, ea: Ea, text: &str, repeatable: bool) -> Result<()> {

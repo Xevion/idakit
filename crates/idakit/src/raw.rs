@@ -218,6 +218,14 @@ impl Idb {
         unsafe { sys::set_cmt(ea.get(), comment, repeatable) }
     }
 
+    pub(crate) fn get_cmt(&self, ea: Ea, repeatable: bool, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_get_cmt(ea.get(), repeatable as u8, buf, cap) }
+    }
+
+    pub(crate) fn patch_bytes(&mut self, ea: Ea, buf: *const c_void, size: usize) -> c_int {
+        unsafe { sys::idakit_patch_bytes(ea.get(), buf, size) }
+    }
+
     pub(crate) fn func_qty(&self) -> usize {
         unsafe { sys::idakit_func_qty() }
     }

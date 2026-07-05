@@ -1,5 +1,5 @@
 //! Raw byte reads, item classification and linear navigation (`bytes.hpp`), binary pattern
-//! search, and the comment write (`set_cmt`).
+//! search, byte patching, and comment read/write.
 
 use std::ffi::{c_char, c_int, c_void};
 
@@ -52,7 +52,14 @@ unsafe extern "C" {
     pub fn idakit_get_prev_head(ea: Ea, minea: Ea) -> Ea;
 }
 
-// comment write (plain libida symbol; the read half lives in the SDK's bytes.hpp too)
+// byte patching (bytes.hpp patch_bytes). Returns 0 without writing if any target byte is
+// unmapped, 1 on success.
 unsafe extern "C" {
+    pub fn idakit_patch_bytes(ea: Ea, buf: *const c_void, size: usize) -> c_int;
+}
+
+// comment read (facade get_cmt, snprintf-style, -1 if none) and write (plain libida `set_cmt`).
+unsafe extern "C" {
+    pub fn idakit_get_cmt(ea: Ea, rptble: u8, buf: *mut c_char, cap: usize) -> i64;
     pub fn set_cmt(ea: Ea, comm: *const c_char, rptble: bool) -> bool;
 }
