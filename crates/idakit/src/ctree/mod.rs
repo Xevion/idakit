@@ -12,9 +12,9 @@ mod ops;
 pub mod query;
 mod render;
 mod tree;
-mod types;
 
 pub use crate::arena::{Arena, Idx};
+pub use crate::types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
 pub use extract::ExtractError;
 pub(crate) use extract::walk;
 pub use node::{
@@ -23,4 +23,3 @@ pub use node::{
 };
 pub use ops::{AssignOp, BinOp, UnOp};
 pub use tree::{Ctree, CtreeBuilder, Descendants};
-pub use types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};

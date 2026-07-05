@@ -12,7 +12,6 @@
 //! the structural [`ct`] constants; named aggregate types are interned by name with a
 //! placeholder so recursion resolves; structural types dedup through the type table.
 
-use std::collections::HashMap;
 use std::ffi::{c_char, c_void};
 
 use idakit_sys::{CaseDesc, EmitVtbl, EnumConstDesc, IDAKIT_NONE, MemberDesc};
@@ -23,9 +22,9 @@ use super::node::{
 };
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::{Ctree, CtreeBuilder};
-use super::types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember};
 use crate::Address;
 use crate::arena::Idx;
+use crate::types::{EnumMember, TypeId, TypeMember};
 
 /// Structural `ctype_t` values the generic operator callback dispatches by name
 /// (operators proper go through `from_raw`).
@@ -39,15 +38,6 @@ mod ct {
     pub const INSN: u32 = 66;
     pub const SIZEOF: u32 = 67;
     pub const TYPE: u32 = 69;
-}
-
-/// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeKind`]; `0` is
-/// the catch-all that maps to [`TypeKind::Unknown`](super::TypeKind::Unknown).
-mod scalar_kind {
-    pub const VOID: u32 = 1;
-    pub const BOOL: u32 = 2;
-    pub const INT: u32 = 3;
-    pub const FLOAT: u32 = 4;
 }
 
 /// Why a ctree walk could not be turned into a [`Ctree`].
@@ -98,20 +88,14 @@ fn raw<T>(id: Idx<T>) -> u32 {
     id.index() as u32
 }
 
-fn opt_size(size: u64, has_size: u32) -> Option<u64> {
-    (has_size != 0).then_some(size)
-}
-
 /// Accumulates the owned ctree as the facade walks. Its methods are the safe surface the
 /// `extern "C"` shims (and the unit tests) call; each returns the new node's handle as a
-/// bare `u32` for the facade to thread to the parent.
+/// bare `u32` for the facade to thread to the parent. Node building lives here; type
+/// building is delegated to the [`CtreeBuilder`]'s [`TypeBuilder`](crate::types::TypeBuilder).
 pub(crate) struct CallbackBuilder {
     b: CtreeBuilder,
-    /// Named aggregate/typedef -> its interned handle (recursion + dedup).
-    name2type: HashMap<Box<str>, TypeId>,
-    /// Placeholder handle -> its name (`None` = anonymous), pending its body.
-    pending: HashMap<TypeId, Option<Box<str>>>,
-    /// First deferred failure; checked at [`finish`](Self::finish).
+    /// First deferred *node* failure; checked at [`finish`](Self::finish) alongside the
+    /// type builder's own signals.
     error: Option<ExtractError>,
 }
 
@@ -119,8 +103,6 @@ impl CallbackBuilder {
     fn new() -> Self {
         Self {
             b: CtreeBuilder::new(),
-            name2type: HashMap::new(),
-            pending: HashMap::new(),
             error: None,
         }
     }
@@ -384,77 +366,31 @@ impl CallbackBuilder {
     }
 
     fn scalar(&mut self, kind: u32, bytes: u32, signed: u32, size: u64, has_size: u32) -> u32 {
-        let width = match u8::try_from(bytes) {
-            Ok(w) => w,
-            Err(_) => {
-                self.fail(ExtractError::ScalarTooWide { bytes });
-                0
-            }
-        };
-        let kind = match kind {
-            scalar_kind::VOID => TypeKind::Void,
-            scalar_kind::BOOL => TypeKind::Bool,
-            scalar_kind::INT => TypeKind::Int {
-                bytes: width,
-                signed: signed != 0,
-            },
-            scalar_kind::FLOAT => TypeKind::Float { bytes: width },
-            _ => TypeKind::Unknown,
-        };
-        raw(self.b.intern_type(TypeData {
-            kind,
-            size: opt_size(size, has_size),
-        }))
+        raw(self
+            .b
+            .types_mut()
+            .scalar(kind, bytes, signed, size, has_size))
     }
 
     fn ptr(&mut self, target: u32, size: u64, has_size: u32) -> u32 {
-        raw(self.b.intern_type(TypeData {
-            kind: TypeKind::Ptr(tid(target)),
-            size: opt_size(size, has_size),
-        }))
+        raw(self.b.types_mut().ptr(tid(target), size, has_size))
     }
 
     fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
-        raw(self.b.intern_type(TypeData {
-            kind: TypeKind::Array {
-                elem: tid(elem),
-                len: nelems,
-            },
-            size: opt_size(size, has_size),
-        }))
+        raw(self.b.types_mut().array(tid(elem), nelems, size, has_size))
     }
 
     fn function(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
         let params = params.iter().map(|&p| tid(p)).collect();
-        raw(self.b.intern_type(TypeData {
-            kind: TypeKind::Function {
-                ret: tid(ret),
-                params,
-                varargs: vararg != 0,
-            },
-            size: None,
-        }))
+        raw(self.b.types_mut().function(tid(ret), params, vararg))
     }
 
     fn named_ref(&mut self, name: String) -> u32 {
-        if let Some(&id) = self.name2type.get(name.as_str()) {
-            return raw(id);
-        }
-        let id = self.b.alloc_type_placeholder();
-        let key: Box<str> = name.into_boxed_str();
-        self.name2type.insert(key.clone(), id);
-        self.pending.insert(id, Some(key));
-        raw(id)
+        raw(self.b.types_mut().named_ref(name))
     }
 
     fn anon(&mut self) -> u32 {
-        let id = self.b.alloc_type_placeholder();
-        self.pending.insert(id, None);
-        raw(id)
-    }
-
-    fn take_name(&mut self, id: TypeId) -> Option<String> {
-        self.pending.remove(&id).flatten().map(String::from)
+        raw(self.b.types_mut().anon())
     }
 
     fn fill_struct(
@@ -465,20 +401,9 @@ impl CallbackBuilder {
         size: u64,
         has_size: u32,
     ) {
-        let id = tid(id);
-        let name = self.take_name(id);
-        let kind = if is_union {
-            TypeKind::Union { name, members }
-        } else {
-            TypeKind::Struct { name, members }
-        };
-        self.b.fill_type(
-            id,
-            TypeData {
-                kind,
-                size: opt_size(size, has_size),
-            },
-        );
+        self.b
+            .types_mut()
+            .fill_struct(tid(id), is_union, members, size, has_size);
     }
 
     fn fill_enum(
@@ -489,34 +414,13 @@ impl CallbackBuilder {
         size: u64,
         has_size: u32,
     ) {
-        let id = tid(id);
-        let name = self.take_name(id);
-        self.b.fill_type(
-            id,
-            TypeData {
-                kind: TypeKind::Enum {
-                    name,
-                    underlying: tid(underlying),
-                    members,
-                },
-                size: opt_size(size, has_size),
-            },
-        );
+        self.b
+            .types_mut()
+            .fill_enum(tid(id), tid(underlying), members, size, has_size);
     }
 
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
-        let id = tid(id);
-        let underlying = tid(underlying);
-        let name = self.take_name(id).unwrap_or_default();
-        // A typedef is a transparent alias, so it adopts its target's size.
-        let size = self.b.type_size(underlying);
-        self.b.fill_type(
-            id,
-            TypeData {
-                kind: TypeKind::Typedef { name, underlying },
-                size,
-            },
-        );
+        self.b.types_mut().fill_typedef(tid(id), tid(underlying));
     }
 
     fn push_lvar(&mut self, lvar: Local) {
@@ -527,12 +431,15 @@ impl CallbackBuilder {
         if let Some(e) = self.error.take() {
             return Err(e);
         }
-        // A placeholder left in `pending` was referenced but never filled, so it would
-        // stay `TypeKind::Unknown` in the tree -- surface it rather than ship a silent gap.
-        if !self.pending.is_empty() {
-            return Err(ExtractError::UnfilledType {
-                count: self.pending.len(),
-            });
+        // Type-side failures the builder recorded but can't name (it is error-type-agnostic):
+        // an over-wide scalar left a placeholder in its place, or a named type was referenced
+        // but never filled (it would stay `TypeKind::Unknown`). Surface them, don't ship a gap.
+        if let Some(bytes) = self.b.types().too_wide() {
+            return Err(ExtractError::ScalarTooWide { bytes });
+        }
+        let unfilled = self.b.types().unfilled();
+        if unfilled != 0 {
+            return Err(ExtractError::UnfilledType { count: unfilled });
         }
         Ok(self.b.finish(sid(root)))
     }
@@ -930,6 +837,7 @@ mod tests {
     use assert2::assert;
 
     use super::*;
+    use crate::types::TypeKind;
 
     /// `cot_*` discriminants used by the operator tests (from hexrays.hpp).
     const COT_ASGADD: u32 = 6;

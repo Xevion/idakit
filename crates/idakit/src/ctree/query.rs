@@ -99,7 +99,7 @@ mod tests {
     use crate::ctree::AssignOp;
     use crate::ctree::node::{Local, LocalLocation};
     use crate::ctree::tree::CtreeBuilder;
-    use crate::ctree::types::{TypeData, TypeKind};
+    use crate::types::{TypeData, TypeKind};
     use assert2::assert;
     use rstest::rstest;
 

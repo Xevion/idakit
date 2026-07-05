@@ -14,7 +14,7 @@ use std::fmt::Write;
 use super::node::{Case, ExpressionId, ExpressionKind, LocalId, StatementId, StatementKind};
 use super::ops::{BinOp, UnOp};
 use super::tree::Ctree;
-use super::types::{TypeId, TypeKind};
+use crate::types::{TypeId, TypeKind};
 
 // C operator precedence, higher binds tighter. A child is parenthesized when its own
 // precedence is below the minimum its position requires (see `Printer::expression`).
@@ -489,7 +489,7 @@ mod tests {
     use crate::ctree::node::{Local, LocalLocation};
     use crate::ctree::ops::AssignOp;
     use crate::ctree::tree::CtreeBuilder;
-    use crate::ctree::types::{TypeData, TypeKind, TypeMember};
+    use crate::types::{TypeData, TypeKind, TypeMember};
     use assert2::assert;
     use rstest::rstest;
 

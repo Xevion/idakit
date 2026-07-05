@@ -1,16 +1,20 @@
-//! Structured types: a third interned arena alongside the node arenas.
+//! `TypeTable`: an interned arena of resolved types carried by an owned snapshot off the
+//! kernel thread -- currently the decompiler [`Ctree`](crate::ctree::Ctree).
 //!
-//! Every expression carries a [`TypeId`] into a [`TypeTable`]. Types are interned, so
-//! identical types share one handle, and recursion (a struct pointing at itself) is
-//! represented by a [`TypeId`] back-reference -- a named aggregate reserves its handle
-//! via [`alloc_placeholder`](TypeTable::alloc_placeholder) before its body is filled, so
-//! a member can point back at it -- rather than by nesting. The table stays flat, finite,
-//! and `Send`, so a materialized ctree carries its full type information off the kernel
-//! thread.
+//! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
+//! types share one handle, and recursion (a struct pointing at itself) is a [`TypeId`]
+//! back-reference: a named aggregate reserves its handle via
+//! [`alloc_placeholder`](TypeTable::alloc_placeholder) before its body is filled, so a
+//! member can point back at it, rather than by nesting. The table stays flat, finite, and
+//! `Send`.
 
 use std::collections::HashMap;
 
 use crate::arena::{Arena, Idx};
+
+mod builder;
+
+pub(crate) use builder::TypeBuilder;
 
 /// Handle to a [`TypeData`] in a [`TypeTable`].
 pub type TypeId = Idx<TypeData>;
@@ -18,6 +22,7 @@ pub type TypeId = Idx<TypeData>;
 /// A resolved type: its shape plus byte size when known.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeData {
+    /// The type's shape.
     pub kind: TypeKind,
     /// Size in bytes, or `None` for an incomplete/sizeless type.
     pub size: Option<u64>,
@@ -26,9 +31,11 @@ pub struct TypeData {
 /// One field of a struct or union.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeMember {
+    /// The field's name; empty if IDA gave none.
     pub name: String,
     /// Offset from the start of the aggregate, in bits.
     pub bit_offset: u64,
+    /// The field's type.
     pub ty: TypeId,
     /// Width in bits for a bitfield member; `None` for an ordinary field.
     pub bitfield_width: Option<u32>,
@@ -37,7 +44,9 @@ pub struct TypeMember {
 /// One member of an enum.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct EnumMember {
+    /// The constant's name.
     pub name: String,
+    /// The constant's integer value.
     pub value: u64,
 }
 
@@ -51,37 +60,65 @@ pub enum TypeKind {
     /// `bool`
     Bool,
     /// an integer of `bytes` width
-    Int { bytes: u8, signed: bool },
+    Int {
+        /// Width in bytes.
+        bytes: u8,
+        /// Whether it is signed.
+        signed: bool,
+    },
     /// a floating-point type of `bytes` width
-    Float { bytes: u8 },
+    Float {
+        /// Width in bytes.
+        bytes: u8,
+    },
     /// `T *`
     Ptr(TypeId),
     /// `T[len]`
-    Array { elem: TypeId, len: u64 },
+    Array {
+        /// The element type.
+        elem: TypeId,
+        /// Number of elements.
+        len: u64,
+    },
     /// a struct, with members in declaration order
     Struct {
+        /// The tag name, or `None` if anonymous.
         name: Option<String>,
+        /// Fields in declaration order.
         members: Vec<TypeMember>,
     },
     /// a union
     Union {
+        /// The tag name, or `None` if anonymous.
         name: Option<String>,
+        /// Fields in declaration order.
         members: Vec<TypeMember>,
     },
     /// an enum and its underlying integer type
     Enum {
+        /// The tag name, or `None` if anonymous.
         name: Option<String>,
+        /// The underlying integer type.
         underlying: TypeId,
+        /// The enumerated constants.
         members: Vec<EnumMember>,
     },
     /// a function prototype
     Function {
+        /// Return type.
         ret: TypeId,
+        /// Parameter types, in order.
         params: Vec<TypeId>,
+        /// Whether the prototype is variadic.
         varargs: bool,
     },
     /// a typedef to another type
-    Typedef { name: String, underlying: TypeId },
+    Typedef {
+        /// The alias name.
+        name: String,
+        /// The aliased type.
+        underlying: TypeId,
+    },
     /// a type IDA could not describe, and the transient state of an aggregate placeholder
     /// before its body is filled (see [`TypeTable::alloc_placeholder`]).
     Unknown,
@@ -110,6 +147,7 @@ pub struct TypeTable {
 }
 
 impl TypeTable {
+    /// An empty table.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -165,6 +203,7 @@ impl TypeTable {
         self.arena.len()
     }
 
+    /// Whether the table has no types.
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {

@@ -7,9 +7,9 @@
 //! resolved value.
 
 use super::ops::{AssignOp, BinOp, UnOp};
-use super::types::TypeId;
 use crate::Address;
 use crate::arena::Idx;
+use crate::types::TypeId;
 
 /// Handle to an [`ExpressionNode`].
 pub type ExpressionId = Idx<ExpressionNode>;

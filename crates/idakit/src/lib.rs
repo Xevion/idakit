@@ -84,6 +84,7 @@ mod search;
 mod segment;
 mod strings;
 mod ty;
+mod types;
 
 pub use address::{Address, BADADDR};
 pub use bitness::Bitness;
@@ -109,6 +110,7 @@ pub use search::{Matches, Pattern};
 pub use segment::{Segment, Segments};
 pub use strings::{StringLiteral, Strings};
 pub use ty::{Member, Members, TypeInfo};
+pub use types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
 
 use crate::kernel::KernelClaim;
 

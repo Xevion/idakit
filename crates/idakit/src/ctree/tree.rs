@@ -7,9 +7,9 @@ use super::node::{
     StatementKind, StatementNode,
 };
 use super::ops::{AssignOp, BinOp, UnOp};
-use super::types::{TypeData, TypeId, TypeTable};
 use crate::Address;
 use crate::arena::Arena;
+use crate::types::{TypeBuilder, TypeData, TypeId, TypeTable};
 
 /// Visit `node`'s children, dispatching to the right arena. Shared by every navigation
 /// path (read-only walks and the build-time parent pass) so the expression/statement split lives
@@ -249,7 +249,7 @@ impl Iterator for Descendants<'_> {
 pub struct CtreeBuilder {
     expressions: Arena<ExpressionNode>,
     statements: Arena<StatementNode>,
-    types: TypeTable,
+    types: TypeBuilder,
     lvars: Vec<Local>,
 }
 
@@ -259,9 +259,19 @@ impl CtreeBuilder {
         Self {
             expressions: Arena::new(),
             statements: Arena::new(),
-            types: TypeTable::new(),
+            types: TypeBuilder::new(),
             lvars: Vec::new(),
         }
+    }
+
+    /// The type builder, for the walk's type callbacks and its finish-time checks.
+    pub(crate) fn types(&self) -> &TypeBuilder {
+        &self.types
+    }
+
+    /// The type builder, mutably, for the walk's type callbacks.
+    pub(crate) fn types_mut(&mut self) -> &mut TypeBuilder {
+        &mut self.types
     }
 
     /// Intern a type, returning a shared handle to pass to [`expression`](Self::expression).
@@ -285,7 +295,7 @@ impl CtreeBuilder {
     /// target's size so the alias node is self-describing.
     #[must_use]
     pub fn type_size(&self, id: TypeId) -> Option<u64> {
-        self.types.get(id).size
+        self.types.type_size(id)
     }
 
     /// Append a local variable; the returned [`LocalId`] (its index) is what
@@ -469,7 +479,7 @@ impl CtreeBuilder {
         Ctree {
             expressions: self.expressions,
             statements: self.statements,
-            types: self.types,
+            types: self.types.into_table(),
             lvars: self.lvars,
             root,
         }
@@ -525,7 +535,7 @@ mod tests {
     use super::*;
     use crate::ctree::node::{Local, LocalId, LocalLocation};
     use crate::ctree::ops::{AssignOp, BinOp};
-    use crate::ctree::types::TypeKind;
+    use crate::types::TypeKind;
     use assert2::assert;
 
     fn int32() -> TypeData {
