@@ -11,6 +11,7 @@ use crate::ctree::Ctree;
 use crate::decompile::DecompiledFunction;
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
+use crate::frame::Frame;
 use crate::instruction::Instruction;
 use crate::reference::References;
 
@@ -139,6 +140,13 @@ impl<'db> Function<'db> {
             address: self.address.get(),
             source,
         })
+    }
+
+    /// Snapshot this function's stack frame, or `None` if it has none. The disassembly-level
+    /// stack layout, no decompilation needed; see [`Idb::frame`].
+    #[must_use]
+    pub fn frame(&self) -> Option<Frame> {
+        self.db.frame(self.address)
     }
 
     /// Snapshot this view's scalar facts into an owned [`FunctionImage`] that can leave the

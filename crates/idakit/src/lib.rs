@@ -71,6 +71,7 @@ mod decompile;
 mod error;
 mod export;
 mod ffi;
+mod frame;
 mod function;
 mod import;
 mod instruction;
@@ -91,6 +92,7 @@ pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{CtreeCounts, DecompiledFunction};
 pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
 pub use export::{Export, Exports};
+pub use frame::{Frame, FrameVar, FrameVarKind};
 pub use function::{
     Chunk, Chunks, Function, FunctionImage, Functions, Instructions, InstructionsIn,
 };
