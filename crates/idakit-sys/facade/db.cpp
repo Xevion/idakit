@@ -145,8 +145,43 @@ extern "C" void *idakit_binpat_compile(idakit_ea_t ea, const char *pattern, int 
   }
 }
 
+extern "C" void *idakit_binpat_from_bytes(const uint8_t *bytes, const uint8_t *mask, size_t len) {
+  try {
+    compiled_binpat_vec_t *v = new compiled_binpat_vec_t;
+    compiled_binpat_t &b = v->push_back();
+    b.bytes.append(bytes, len);
+    if (mask != nullptr)
+      b.mask.append(mask, len);
+    return v;
+  } catch (...) {
+    std::abort();
+  }
+}
+
 extern "C" void idakit_binpat_free(void *pat) {
   delete reinterpret_cast<compiled_binpat_vec_t *>(pat);
+}
+
+// Fills *total with the compiled pattern's byte length and *anchors with the count of
+// concrete (non-wildcard) bytes -- mask[i] != 0, or every byte when the mask is empty.
+// IDA's parser silently drops tokens it can't read, so a typo'd pattern lands here with
+// anchors == 0: nothing to match on.
+extern "C" void idakit_binpat_stats(const void *pat, size_t *total, size_t *anchors) {
+  const compiled_binpat_vec_t *v = reinterpret_cast<const compiled_binpat_vec_t *>(pat);
+  size_t t = 0, a = 0;
+  if (!v->empty()) {
+    const compiled_binpat_t &b = v->front();
+    t = b.bytes.size();
+    if (b.mask.empty()) {
+      a = t;
+    } else {
+      for (size_t i = 0; i < b.mask.size(); i++)
+        if (b.mask[i] != 0)
+          a++;
+    }
+  }
+  *total = t;
+  *anchors = a;
 }
 
 extern "C" idakit_ea_t idakit_bin_search(idakit_ea_t start, idakit_ea_t end, const void *pat,

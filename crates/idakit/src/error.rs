@@ -69,6 +69,84 @@ impl fmt::Display for ReasonTail<'_> {
     }
 }
 
+/// Why a [`Pattern`](crate::Pattern) constructor rejected its input. Carried by
+/// [`Error::PatternRejected`]; a typed reason rather than an opaque message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PatternRejection {
+    /// A [`hex`](crate::Pattern::hex) token was neither a hex byte, a nibble pattern
+    /// (`4?`/`?B`), nor a wildcard (`?`/`??`).
+    BadToken {
+        /// The offending token, verbatim.
+        token: String,
+        /// Its zero-based position in the whitespace-split pattern.
+        index: usize,
+    },
+
+    /// A [`code_mask`](crate::Pattern::code_mask) mask character was not one of `x`/`X`
+    /// (match) or `?`/`.` (wildcard).
+    BadMaskChar {
+        /// The offending mask character.
+        ch: char,
+        /// Its zero-based position in the mask string.
+        index: usize,
+    },
+
+    /// A mask's length did not match the byte sequence it applies to
+    /// ([`bytes`](crate::Pattern::bytes)/[`code_mask`](crate::Pattern::code_mask)).
+    MaskMismatch {
+        /// Number of pattern bytes.
+        bytes: usize,
+        /// Number of mask entries.
+        mask: usize,
+    },
+
+    /// The pattern pins no bit to match on: it is empty or all wildcards. A search on it
+    /// could only ever match nothing, so it is rejected rather than run. `total` is the
+    /// compiled length in bytes.
+    NoAnchor {
+        /// Total pattern bytes (every one a full wildcard).
+        total: usize,
+    },
+
+    /// IDA's parser rejected an [`ida`](crate::Pattern::ida) pattern outright (an empty
+    /// string, an unterminated `"`). `detail` is IDA's own diagnostic, when it gave one.
+    Unparseable {
+        /// IDA's parser message, when non-empty.
+        detail: Option<String>,
+    },
+}
+
+impl fmt::Display for PatternRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BadToken { token, index } => {
+                write!(
+                    f,
+                    "token {token:?} at position {index} is not a hex byte, nibble, or wildcard"
+                )
+            }
+            Self::BadMaskChar { ch, index } => {
+                write!(
+                    f,
+                    "mask character {ch:?} at position {index} is not one of x, ?, ."
+                )
+            }
+            Self::MaskMismatch { bytes, mask } => {
+                write!(
+                    f,
+                    "mask length {mask} does not match pattern length {bytes}"
+                )
+            }
+            Self::NoAnchor { total: 0 } => f.write_str("pattern is empty"),
+            Self::NoAnchor { total } => {
+                write!(f, "pattern pins no concrete bits ({total} wildcard bytes)")
+            }
+            Self::Unparseable { detail: Some(d) } => write!(f, "could not parse ({d})"),
+            Self::Unparseable { detail: None } => f.write_str("could not parse"),
+        }
+    }
+}
+
 /// A failure from an idiomatic `idakit` operation.
 #[derive(Debug, Snafu, PartialEq, Eq)]
 #[snafu(visibility(pub(crate)))]
@@ -128,14 +206,14 @@ pub enum Error {
         name: String,
     },
 
-    /// A binary search pattern did not parse. `reason` is IDA's own `parse_binpat_str`
-    /// diagnostic (e.g. a token that is neither a number, a `"..."` literal, nor `?`).
-    #[snafu(display("invalid search pattern {pattern:?}: {reason}"))]
-    PatternParse {
-        /// The pattern string that failed to parse.
+    /// A binary search pattern was rejected by [`Pattern::compile`](crate::Pattern::compile).
+    /// `kind` is a typed reason; see [`PatternRejection`].
+    #[snafu(display("invalid search pattern {pattern:?}: {kind}"))]
+    PatternRejected {
+        /// The pattern string that was rejected.
         pattern: String,
-        /// IDA's parse diagnostic.
-        reason: String,
+        /// Why it was rejected.
+        kind: PatternRejection,
     },
 
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is

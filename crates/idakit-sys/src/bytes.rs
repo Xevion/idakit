@@ -22,7 +22,9 @@ unsafe extern "C" {
         errbuf: *mut c_char,
         errcap: usize,
     ) -> *mut c_void;
+    pub fn idakit_binpat_from_bytes(bytes: *const u8, mask: *const u8, len: usize) -> *mut c_void;
     pub fn idakit_binpat_free(pat: *mut c_void);
+    pub fn idakit_binpat_stats(pat: *const c_void, total: *mut usize, anchors: *mut usize);
     pub fn idakit_bin_search(start: Ea, end: Ea, pat: *const c_void, flags: c_int) -> Ea;
 }
 

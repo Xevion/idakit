@@ -84,7 +84,16 @@ idakit_ea_t idakit_min_ea(void);
 idakit_ea_t idakit_max_ea(void);
 void *idakit_binpat_compile(idakit_ea_t ea, const char *pattern, int radix, char *errbuf,
                             size_t errcap);
+/* Build a compiled pattern directly from raw bytes and a per-byte mask (no parsing): the
+ * caller has already tokenized. `mask` is len bytes, applied bitwise (search with BITMASK);
+ * 0xFF = full byte, 0x00 = wildcard, 0xF0/0x0F = a nibble. Pass mask == NULL for all bytes
+ * defined. Never fails structurally, so there is no error channel. */
+void *idakit_binpat_from_bytes(const uint8_t *bytes, const uint8_t *mask, size_t len);
 void idakit_binpat_free(void *pat);
+/* Compiled pattern shape: *total = byte length, *anchors = concrete (non-wildcard) bytes.
+ * anchors == 0 means the pattern pins nothing to match on (empty, all wildcards, or IDA
+ * silently dropped an unreadable token). */
+void idakit_binpat_stats(const void *pat, size_t *total, size_t *anchors);
 idakit_ea_t idakit_bin_search(idakit_ea_t start, idakit_ea_t end, const void *pat, int flags);
 
 /* Database-wide metadata. String getters are snprintf-style (return the full length). */

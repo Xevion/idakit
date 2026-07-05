@@ -80,7 +80,7 @@ mod xref;
 pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{Cfunc, CtreeCounts};
 pub use ea::{BADADDR, Ea, Offset};
-pub use error::{CallError, Error, InitError, Qerrno, Result};
+pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
 pub use func::{Chunk, Chunks, Func, FuncImage, Functions, Instructions};
 pub use insn::{
     Access, DecodeError, Dtype, Flow, Insn, Isa, Mem, Operand, OperandKind, Reg, RegClass,
