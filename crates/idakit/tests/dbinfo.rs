@@ -5,7 +5,7 @@
 //! kernel tests. Runs against `IDAKIT_TEST_DB` or `$IDADIR/libida.so.i64` (see
 //! [`common::test_db`]); skips when neither is present. Read-only; opens `save = false`.
 
-use idakit::{Ida, Idb, Name};
+use idakit::{Bitness, Ida, Idb, Name};
 
 mod common;
 
@@ -30,8 +30,8 @@ fn run(idb: &mut Idb, db: &str) {
     // full input path ends with the bare root filename.
     let meta = idb.meta();
     assert!(
-        meta.bitness == 32 || meta.bitness == 64,
-        "unexpected bitness {}",
+        matches!(meta.bitness, Some(Bitness::Bits32 | Bitness::Bits64)),
+        "unexpected bitness {:?}",
         meta.bitness
     );
     let proc = meta.processor.as_deref().unwrap_or_default();
@@ -43,7 +43,7 @@ fn run(idb: &mut Idb, db: &str) {
         );
     }
     println!(
-        "meta: bitness={} proc={proc} file_type={:?} base={:?} root={:?}",
+        "meta: bitness={:?} proc={proc} file_type={:?} base={:?} root={:?}",
         meta.bitness, meta.file_type, meta.image_base, meta.root_filename
     );
 

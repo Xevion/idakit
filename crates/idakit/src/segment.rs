@@ -4,6 +4,7 @@ use idakit_sys as sys;
 
 use crate::Idb;
 use crate::address::Address;
+use crate::bitness::Bitness;
 use crate::ffi::read_string;
 
 impl Idb {
@@ -69,10 +70,10 @@ impl<'db> Segment<'db> {
         read_string(|buf, cap| self.db.seg_class(self.index, buf, cap))
     }
 
-    /// Addressing width in bits: 16, 32, or 64.
+    /// The segment's addressing width, or `None` if the segment reports an unrecognized one.
     #[must_use]
-    pub fn bitness(&self) -> u8 {
-        self.db.seg_bitness(self.index).max(0) as u8
+    pub fn bitness(&self) -> Option<Bitness> {
+        Bitness::try_from_bits(self.db.seg_bitness(self.index).max(0) as u8)
     }
 
     /// Whether the segment is readable (`SEGPERM_READ`). All three permission predicates

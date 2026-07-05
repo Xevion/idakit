@@ -61,6 +61,7 @@ use idakit_sys as sys;
 
 mod address;
 mod arena;
+mod bitness;
 mod bytes;
 mod cfg;
 mod claim;
@@ -80,6 +81,7 @@ mod segment;
 mod ty;
 
 pub use address::{Address, BADADDR};
+pub use bitness::Bitness;
 pub use cfg::{Block, BlockId, BlockKind, Cfg, ExternalExit};
 pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{CtreeCounts, DecompiledFunction};

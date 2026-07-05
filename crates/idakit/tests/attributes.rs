@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::{Ida, Idb};
+use idakit::{Bitness, Ida, Idb};
 
 #[test]
 fn attributes() {
@@ -59,12 +59,12 @@ fn run(idb: &mut Idb, db: &str) {
         "an executable segment should be readable"
     );
     assert!(
-        exec.bitness() == 32 || exec.bitness() == 64,
-        "unexpected code-segment bitness {}",
+        matches!(exec.bitness(), Some(Bitness::Bits32 | Bitness::Bits64)),
+        "unexpected code-segment bitness {:?}",
         exec.bitness()
     );
     println!(
-        "exec segment {:?}: class={:?} bitness={} r={} w={} x={}",
+        "exec segment {:?}: class={:?} bitness={:?} r={} w={} x={}",
         exec.name(),
         exec.class(),
         exec.bitness(),

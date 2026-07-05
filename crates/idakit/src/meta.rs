@@ -4,6 +4,7 @@ use std::ops::Range;
 
 use crate::Idb;
 use crate::address::Address;
+use crate::bitness::Bitness;
 use crate::ffi::read_string;
 
 /// An owned, `Send` snapshot of database-wide metadata, from [`Idb::meta`].
@@ -13,8 +14,8 @@ use crate::ffi::read_string;
 /// so grab it once rather than per field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Meta {
-    /// Application bitness: 16, 32, or 64.
-    pub bitness: u8,
+    /// Application addressing width, or `None` if the database reports an unrecognized one.
+    pub bitness: Option<Bitness>,
     /// Preferred load address (image base), when the format records one.
     pub image_base: Option<Address>,
     /// Processor module id (e.g. `metapc`).
@@ -42,7 +43,7 @@ impl Idb {
     #[must_use]
     pub fn meta(&self) -> Meta {
         Meta {
-            bitness: self.bitness().max(0) as u8,
+            bitness: Bitness::try_from_bits(self.bitness().max(0) as u8),
             image_base: Address::try_new(self.image_base()),
             processor: read_string(|buf, cap| self.proc_name(buf, cap)),
             file_type: read_string(|buf, cap| self.file_type_name(buf, cap)),

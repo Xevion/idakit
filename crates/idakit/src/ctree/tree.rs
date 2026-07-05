@@ -147,6 +147,40 @@ impl Ctree {
         self.types.iter()
     }
 
+    /// The first expression node whose source address is `address`, or `None` if none is.
+    /// Several nodes can share one address; this returns the first in allocation order and
+    /// [`items_at`](Self::items_at) yields them all.
+    #[must_use]
+    pub fn expression_at(&self, address: Address) -> Option<ExpressionId> {
+        self.expressions()
+            .find(|(_, node)| node.address == Some(address))
+            .map(|(id, _)| id)
+    }
+
+    /// The first statement node whose source address is `address`, or `None`.
+    #[must_use]
+    pub fn statement_at(&self, address: Address) -> Option<StatementId> {
+        self.statements()
+            .find(|(_, node)| node.address == Some(address))
+            .map(|(id, _)| id)
+    }
+
+    /// Every node -- expression then statement -- whose source address is `address`, in
+    /// allocation order. The flat, address-keyed counterpart to the structural
+    /// [`descendants`](Self::descendants) walk: it answers "what did the decompiler place at
+    /// this instruction?" without navigating the tree.
+    pub fn items_at(&self, address: Address) -> impl Iterator<Item = NodeRef> + '_ {
+        let expressions = self
+            .expressions()
+            .filter(move |(_, node)| node.address == Some(address))
+            .map(|(id, _)| NodeRef::Expression(id));
+        let statements = self
+            .statements()
+            .filter(move |(_, node)| node.address == Some(address))
+            .map(|(id, _)| NodeRef::Statement(id));
+        expressions.chain(statements)
+    }
+
     /// This node's parent, or `None` for the root.
     #[inline]
     #[must_use]
@@ -624,6 +658,43 @@ mod tests {
             .filter(|(_, e)| matches!(e.kind, ExpressionKind::Binary { .. }))
             .count();
         assert!(binaries == 1);
+    }
+
+    /// The flat, address-keyed lookups find nodes by their backing instruction address:
+    /// `expression_at`/`statement_at` return the first of each kind, `items_at` yields every
+    /// node sharing an address (expressions first), and an address no node carries is empty.
+    #[test]
+    fn flat_queries_find_nodes_by_address() {
+        let mut b = CtreeBuilder::new();
+        let int = b.intern_type(int32());
+        let a0 = Address::new_const(0x1000);
+        let a1 = Address::new_const(0x1004);
+
+        // An expression at a0, wrapped in a statement also at a0; a second statement at a1.
+        let v = b
+            .expression(int, ExpressionKind::Var(LocalId(0)))
+            .address(a0)
+            .call();
+        let s0 = b.statement(StatementKind::Expression(v)).address(a0).call();
+        let s1 = b.statement(StatementKind::Return(None)).address(a1).call();
+        let block = b.block(vec![s0, s1]);
+        let tree = b.finish(block);
+
+        assert!(tree.expression_at(a0) == Some(v));
+        assert!(tree.statement_at(a0) == Some(s0));
+        assert!(tree.statement_at(a1) == Some(s1));
+        // No expression sits at a1, and nothing at all at an unmapped address.
+        assert!(tree.expression_at(a1).is_none());
+        assert!(tree.statement_at(Address::new_const(0x2000)).is_none());
+
+        // items_at yields the expression then the statement that share a0; the address-less
+        // block never appears.
+        assert!(
+            tree.items_at(a0).collect::<Vec<_>>()
+                == vec![NodeRef::Expression(v), NodeRef::Statement(s0)]
+        );
+        assert!(tree.items_at(a1).collect::<Vec<_>>() == vec![NodeRef::Statement(s1)]);
+        assert!(tree.items_at(Address::new_const(0x2000)).next().is_none());
     }
 
     #[test]
