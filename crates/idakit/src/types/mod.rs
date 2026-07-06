@@ -1,6 +1,6 @@
 //! `TypeTable`: an interned arena of resolved types carried by an owned snapshot off the
 //! kernel thread -- the decompiler [`Ctree`](crate::ctree::Ctree), a function's
-//! [`Frame`](crate::Frame), or a standalone [`TypeImage`](crate::TypeImage).
+//! [`StackFrame`](crate::StackFrame), or a standalone [`Type`](crate::Type).
 //!
 //! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
 //! types share one handle, and recursion (a struct pointing at itself) is a [`TypeId`]
@@ -14,19 +14,22 @@ use std::collections::HashMap;
 use crate::arena::{Arena, Idx};
 
 mod builder;
+mod resolved;
 mod sink;
 
 pub(crate) use builder::TypeBuilder;
+pub use resolved::Type;
+pub(crate) use resolved::walk_type;
 pub(crate) use sink::{TypeSink, raw, reborrow, tid, type_vtbl};
 
-/// Handle to a [`TypeData`] in a [`TypeTable`].
-pub type TypeId = Idx<TypeData>;
+/// Handle to a [`TypeValue`] in a [`TypeTable`].
+pub type TypeId = Idx<TypeValue>;
 
 /// A resolved type: its shape plus byte size when known.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct TypeData {
+pub struct TypeValue {
     /// The type's shape.
-    pub kind: TypeKind,
+    pub shape: TypeShape,
     /// Size in bytes, or `None` for an incomplete/sizeless type.
     pub size: Option<u64>,
 }
@@ -56,11 +59,11 @@ pub struct EnumMember {
 /// The shape of a type. Child types are [`TypeId`] handles, so recursion and sharing
 /// need no nesting.
 ///
-/// A closed set: a named type with no structural body becomes [`Opaque`](TypeKind::Opaque)
-/// rather than a catch-all, and [`Unknown`](TypeKind::Unknown) is only the transient
+/// A closed set: a named type with no structural body becomes [`Opaque`](TypeShape::Opaque)
+/// rather than a catch-all, and [`Unknown`](TypeShape::Unknown) is only the transient
 /// build-time placeholder. A new shape in a later IDA is a deliberate, breaking addition.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum TypeKind {
+pub enum TypeShape {
     /// `void`
     Void,
     /// `bool`
@@ -135,43 +138,43 @@ pub enum TypeKind {
     Unknown,
 }
 
-impl TypeKind {
+impl TypeShape {
     /// The type a pointer addresses, or `None` for a non-pointer. A structural accessor --
     /// the pointer analogue of reading a struct's members -- so callers needn't re-match
-    /// the [`Ptr`](TypeKind::Ptr) variant by hand.
+    /// the [`Ptr`](TypeShape::Ptr) variant by hand.
     #[inline]
     #[must_use]
     pub fn pointee(&self) -> Option<TypeId> {
         match self {
-            TypeKind::Ptr(elem) => Some(*elem),
+            TypeShape::Ptr(elem) => Some(*elem),
             _ => None,
         }
     }
 
-    /// The tag of a named aggregate ([`Struct`](TypeKind::Struct)/[`Union`](TypeKind::Union)/
-    /// [`Enum`](TypeKind::Enum), unless anonymous) or the alias of a
-    /// [`Typedef`](TypeKind::Typedef); `None` for an anonymous or structural type. Borrows from
+    /// The tag of a named aggregate ([`Struct`](TypeShape::Struct)/[`Union`](TypeShape::Union)/
+    /// [`Enum`](TypeShape::Enum), unless anonymous) or the alias of a
+    /// [`Typedef`](TypeShape::Typedef); `None` for an anonymous or structural type. Borrows from
     /// `self`, so the caller clones only when it needs an owned name -- e.g. feeding it back to
-    /// [`Idb::type_named`](crate::Idb::type_named) takes the borrow directly.
+    /// [`Database::type_named`](crate::Database::type_named) takes the borrow directly.
     #[inline]
     #[must_use]
     pub fn tag_name(&self) -> Option<&str> {
         match self {
-            TypeKind::Struct { name, .. }
-            | TypeKind::Union { name, .. }
-            | TypeKind::Enum { name, .. } => name.as_deref(),
-            TypeKind::Typedef { name, .. } => Some(name.as_str()),
+            TypeShape::Struct { name, .. }
+            | TypeShape::Union { name, .. }
+            | TypeShape::Enum { name, .. } => name.as_deref(),
+            TypeShape::Typedef { name, .. } => Some(name.as_str()),
             _ => None,
         }
     }
 }
 
-/// An interned arena of [`TypeData`]: structurally identical types collapse to one
+/// An interned arena of [`TypeValue`]: structurally identical types collapse to one
 /// [`TypeId`].
 #[derive(Debug)]
 pub struct TypeTable {
-    arena: Arena<TypeData>,
-    dedup: HashMap<TypeData, TypeId>,
+    arena: Arena<TypeValue>,
+    dedup: HashMap<TypeValue, TypeId>,
 }
 
 impl TypeTable {
@@ -184,9 +187,9 @@ impl TypeTable {
         }
     }
 
-    /// Intern a type, returning a shared handle. Types with identical kind, size, and
+    /// Intern a type, returning a shared handle. Types with identical shape, size, and
     /// child handles collapse to a single entry.
-    pub fn intern(&mut self, data: TypeData) -> TypeId {
+    pub fn intern(&mut self, data: TypeValue) -> TypeId {
         if let Some(&id) = self.dedup.get(&data) {
             return id;
         }
@@ -199,28 +202,28 @@ impl TypeTable {
     /// This breaks recursion: a recursive member can reference the aggregate's handle
     /// before [`fill`](Self::fill) supplies its body. Not deduplicated.
     ///
-    /// [`Unknown`]: TypeKind::Unknown
+    /// [`Unknown`]: TypeShape::Unknown
     pub fn alloc_placeholder(&mut self) -> TypeId {
-        self.arena.alloc(TypeData {
-            kind: TypeKind::Unknown,
+        self.arena.alloc(TypeValue {
+            shape: TypeShape::Unknown,
             size: None,
         })
     }
 
     /// Supply the body of a handle from [`alloc_placeholder`](Self::alloc_placeholder).
-    pub fn fill(&mut self, id: TypeId, data: TypeData) {
+    pub fn fill(&mut self, id: TypeId, data: TypeValue) {
         self.arena[id] = data;
     }
 
     /// The type behind a handle.
     #[inline]
     #[must_use]
-    pub fn get(&self, id: TypeId) -> &TypeData {
+    pub fn get(&self, id: TypeId) -> &TypeValue {
         &self.arena[id]
     }
 
     /// Iterate every `(handle, type)` in interning order.
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeData)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeValue)> {
         self.arena.iter()
     }
 
@@ -251,9 +254,9 @@ mod tests {
 
     use super::*;
 
-    fn int(bytes: u8, signed: bool) -> TypeData {
-        TypeData {
-            kind: TypeKind::Int { bytes, signed },
+    fn int(bytes: u8, signed: bool) -> TypeValue {
+        TypeValue {
+            shape: TypeShape::Int { bytes, signed },
             size: Some(u64::from(bytes)),
         }
     }
@@ -282,14 +285,14 @@ mod tests {
         // member pointer can target it before the body is filled. The table stays finite.
         let mut table = TypeTable::new();
         let node = table.alloc_placeholder();
-        let ptr = table.intern(TypeData {
-            kind: TypeKind::Ptr(node),
+        let ptr = table.intern(TypeValue {
+            shape: TypeShape::Ptr(node),
             size: Some(8),
         });
         table.fill(
             node,
-            TypeData {
-                kind: TypeKind::Struct {
+            TypeValue {
+                shape: TypeShape::Struct {
                     name: Some("node".into()),
                     members: vec![TypeMember {
                         name: "next".into(),
@@ -302,9 +305,9 @@ mod tests {
             },
         );
 
-        assert!(let TypeKind::Struct { members, .. } = &table.get(node).kind);
+        assert!(let TypeShape::Struct { members, .. } = &table.get(node).shape);
         // the member pointer resolves back to the struct itself
-        assert!(table.get(members[0].ty).kind == TypeKind::Ptr(node));
+        assert!(table.get(members[0].ty).shape == TypeShape::Ptr(node));
     }
 
     /// `pointee` unwraps a pointer's element type and is `None` for everything else.
@@ -312,38 +315,38 @@ mod tests {
     fn pointee_unwraps_only_pointers() {
         let mut table = TypeTable::new();
         let elem = table.intern(int(4, true));
-        let ptr = table.intern(TypeData {
-            kind: TypeKind::Ptr(elem),
+        let ptr = table.intern(TypeValue {
+            shape: TypeShape::Ptr(elem),
             size: Some(8),
         });
-        assert!(table.get(ptr).kind.pointee() == Some(elem));
-        assert!(let None = table.get(elem).kind.pointee());
-        assert!(let None = TypeKind::Void.pointee());
+        assert!(table.get(ptr).shape.pointee() == Some(elem));
+        assert!(let None = table.get(elem).shape.pointee());
+        assert!(let None = TypeShape::Void.pointee());
     }
 
     /// `tag_name` yields a named aggregate's tag and a typedef's alias, and `None` for an
     /// anonymous or structural type.
     #[test]
     fn tag_name_reads_named_types_only() {
-        let named = TypeKind::Struct {
+        let named = TypeShape::Struct {
             name: Some("pt".into()),
             members: vec![],
         };
         assert!(named.tag_name() == Some("pt"));
-        let anon = TypeKind::Struct {
+        let anon = TypeShape::Struct {
             name: None,
             members: vec![],
         };
         assert!(anon.tag_name().is_none());
 
         let underlying = TypeTable::new().alloc_placeholder();
-        let alias = TypeKind::Typedef {
+        let alias = TypeShape::Typedef {
             name: "u32".into(),
             underlying,
         };
         assert!(alias.tag_name() == Some("u32"));
 
-        let scalar = TypeKind::Int {
+        let scalar = TypeShape::Int {
             bytes: 4,
             signed: true,
         };

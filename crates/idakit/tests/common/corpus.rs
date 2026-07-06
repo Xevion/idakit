@@ -99,7 +99,7 @@ pub struct WorkingCopy {
 }
 
 impl WorkingCopy {
-    /// Path to the copy, to hand to `Idb::open`.
+    /// Path to the copy, to hand to `Database::open`.
     pub fn path(&self) -> &str {
         self.path.to_str().expect("scratch path is valid UTF-8")
     }

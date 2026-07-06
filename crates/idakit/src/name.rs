@@ -1,12 +1,12 @@
-//! Name lookup and enumeration: [`Idb::name`], [`Idb::address_of`], [`Idb::demangle`], and the
+//! Name lookup and enumeration: [`Database::name`], [`Database::address_of`], [`Database::demangle`], and the
 //! [`Names`] iterator over the database's name list.
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::error::{Error, Result};
 use crate::ffi::{read_string, with_cstr};
 
-impl Idb {
+impl Database {
     /// The name at `address` -- a label, function, or data name -- or `None` if the address is
     /// unnamed. This is the whole-database counterpart to [`Function::name`](crate::Function::name),
     /// which is specific to a function entry.
@@ -72,16 +72,16 @@ pub struct Name {
 }
 
 /// Lazy iterator over every named address, in the kernel's name-list order, from
-/// [`Idb::names`].
+/// [`Database::names`].
 pub struct Names<'db> {
-    db: &'db Idb,
+    db: &'db Database,
     next: usize,
     count: usize,
 }
 
 impl<'db> Names<'db> {
     #[inline]
-    pub(crate) fn new(db: &'db Idb) -> Self {
+    pub(crate) fn new(db: &'db Database) -> Self {
         Self {
             db,
             next: 0,

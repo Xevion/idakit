@@ -14,7 +14,7 @@ use std::fmt::Write;
 use super::node::{Case, ExpressionId, ExpressionKind, LocalId, StatementId, StatementKind};
 use super::ops::{BinOp, UnOp};
 use super::tree::Ctree;
-use crate::types::{TypeId, TypeKind};
+use crate::types::{TypeId, TypeShape};
 
 // C operator precedence, higher binds tighter. A child is parenthesized when its own
 // precedence is below the minimum its position requires (see `Printer::expression`).
@@ -370,11 +370,11 @@ impl Printer<'_> {
     /// back to a synthetic `field_<off>` when the type isn't an aggregate we can index.
     fn field_name(&self, obj: ExpressionId, byte_off: u32, through_ptr: bool) -> String {
         let mut ty = self.tree.type_of(self.tree.expression(obj).ty);
-        if through_ptr && let TypeKind::Ptr(p) = &ty.kind {
+        if through_ptr && let TypeShape::Ptr(p) = &ty.shape {
             ty = self.tree.type_of(*p);
         }
-        let members = match &ty.kind {
-            TypeKind::Struct { members, .. } | TypeKind::Union { members, .. } => Some(members),
+        let members = match &ty.shape {
+            TypeShape::Struct { members, .. } | TypeShape::Union { members, .. } => Some(members),
             _ => None,
         };
         if let Some(members) = members {
@@ -396,12 +396,12 @@ impl Printer<'_> {
     /// The bare name of a named aggregate/typedef, used to label an unnamed base
     /// subobject member by its type.
     fn type_tag_name(&self, id: TypeId) -> Option<String> {
-        match &self.tree.type_of(id).kind {
-            TypeKind::Struct { name, .. }
-            | TypeKind::Union { name, .. }
-            | TypeKind::Enum { name, .. } => name.clone(),
-            TypeKind::Typedef { name, .. } => Some(name.clone()),
-            TypeKind::Opaque(name) => Some(name.clone()),
+        match &self.tree.type_of(id).shape {
+            TypeShape::Struct { name, .. }
+            | TypeShape::Union { name, .. }
+            | TypeShape::Enum { name, .. } => name.clone(),
+            TypeShape::Typedef { name, .. } => Some(name.clone()),
+            TypeShape::Opaque(name) => Some(name.clone()),
             _ => None,
         }
     }
@@ -416,10 +416,10 @@ impl Printer<'_> {
 
     fn print_type(&self, id: TypeId) -> String {
         let t = self.tree.type_of(id);
-        match &t.kind {
-            TypeKind::Void => "void".into(),
-            TypeKind::Bool => "bool".into(),
-            TypeKind::Int { bytes, signed } => {
+        match &t.shape {
+            TypeShape::Void => "void".into(),
+            TypeShape::Bool => "bool".into(),
+            TypeShape::Int { bytes, signed } => {
                 let bits = u32::from(*bytes) * 8;
                 if *signed {
                     format!("__int{bits}")
@@ -427,17 +427,17 @@ impl Printer<'_> {
                     format!("unsigned __int{bits}")
                 }
             }
-            TypeKind::Float { bytes } => match bytes {
+            TypeShape::Float { bytes } => match bytes {
                 4 => "float".into(),
                 8 => "double".into(),
                 _ => "long double".into(),
             },
-            TypeKind::Ptr(p) => format!("{} *", self.print_type(*p)),
-            TypeKind::Array { elem, len } => format!("{}[{}]", self.print_type(*elem), len),
-            TypeKind::Struct { name, .. } => name.clone().unwrap_or_else(|| "struct".into()),
-            TypeKind::Union { name, .. } => name.clone().unwrap_or_else(|| "union".into()),
-            TypeKind::Enum { name, .. } => name.clone().unwrap_or_else(|| "enum".into()),
-            TypeKind::Function {
+            TypeShape::Ptr(p) => format!("{} *", self.print_type(*p)),
+            TypeShape::Array { elem, len } => format!("{}[{}]", self.print_type(*elem), len),
+            TypeShape::Struct { name, .. } => name.clone().unwrap_or_else(|| "struct".into()),
+            TypeShape::Union { name, .. } => name.clone().unwrap_or_else(|| "union".into()),
+            TypeShape::Enum { name, .. } => name.clone().unwrap_or_else(|| "enum".into()),
+            TypeShape::Function {
                 ret,
                 params,
                 varargs,
@@ -448,9 +448,9 @@ impl Printer<'_> {
                 }
                 format!("{} (*)({})", self.print_type(*ret), parts.join(", "))
             }
-            TypeKind::Typedef { name, .. } => name.clone(),
-            TypeKind::Opaque(name) => name.clone(),
-            TypeKind::Unknown => "_UNKNOWN".into(),
+            TypeShape::Typedef { name, .. } => name.clone(),
+            TypeShape::Opaque(name) => name.clone(),
+            TypeShape::Unknown => "_UNKNOWN".into(),
         }
     }
 }
@@ -491,13 +491,13 @@ mod tests {
     use crate::ctree::node::{Local, LocalLocation};
     use crate::ctree::ops::AssignOp;
     use crate::ctree::tree::CtreeBuilder;
-    use crate::types::{TypeData, TypeKind, TypeMember};
+    use crate::types::{TypeMember, TypeShape, TypeValue};
     use assert2::assert;
     use rstest::rstest;
 
     fn int32(b: &mut CtreeBuilder) -> TypeId {
-        b.intern_type(TypeData {
-            kind: TypeKind::Int {
+        b.intern_type(TypeValue {
+            shape: TypeShape::Int {
                 bytes: 4,
                 signed: true,
             },
@@ -523,15 +523,15 @@ mod tests {
     #[test]
     fn empty_member_name_falls_back_to_type_name() {
         let mut b = CtreeBuilder::new();
-        let base = b.intern_type(TypeData {
-            kind: TypeKind::Struct {
+        let base = b.intern_type(TypeValue {
+            shape: TypeShape::Struct {
                 name: Some("Base".into()),
                 members: vec![],
             },
             size: Some(8),
         });
-        let derived = b.intern_type(TypeData {
-            kind: TypeKind::Struct {
+        let derived = b.intern_type(TypeValue {
+            shape: TypeShape::Struct {
                 name: Some("Derived".into()),
                 members: vec![TypeMember {
                     name: String::new(),
@@ -542,8 +542,8 @@ mod tests {
             },
             size: Some(8),
         });
-        let pderived = b.intern_type(TypeData {
-            kind: TypeKind::Ptr(derived),
+        let pderived = b.intern_type(TypeValue {
+            shape: TypeShape::Ptr(derived),
             size: Some(8),
         });
         let this = b.push_lvar(lvar("this", pderived));

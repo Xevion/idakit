@@ -383,7 +383,7 @@ impl CallbackBuilder {
         }
         // Type-side failures the builder recorded but can't name (it is error-type-agnostic):
         // an over-wide scalar left a placeholder in its place, or a named type was referenced
-        // but never filled (it would stay `TypeKind::Unknown`). Surface them, don't ship a gap.
+        // but never filled (it would stay `TypeShape::Unknown`). Surface them, don't ship a gap.
         if let Some(bytes) = self.b.types().too_wide() {
             return Err(ExtractError::ScalarTooWide { bytes });
         }
@@ -688,7 +688,7 @@ mod tests {
     use assert2::assert;
 
     use super::*;
-    use crate::types::{TypeKind, TypeMember};
+    use crate::types::{TypeMember, TypeShape};
 
     /// `cot_*` discriminants used by the operator tests (from hexrays.hpp).
     const COT_ASGADD: u32 = 6;
@@ -892,12 +892,12 @@ mod tests {
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        assert!(let TypeKind::Struct { name, members } = &tree.type_of(tid(node)).kind);
+        assert!(let TypeShape::Struct { name, members } = &tree.type_of(tid(node)).shape);
         assert!(name.as_deref() == Some("Node"));
         assert!(members.len() == 1);
         assert!(members[0].name == "next");
         // the member pointer resolves back to the struct itself
-        assert!(matches!(tree.type_of(members[0].ty).kind, TypeKind::Ptr(t) if t == tid(node)));
+        assert!(matches!(tree.type_of(members[0].ty).shape, TypeShape::Ptr(t) if t == tid(node)));
     }
 
     /// A typedef keeps its alias name and points at the (separately interned) underlying.
@@ -914,11 +914,11 @@ mod tests {
         let tree = cb.finish(blk).expect("well-formed");
 
         let alias_ty = tree.type_of(tid(alias));
-        assert!(let TypeKind::Typedef { name, underlying } = &alias_ty.kind);
+        assert!(let TypeShape::Typedef { name, underlying } = &alias_ty.shape);
         assert!(name == "size_t");
         assert!(matches!(
-            tree.type_of(*underlying).kind,
-            TypeKind::Int { bytes: 4, .. }
+            tree.type_of(*underlying).shape,
+            TypeShape::Int { bytes: 4, .. }
         ));
         // the alias adopts its target's size, so the node is self-describing
         assert!(alias_ty.size == Some(4));
@@ -947,7 +947,7 @@ mod tests {
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("opaque is a complete type");
 
-        assert!(let TypeKind::Opaque(name) = &tree.type_of(tid(fwd)).kind);
+        assert!(let TypeShape::Opaque(name) = &tree.type_of(tid(fwd)).shape);
         assert!(name == "SomeHandle");
     }
 

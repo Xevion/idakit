@@ -11,7 +11,7 @@ fn write() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Idb) {
+fn run(idb: &mut idakit::Database) {
     let address = idb.functions().next().expect("a function").address();
 
     comment_round_trips(idb, address);
@@ -22,7 +22,7 @@ fn run(idb: &mut idakit::Idb) {
 }
 
 /// A regular and a repeatable comment set on `address` read back verbatim on their own channels.
-fn comment_round_trips(idb: &mut idakit::Idb, address: Address) {
+fn comment_round_trips(idb: &mut idakit::Database, address: Address) {
     idb.set_comment(address, "idakit regular", false)
         .expect("set regular comment");
     idb.set_comment(address, "idakit repeatable", true)
@@ -38,7 +38,7 @@ fn comment_round_trips(idb: &mut idakit::Idb, address: Address) {
 }
 
 /// Patching bytes is visible to a read-back, and restoring returns the originals.
-fn patch_round_trips(idb: &mut idakit::Idb, address: Address) {
+fn patch_round_trips(idb: &mut idakit::Database, address: Address) {
     let original = idb.bytes(address, 4);
     assert!(original.len() == 4, "need 4 readable bytes at the entry");
 
@@ -58,7 +58,7 @@ fn patch_round_trips(idb: &mut idakit::Idb, address: Address) {
 }
 
 /// A patch targeting an unmapped address is rejected whole, as a typed `WriteRejected`.
-fn patch_rejects_unmapped(idb: &mut idakit::Idb) {
+fn patch_rejects_unmapped(idb: &mut idakit::Database) {
     let nowhere = Address::new_const(0xffff_ffff_f000);
     let r = idb.patch(nowhere, &[0x90, 0x90]);
     assert!(

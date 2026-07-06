@@ -14,7 +14,7 @@ fn search() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Idb) {
+fn run(idb: &mut idakit::Database) {
     let first = idb.functions().next().expect("a function");
     let address = first.address();
     let bytes = idb.bytes(address, 8);
@@ -29,7 +29,7 @@ fn run(idb: &mut idakit::Idb) {
 }
 
 /// hex / bytes / code_mask built from the same entry bytes must each list `address`.
-fn exact_forms_all_find_entry(idb: &idakit::Idb, address: Address, bytes: &[u8]) {
+fn exact_forms_all_find_entry(idb: &idakit::Database, address: Address, bytes: &[u8]) {
     let hex_str = bytes
         .iter()
         .map(|b| format!("{b:02X}"))
@@ -64,7 +64,7 @@ fn exact_forms_all_find_entry(idb: &idakit::Idb, address: Address, bytes: &[u8])
 }
 
 /// A byte- and a nibble-wildcard both still match `address` (mask can only widen the set).
-fn wildcards_still_match(idb: &idakit::Idb, address: Address, bytes: &[u8]) {
+fn wildcards_still_match(idb: &idakit::Database, address: Address, bytes: &[u8]) {
     // Byte wildcard on the second byte.
     let mut wild: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
     wild[1] = "?".to_owned();
@@ -84,7 +84,7 @@ fn wildcards_still_match(idb: &idakit::Idb, address: Address, bytes: &[u8]) {
 }
 
 /// A search range starting past `address` must not report `address`.
-fn range_excludes_start(idb: &idakit::Idb, address: Address, bytes: &[u8]) {
+fn range_excludes_start(idb: &idakit::Database, address: Address, bytes: &[u8]) {
     let pat = Pattern::bytes(idb, bytes).call().expect("bytes compiles");
     let bounds = idb
         .address_range()
@@ -97,7 +97,7 @@ fn range_excludes_start(idb: &idakit::Idb, address: Address, bytes: &[u8]) {
 }
 
 /// Each kernel-dependent rejection returns its specific typed `PatternRejection`.
-fn rejections_trip(idb: &idakit::Idb) {
+fn rejections_trip(idb: &idakit::Database) {
     // All-wildcard hex -> NoAnchor.
     let_no_anchor(Pattern::hex(idb, "? ?"), 2);
 

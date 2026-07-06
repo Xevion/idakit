@@ -184,7 +184,7 @@ pub enum Error {
         source: ExtractError,
     },
 
-    /// Instruction decoding failed; carries the [`DecodeError`]. [`decode`](crate::Idb::decode)
+    /// Instruction decoding failed; carries the [`DecodeError`]. [`decode`](crate::Database::decode)
     /// returns [`DecodeError`] directly, but `#[snafu(context(false))]` gives a `From` so `?`
     /// flattens it into an [`Error`] in code that returns the crate [`Result`].
     #[snafu(display("{source}"), context(false))]
@@ -208,7 +208,7 @@ pub enum Error {
     },
 
     /// No function covers the requested address -- e.g. building a
-    /// [`Cfg`](crate::Cfg) at an address IDA has not attributed to any function.
+    /// [`FlowChart`](crate::FlowChart) at an address IDA has not attributed to any function.
     #[snafu(display("no function at {address:#x}"))]
     NoFunction {
         /// The address that lies in no function.
@@ -261,7 +261,7 @@ pub enum Error {
     /// The kernel tried to terminate the process with `exit(code)` mid-operation --
     /// IDA's reaction to an unrecoverable condition such as an unaccepted license. The
     /// facade trapped the exit and returned control, but the kernel has already torn
-    /// itself down: the [`Idb`](crate::Idb) is unusable and a fresh process is needed
+    /// itself down: the [`Database`](crate::Database) is unusable and a fresh process is needed
     /// to run IDA again. `diagnostic` is whatever IDA printed on its way out (captured,
     /// not leaked) -- e.g. `"License not yet accepted, cannot run in batch mode"`.
     #[snafu(display(
@@ -389,7 +389,7 @@ pub enum InitError {
     KernelGone,
 
     /// A kernel is already live; the kernel is a process global, so drop the existing
-    /// [`Idb`](crate::Idb) before [`here`](crate::Ida::here)/[`run`](crate::Ida::run) again.
+    /// [`Database`](crate::Database) before [`here`](crate::Ida::here)/[`run`](crate::Ida::run) again.
     #[snafu(display("a kernel is already live in this process"))]
     AlreadyRunning,
 }

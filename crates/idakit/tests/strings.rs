@@ -4,14 +4,14 @@
 
 mod common;
 
-use idakit::Idb;
+use idakit::Database;
 
 #[test]
 fn strings() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb) {
+fn run(idb: &mut Database) {
     let mut total = 0usize;
     let mut decoded = 0usize;
     let mut wide = 0usize;

@@ -1,16 +1,16 @@
 //! Typed reads of the data at an address: fixed-width integers, pointers, and strings.
 //!
-//! These interpret the analyzed image (the raw [`bytes`](Idb::bytes)) as values, in the
+//! These interpret the analyzed image (the raw [`bytes`](Database::bytes)) as values, in the
 //! database's byte order. Each read is `None` when the covered bytes are not fully mapped, so a
 //! read off the end of a segment fails rather than quietly returning zero. They pair with the
-//! data [`references`](Idb::references_to): follow a data xref to an address, then read what
+//! data [`xrefs_to`](Database::xrefs_to): follow a data xref to an address, then read what
 //! lives there.
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::bitness::Bitness;
 
-impl Idb {
+impl Database {
     /// Read the unsigned byte at `address`, or `None` if it is not mapped.
     #[must_use]
     pub fn read_u8(&self, address: Address) -> Option<u8> {
@@ -59,10 +59,10 @@ impl Idb {
     /// Read the C string (1-byte units, NUL-terminated) at `address`, decoded as UTF-8, or
     /// `None` if `address` holds no string. The length is auto-detected up to the terminator;
     /// undecodable bytes become the Unicode replacement character (U+FFFD). For wide strings and
-    /// a whole-database sweep, use [`strings`](Idb::strings) instead.
+    /// a whole-database sweep, use [`strings`](Database::strings) instead.
     #[must_use]
     pub fn read_string(&self, address: Address) -> Option<String> {
-        // Fully qualified: `Idb::read_string` (this method) and the `ffi::read_string` buffer
+        // Fully qualified: `Database::read_string` (this method) and the `ffi::read_string` buffer
         // helper share a name; the path keeps them apart.
         crate::ffi::read_string(|buf, cap| self.get_strlit(address, 0, buf, cap))
     }

@@ -1,16 +1,16 @@
 //! [`StringLiteral`]: one string from IDA's string list, iterated by [`Strings`].
 //!
 //! The natural singular name `String` collides with [`std::string::String`], so the view is
-//! [`StringLiteral`] while the iterator and the [`Idb::strings`] method keep the ergonomic
+//! [`StringLiteral`] while the iterator and the [`Database::strings`] method keep the ergonomic
 //! `strings` stem.
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::ffi::read_string;
 
-impl Idb {
+impl Database {
     /// Iterate every string literal IDA located in the database.
     ///
     /// This (re)builds IDA's string list first -- an O(database) scan -- then walks it. Collect
@@ -30,12 +30,12 @@ pub struct StringLiteral<'db> {
     address: Address,
     length: usize,
     raw_type: i32,
-    db: &'db Idb,
+    db: &'db Database,
 }
 
 impl<'db> StringLiteral<'db> {
     #[inline]
-    pub(crate) fn new(address: Address, length: usize, raw_type: i32, db: &'db Idb) -> Self {
+    pub(crate) fn new(address: Address, length: usize, raw_type: i32, db: &'db Database) -> Self {
         Self {
             address,
             length,
@@ -128,18 +128,18 @@ fn is_pascal_of(raw_type: i32) -> bool {
     (1..=3).contains(&layout)
 }
 
-/// Lazy iterator over IDA's string list, in list order. Borrows `&Idb`, so it can't outlive the
+/// Lazy iterator over IDA's string list, in list order. Borrows `&Database`, so it can't outlive the
 /// database or coexist with a write. `size_hint`'s lower bound is `0`: a list entry with no
 /// readable address is skipped.
 pub struct Strings<'db> {
-    db: &'db Idb,
+    db: &'db Database,
     next: usize,
     count: usize,
 }
 
 impl<'db> Strings<'db> {
     #[inline]
-    pub(crate) fn new(db: &'db Idb) -> Self {
+    pub(crate) fn new(db: &'db Database) -> Self {
         Self {
             db,
             next: 0,

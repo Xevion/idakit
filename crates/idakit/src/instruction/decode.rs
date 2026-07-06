@@ -10,8 +10,8 @@ use std::ffi::{CStr, c_char};
 use idakit_sys as sys;
 
 use super::{
-    Access, DataType, DecodeError, Flow, Instruction, Isa, Mem, Operand, OperandKind, Register,
-    RegisterClass,
+    Access, DecodeError, Flow, Instruction, Isa, Memory, Operand, OperandDataType, OperandKind,
+    Register, RegisterClass,
 };
 use crate::address::Address;
 
@@ -51,7 +51,7 @@ fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, Dec
                 reason: "register operand carries no register",
             })?)
         }
-        sys::IDAKIT_OP_MEM => OperandKind::Mem(Mem {
+        sys::IDAKIT_OP_MEM => OperandKind::Memory(Memory {
             base: register(&o.base),
             index: register(&o.index),
             scale: o.scale,
@@ -59,7 +59,7 @@ fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, Dec
             segment: None,
             target: Address::try_new(o.addr),
         }),
-        sys::IDAKIT_OP_IMM => OperandKind::Imm { value: o.value },
+        sys::IDAKIT_OP_IMM => OperandKind::Immediate { value: o.value },
         sys::IDAKIT_OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or(
             DecodeError::MalformedOperand {
                 address: address.get(),
@@ -76,7 +76,7 @@ fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, Dec
         other => unreachable!("facade emitted unknown operand kind {other}"),
     };
     let data_type =
-        DataType::try_from(o.data_type).map_err(|_| DecodeError::UnsupportedDataType {
+        OperandDataType::try_from(o.data_type).map_err(|_| DecodeError::UnsupportedDataType {
             address: address.get(),
             op: o.idx,
             dtype: o.data_type,
@@ -162,7 +162,7 @@ mod tests {
     fn gpr(num: u16, width: u8, nm: &str) -> sys::InstructionRegister {
         sys::InstructionRegister {
             num,
-            cls: u8::from(RegisterClass::Gpr),
+            cls: u8::from(RegisterClass::GeneralPurpose),
             width,
             name: name16(nm),
         }
@@ -205,16 +205,16 @@ mod tests {
     fn register_operand_carries_name_and_class() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_REG;
-        op.data_type = u8::from(DataType::Qword);
+        op.data_type = u8::from(OperandDataType::Qword);
         op.access = 0b11; // read + written
         op.register = gpr(0, 8, "rax");
 
         let mapped = operand(&op, at()).expect("valid reg operand");
         assert!(let OperandKind::Register(r) = &mapped.kind);
         assert!(r.name.as_ref() == "rax");
-        assert!(r.class == RegisterClass::Gpr);
+        assert!(r.class == RegisterClass::GeneralPurpose);
         assert!(r.width == 8);
-        assert!(mapped.data_type == DataType::Qword);
+        assert!(mapped.data_type == OperandDataType::Qword);
         assert!(
             mapped.access
                 == Access {
@@ -228,7 +228,7 @@ mod tests {
     fn memory_operand_decodes_base_index_scale_disp() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_MEM;
-        op.data_type = u8::from(DataType::Dword);
+        op.data_type = u8::from(OperandDataType::Dword);
         op.base = gpr(5, 8, "rbp");
         op.index = gpr(0, 8, "rax");
         op.scale = 4;
@@ -236,7 +236,7 @@ mod tests {
         op.addr = crate::address::BADADDR; // no static target for [rbp+rax*4+8]
 
         let mapped = operand(&op, at()).expect("valid mem operand");
-        assert!(let OperandKind::Mem(m) = &mapped.kind);
+        assert!(let OperandKind::Memory(m) = &mapped.kind);
         assert!(let Some(base) = &m.base);
         assert!(base.name.as_ref() == "rbp");
         assert!(let Some(index) = &m.index);
@@ -253,7 +253,7 @@ mod tests {
         op.kind = sys::IDAKIT_OP_MEM;
         op.addr = 0x40_0000; // a direct [addr] reference resolves to a target
         let mapped = operand(&op, at()).expect("valid mem operand");
-        assert!(let OperandKind::Mem(m) = &mapped.kind);
+        assert!(let OperandKind::Memory(m) = &mapped.kind);
         assert!(m.base.is_none());
         assert!(m.index.is_none());
         assert!(let Some(t) = m.target);
@@ -265,7 +265,7 @@ mod tests {
         let mut imm = blank_op();
         imm.kind = sys::IDAKIT_OP_IMM;
         imm.value = 0x1234;
-        assert!(let OperandKind::Imm { value } = operand(&imm, at()).expect("imm").kind);
+        assert!(let OperandKind::Immediate { value } = operand(&imm, at()).expect("imm").kind);
         assert!(value == 0x1234);
 
         let mut near = blank_op();

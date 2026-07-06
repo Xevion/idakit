@@ -1,4 +1,4 @@
-//! The crate's kernel-global FFI boundary, as private [`Idb`] methods.
+//! The crate's kernel-global FFI boundary, as private [`Database`] methods.
 //!
 //! Every `idakit-sys` call that operates on the implicit current database lives
 //! here as one thin wrapper. The handle-scoped calls (`DecompiledFunction`) stay on
@@ -6,7 +6,7 @@
 //!
 //! # Safety
 //!
-//! Every method below is sound by one invariant, discharged here once: an [`Idb`]
+//! Every method below is sound by one invariant, discharged here once: an [`Database`]
 //! is `!Send` and constructed only inside the kernel-thread pump of
 //! [`Ida::run`](crate::Ida::run), so holding `&self` proves we are on the kernel
 //! thread with the library initialized and a database open: exactly the
@@ -18,12 +18,12 @@ use std::ffi::{c_char, c_int, c_void};
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::error::Qerrno;
 use crate::ffi::cstr;
 
-impl Idb {
+impl Database {
     // The three error helpers below read *thread-local* kernel state; `&self` is the
     // kernel-thread token (see module note), not a source of instance state.
 
@@ -208,10 +208,10 @@ impl Idb {
     }
 
     /// Open an reference cursor over the current database; `is_to` selects xrefs targeting
-    /// `address` vs originating at it. The returned handle is owned by the [`References`] iterator,
+    /// `address` vs originating at it. The returned handle is owned by the [`Xrefs`] iterator,
     /// which closes it on drop.
     ///
-    /// [`References`]: crate::References
+    /// [`Xrefs`]: crate::Xrefs
     pub(crate) fn xref_open(&self, address: Address, is_to: bool) -> *mut c_void {
         unsafe { sys::idakit_xref_open(address.get(), is_to as u8) }
     }

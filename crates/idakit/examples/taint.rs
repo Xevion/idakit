@@ -5,7 +5,7 @@
 //!
 //!   decompile   -- Hex-Rays, kernel thread, serial and unavoidable
 //!   extract     -- `cfunc.ctree()`, the facade DFS + Rust rebuild, kernel thread
-//!   resolve     -- turning `Obj(address)` callees into names, kernel thread (needs `&Idb`)
+//!   resolve     -- turning `Obj(address)` callees into names, kernel thread (needs `&Database`)
 //!   analyze     -- the pure taint pass over the Send image (no kernel access)
 //!
 //! The split answers the live question: how much of the work is the serial kernel
@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use idakit::ctree::{Ctree, ExpressionId, LocalId, NodeRef};
-use idakit::{Address, Idb};
+use idakit::{Address, Database};
 
 /// Calls whose return value introduces taint (matched as a substring of the name).
 const SOURCES: &[&str] = &["recv", "read", "fgets", "getenv", "scanf", "gets"];
@@ -39,7 +39,7 @@ fn matches(name: &str, set: &[&str]) -> bool {
 /// telling part: the ctree's `Call` carries only an `Obj(address)`/`Helper`, so the names
 /// every analysis actually keys on have to be resolved *here*, on the kernel thread,
 /// and folded in -- the bare tree cannot answer "what does this call?" off-thread.
-struct FunctionImage {
+struct TaintInput {
     tree: Ctree,
     /// Call expression -> resolved callee name (only the ones that resolve to a symbol).
     callees: HashMap<ExpressionId, String>,
@@ -57,7 +57,7 @@ fn callee_name(tree: &Ctree, callee: ExpressionId) -> Option<String> {
 }
 
 /// Build the callee-name map for a tree. Now that the tree carries callee names, this is
-/// pure (no `Idb`) -- the kernel-thread name resolution that used to dominate is gone.
+/// pure (no `Database`) -- the kernel-thread name resolution that used to dominate is gone.
 fn resolve_callees(tree: &Ctree) -> HashMap<ExpressionId, String> {
     let mut map = HashMap::new();
     for (id, callee, _) in tree.calls() {
@@ -70,7 +70,7 @@ fn resolve_callees(tree: &Ctree) -> HashMap<ExpressionId, String> {
 
 /// Does `e`'s subtree read a tainted lvar or call a source directly? Flow-insensitive
 /// and deliberately crude -- the point is to do real work proportional to tree size.
-fn expression_tainted(img: &FunctionImage, e: ExpressionId, tainted: &HashSet<u32>) -> bool {
+fn expression_tainted(img: &TaintInput, e: ExpressionId, tainted: &HashSet<u32>) -> bool {
     img.tree
         .expression_descendants(NodeRef::Expression(e))
         .any(|id| match img.tree.kind(id).as_var() {
@@ -79,9 +79,9 @@ fn expression_tainted(img: &FunctionImage, e: ExpressionId, tainted: &HashSet<u3
         })
 }
 
-/// The pure phase: returns the number of source->sink flows found. No `Idb` access,
+/// The pure phase: returns the number of source->sink flows found. No `Database` access,
 /// so this is exactly the work that could move to a worker thread.
-fn analyze(img: &FunctionImage) -> usize {
+fn analyze(img: &TaintInput) -> usize {
     // Collect `Var(i) = rhs` definitions once.
     let defs: Vec<(u32, ExpressionId)> = img
         .tree
@@ -129,7 +129,7 @@ struct Totals {
     nodes: u64,
 }
 
-fn run(idb: &mut Idb, db: &str) -> Result<(), idakit::Error> {
+fn run(idb: &mut Database, db: &str) -> Result<(), idakit::Error> {
     idb.open(db).call()?;
 
     let limit = std::env::var("TAINT_LIMIT")
@@ -169,7 +169,7 @@ fn run(idb: &mut Idb, db: &str) -> Result<(), idakit::Error> {
         t.resolve += started.elapsed();
 
         t.nodes += (tree.expressions().count() + tree.statements().count()) as u64;
-        let img = FunctionImage { tree, callees };
+        let img = TaintInput { tree, callees };
 
         let started = Instant::now();
         t.flows += analyze(&img);

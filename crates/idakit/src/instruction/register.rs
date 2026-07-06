@@ -29,7 +29,7 @@ use strum::VariantArray;
 #[repr(u8)]
 pub enum RegisterClass {
     /// General-purpose integer register (`al`/`ax`/`eax`/`rax`, ...).
-    Gpr = 0,
+    GeneralPurpose = 0,
     /// Segment register (`cs`/`ds`/`ss`/`es`/`fs`/`gs`).
     Segment = 1,
     /// 128-bit SSE/AVX vector register (`xmm0`..).
@@ -74,7 +74,7 @@ impl RegisterClass {
             Self::Control => "cr",
             Self::Debug => "dr",
             Self::Test => "tr",
-            Self::Gpr | Self::Segment | Self::Ip => return None,
+            Self::GeneralPurpose | Self::Segment | Self::Ip => return None,
         })
     }
 
@@ -123,7 +123,7 @@ mod tests {
         for &c in RegisterClass::VARIANTS {
             let irregular = matches!(
                 c,
-                RegisterClass::Gpr | RegisterClass::Segment | RegisterClass::Ip
+                RegisterClass::GeneralPurpose | RegisterClass::Segment | RegisterClass::Ip
             );
             assert!(c.name_prefix().is_some() != irregular, "{c:?}");
         }
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn reg_class_ids_align_with_the_facade() {
         let expected = [
-            RegisterClass::Gpr,
+            RegisterClass::GeneralPurpose,
             RegisterClass::Segment,
             RegisterClass::Xmm,
             RegisterClass::Ymm,

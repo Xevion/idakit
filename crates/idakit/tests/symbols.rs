@@ -5,14 +5,14 @@
 
 mod common;
 
-use idakit::Idb;
+use idakit::Database;
 
 #[test]
 fn symbols() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb) {
+fn run(idb: &mut Database) {
     // Every export must resolve to something: a local address or a forward target.
     let mut exports = 0usize;
     let mut named_exports = 0usize;

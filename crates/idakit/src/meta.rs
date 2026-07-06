@@ -1,19 +1,19 @@
-//! [`Meta`]: an owned snapshot of database-wide metadata.
+//! [`DatabaseInfo`]: an owned snapshot of database-wide metadata.
 
 use std::ops::Range;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::bitness::Bitness;
 use crate::ffi::read_string;
 
-/// An owned, `Send` snapshot of database-wide metadata, from [`Idb::meta`].
+/// An owned, `Send` snapshot of database-wide metadata, from [`Database::info`].
 ///
-/// Every field is resolved and copied out at snapshot time, so a `Meta` carries no borrow on
-/// the [`Idb`] and can be inspected on any thread. Reading it is a handful of kernel calls,
-/// so grab it once rather than per field.
+/// Every field is resolved and copied out at snapshot time, so a `DatabaseInfo` carries no borrow
+/// on the [`Database`] and can be inspected on any thread. Reading it is a handful of kernel
+/// calls, so grab it once rather than per field.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Meta {
+pub struct DatabaseInfo {
     /// Application addressing width, or `None` if the database reports an unrecognized one.
     pub bitness: Option<Bitness>,
     /// Preferred load address (image base), when the format records one.
@@ -28,7 +28,7 @@ pub struct Meta {
     pub root_filename: Option<String>,
 }
 
-impl Idb {
+impl Database {
     /// The database's address bounds as `min..max` (max exclusive), the natural default
     /// range for a whole-image [`search`](Self::search); `None` for a database with no
     /// mapped content.
@@ -39,10 +39,10 @@ impl Idb {
         Some(min..max)
     }
 
-    /// Snapshot the database's metadata into an owned, `Send` [`Meta`].
+    /// Snapshot the database's metadata into an owned, `Send` [`DatabaseInfo`].
     #[must_use]
-    pub fn meta(&self) -> Meta {
-        Meta {
+    pub fn info(&self) -> DatabaseInfo {
+        DatabaseInfo {
             bitness: self.bitness(),
             image_base: Address::try_new(self.image_base()),
             processor: read_string(|buf, cap| self.proc_name(buf, cap)),
@@ -55,10 +55,10 @@ impl Idb {
 
 #[cfg(test)]
 mod tests {
-    use super::Meta;
+    use super::DatabaseInfo;
 
     const fn assert_send<T: Send>() {}
 
     // A detached snapshot is only worth having if it can leave the kernel thread.
-    const _: () = assert_send::<Meta>();
+    const _: () = assert_send::<DatabaseInfo>();
 }

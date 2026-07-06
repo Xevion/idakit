@@ -16,12 +16,12 @@ use std::ptr;
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::error::{Error, PatternRejection, Result};
 use crate::ffi::{cstr, with_cstr};
 
-impl Idb {
+impl Database {
     /// Search the whole image ([`address_range`](Self::address_range)) for `pattern`,
     /// lazily yielding each match address in ascending order.
     #[must_use]
@@ -54,13 +54,13 @@ impl Idb {
 /// `handle` is the safety invariant for the searches below: non-null (checked at
 /// construction), from a facade `idakit_binpat_*` builder, freed exactly once on [`Drop`].
 /// The raw pointer makes `Pattern` `!Send`, so it lives only on the kernel thread; it borrows
-/// the [`Idb`] it was built against, so that database stays open while the pattern exists.
+/// the [`Database`] it was built against, so that database stays open while the pattern exists.
 pub struct Pattern<'db> {
     handle: *mut c_void,
     /// `BIN_SEARCH_*` flags applied per search: `BITMASK` for the byte/mask forms (so mask
     /// nibbles work), `CASE`-or-nothing for [`ida`](Pattern::ida).
     flags: c_int,
-    _db: PhantomData<&'db Idb>,
+    _db: PhantomData<&'db Database>,
 }
 
 impl<'db> Pattern<'db> {
@@ -72,7 +72,7 @@ impl<'db> Pattern<'db> {
     ///
     /// This grammar is parsed here, not by IDA -- a mistyped byte is a hard error, never the
     /// silent ASCII fallback [`ida`](Self::ida) would give it.
-    pub fn hex(db: &'db Idb, pattern: impl AsRef<str>) -> Result<Self> {
+    pub fn hex(db: &'db Database, pattern: impl AsRef<str>) -> Result<Self> {
         let pattern = pattern.as_ref();
         let (bytes, mask) = parse_hex(pattern).map_err(|kind| Error::PatternRejected {
             pattern: pattern.to_owned(),
@@ -86,7 +86,7 @@ impl<'db> Pattern<'db> {
     /// on a mask character outside that set ([`BadMaskChar`](PatternRejection::BadMaskChar)),
     /// a length mismatch ([`MaskMismatch`](PatternRejection::MaskMismatch)), or an
     /// all-wildcard mask ([`NoAnchor`](PatternRejection::NoAnchor)).
-    pub fn code_mask(db: &'db Idb, code: &[u8], mask: impl AsRef<str>) -> Result<Self> {
+    pub fn code_mask(db: &'db Database, code: &[u8], mask: impl AsRef<str>) -> Result<Self> {
         let mask = mask.as_ref();
         let repr = render(code);
         let mask_bytes = parse_mask(mask).map_err(|kind| Error::PatternRejected {
@@ -107,7 +107,12 @@ impl<'db> Pattern<'db> {
 
     /// Build a pattern from raw bytes plus a per-byte bit mask, or from `bytes.len()` bytes
     /// checked in full. Shared by the parsing constructors and [`bytes`](Self::bytes).
-    fn from_parts(db: &'db Idb, repr: String, bytes: &[u8], mask: Option<&[u8]>) -> Result<Self> {
+    fn from_parts(
+        db: &'db Database,
+        repr: String,
+        bytes: &[u8],
+        mask: Option<&[u8]>,
+    ) -> Result<Self> {
         let _ = db; // borrow only: ties the pattern's lifetime to the open database.
         let anchors = match mask {
             Some(m) => m.iter().filter(|&&b| b != 0).count(),
@@ -139,7 +144,7 @@ impl<'db> Pattern<'db> {
     /// high nibble, `0x0F` low nibble. `Err` on a length mismatch or an all-wildcard mask.
     #[builder]
     pub fn bytes<'a>(
-        #[builder(start_fn)] db: &'db Idb,
+        #[builder(start_fn)] db: &'db Database,
         #[builder(start_fn)] data: &'a [u8],
         mask: Option<&'a [u8]>,
     ) -> Result<Self> {
@@ -164,7 +169,7 @@ impl<'db> Pattern<'db> {
     /// [`NoAnchor`](PatternRejection::NoAnchor) when it compiles to only wildcards.
     #[builder]
     pub fn ida(
-        #[builder(start_fn)] db: &'db Idb,
+        #[builder(start_fn)] db: &'db Database,
         #[builder(start_fn)] pattern: impl AsRef<str>,
         #[builder(default = 16)] radix: u32,
         #[builder(default)] case_sensitive: bool,
@@ -298,7 +303,7 @@ fn render(bytes: &[u8]) -> String {
         .join(" ")
 }
 
-/// Lazy iterator over a [`Pattern`]'s matches; see [`Idb::search`]/[`Idb::search_in`].
+/// Lazy iterator over a [`Pattern`]'s matches; see [`Database::search`]/[`Database::search_in`].
 ///
 /// `'p` borrows the [`Pattern`] (keeping its handle alive); `'db` is the database that
 /// pattern belongs to, kept open for the walk.

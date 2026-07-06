@@ -10,9 +10,9 @@
 
 use std::collections::HashMap;
 
-use super::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
+use super::{EnumMember, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
 
-/// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeKind`]. The walker
+/// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeShape`]. The walker
 /// emits only these four (a non-structural type is routed to [`opaque`](TypeBuilder::opaque)
 /// instead), so the catch-all is a defensive fallback it never triggers.
 mod scalar_kind {
@@ -49,7 +49,7 @@ impl TypeBuilder {
         }
     }
 
-    pub(crate) fn intern(&mut self, data: TypeData) -> TypeId {
+    pub(crate) fn intern(&mut self, data: TypeValue) -> TypeId {
         self.table.intern(data)
     }
 
@@ -57,7 +57,7 @@ impl TypeBuilder {
         self.table.alloc_placeholder()
     }
 
-    pub(crate) fn fill(&mut self, id: TypeId, data: TypeData) {
+    pub(crate) fn fill(&mut self, id: TypeId, data: TypeValue) {
         self.table.fill(id, data);
     }
 
@@ -80,39 +80,39 @@ impl TypeBuilder {
                 0
             }
         };
-        let kind = match kind {
-            scalar_kind::VOID => TypeKind::Void,
-            scalar_kind::BOOL => TypeKind::Bool,
-            scalar_kind::INT => TypeKind::Int {
+        let shape = match kind {
+            scalar_kind::VOID => TypeShape::Void,
+            scalar_kind::BOOL => TypeShape::Bool,
+            scalar_kind::INT => TypeShape::Int {
                 bytes: width,
                 signed: signed != 0,
             },
-            scalar_kind::FLOAT => TypeKind::Float { bytes: width },
-            _ => TypeKind::Unknown,
+            scalar_kind::FLOAT => TypeShape::Float { bytes: width },
+            _ => TypeShape::Unknown,
         };
-        self.intern(TypeData {
-            kind,
+        self.intern(TypeValue {
+            shape,
             size: opt_size(size, has_size),
         })
     }
 
     pub(crate) fn ptr(&mut self, target: TypeId, size: u64, has_size: u32) -> TypeId {
-        self.intern(TypeData {
-            kind: TypeKind::Ptr(target),
+        self.intern(TypeValue {
+            shape: TypeShape::Ptr(target),
             size: opt_size(size, has_size),
         })
     }
 
     pub(crate) fn array(&mut self, elem: TypeId, nelems: u64, size: u64, has_size: u32) -> TypeId {
-        self.intern(TypeData {
-            kind: TypeKind::Array { elem, len: nelems },
+        self.intern(TypeValue {
+            shape: TypeShape::Array { elem, len: nelems },
             size: opt_size(size, has_size),
         })
     }
 
     pub(crate) fn function(&mut self, ret: TypeId, params: Vec<TypeId>, vararg: u32) -> TypeId {
-        self.intern(TypeData {
-            kind: TypeKind::Function {
+        self.intern(TypeValue {
+            shape: TypeShape::Function {
                 ret,
                 params,
                 varargs: vararg != 0,
@@ -124,8 +124,8 @@ impl TypeBuilder {
     /// A named type IDA can name but not describe here (a forward-decl/incomplete aggregate
     /// or unresolved reference): a bodyless, sizeless leaf carrying just the resolved name.
     pub(crate) fn opaque(&mut self, name: String) -> TypeId {
-        self.intern(TypeData {
-            kind: TypeKind::Opaque(name),
+        self.intern(TypeValue {
+            shape: TypeShape::Opaque(name),
             size: None,
         })
     }
@@ -162,15 +162,15 @@ impl TypeBuilder {
         has_size: u32,
     ) {
         let name = self.take_name(id);
-        let kind = if is_union {
-            TypeKind::Union { name, members }
+        let shape = if is_union {
+            TypeShape::Union { name, members }
         } else {
-            TypeKind::Struct { name, members }
+            TypeShape::Struct { name, members }
         };
         self.fill(
             id,
-            TypeData {
-                kind,
+            TypeValue {
+                shape,
                 size: opt_size(size, has_size),
             },
         );
@@ -187,8 +187,8 @@ impl TypeBuilder {
         let name = self.take_name(id);
         self.fill(
             id,
-            TypeData {
-                kind: TypeKind::Enum {
+            TypeValue {
+                shape: TypeShape::Enum {
                     name,
                     underlying,
                     members,
@@ -204,8 +204,8 @@ impl TypeBuilder {
         let size = self.type_size(underlying);
         self.fill(
             id,
-            TypeData {
-                kind: TypeKind::Typedef { name, underlying },
+            TypeValue {
+                shape: TypeShape::Typedef { name, underlying },
                 size,
             },
         );
@@ -218,7 +218,7 @@ impl TypeBuilder {
     }
 
     /// How many placeholders were referenced but never filled: a non-zero count means the
-    /// table still carries a [`TypeKind::Unknown`] stand-in, which the caller rejects.
+    /// table still carries a [`TypeShape::Unknown`] stand-in, which the caller rejects.
     pub(crate) fn unfilled(&self) -> usize {
         self.pending.len()
     }

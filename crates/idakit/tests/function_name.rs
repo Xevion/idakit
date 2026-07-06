@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::{FunctionName, Idb};
+use idakit::{Database, FunctionName};
 
 #[test]
 fn function_names_are_total() {
@@ -23,7 +23,7 @@ fn function_names_are_total() {
 // The tripwire behind dropping the `Option` from `name()`: sweep every function entry and
 // assert it carries a non-empty name. Proven across the corpus (PE + ELF, 112k funcs), this
 // fails loudly should a future or exotic database ever yield a nameless function head.
-fn run(idb: &mut Idb, db: &str) {
+fn run(idb: &mut Database, db: &str) {
     idb.open(db).call().expect("open failed");
 
     let (mut user, mut auto, mut dummy) = (0usize, 0usize, 0usize);

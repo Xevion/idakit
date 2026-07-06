@@ -3,7 +3,7 @@
 //!
 //! It walks every code head in every function's chunks, decodes it, and asserts the decode
 //! *succeeds* -- a register or value type the model cannot represent exactly is a loud error,
-//! never a `Gpr`/`Void` guess -- then cross-checks each register's resolved name against its
+//! never a `GeneralPurpose`/`Void` guess -- then cross-checks each register's resolved name against its
 //! assigned [`RegisterClass`] with the shared `RegisterCheck` oracle. This is the exhaustive,
 //! single-database counterpart to the budget-bounded `decode` check the corpus matrix fans out
 //! across every fixture; both hold the same invariant through the same oracle. Read-only; opens
@@ -12,7 +12,7 @@
 mod common;
 
 use common::checks::RegisterCheck;
-use idakit::{DecodeError, Idb, RegisterClass};
+use idakit::{Database, DecodeError, RegisterClass};
 
 #[test]
 fn decode_is_strict_and_consistent() {
@@ -28,7 +28,7 @@ fn decode_is_strict_and_consistent() {
     .expect("kernel init failed");
 }
 
-fn run(idb: &mut Idb, db: &str) {
+fn run(idb: &mut Database, db: &str) {
     idb.open(db).call().expect("open failed");
 
     let mut classes = [0usize; 13];
@@ -81,7 +81,7 @@ fn run(idb: &mut Idb, db: &str) {
     println!(
         "decode sweep OK: {insns} instructions, {regs} register operands -- \
          gpr {} seg {} xmm {} ymm {} zmm {} mask {} st {} mmx {} ctrl {} dbg {} test {} ip {} bnd {}",
-        named(RegisterClass::Gpr),
+        named(RegisterClass::GeneralPurpose),
         named(RegisterClass::Segment),
         named(RegisterClass::Xmm),
         named(RegisterClass::Ymm),

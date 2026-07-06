@@ -4,14 +4,14 @@
 
 mod common;
 
-use idakit::{FrameVar, Idb};
+use idakit::{Database, StackSlot};
 
 #[test]
 fn frame() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb) {
+fn run(idb: &mut Database) {
     let mut with_frame = 0usize;
     let mut with_special = 0usize;
     let mut with_typed = 0usize;
@@ -21,10 +21,10 @@ fn run(idb: &mut Idb) {
             continue;
         };
         with_frame += 1;
-        if frame.vars().iter().any(FrameVar::is_special) {
+        if frame.slots().iter().any(StackSlot::is_special) {
             with_special += 1;
         }
-        if frame.vars().iter().any(|v| v.ty().is_some()) {
+        if frame.slots().iter().any(|v| v.ty().is_some()) {
             with_typed += 1;
         }
         if example.is_none() {
@@ -43,14 +43,14 @@ fn run(idb: &mut Idb) {
         frame.size(),
         frame.len()
     );
-    for v in frame.vars() {
-        let kind = v.ty().map(|id| &frame.type_of(id).kind);
+    for v in frame.slots() {
+        let shape = v.ty().map(|id| &frame.type_of(id).shape);
         println!(
             "  {:>14} @ {:>+#8x} size={:<3} ty={:?}",
             v.name().unwrap_or("<reserved>"),
             v.offset(),
             v.size(),
-            kind,
+            shape,
         );
     }
     println!(

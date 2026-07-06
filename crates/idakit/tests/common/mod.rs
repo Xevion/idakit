@@ -8,7 +8,7 @@ pub mod corpus;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use idakit::{Ida, Idb};
+use idakit::{Database, Ida};
 
 /// Open the shared test database (see [`TestDb::source`]) on the kernel thread, run `body`
 /// against it, and close it (`save = false`). Every dedicated single-DB test is this shape, so
@@ -16,7 +16,7 @@ use idakit::{Ida, Idb};
 /// when no test database is available -- matching the corpus matrix's "no corpus, no cases"
 /// stance -- and a caught assertion panic re-raises with its real message, so failures keep their
 /// location.
-pub fn with_canonical_db(body: impl FnOnce(&mut Idb) + Send + 'static) {
+pub fn with_canonical_db(body: impl FnOnce(&mut Database) + Send + 'static) {
     let Some(db) = TestDb::acquire() else {
         return;
     };
@@ -38,7 +38,7 @@ pub fn with_canonical_db(body: impl FnOnce(&mut Idb) + Send + 'static) {
 /// *own* copy via [`TestDb::acquire`] rather than the shared [`source`](TestDb::source) file
 /// -- otherwise tests flake against a live GUI session and against each other. Hold the guard
 /// for as long as the database is open; dropping it deletes the copy. Pass it straight to
-/// [`Idb::open`](idakit::Idb::open) -- it is [`AsRef<str>`] -- or via [`path`](TestDb::path).
+/// [`Database::open`](idakit::Database::open) -- it is [`AsRef<str>`] -- or via [`path`](TestDb::path).
 ///
 /// The conversion trait is `AsRef`, deliberately, not `From`/`Into`: a by-value `From<TestDb>`
 /// would move the guard out and drop it, deleting the copy the caller is about to open.
@@ -101,7 +101,7 @@ impl TestDb {
         panic!("could not copy test db {src:?} into any scratch dir: {last_err:?}");
     }
 
-    /// Path to the private copy, to hand to [`Idb::open`](idakit::Idb::open).
+    /// Path to the private copy, to hand to [`Database::open`](idakit::Database::open).
     #[must_use]
     pub fn path(&self) -> &str {
         self.db.to_str().expect("scratch db path is valid UTF-8")

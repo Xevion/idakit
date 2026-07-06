@@ -19,7 +19,7 @@ use strum::VariantArray;
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u8)]
-pub enum DataType {
+pub enum OperandDataType {
     /// 8-bit integer.
     Byte = 0,
     /// 16-bit integer.
@@ -60,7 +60,7 @@ pub enum DataType {
     Half = 18,
 }
 
-impl DataType {
+impl OperandDataType {
     /// Fixed byte width, when the type has one. `None` for variable-size
     /// ([`Tbyte`](Self::Tbyte), [`Ldbl`](Self::Ldbl), [`PackReal`](Self::PackReal)),
     /// pointer ([`Code`](Self::Code), [`String`](Self::String), [`Unicode`](Self::Unicode)),
@@ -69,14 +69,14 @@ impl DataType {
     #[must_use]
     pub fn bytes(self) -> Option<u32> {
         Some(match self {
-            DataType::Byte => 1,
-            DataType::Word | DataType::Half => 2,
-            DataType::Dword | DataType::Float => 4,
-            DataType::Fword => 6,
-            DataType::Double | DataType::Qword => 8,
-            DataType::Byte16 => 16,
-            DataType::Byte32 => 32,
-            DataType::Byte64 => 64,
+            OperandDataType::Byte => 1,
+            OperandDataType::Word | OperandDataType::Half => 2,
+            OperandDataType::Dword | OperandDataType::Float => 4,
+            OperandDataType::Fword => 6,
+            OperandDataType::Double | OperandDataType::Qword => 8,
+            OperandDataType::Byte16 => 16,
+            OperandDataType::Byte32 => 32,
+            OperandDataType::Byte64 => 64,
             _ => return None,
         })
     }
@@ -87,7 +87,11 @@ impl DataType {
     pub fn is_float(self) -> bool {
         matches!(
             self,
-            DataType::Float | DataType::Double | DataType::Tbyte | DataType::Ldbl | DataType::Half
+            OperandDataType::Float
+                | OperandDataType::Double
+                | OperandDataType::Tbyte
+                | OperandDataType::Ldbl
+                | OperandDataType::Half
         )
     }
 }
@@ -101,8 +105,8 @@ mod tests {
 
     #[test]
     fn raw_roundtrips_every_variant() {
-        for &d in DataType::VARIANTS {
-            assert!(DataType::try_from(u8::from(d)).ok() == Some(d));
+        for &d in OperandDataType::VARIANTS {
+            assert!(OperandDataType::try_from(u8::from(d)).ok() == Some(d));
         }
     }
 
@@ -111,11 +115,11 @@ mod tests {
     // Pure constant source -- no kernel, so it runs as a unit test.
     #[test]
     fn dtype_ids_align_with_the_facade() {
-        assert!(DataType::VARIANTS.len() == sys::IDAKIT_OP_DTYPE_COUNT);
+        assert!(OperandDataType::VARIANTS.len() == sys::IDAKIT_OP_DTYPE_COUNT);
         let mut ids = [0u8; sys::IDAKIT_OP_DTYPE_COUNT];
         // SAFETY: the facade writes exactly IDAKIT_OP_DTYPE_COUNT bytes.
         unsafe { sys::idakit_op_dtype_ids(ids.as_mut_ptr()) };
-        for (i, &d) in DataType::VARIANTS.iter().enumerate() {
+        for (i, &d) in OperandDataType::VARIANTS.iter().enumerate() {
             assert!(
                 ids[i] == u8::from(d),
                 "data type {d:?}: facade dt_ {} != discriminant {}",
@@ -127,28 +131,28 @@ mod tests {
 
     #[test]
     fn try_from_rejects_unknown() {
-        assert!(DataType::try_from(19).is_err());
-        assert!(DataType::try_from(255).is_err());
+        assert!(OperandDataType::try_from(19).is_err());
+        assert!(OperandDataType::try_from(255).is_err());
     }
 
     #[test]
     fn fixed_sizes_match_the_isa() {
-        assert!(DataType::Byte.bytes() == Some(1));
-        assert!(DataType::Qword.bytes() == Some(8));
-        assert!(DataType::Byte16.bytes() == Some(16));
-        assert!(DataType::Half.bytes() == Some(2));
+        assert!(OperandDataType::Byte.bytes() == Some(1));
+        assert!(OperandDataType::Qword.bytes() == Some(8));
+        assert!(OperandDataType::Byte16.bytes() == Some(16));
+        assert!(OperandDataType::Half.bytes() == Some(2));
         // Variable / pointer / sizeless types report no fixed width.
-        assert!(DataType::Tbyte.bytes().is_none());
-        assert!(DataType::Code.bytes().is_none());
-        assert!(DataType::Void.bytes().is_none());
+        assert!(OperandDataType::Tbyte.bytes().is_none());
+        assert!(OperandDataType::Code.bytes().is_none());
+        assert!(OperandDataType::Void.bytes().is_none());
     }
 
     #[test]
     fn float_classification() {
-        assert!(DataType::Float.is_float());
-        assert!(DataType::Half.is_float());
-        assert!(DataType::Ldbl.is_float());
-        assert!(!DataType::Dword.is_float());
-        assert!(!DataType::Qword.is_float());
+        assert!(OperandDataType::Float.is_float());
+        assert!(OperandDataType::Half.is_float());
+        assert!(OperandDataType::Ldbl.is_float());
+        assert!(!OperandDataType::Dword.is_float());
+        assert!(!OperandDataType::Qword.is_float());
     }
 }

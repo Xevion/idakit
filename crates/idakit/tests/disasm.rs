@@ -8,17 +8,17 @@
 //! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
 //! that must agree. Read-only; never opens for write.
 
-use idakit::{CodeReference, Idb, Operand, OperandKind, Origin, ReferenceKind};
+use idakit::{CodeXref, Database, Operand, OperandKind, XrefKind, XrefOrigin};
 
 mod common;
 
 fn fmt_op(op: &Operand) -> String {
     match &op.kind {
         OperandKind::Register(r) => r.name.to_string(),
-        OperandKind::Imm { value } => format!("{value:#x}"),
+        OperandKind::Immediate { value } => format!("{value:#x}"),
         OperandKind::Near(t) => format!("{t:#x}"),
         OperandKind::Far { selector, offset } => format!("{selector:#x}:{offset:#x}"),
-        OperandKind::Mem(m) => {
+        OperandKind::Memory(m) => {
             let mut s = String::from("[");
             if let Some(b) = &m.base {
                 s.push_str(&b.name);
@@ -50,7 +50,7 @@ fn disasm() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb) {
+fn run(idb: &mut Database) {
     const BUDGET: usize = 4000;
     let mut total = 0usize;
     let mut with_ops = 0usize;
@@ -101,15 +101,15 @@ fn run(idb: &mut Idb) {
                 && (instruction.flow.is_call || instruction.flow.is_jump)
                 && let Some(target) = instruction.flow.target
             {
-                let matched = idb.references_from(address).find(|x| {
+                let matched = idb.xrefs_from(address).find(|x| {
                     x.to == target
                         && matches!(
                             x.kind,
-                            ReferenceKind::Code(
-                                CodeReference::CallNear
-                                    | CodeReference::CallFar
-                                    | CodeReference::JumpNear
-                                    | CodeReference::JumpFar
+                            XrefKind::Code(
+                                CodeXref::CallNear
+                                    | CodeXref::CallFar
+                                    | CodeXref::JumpNear
+                                    | CodeXref::JumpFar
                             )
                         )
                 });
@@ -118,7 +118,7 @@ fn run(idb: &mut Idb) {
                     // also proves the `xrefblk_t::user` byte flows through the facade rather than
                     // arriving uninitialized (which would surface as a spurious `User`).
                     assert!(
-                        reference.origin == Origin::Analysis,
+                        reference.origin == XrefOrigin::Analysis,
                         "direct branch xref at {address:#x} should be analysis-made, got {:?}",
                         reference.origin
                     );

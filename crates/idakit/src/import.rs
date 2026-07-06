@@ -5,14 +5,14 @@ use std::marker::PhantomData;
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::ffi::read_string;
 
-impl Idb {
+impl Database {
     /// Iterate every imported symbol, across all import modules.
     ///
-    /// Unlike [`segments`](Idb::segments)/[`exports`](Idb::exports), imports have no stable
+    /// Unlike [`segments`](Database::segments)/[`exports`](Database::exports), imports have no stable
     /// random-access index in IDA, so this materializes a snapshot of the whole import table and
     /// yields owned [`Import`]s from it; the snapshot is released when the iterator drops.
     #[inline]
@@ -67,14 +67,14 @@ impl Import {
     }
 }
 
-/// Lazy iterator over the database's imports; frees the snapshot on drop. Borrows `&Idb`, so it
+/// Lazy iterator over the database's imports; frees the snapshot on drop. Borrows `&Database`, so it
 /// can't outlive the database or coexist with a write. `size_hint`'s lower bound is `0`: a slot
 /// with no valid address is skipped.
 pub struct Imports<'db> {
     handle: *mut c_void,
     next: usize,
     count: usize,
-    _db: PhantomData<&'db Idb>,
+    _db: PhantomData<&'db Database>,
 }
 
 impl Imports<'_> {

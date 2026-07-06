@@ -1,10 +1,10 @@
 //! A minimal append-only index arena, modeled on rust-analyzer's `la_arena`.
 //!
 //! [`Idx<T>`] is a 32-bit handle into an [`Arena<T>`]: `Copy`, lifetime-free, and
-//! typed by `T` so an `Idx<ExpressionData>` cannot be used where an `Idx<TypeData>` is
+//! typed by `T` so an `Idx<ExpressionData>` cannot be used where an `Idx<TypeValue>` is
 //! expected. The arena only appends, so a handle stays valid for the arena's life.
 //! Being lifetime-free and (for `T: Send`) `Send` is what lets a materialized graph --
-//! the decompiler ctree, a function's [`Cfg`](crate::Cfg) -- move off the kernel thread
+//! the decompiler ctree, a function's [`FlowChart`](crate::FlowChart) -- move off the kernel thread
 //! to a worker.
 
 use std::fmt;

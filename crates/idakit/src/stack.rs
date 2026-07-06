@@ -1,42 +1,42 @@
-//! [`Frame`]: an owned, `Send` snapshot of a function's stack frame.
+//! [`StackFrame`]: an owned, `Send` snapshot of a function's stack frame.
 //!
 //! IDA models a function frame as a UDT, so idakit reads it much like a struct -- but with stack
-//! semantics the generic [`TypeImage`](crate::TypeImage) walk lacks: each [`FrameVar`] carries its
-//! frame-pointer-relative [`offset`](FrameVar::offset) (the `var_18`/`arg_4` displacement IDA
-//! displays), and its [`kind`](FrameVar::kind) distinguishes a real stack variable from IDA's
+//! semantics the generic [`Type`](crate::Type) walk lacks: each [`StackSlot`] carries its
+//! frame-pointer-relative [`offset`](StackSlot::offset) (the `var_18`/`arg_4` displacement IDA
+//! displays), and its [`kind`](StackSlot::kind) distinguishes a real stack variable from IDA's
 //! reserved return-address and saved-register slots. Materialized on the kernel thread and handed
 //! back owned, so it analyzes anywhere. This is the disassembly-level counterpart to the
 //! decompiler's lvars ([`Ctree::lvars`](crate::ctree::Ctree::lvars)), and needs no decompilation.
 //!
-//! The [`FrameVar`]/[`FrameVarKind`] split is a deliberate divergence from idalib's flat UDT
+//! The [`StackSlot`]/[`StackSlotKind`] split is a deliberate divergence from idalib's flat UDT
 //! members: `offset`/`size` are universal, but a name and type only mean anything for a real
-//! variable, so they live inside [`FrameVarKind::Variable`]. A reserved slot's IDA-synthesized
-//! name (`__return_address`) carries no information the [`kind`](FrameVar::kind) doesn't, so it is
-//! dropped rather than surfaced as a placeholder.
+//! variable, so they live inside [`StackSlotKind::Variable`]. A reserved slot's IDA-synthesized
+//! name (`__return_address`) carries no information the [`kind`](StackSlot::kind) doesn't, so it
+//! is dropped rather than surfaced as a placeholder.
 
 use std::ffi::{c_char, c_void};
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::ctree::ExtractError;
 use crate::error::{Error, Result};
 use crate::ffi::lossy;
-use crate::types::{TypeBuilder, TypeData, TypeId, TypeSink, TypeTable, reborrow, tid, type_vtbl};
+use crate::types::{TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue, reborrow, tid, type_vtbl};
 
-/// What a [`FrameVar`] is: a real stack variable (carrying its name and type), or one of the two
+/// What a [`StackSlot`] is: a real stack variable (carrying its name and type), or one of the two
 /// slots IDA reserves in every frame.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FrameVarKind {
-    /// A stack variable: a local (negative [`offset`](FrameVar::offset)) or a stack-passed
+pub enum StackSlotKind {
+    /// A stack variable: a local (negative [`offset`](StackSlot::offset)) or a stack-passed
     /// argument (positive), with the name and type IDA gave it.
     Variable {
         /// The variable's name (e.g. `var_18`, `arg_4`); empty if IDA assigned none.
         name: String,
-        /// The variable's structured type as a [`TypeId`] into the [`Frame`]'s
-        /// [`types`](Frame::types) table, or `None` for an untyped stack slot. Resolve it with
-        /// [`Frame::type_of`].
+        /// The variable's structured type as a [`TypeId`] into the [`StackFrame`]'s
+        /// [`types`](StackFrame::types) table, or `None` for an untyped stack slot. Resolve it
+        /// with [`StackFrame::type_of`].
         ty: Option<TypeId>,
     },
     /// IDA's reserved return-address slot.
@@ -45,7 +45,7 @@ pub enum FrameVarKind {
     SavedRegisters,
 }
 
-impl FrameVarKind {
+impl StackSlotKind {
     /// Build from the facade's `(flags, name, ty)` parts. A reserved slot (either flag set) drops
     /// the synthetic name/type; return-address wins a (never-real) tie so the mapping stays total
     /// and deterministic.
@@ -63,13 +63,13 @@ impl FrameVarKind {
 /// One slot in a function's stack frame: its frame-pointer-relative offset and byte size, plus a
 /// [`kind`](Self::kind) that is either a real variable (with name/type) or a reserved slot.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FrameVar {
+pub struct StackSlot {
     offset: i64,
     size: u64,
-    kind: FrameVarKind,
+    kind: StackSlotKind,
 }
 
-impl FrameVar {
+impl StackSlot {
     /// The frame-pointer-relative offset IDA displays: negative below the frame pointer (locals),
     /// positive above it (the return address, then stack arguments).
     #[inline]
@@ -88,7 +88,7 @@ impl FrameVar {
     /// What this slot is -- a real variable (with name/type) or a reserved slot.
     #[inline]
     #[must_use]
-    pub const fn kind(&self) -> &FrameVarKind {
+    pub const fn kind(&self) -> &StackSlotKind {
         &self.kind
     }
 
@@ -98,19 +98,19 @@ impl FrameVar {
     #[must_use]
     pub fn name(&self) -> Option<&str> {
         match &self.kind {
-            FrameVarKind::Variable { name, .. } => Some(name),
+            StackSlotKind::Variable { name, .. } => Some(name),
             _ => None,
         }
     }
 
     /// The variable's structured type handle, or `None` for a reserved slot or an untyped stack
-    /// slot. Resolve it against the owning [`Frame`] with [`Frame::type_of`]. Shortcut into
-    /// [`kind`](Self::kind).
+    /// slot. Resolve it against the owning [`StackFrame`] with [`StackFrame::type_of`]. Shortcut
+    /// into [`kind`](Self::kind).
     #[inline]
     #[must_use]
     pub fn ty(&self) -> Option<TypeId> {
         match &self.kind {
-            FrameVarKind::Variable { ty, .. } => *ty,
+            StackSlotKind::Variable { ty, .. } => *ty,
             _ => None,
         }
     }
@@ -120,21 +120,22 @@ impl FrameVar {
     #[inline]
     #[must_use]
     pub const fn is_special(&self) -> bool {
-        !matches!(self.kind, FrameVarKind::Variable { .. })
+        !matches!(self.kind, StackSlotKind::Variable { .. })
     }
 }
 
 /// An owned, `Send` snapshot of a function's stack frame. Build with
-/// [`Function::frame`](crate::Function::frame)/[`Idb::frame`], then read its [`size`](Self::size)
-/// and [`vars`](Self::vars). Detached from the kernel, so it inspects on any thread.
+/// [`Function::frame`](crate::Function::frame)/[`Database::frame`], then read its
+/// [`size`](Self::size) and [`slots`](Self::slots). Detached from the kernel, so it inspects on
+/// any thread.
 #[derive(Debug)]
-pub struct Frame {
+pub struct StackFrame {
     size: u64,
     types: TypeTable,
-    vars: Vec<FrameVar>,
+    slots: Vec<StackSlot>,
 }
 
-impl Frame {
+impl StackFrame {
     /// The frame's total size in bytes: locals + saved registers + return address + purged args.
     #[inline]
     #[must_use]
@@ -142,7 +143,7 @@ impl Frame {
         self.size
     }
 
-    /// The interned type table backing every [`FrameVar::ty`] handle. The frame's own arena,
+    /// The interned type table backing every [`StackSlot::ty`] handle. The frame's own arena,
     /// materialized on the kernel thread, so it resolves types on any thread.
     #[inline]
     #[must_use]
@@ -150,35 +151,40 @@ impl Frame {
         &self.types
     }
 
-    /// Resolve a [`FrameVar::ty`] handle to its type. Handles come from this frame's own
+    /// Resolve a [`StackSlot::ty`] handle to its type. Handles come from this frame's own
     /// [`types`](Self::types) table, so this never panics on a handle taken from `self`.
     #[inline]
     #[must_use]
-    pub fn type_of(&self, id: TypeId) -> &TypeData {
+    pub fn type_of(&self, id: TypeId) -> &TypeValue {
         self.types.get(id)
     }
 
     /// Every slot in the frame, in IDA's member order (low to high offset) -- real variables and
-    /// reserved slots alike, told apart by [`FrameVar::kind`]. Filter on
-    /// [`is_special`](FrameVar::is_special) for just the variables.
+    /// reserved slots alike, told apart by [`StackSlot::kind`]. Use
+    /// [`variables`](Self::variables) for just the real ones.
     #[inline]
     #[must_use]
-    pub fn vars(&self) -> &[FrameVar] {
-        &self.vars
+    pub fn slots(&self) -> &[StackSlot] {
+        &self.slots
+    }
+
+    /// The real stack variables, skipping IDA's reserved slots (return address, saved registers).
+    pub fn variables(&self) -> impl Iterator<Item = &StackSlot> {
+        self.slots().iter().filter(|s| !s.is_special())
     }
 
     /// The number of slots, including the reserved ones.
     #[inline]
     #[must_use]
     pub fn len(&self) -> usize {
-        self.vars.len()
+        self.slots.len()
     }
 
     /// Whether the frame has no slots.
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.vars.is_empty()
+        self.slots.is_empty()
     }
 }
 
@@ -186,7 +192,7 @@ impl Frame {
 /// plus the variable rows themselves (their `ty` handles into that builder's table).
 struct FrameBuilder {
     types: TypeBuilder,
-    vars: Vec<FrameVar>,
+    slots: Vec<StackSlot>,
 }
 
 impl TypeSink for FrameBuilder {
@@ -210,23 +216,23 @@ unsafe extern "C" fn cb_f_var(
     let ty = (ty != sys::IDAKIT_NONE).then(|| tid(ty));
     // SAFETY: `ctx` is the `*mut FrameBuilder` passed to the walk, unaliased for this call.
     unsafe { reborrow::<FrameBuilder>(&ctx) }
-        .vars
-        .push(FrameVar {
+        .slots
+        .push(StackSlot {
             offset,
             size,
-            kind: FrameVarKind::from_parts(flags, name, ty),
+            kind: StackSlotKind::from_parts(flags, name, ty),
         });
 }
 
-impl Idb {
+impl Database {
     /// Snapshot the stack frame of the function containing `address`: `Ok(None)` if no function
     /// covers it or the function has no frame, `Err` only if a variable's type could not be
     /// structured. The disassembly-level view of the function's stack layout -- no decompilation
     /// needed. For the decompiler's richer locals, see [`ctree`](Self::ctree).
-    pub fn frame(&self, address: Address) -> Result<Option<Frame>> {
+    pub fn frame(&self, address: Address) -> Result<Option<StackFrame>> {
         let mut fb = FrameBuilder {
             types: TypeBuilder::new(),
-            vars: Vec::new(),
+            slots: Vec::new(),
         };
         let vtbl = sys::FrameVtbl {
             types: type_vtbl::<FrameBuilder>(),
@@ -261,10 +267,10 @@ impl Idb {
                 source: ExtractError::UnfilledType { count: unfilled },
             });
         }
-        Ok(Some(Frame {
+        Ok(Some(StackFrame {
             size,
             types: fb.types.into_table(),
-            vars: fb.vars,
+            slots: fb.slots,
         }))
     }
 }
@@ -278,7 +284,7 @@ mod tests {
     const fn assert_send<T: Send>() {}
 
     // A frame must cross the kernel thread; a later non-Send field would fail this.
-    const _: () = assert_send::<Frame>();
+    const _: () = assert_send::<StackFrame>();
 
     /// A clear flag word yields a `Variable` carrying the name/type; either reserved flag yields
     /// the matching special kind and drops the name/type, with return-address winning a tie.
@@ -286,26 +292,26 @@ mod tests {
     fn kind_from_parts() {
         let ty = Some(tid(0));
         assert!(
-            FrameVarKind::from_parts(0, "var_18".to_owned(), ty)
-                == FrameVarKind::Variable {
+            StackSlotKind::from_parts(0, "var_18".to_owned(), ty)
+                == StackSlotKind::Variable {
                     name: "var_18".to_owned(),
                     ty,
                 }
         );
         assert!(
-            FrameVarKind::from_parts(sys::FRAME_VAR_RETADDR, "r".to_owned(), ty)
-                == FrameVarKind::ReturnAddress
+            StackSlotKind::from_parts(sys::FRAME_VAR_RETADDR, "r".to_owned(), ty)
+                == StackSlotKind::ReturnAddress
         );
         assert!(
-            FrameVarKind::from_parts(sys::FRAME_VAR_SAVREGS, "s".to_owned(), None)
-                == FrameVarKind::SavedRegisters
+            StackSlotKind::from_parts(sys::FRAME_VAR_SAVREGS, "s".to_owned(), None)
+                == StackSlotKind::SavedRegisters
         );
         assert!(
-            FrameVarKind::from_parts(
+            StackSlotKind::from_parts(
                 sys::FRAME_VAR_RETADDR | sys::FRAME_VAR_SAVREGS,
                 String::new(),
                 None
-            ) == FrameVarKind::ReturnAddress
+            ) == StackSlotKind::ReturnAddress
         );
     }
 
@@ -313,10 +319,10 @@ mod tests {
     #[test]
     fn accessors_follow_the_kind() {
         let ty = Some(tid(3));
-        let var = FrameVar {
+        let var = StackSlot {
             offset: -0x18,
             size: 4,
-            kind: FrameVarKind::Variable {
+            kind: StackSlotKind::Variable {
                 name: "var_18".to_owned(),
                 ty,
             },
@@ -325,10 +331,10 @@ mod tests {
         assert!(var.name() == Some("var_18"));
         assert!(var.ty() == ty);
 
-        let retaddr = FrameVar {
+        let retaddr = StackSlot {
             offset: 0,
             size: 8,
-            kind: FrameVarKind::ReturnAddress,
+            kind: StackSlotKind::ReturnAddress,
         };
         assert!(retaddr.is_special());
         assert!(retaddr.name().is_none());

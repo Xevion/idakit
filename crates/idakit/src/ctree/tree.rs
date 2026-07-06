@@ -9,7 +9,7 @@ use super::node::{
 use super::ops::{AssignOp, BinOp, UnOp};
 use crate::Address;
 use crate::arena::Arena;
-use crate::types::{TypeBuilder, TypeData, TypeId, TypeTable};
+use crate::types::{TypeBuilder, TypeId, TypeTable, TypeValue};
 
 /// Visit `node`'s children, dispatching to the right arena. Shared by every navigation
 /// path (read-only walks and the build-time parent pass) so the expression/statement split lives
@@ -34,17 +34,17 @@ fn for_each_child(
 /// the live database, so it goes stale if the function is re-decompiled. Writing back to
 /// IDA is a separate concern, not routed through these handles.
 ///
-/// Real trees come from decompiling a function ([`Idb::decompile`](crate::Idb::decompile));
+/// Real trees come from decompiling a function ([`Database::decompile`](crate::Database::decompile));
 /// [`CtreeBuilder`] builds one directly, with no kernel, for testing matchers against a
 /// known shape:
 ///
 /// ```
 /// use idakit::Address;
-/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeData, TypeKind};
+/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeShape, TypeValue};
 ///
 /// let mut b = CtreeBuilder::new();
-/// let ty = b.intern_type(TypeData {
-///     kind: TypeKind::Unknown,
+/// let ty = b.intern_type(TypeValue {
+///     shape: TypeShape::Unknown,
 ///     size: None,
 /// });
 /// let arg = b.push_lvar(Local {
@@ -122,7 +122,7 @@ impl Ctree {
     /// The type behind a handle (e.g. an [`ExpressionNode::ty`]).
     #[inline]
     #[must_use]
-    pub fn type_of(&self, id: TypeId) -> &TypeData {
+    pub fn type_of(&self, id: TypeId) -> &TypeValue {
         self.types.get(id)
     }
 
@@ -183,7 +183,7 @@ impl Ctree {
     }
 
     /// Every interned type, flat.
-    pub fn types(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeData)> {
+    pub fn types(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeValue)> {
         self.types.iter()
     }
 
@@ -316,7 +316,7 @@ impl CtreeBuilder {
     }
 
     /// Intern a type, returning a shared handle to pass to [`expression`](Self::expression).
-    pub fn intern_type(&mut self, data: TypeData) -> TypeId {
+    pub fn intern_type(&mut self, data: TypeValue) -> TypeId {
         self.types.intern(data)
     }
 
@@ -328,7 +328,7 @@ impl CtreeBuilder {
     }
 
     /// Supply the body of a placeholder from [`alloc_type_placeholder`](Self::alloc_type_placeholder).
-    pub fn fill_type(&mut self, id: TypeId, data: TypeData) {
+    pub fn fill_type(&mut self, id: TypeId, data: TypeValue) {
         self.types.fill(id, data);
     }
 
@@ -576,12 +576,12 @@ mod tests {
     use super::*;
     use crate::ctree::node::{Local, LocalId, LocalLocation};
     use crate::ctree::ops::{AssignOp, BinOp};
-    use crate::types::TypeKind;
+    use crate::types::TypeShape;
     use assert2::assert;
 
-    fn int32() -> TypeData {
-        TypeData {
-            kind: TypeKind::Int {
+    fn int32() -> TypeValue {
+        TypeValue {
+            shape: TypeShape::Int {
                 bytes: 4,
                 signed: true,
             },
@@ -753,8 +753,8 @@ mod tests {
         let (tree, _block, _ret, add, _va, _vb) = sample();
         let ty = tree.expression(add).ty;
         assert!(
-            tree.type_of(ty).kind
-                == TypeKind::Int {
+            tree.type_of(ty).shape
+                == TypeShape::Int {
                     bytes: 4,
                     signed: true
                 }

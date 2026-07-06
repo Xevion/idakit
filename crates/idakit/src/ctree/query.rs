@@ -50,11 +50,11 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 ///
 /// ```
 /// use idakit::ctree::query::base_var;
-/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeData, TypeKind};
+/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeShape, TypeValue};
 ///
 /// let mut b = CtreeBuilder::new();
-/// let ty = b.intern_type(TypeData {
-///     kind: TypeKind::Unknown,
+/// let ty = b.intern_type(TypeValue {
+///     shape: TypeShape::Unknown,
 ///     size: None,
 /// });
 /// let this = b.push_lvar(Local {
@@ -114,7 +114,7 @@ pub fn base_var(tree: &Ctree, e: ExpressionId) -> Option<(LocalId, i64)> {
 /// The byte size of what `e`'s pointer type addresses, used to scale pointer arithmetic.
 /// `None` unless `e` is a pointer whose element size is known.
 fn pointee_size(tree: &Ctree, e: ExpressionId) -> Option<i64> {
-    let elem = tree.type_of(tree.expression(e).ty).kind.pointee()?;
+    let elem = tree.type_of(tree.expression(e).ty).shape.pointee()?;
     tree.type_of(elem).size.map(|s| s as i64)
 }
 
@@ -133,13 +133,13 @@ mod tests {
     use crate::ctree::AssignOp;
     use crate::ctree::node::{Local, LocalLocation};
     use crate::ctree::tree::CtreeBuilder;
-    use crate::types::{TypeData, TypeKind};
+    use crate::types::{TypeShape, TypeValue};
     use assert2::assert;
     use rstest::rstest;
 
     fn ty(b: &mut CtreeBuilder) -> crate::ctree::TypeId {
-        b.intern_type(TypeData {
-            kind: TypeKind::Unknown,
+        b.intern_type(TypeValue {
+            shape: TypeShape::Unknown,
             size: None,
         })
     }
@@ -262,15 +262,15 @@ mod tests {
         #[case] expect: i64,
     ) {
         let mut b = CtreeBuilder::new();
-        let elem = b.intern_type(TypeData {
-            kind: TypeKind::Int {
+        let elem = b.intern_type(TypeValue {
+            shape: TypeShape::Int {
                 bytes: elem_bytes,
                 signed: false,
             },
             size: Some(u64::from(elem_bytes)),
         });
-        let ptr = b.intern_type(TypeData {
-            kind: TypeKind::Ptr(elem),
+        let ptr = b.intern_type(TypeValue {
+            shape: TypeShape::Ptr(elem),
             size: Some(8),
         });
         let this = b.push_lvar(this_lvar_def("this", ptr));
@@ -291,8 +291,8 @@ mod tests {
     #[test]
     fn base_var_rejects_non_pointer_addition() {
         let mut b = CtreeBuilder::new();
-        let int = b.intern_type(TypeData {
-            kind: TypeKind::Int {
+        let int = b.intern_type(TypeValue {
+            shape: TypeShape::Int {
                 bytes: 4,
                 signed: true,
             },

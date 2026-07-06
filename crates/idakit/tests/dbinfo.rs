@@ -5,7 +5,7 @@
 //! kernel tests. Runs against the corpus manifest's canonical fixture (see
 //! [`common::TestDb`]); skips when no corpus is configured. Read-only; opens `save = false`.
 
-use idakit::{Bitness, Idb, Name};
+use idakit::{Bitness, Database, Name};
 
 mod common;
 
@@ -14,26 +14,26 @@ fn dbinfo() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb) {
+fn run(idb: &mut Database) {
     // Metadata snapshot: an x86 database is 32- or 64-bit, has a processor name, and its
     // full input path ends with the bare root filename.
-    let meta = idb.meta();
+    let info = idb.info();
     assert!(
-        matches!(meta.bitness, Some(Bitness::Bits32 | Bitness::Bits64)),
+        matches!(info.bitness, Some(Bitness::Bits32 | Bitness::Bits64)),
         "unexpected bitness {:?}",
-        meta.bitness
+        info.bitness
     );
-    let proc = meta.processor.as_deref().unwrap_or_default();
+    let proc = info.processor.as_deref().unwrap_or_default();
     assert!(!proc.is_empty(), "processor name is empty");
-    if let (Some(path), Some(root)) = (&meta.input_path, &meta.root_filename) {
+    if let (Some(path), Some(root)) = (&info.input_path, &info.root_filename) {
         assert!(
             path.ends_with(root.as_str()),
             "input path {path:?} does not end with root filename {root:?}"
         );
     }
     println!(
-        "meta: bitness={:?} proc={proc} file_type={:?} base={:?} root={:?}",
-        meta.bitness, meta.file_type, meta.image_base, meta.root_filename
+        "info: bitness={:?} proc={proc} file_type={:?} base={:?} root={:?}",
+        info.bitness, info.file_type, info.image_base, info.root_filename
     );
 
     // The name list is non-empty and each name round-trips address -> name -> address for at least some

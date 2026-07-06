@@ -1,10 +1,10 @@
 //! [`Bitness`]: the addressing width of an image or segment.
 
-use crate::Idb;
+use crate::Database;
 
-impl Idb {
+impl Database {
     /// The database's addressing width, or `None` if it reports an unrecognized one. The width
-    /// of a [`read_pointer`](Idb::read_pointer) and one field of the [`meta`](Idb::meta)
+    /// of a [`read_pointer`](Database::read_pointer) and one field of the [`info`](Database::info)
     /// snapshot.
     #[inline]
     #[must_use]

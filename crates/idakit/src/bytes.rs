@@ -1,15 +1,15 @@
 //! Byte-level access to the analyzed image, mirroring the SDK's `bytes.hpp`: raw reads,
 //! item classification and linear navigation, and comments. Accessor-only, like the `raw`
-//! and `ffi` layers -- it defines no view type, so the entry points hang off [`Idb`].
+//! and `ffi` layers -- it defines no view type, so the entry points hang off [`Database`].
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::error::{Error, Result};
 use crate::ffi::{read_string, with_cstr};
 
-impl Idb {
+impl Database {
     /// Whether the kernel classifies the item at `address` as an instruction. This is the gate
     /// [`Function::instructions`](crate::Function::instructions) walks by: [`decode`](Self::decode)
     /// will happily turn arbitrary bytes into an [`Instruction`](crate::Instruction), so only `is_code`

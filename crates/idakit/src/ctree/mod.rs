@@ -11,7 +11,7 @@ mod render;
 mod tree;
 
 pub use crate::arena::{Arena, Idx};
-pub use crate::types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
+pub use crate::types::{EnumMember, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
 pub use extract::ExtractError;
 pub(crate) use extract::walk;
 pub use node::{

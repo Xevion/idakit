@@ -3,7 +3,7 @@
 //! # The kernel thread
 //!
 //! The IDA kernel is single-threaded and thread-affine. [`Ida::here`] brings it up *on
-//! the current thread* and hands back the open [`Idb`] -- no kernel thread, no closure --
+//! the current thread* and hands back the open [`Database`] -- no kernel thread, no closure --
 //! for programs that own their thread (scripts, tests, CLIs):
 //!
 //! ```no_run
@@ -23,11 +23,11 @@
 //! thread marshals work onto the kernel with [`Ida::call`]:
 //!
 //! ```no_run
-//! use idakit::{Ida, Idb};
+//! use idakit::{Ida, Database};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! Ida::run(|ida| {
-//!     ida.call(|idb: &mut Idb| -> idakit::Result<()> {
+//!     ida.call(|idb: &mut Database| -> idakit::Result<()> {
 //!         idb.open("/path/to/db.i64").call()?;
 //!         idb.close(false);
 //!         Ok(())
@@ -37,13 +37,13 @@
 //! # }
 //! ```
 //!
-//! The kernel is a process global: only one `Idb` is live at a time (a second
+//! The kernel is a process global: only one `Database` is live at a time (a second
 //! [`here`](Ida::here)/[`run`](Ida::run) yields [`InitError::AlreadyRunning`]).
 //!
 //! # Read/write separation
 //!
-//! [`Idb`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Idb` and
-//! return lightweight views ([`Function`], [`Segment`], ...); writes take `&mut Idb`, so a read
+//! [`Database`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` and
+//! return lightweight views ([`Function`], [`Segment`], ...); writes take `&mut Database`, so a read
 //! view can't be held across a mutation.
 //!
 //! # Building
@@ -73,7 +73,6 @@ mod address;
 mod arena;
 mod bitness;
 mod bytes;
-mod cfg;
 mod claim;
 pub mod ctree;
 mod data;
@@ -81,7 +80,7 @@ mod decompile;
 mod error;
 mod export;
 mod ffi;
-mod frame;
+mod flowchart;
 mod function;
 mod import;
 mod instruction;
@@ -89,48 +88,48 @@ mod kernel;
 mod meta;
 mod name;
 mod raw;
-mod reference;
 mod search;
 mod segment;
+mod stack;
 mod strings;
-mod ty;
 mod types;
+mod xref;
 
 pub use address::{Address, BADADDR};
 pub use bitness::Bitness;
-pub use cfg::{Block, BlockId, BlockKind, Cfg, ExternalExit};
 pub use ctree::{AssignOp, BinOp, UnOp};
 pub use decompile::{CtreeCounts, DecompiledFunction};
 pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
 pub use export::{Export, Exports};
-pub use frame::{Frame, FrameVar, FrameVarKind};
+pub use flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
 pub use function::{
-    Chunk, Chunks, Function, FunctionImage, FunctionName, Functions, Instructions, InstructionsIn,
+    Function, FunctionChunk, FunctionChunks, FunctionName, FunctionSnapshot, Functions,
+    Instructions, InstructionsIn,
 };
 pub use import::{Import, Imports};
 pub use instruction::{
-    Access, DataType, DecodeError, Flow, Instruction, Isa, Mem, Operand, OperandKind, Register,
-    RegisterClass,
+    Access, DecodeError, Flow, Instruction, Isa, Memory, Operand, OperandDataType, OperandKind,
+    Register, RegisterClass,
 };
 pub use kernel::{Ida, IdaConfig, IdaConfigBuilder};
-pub use meta::Meta;
+pub use meta::DatabaseInfo;
 pub use name::{Name, Names};
-pub use reference::{CodeReference, DataReference, Origin, Reference, ReferenceKind, References};
 pub use search::{Matches, Pattern};
 pub use segment::{Segment, Segments};
+pub use stack::{StackFrame, StackSlot, StackSlotKind};
 pub use strings::{StringLiteral, Strings};
-pub use ty::TypeImage;
-pub use types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
+pub use types::{EnumMember, Type, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
+pub use xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
 
 use crate::kernel::KernelClaim;
 
 /// The open database. `!Send + !Sync`, so it stays on the kernel thread. Reads borrow
-/// `&Idb` (returning [`Function`]/[`Segment`] views); writes take `&mut Idb`, so a read
+/// `&Database` (returning [`Function`]/[`Segment`] views); writes take `&mut Database`, so a read
 /// view can't be held across a write.
-pub struct Idb {
+pub struct Database {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.
     hexrays_ready: Cell<bool>,
-    /// `Some` for an in-place `Idb`; `None` for the actor's, whose claim `run` holds.
+    /// `Some` for an in-place `Database`; `None` for the actor's, whose claim `run` holds.
     _claim: Option<KernelClaim>,
     _not_send: PhantomData<*const ()>,
 }
@@ -138,7 +137,7 @@ pub struct Idb {
 /// Database-open builder: `idb.open(path).run_auto(true).call()`. `path` stays a
 /// positional argument; options chain before the terminal `.call()`.
 #[bon::bon]
-impl Idb {
+impl Database {
     /// Open a database file. Re-opening after [`close`](Self::close) works.
     ///
     /// With `run_auto` set, IDA's auto-analysis runs and this blocks until it drains,
@@ -177,8 +176,8 @@ impl Idb {
     }
 }
 
-impl Idb {
-    /// The actor's `Idb`; `run` holds its claim.
+impl Database {
+    /// The actor's `Database`; `run` holds its claim.
     pub(crate) fn new() -> Self {
         Self {
             hexrays_ready: Cell::new(false),
@@ -187,7 +186,7 @@ impl Idb {
         }
     }
 
-    /// An in-place `Idb` that releases the kernel when dropped.
+    /// An in-place `Database` that releases the kernel when dropped.
     pub(crate) fn owned(claim: KernelClaim) -> Self {
         Self {
             hexrays_ready: Cell::new(false),

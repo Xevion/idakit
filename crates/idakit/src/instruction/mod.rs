@@ -1,6 +1,6 @@
 //! Decoded machine instructions: an owned, `Send` disassembly ADT.
 //!
-//! [`Idb::decode`](crate::Idb::decode) turns the bytes at an [`Address`] into an owned [`Instruction`]
+//! [`Database::decode`](crate::Database::decode) turns the bytes at an [`Address`] into an owned [`Instruction`]
 //! -- mnemonic, operands, and control-flow facts all resolved on the kernel thread and
 //! baked in, so the value carries no borrow and can be analyzed on any worker thread. This
 //! is the raw-disassembly counterpart to the decompiler ctree: it stays ISA-shaped (it
@@ -19,7 +19,7 @@ mod data_type;
 mod decode;
 mod register;
 
-pub use data_type::DataType;
+pub use data_type::OperandDataType;
 pub use register::{Register, RegisterClass};
 
 pub(crate) use decode::insn_from_raw;
@@ -28,10 +28,10 @@ use snafu::Snafu;
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 
-impl Idb {
+impl Database {
     /// Decode the instruction at `address` into an owned, `Send` [`Instruction`] -- mnemonic, semantic
     /// operands, and control-flow facts, all resolved here on the kernel thread.
     ///
@@ -99,7 +99,7 @@ pub enum DecodeError {
 
     /// A register operand referred to a register in no modelled [`RegisterClass`] -- flags,
     /// fpu/sse control-status, or a number outside the register file. Rejected loudly rather
-    /// than mislabeled `Gpr`; empirically never emitted for a real x86 operand.
+    /// than mislabeled `GeneralPurpose`; empirically never emitted for a real x86 operand.
     #[snafu(display("unmodeled register {regnum} at operand {op}, {address:#x}"))]
     UnsupportedRegister {
         /// Address of the instruction.
@@ -112,7 +112,7 @@ pub enum DecodeError {
 
     /// An operand's value type was outside this IDA minor's `op_dtype_t` domain -- only 9.3's
     /// `dt_*` set is modelled, so a newer SDK's value is a deliberate break, not a silent
-    /// `Void`. See [`DataType`].
+    /// `Void`. See [`OperandDataType`].
     #[snafu(display("unmodeled data type {dtype} at operand {op}, {address:#x}"))]
     UnsupportedDataType {
         /// Address of the instruction.
@@ -187,7 +187,7 @@ impl Instruction {
         self.ops.iter().flat_map(|op| {
             let regs: [Option<&Register>; 3] = match &op.kind {
                 OperandKind::Register(r) => [Some(r), None, None],
-                OperandKind::Mem(m) => [m.base.as_ref(), m.index.as_ref(), m.segment.as_ref()],
+                OperandKind::Memory(m) => [m.base.as_ref(), m.index.as_ref(), m.segment.as_ref()],
                 _ => [None, None, None],
             };
             regs.into_iter().flatten()
@@ -205,7 +205,7 @@ pub struct Operand {
     /// What the operand refers to.
     pub kind: OperandKind,
     /// The operand's value type.
-    pub data_type: DataType,
+    pub data_type: OperandDataType,
     /// Whether the instruction reads and/or writes this operand.
     pub access: Access,
 }
@@ -221,10 +221,10 @@ pub enum OperandKind {
     /// A register, of any class (folds every register operand type).
     Register(Register),
     /// A memory reference: `seg:[base + index*scale + disp]`.
-    Mem(Mem),
+    Memory(Memory),
     /// An immediate constant. Signedness is carried by the operand's
     /// [`data_type`](Operand::data_type).
-    Imm {
+    Immediate {
         /// The immediate value.
         value: u64,
     },
@@ -246,7 +246,7 @@ pub enum OperandKind {
 /// addressing form (a bare `[disp]` has no `base`/`index`; a RIP-relative reference IDA
 /// folded to an absolute address populates `target`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Mem {
+pub struct Memory {
     /// Base register, if any.
     pub base: Option<Register>,
     /// Index register, if any.
@@ -318,7 +318,7 @@ mod tests {
     fn reg(name: &str) -> Register {
         Register {
             num: 0,
-            class: RegisterClass::Gpr,
+            class: RegisterClass::GeneralPurpose,
             width: 8,
             name: name.into(),
         }
@@ -328,7 +328,7 @@ mod tests {
         Operand {
             idx: 0,
             kind,
-            data_type: DataType::Qword,
+            data_type: OperandDataType::Qword,
             access: Access::default(),
         }
     }
@@ -345,7 +345,7 @@ mod tests {
             mnemonic: "lea".into(),
             ops: vec![
                 op(OperandKind::Register(reg("rax"))),
-                op(OperandKind::Mem(Mem {
+                op(OperandKind::Memory(Memory {
                     base: Some(reg("rbx")),
                     index: Some(reg("rcx")),
                     scale: 1,
@@ -353,7 +353,7 @@ mod tests {
                     segment: None,
                     target: None,
                 })),
-                op(OperandKind::Imm { value: 5 }),
+                op(OperandKind::Immediate { value: 5 }),
             ],
             flow: Flow {
                 is_call: false,

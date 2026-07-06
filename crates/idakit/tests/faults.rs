@@ -11,7 +11,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use assert2::assert;
-use idakit::{Error, Ida, Idb};
+use idakit::{Database, Error, Ida};
 
 mod common;
 
@@ -50,7 +50,7 @@ impl Drop for Scratch {
 
 /// Open `path` and assert the kernel rejected it with an `Err` (rather than succeeding or
 /// killing the process). Runs as the kernel job body so the test stays at one indent level.
-fn open_is_rejected(idb: &mut Idb, path: &str) {
+fn open_is_rejected(idb: &mut Database, path: &str) {
     let result = idb.open(path).call();
     assert!(result.is_err(), "open of {path:?} should be rejected");
 }

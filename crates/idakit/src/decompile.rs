@@ -6,13 +6,13 @@ use std::marker::PhantomData;
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::ctree::{Ctree, ExtractError, walk};
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
 
-impl Idb {
+impl Database {
     /// Decompile the function at `address` and materialize its ctree. Sugar for
     /// [`function(address)`](Self::function)`.`[`ctree()`](crate::Function::ctree).
     pub fn ctree(&self, address: Address) -> Result<Ctree> {
@@ -62,13 +62,13 @@ pub struct CtreeCounts {
 /// raw pointer makes `DecompiledFunction` `!Send`, so it lives only on the kernel thread.
 pub struct DecompiledFunction<'db> {
     handle: *mut c_void,
-    _db: PhantomData<&'db Idb>,
+    _db: PhantomData<&'db Database>,
 }
 
 impl<'db> DecompiledFunction<'db> {
     /// Take ownership of a non-null `idakit_decompile` handle.
     #[inline]
-    pub(crate) fn from_handle(handle: *mut c_void, _db: &'db Idb) -> Self {
+    pub(crate) fn from_handle(handle: *mut c_void, _db: &'db Database) -> Self {
         debug_assert!(
             !handle.is_null(),
             "DecompiledFunction handle must be non-null"

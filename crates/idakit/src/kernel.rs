@@ -1,7 +1,7 @@
 //! [`Ida`]: the kernel-thread host and marshalling handle. Brings IDA's single-threaded,
 //! thread-affine kernel up -- either on the current thread ([`Ida::here`]) or on a
 //! dedicated `"idakit-kernel"` thread ([`Ida::run`]) -- and gates it behind a process-wide
-//! [`KernelClaim`] so only one [`Idb`] is ever live.
+//! [`KernelClaim`] so only one [`Database`] is ever live.
 
 use std::ffi::c_int;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -11,11 +11,11 @@ use std::thread;
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::claim;
 use crate::error::{CallError, InitError, Result, panic_payload_str};
 
-/// At most one [`Idb`] may be live: the kernel is a process global.
+/// At most one [`Database`] may be live: the kernel is a process global.
 static KERNEL_LIVE: AtomicBool = AtomicBool::new(false);
 /// `init_library` runs once ever; later claims only re-steal `g_main`.
 static KERNEL_INITED: AtomicBool = AtomicBool::new(false);
@@ -39,7 +39,7 @@ impl Drop for KernelClaim {
     }
 }
 
-type Job = Box<dyn FnOnce(&mut Idb) + Send>;
+type Job = Box<dyn FnOnce(&mut Database) + Send>;
 
 /// A `Send + Clone` handle to the kernel; marshal closures to it from any thread.
 #[derive(Clone)]
@@ -62,11 +62,11 @@ impl Ida {
     }
 
     /// Bring the kernel up *on the current thread* and return the open database -- no
-    /// kernel thread, no closure. The `!Send` [`Idb`] lives here; dropping it releases
+    /// kernel thread, no closure. The `!Send` [`Database`] lives here; dropping it releases
     /// the kernel. For scripts, tests, and CLIs that own their thread. Prefer
     /// [`run`](Self::run) when the current thread must stay free or many threads drive
     /// the kernel. Configure bring-up with [`new`](Self::new).
-    pub fn here() -> Result<Idb, InitError> {
+    pub fn here() -> Result<Database, InitError> {
         IdaConfig::builder().here()
     }
 
@@ -97,14 +97,14 @@ impl Ida {
     /// [`CallError::Panicked`], leaving the kernel alive for later calls.
     pub fn call<R, F>(&self, f: F) -> Result<R, CallError>
     where
-        F: FnOnce(&mut Idb) -> R + Send + 'static,
+        F: FnOnce(&mut Database) -> R + Send + 'static,
         R: Send + 'static,
     {
         let (rtx, rrx) = channel::<thread::Result<R>>();
         if self
             .tx
             .send(Box::new(move |idb| {
-                // AssertUnwindSafe: `&mut Idb` isn't UnwindSafe. A panic mid-write
+                // AssertUnwindSafe: `&mut Database` isn't UnwindSafe. A panic mid-write
                 // may leave kernel state inconsistent; we keep the actor alive and
                 // hand the panic back as an error rather than unwind the kernel.
                 let _ = rtx.send(catch_unwind(AssertUnwindSafe(|| f(idb))));
@@ -161,7 +161,7 @@ impl IdaConfig {
                     return;
                 }
 
-                let mut idb = Idb::new();
+                let mut idb = Database::new();
                 while let Ok(job) = rx.recv() {
                     // Jobs catch their own closure's panic (see `call`); guard the
                     // pump too so no stray panic can unwind and kill the kernel.
@@ -195,11 +195,11 @@ impl IdaConfig {
         Ok(result)
     }
 
-    /// Bring the kernel up on the current thread and return the [`Idb`]; see [`Ida::here`].
-    pub fn here(self) -> Result<Idb, InitError> {
+    /// Bring the kernel up on the current thread and return the [`Database`]; see [`Ida::here`].
+    pub fn here(self) -> Result<Database, InitError> {
         let claim = KernelClaim::acquire()?;
         bring_up_kernel(&self)?;
-        Ok(Idb::owned(claim))
+        Ok(Database::owned(claim))
     }
 }
 
@@ -216,8 +216,8 @@ impl<S: State> IdaConfigBuilder<S> {
         self.build().run(app)
     }
 
-    /// Bring the kernel up on the current thread and return the [`Idb`]; see [`Ida::here`].
-    pub fn here(self) -> Result<Idb, InitError>
+    /// Bring the kernel up on the current thread and return the [`Database`]; see [`Ida::here`].
+    pub fn here(self) -> Result<Database, InitError>
     where
         S: IsComplete,
     {

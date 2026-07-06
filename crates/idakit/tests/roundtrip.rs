@@ -12,7 +12,7 @@ fn roundtrip() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Idb) {
+fn run(idb: &mut idakit::Database) {
     let func_count = idb.functions().count();
     let seg_count = idb.segments().count();
     assert!(func_count > 0, "expected at least one function");
@@ -27,14 +27,14 @@ fn run(idb: &mut idakit::Idb) {
     assert!(!bytes.is_empty(), "expected readable bytes at the entry");
 
     // Best-effort; just exercise the paths (consume the lazy reference cursors).
-    let _ = first.references_to().count();
-    let _ = first.references_from().count();
+    let _ = first.xrefs_to().count();
+    let _ = first.xrefs_from().count();
     let _ = first.prototype();
 
     // Structured prototype walk: drive idakit_func_type_walk over real functions. Not every
     // function is typed, so scan for the first that resolves and validate its shape end-to-end.
     {
-        use idakit::TypeKind;
+        use idakit::TypeShape;
         let mut typed = 0usize;
         let mut example = None;
         for f in idb.functions().take(2000) {
@@ -46,7 +46,7 @@ fn run(idb: &mut idakit::Idb) {
             }
         }
         if let Some((ea, image)) = example {
-            let TypeKind::Function { ret, params, .. } = image.kind() else {
+            let TypeShape::Function { ret, params, .. } = image.shape() else {
                 panic!("a function prototype's root should be a Function type");
             };
             // Every child handle resolves against the image's own table.

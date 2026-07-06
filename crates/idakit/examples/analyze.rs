@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some((address, cfg)) = idb
                 .functions()
                 .take(2000)
-                .filter_map(|f| f.cfg().ok().map(|c| (f.address(), c)))
+                .filter_map(|f| f.flowchart().ok().map(|c| (f.address(), c)))
                 .max_by_key(|(_, c)| c.len())
             {
                 let edges: usize = cfg.blocks().map(|(_, b)| b.successors().len()).sum();

@@ -1,16 +1,17 @@
-//! [`Cfg`]: an owned, `Send` control-flow graph of one function.
+//! [`FlowChart`]: an owned, `Send` control-flow graph of one function.
 //!
 //! IDA builds a function's whole flow chart eagerly (`qflow_chart_t`), so -- unlike the lazy
 //! [`Function`]/[`Segment`](crate::Segment) views that re-query per accessor -- a CFG is a
 //! snapshot from the start. It is materialized on the kernel thread and handed back as an
-//! owned [`Cfg`] any worker can traverse: an append-only arena of [`Block`]s keyed by
-//! [`BlockId`], with successor/predecessor edges as block handles. A [`Block`] carries only
-//! its address range; pair it with [`Idb::instructions_in`] to walk the instructions inside.
+//! owned [`FlowChart`] any worker can traverse: an append-only arena of [`BasicBlock`]s keyed by
+//! [`BasicBlockId`], with successor/predecessor edges as block handles. A [`BasicBlock`] carries
+//! only its address range; pair it with [`Database::instructions_in`] to walk the instructions
+//! inside.
 //!
-//! The arena holds only the function's *own* basic blocks, so every [`Block`] has a non-empty
-//! range. A tail-jump or call *out* of the function is an [`ExternalExit`] on the source
-//! block, not a block of its own: IDA represents those targets as zero-length stub blocks
-//! (`start == end`, decided purely by index past `nproper`), which idakit lifts to typed
+//! The arena holds only the function's *own* basic blocks, so every [`BasicBlock`] has a
+//! non-empty range. A tail-jump or call *out* of the function is an [`ExternalExit`] on the
+//! source block, not a block of its own: IDA represents those targets as zero-length stub
+//! blocks (`start == end`, decided purely by index past `nproper`), which idakit lifts to typed
 //! edges so the arena stays real code and out-of-function targets stay addressable.
 
 use std::ffi::{c_int, c_void};
@@ -21,20 +22,20 @@ use strum::VariantArray;
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::arena::{Arena, Idx};
 use crate::error::{Error, Result};
 
-/// A handle into a [`Cfg`]'s block arena. Edges are lists of these; block 0 is the entry.
-pub type BlockId = Idx<Block>;
+/// A handle into a [`FlowChart`]'s block arena. Edges are lists of these; block 0 is the entry.
+pub type BasicBlockId = Idx<BasicBlock>;
 
 /// How a basic block ends (`fc_block_type_t` from `gdl.hpp`, IDA 9.3): the kind of
 /// control-flow transfer that terminates it.
 ///
 /// Only the six in-function terminators appear: the SDK's external kinds (`fcb_extern`,
 /// `fcb_enoret`) name zero-length stubs for out-of-function targets, which idakit lifts to
-/// [`ExternalExit`]s rather than blocks -- so a real [`Block`] is never one of them.
+/// [`ExternalExit`]s rather than blocks -- so a real [`BasicBlock`] is never one of them.
 ///
 /// A closed set: `TryFrom<u8>` rejects any `fc_block_type_t` outside it (a newer SDK's value
 /// surfaces as [`Error::UnknownBlockKind`](crate::Error::UnknownBlockKind) at CFG build, a
@@ -44,7 +45,7 @@ pub type BlockId = Idx<Block>;
     Clone, Copy, Debug, PartialEq, Eq, Hash, TryFromPrimitive, IntoPrimitive, VariantArray,
 )]
 #[repr(u8)]
-pub enum BlockKind {
+pub enum BasicBlockKind {
     /// `fcb_normal`: falls through or branches within the function.
     Normal = 0,
     /// `fcb_indjump`: ends with an indirect jump (a switch dispatch, a jump table).
@@ -59,7 +60,7 @@ pub enum BlockKind {
     Error = 7,
 }
 
-impl BlockKind {
+impl BasicBlockKind {
     /// Whether the block returns from the function (`fcb_ret`/`fcb_cndret`).
     #[inline]
     #[must_use]
@@ -77,10 +78,10 @@ impl BlockKind {
     }
 }
 
-/// A control-flow edge that leaves the function: a tail-jump or tail-call from a [`Block`] to
-/// `target`, an address in no block of this graph. IDA carries these as zero-length stub
+/// A control-flow edge that leaves the function: a tail-jump or tail-call from a [`BasicBlock`]
+/// to `target`, an address in no block of this graph. IDA carries these as zero-length stub
 /// blocks; idakit lifts them to edges (see the module docs). Read them with
-/// [`Block::exits`]; internal edges are [`Block::successors`].
+/// [`BasicBlock::exits`]; internal edges are [`BasicBlock::successors`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ExternalExit {
     /// The out-of-function address this block transfers to.
@@ -91,18 +92,18 @@ pub struct ExternalExit {
 }
 
 /// One basic block: a straight-line run of code with a single entry and single exit,
-/// [`kind`](Self::kind) naming how it ends. Yielded by [`Cfg::blocks`]. The range is always
-/// non-empty -- external stubs are [`ExternalExit`]s, not blocks.
+/// [`kind`](Self::kind) naming how it ends. Yielded by [`FlowChart::blocks`]. The range is
+/// always non-empty -- external stubs are [`ExternalExit`]s, not blocks.
 #[derive(Clone, Debug)]
-pub struct Block {
+pub struct BasicBlock {
     range: Range<Address>,
-    kind: BlockKind,
-    succ: Vec<BlockId>,
-    pred: Vec<BlockId>,
+    kind: BasicBlockKind,
+    succ: Vec<BasicBlockId>,
+    pred: Vec<BasicBlockId>,
     exits: Vec<ExternalExit>,
 }
 
-impl Block {
+impl BasicBlock {
     /// The block's half-open address range `[start, end)`.
     #[inline]
     #[must_use]
@@ -124,10 +125,10 @@ impl Block {
         self.range.end
     }
 
-    /// How the block ends -- see [`BlockKind`].
+    /// How the block ends -- see [`BasicBlockKind`].
     #[inline]
     #[must_use]
-    pub fn kind(&self) -> BlockKind {
+    pub fn kind(&self) -> BasicBlockKind {
         self.kind
     }
 
@@ -135,7 +136,7 @@ impl Block {
     /// tail-jumps and calls are [`exits`](Self::exits).
     #[inline]
     #[must_use]
-    pub fn successors(&self) -> &[BlockId] {
+    pub fn successors(&self) -> &[BasicBlockId] {
         &self.succ
     }
 
@@ -143,7 +144,7 @@ impl Block {
     /// `predecessors(false)`.
     #[inline]
     #[must_use]
-    pub fn predecessors(&self) -> &[BlockId] {
+    pub fn predecessors(&self) -> &[BasicBlockId] {
         &self.pred
     }
 
@@ -158,16 +159,17 @@ impl Block {
 }
 
 /// An owned, `Send` control-flow graph of one function. Materialize with
-/// [`Function::cfg`](crate::Function::cfg)/[`Idb::cfg`], then traverse the [`Block`] arena by
-/// [`BlockId`]. Detached from the kernel, so it analyzes on any thread.
+/// [`Function::flowchart`](crate::Function::flowchart)/[`Database::flowchart`], then traverse
+/// the [`BasicBlock`] arena by [`BasicBlockId`]. Detached from the kernel, so it analyzes on any
+/// thread.
 #[derive(Debug)]
-pub struct Cfg {
-    blocks: Arena<Block>,
-    entry: BlockId,
+pub struct FlowChart {
+    blocks: Arena<BasicBlock>,
+    entry: BasicBlockId,
     function: Address,
 }
 
-impl Cfg {
+impl FlowChart {
     /// The entry address of the function this graph was built from.
     #[inline]
     #[must_use]
@@ -178,14 +180,14 @@ impl Cfg {
     /// The entry block, where execution enters the function (always block 0).
     #[inline]
     #[must_use]
-    pub fn entry(&self) -> BlockId {
+    pub fn entry(&self) -> BasicBlockId {
         self.entry
     }
 
     /// Borrow the block behind a handle.
     #[inline]
     #[must_use]
-    pub fn block(&self, id: BlockId) -> &Block {
+    pub fn block(&self, id: BasicBlockId) -> &BasicBlock {
         &self.blocks[id]
     }
 
@@ -203,33 +205,34 @@ impl Cfg {
         self.blocks.is_empty()
     }
 
-    /// Iterate every `(BlockId, &Block)` in index order -- the entry block first.
-    pub fn blocks(&self) -> impl ExactSizeIterator<Item = (BlockId, &Block)> {
+    /// Iterate every `(BasicBlockId, &BasicBlock)` in index order -- the entry block first.
+    pub fn blocks(&self) -> impl ExactSizeIterator<Item = (BasicBlockId, &BasicBlock)> {
         self.blocks.iter()
     }
 
     /// The block whose range contains `address`, if any.
     #[must_use]
-    pub fn block_at(&self, address: Address) -> Option<BlockId> {
+    pub fn block_at(&self, address: Address) -> Option<BasicBlockId> {
         self.blocks
             .iter()
             .find_map(|(id, b)| (b.range.start <= address && address < b.range.end).then_some(id))
     }
 }
 
-impl Idb {
+impl Database {
     /// Build the control-flow graph of the function containing `address` with default options:
     /// external exits recorded, predecessors computed, calls do not split a block. `Err` with
     /// [`Error::NoFunction`] when no function covers `address`. For the knobs, use
-    /// [`Function::cfg_with`](crate::Function::cfg_with).
-    pub fn cfg(&self, address: Address) -> Result<Cfg> {
-        self.build_cfg(address, 0)
+    /// [`Function::flowchart_with`](crate::Function::flowchart_with).
+    pub fn flowchart(&self, address: Address) -> Result<FlowChart> {
+        self.build_flowchart(address, 0)
     }
 
-    /// The shared build path behind [`cfg`](Self::cfg) and the `cfg_with` builder: constructs
-    /// the flow chart, extracts every block and edge into an owned arena, and frees the
-    /// kernel object before returning -- so the result is a detached `Send` snapshot.
-    pub(crate) fn build_cfg(&self, address: Address, flags: c_int) -> Result<Cfg> {
+    /// The shared build path behind [`flowchart`](Self::flowchart) and the `flowchart_with`
+    /// builder: constructs the flow chart, extracts every block and edge into an owned arena,
+    /// and frees the kernel object before returning -- so the result is a detached `Send`
+    /// snapshot.
+    pub(crate) fn build_flowchart(&self, address: Address, flags: c_int) -> Result<FlowChart> {
         // SAFETY: the kernel is claimed for the lifetime of `&self`. The returned handle is
         // owned by this call and freed once, below.
         let handle = unsafe { sys::idakit_cfg_build(address.get(), flags) };
@@ -246,9 +249,9 @@ impl Idb {
         let blocks = blocks?;
 
         let function = blocks.iter().next().map_or(address, |(_, b)| b.start());
-        Ok(Cfg {
+        Ok(FlowChart {
             blocks,
-            entry: BlockId::from_raw(0),
+            entry: BasicBlockId::from_raw(0),
             function,
         })
     }
@@ -256,7 +259,7 @@ impl Idb {
 
 /// Compose an `FC_` flag word from the builder's booleans. `externals`/`predecessors` are the
 /// enabled state, so *disabling* either sets the corresponding `NO*` flag.
-pub(crate) fn cfg_flags(call_ends: bool, externals: bool, predecessors: bool) -> c_int {
+pub(crate) fn flowchart_flags(call_ends: bool, externals: bool, predecessors: bool) -> c_int {
     let mut flags = 0;
     if call_ends {
         flags |= sys::FC_CALL_ENDS;
@@ -275,10 +278,10 @@ pub(crate) fn cfg_flags(call_ends: bool, externals: bool, predecessors: bool) ->
 const FCB_ENORET: u8 = 5;
 
 /// Drain a built flow chart into an owned block arena. The first `nproper` kernel blocks are
-/// the function's own -- allocated in order, so allocation `i` is `BlockId::from_raw(i)`,
+/// the function's own -- allocated in order, so allocation `i` is `BasicBlockId::from_raw(i)`,
 /// matching the raw edge indices. The rest are zero-length external stubs: never allocated,
 /// only read (their `start` is a jump target) when a proper block's edge points at one.
-fn extract(handle: *const c_void) -> Result<Arena<Block>> {
+fn extract(handle: *const c_void) -> Result<Arena<BasicBlock>> {
     // SAFETY (every call below): `handle` is a live flow chart; indices are kept in range by
     // the loop bounds and the facade's own checks; out-params are valid locals.
     let nproper = unsafe { sys::idakit_cfg_nproper(handle) };
@@ -287,10 +290,10 @@ fn extract(handle: *const c_void) -> Result<Arena<Block>> {
         let (mut start, mut end, mut kind) = (0u64, 0u64, 0i32);
         unsafe { sys::idakit_cfg_block(handle, i, &mut start, &mut end, &mut kind) };
         let raw = kind as u8;
-        let kind =
-            BlockKind::try_from(raw).map_err(|_| Error::UnknownBlockKind { block: start, raw })?;
+        let kind = BasicBlockKind::try_from(raw)
+            .map_err(|_| Error::UnknownBlockKind { block: start, raw })?;
         let (succ, exits) = successors(handle, i, nproper);
-        blocks.alloc(Block {
+        blocks.alloc(BasicBlock {
             range: block_range(start, end),
             kind,
             succ,
@@ -301,14 +304,14 @@ fn extract(handle: *const c_void) -> Result<Arena<Block>> {
     Ok(blocks)
 }
 
-/// Split block `n`'s successor edges: targets below `nproper` are internal [`BlockId`]s, the
-/// rest are external stubs read into [`ExternalExit`]s (target = stub start, `noreturn` from
-/// its `fcb_enoret` kind).
+/// Split block `n`'s successor edges: targets below `nproper` are internal [`BasicBlockId`]s,
+/// the rest are external stubs read into [`ExternalExit`]s (target = stub start, `noreturn`
+/// from its `fcb_enoret` kind).
 fn successors(
     handle: *const c_void,
     n: c_int,
     nproper: c_int,
-) -> (Vec<BlockId>, Vec<ExternalExit>) {
+) -> (Vec<BasicBlockId>, Vec<ExternalExit>) {
     // SAFETY (every call): `handle` live, `n` in `[0, nproper)`, `i` in `[0, count)`, `j`
     // returned in range by the facade.
     let count = unsafe { sys::idakit_cfg_nsucc(handle, n) };
@@ -321,7 +324,7 @@ fn successors(
         }
         if j < nproper {
             if let Ok(id) = u32::try_from(j) {
-                succ.push(BlockId::from_raw(id));
+                succ.push(BasicBlockId::from_raw(id));
             }
         } else {
             let (mut start, mut end, mut kind) = (0u64, 0u64, 0i32);
@@ -335,9 +338,10 @@ fn successors(
     (succ, exits)
 }
 
-/// Block `n`'s predecessor handles. All are internal: external stubs are pure sinks, so no
-/// proper block has one as a predecessor -- an out-of-range index is dropped defensively.
-fn predecessors(handle: *const c_void, n: c_int, nproper: c_int) -> Vec<BlockId> {
+/// The block at index `n`'s predecessor handles. All are internal: external stubs are pure
+/// sinks, so no proper block has one as a predecessor -- an out-of-range index is dropped
+/// defensively.
+fn predecessors(handle: *const c_void, n: c_int, nproper: c_int) -> Vec<BasicBlockId> {
     // SAFETY: as in `successors`.
     let count = unsafe { sys::idakit_cfg_npred(handle, n) };
     (0..count)
@@ -345,7 +349,7 @@ fn predecessors(handle: *const c_void, n: c_int, nproper: c_int) -> Vec<BlockId>
             let j = unsafe { sys::idakit_cfg_pred(handle, n, i) };
             (0..nproper)
                 .contains(&j)
-                .then(|| u32::try_from(j).ok().map(BlockId::from_raw))
+                .then(|| u32::try_from(j).ok().map(BasicBlockId::from_raw))
                 .flatten()
         })
         .collect()
@@ -368,21 +372,21 @@ mod tests {
 
     const fn assert_send<T: Send>() {}
 
-    // The reason Cfg is an owned arena and not a borrowed view: it must cross the kernel
+    // The reason FlowChart is an owned arena and not a borrowed view: it must cross the kernel
     // thread. A later non-Send field would fail this.
-    const _: () = assert_send::<Cfg>();
+    const _: () = assert_send::<FlowChart>();
 
     /// Discriminants match `fc_block_type_t` (gdl.hpp, IDA 9.3), and `u8`/`TryFrom` round-trip.
     #[rstest]
-    #[case(BlockKind::Normal, 0)]
-    #[case(BlockKind::IndirectJump, 1)]
-    #[case(BlockKind::Return, 2)]
-    #[case(BlockKind::CondReturn, 3)]
-    #[case(BlockKind::NoReturn, 4)]
-    #[case(BlockKind::Error, 7)]
-    fn block_kind_raw_matches_sdk(#[case] kind: BlockKind, #[case] raw: u8) {
+    #[case(BasicBlockKind::Normal, 0)]
+    #[case(BasicBlockKind::IndirectJump, 1)]
+    #[case(BasicBlockKind::Return, 2)]
+    #[case(BasicBlockKind::CondReturn, 3)]
+    #[case(BasicBlockKind::NoReturn, 4)]
+    #[case(BasicBlockKind::Error, 7)]
+    fn block_kind_raw_matches_sdk(#[case] kind: BasicBlockKind, #[case] raw: u8) {
         assert!(u8::from(kind) == raw);
-        assert!(BlockKind::try_from(raw).ok() == Some(kind));
+        assert!(BasicBlockKind::try_from(raw).ok() == Some(kind));
     }
 
     /// A byte outside the modelled set is rejected, not absorbed: the SDK's external kinds
@@ -394,18 +398,18 @@ mod tests {
     #[case(200)]
     #[case(0xff)]
     fn unmodeled_block_kinds_are_rejected(#[case] raw: u8) {
-        assert!(BlockKind::try_from(raw).is_err());
+        assert!(BasicBlockKind::try_from(raw).is_err());
     }
 
     /// The folded predicates agree with the raw variants they group.
     #[rstest]
-    #[case(BlockKind::Return, true, false)]
-    #[case(BlockKind::CondReturn, true, false)]
-    #[case(BlockKind::NoReturn, false, true)]
-    #[case(BlockKind::Normal, false, false)]
-    #[case(BlockKind::IndirectJump, false, false)]
-    #[case(BlockKind::Error, false, false)]
-    fn block_kind_predicates(#[case] kind: BlockKind, #[case] ret: bool, #[case] noret: bool) {
+    #[case(BasicBlockKind::Return, true, false)]
+    #[case(BasicBlockKind::CondReturn, true, false)]
+    #[case(BasicBlockKind::NoReturn, false, true)]
+    #[case(BasicBlockKind::Normal, false, false)]
+    #[case(BasicBlockKind::IndirectJump, false, false)]
+    #[case(BasicBlockKind::Error, false, false)]
+    fn block_kind_predicates(#[case] kind: BasicBlockKind, #[case] ret: bool, #[case] noret: bool) {
         assert!(kind.is_return() == ret);
         assert!(kind.is_noreturn() == noret);
     }
@@ -414,20 +418,21 @@ mod tests {
     /// variant that forgets a discriminant fails here.
     #[test]
     fn every_variant_round_trips() {
-        for &kind in BlockKind::VARIANTS {
-            assert!(BlockKind::try_from(u8::from(kind)).ok() == Some(kind));
+        for &kind in BasicBlockKind::VARIANTS {
+            assert!(BasicBlockKind::try_from(u8::from(kind)).ok() == Some(kind));
         }
     }
 
     /// The three booleans map onto the right `FC_` bits, and disabling is what sets a flag.
     #[test]
     fn cfg_flags_compose() {
-        assert!(cfg_flags(false, true, true) == 0);
-        assert!(cfg_flags(true, true, true) == sys::FC_CALL_ENDS);
-        assert!(cfg_flags(false, false, true) == sys::FC_NOEXT);
-        assert!(cfg_flags(false, true, false) == sys::FC_NOPREDS);
+        assert!(flowchart_flags(false, true, true) == 0);
+        assert!(flowchart_flags(true, true, true) == sys::FC_CALL_ENDS);
+        assert!(flowchart_flags(false, false, true) == sys::FC_NOEXT);
+        assert!(flowchart_flags(false, true, false) == sys::FC_NOPREDS);
         assert!(
-            cfg_flags(true, false, false) == sys::FC_CALL_ENDS | sys::FC_NOEXT | sys::FC_NOPREDS
+            flowchart_flags(true, false, false)
+                == sys::FC_CALL_ENDS | sys::FC_NOEXT | sys::FC_NOPREDS
         );
     }
 }

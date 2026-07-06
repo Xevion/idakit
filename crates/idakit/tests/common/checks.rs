@@ -1,13 +1,13 @@
-//! Reusable, read-only invariant checks over an already-open [`Idb`]. Each returns a one-line
+//! Reusable, read-only invariant checks over an already-open [`Database`]. Each returns a one-line
 //! summary and panics (via `assert!`) on a violation, so it works as a `#[test]` body and as a
 //! `libtest-mimic` trial alike. The registry [`CHECKS`] is the corpus matrix's check axis.
 
 use idakit::{
-    CodeReference, DecodeError, Error, Idb, ReferenceKind, Register, RegisterClass, TypeKind,
+    CodeXref, Database, DecodeError, Error, Register, RegisterClass, TypeShape, XrefKind,
 };
 
 /// One named invariant over an open database.
-pub type Check = fn(&Idb) -> String;
+pub type Check = fn(&Database) -> String;
 
 /// The check axis of the corpus matrix. Add a row here and every corpus database runs it.
 pub const CHECKS: &[(&str, Check)] = &[
@@ -24,7 +24,7 @@ pub const CHECKS: &[(&str, Check)] = &[
 
 /// The database has functions and segments, the first function is named, and its entry bytes
 /// are readable -- the floor every real program clears.
-pub fn structure(idb: &Idb) -> String {
+pub fn structure(idb: &Database) -> String {
     let funcs = idb.functions().count();
     let segs = idb.segments().count();
     assert!(funcs > 0, "no functions");
@@ -39,7 +39,7 @@ pub fn structure(idb: &Idb) -> String {
 
 /// Every export resolves to an address or a forwarder; every import carries a name or an
 /// ordinal; a real program has at least one of the two.
-pub fn symbols(idb: &Idb) -> String {
+pub fn symbols(idb: &Database) -> String {
     let mut exports = 0usize;
     for export in idb.exports().take(20000) {
         exports += 1;
@@ -64,7 +64,7 @@ pub fn symbols(idb: &Idb) -> String {
 
 /// Every located string has a sane character width, and when the scan finds any, at least some
 /// decode to text.
-pub fn strings(idb: &Idb) -> String {
+pub fn strings(idb: &Database) -> String {
     let mut total = 0usize;
     let mut decoded = 0usize;
     for s in idb.strings().take(5000) {
@@ -87,7 +87,7 @@ pub fn strings(idb: &Idb) -> String {
 
 /// A bounded straight-line decode holds structural invariants, and at least one direct branch
 /// target is mirrored in IDA's reference graph.
-pub fn disasm(idb: &Idb) -> String {
+pub fn disasm(idb: &Database) -> String {
     const BUDGET: usize = 4000;
     let mut total = 0usize;
     let mut with_ops = 0usize;
@@ -123,15 +123,15 @@ pub fn disasm(idb: &Idb) -> String {
                 && (instruction.flow.is_call || instruction.flow.is_jump)
                 && let Some(target) = instruction.flow.target
             {
-                checked_target = idb.references_from(address).any(|x| {
+                checked_target = idb.xrefs_from(address).any(|x| {
                     x.to == target
                         && matches!(
                             x.kind,
-                            ReferenceKind::Code(
-                                CodeReference::CallNear
-                                    | CodeReference::CallFar
-                                    | CodeReference::JumpNear
-                                    | CodeReference::JumpFar
+                            XrefKind::Code(
+                                CodeXref::CallNear
+                                    | CodeXref::CallFar
+                                    | CodeXref::JumpNear
+                                    | CodeXref::JumpFar
                             )
                         )
                 });
@@ -154,11 +154,11 @@ pub fn disasm(idb: &Idb) -> String {
 
 /// The first multi-block function builds a graph whose edges are in range and mirror as
 /// predecessors, and whose entry resolves back to block 0.
-pub fn cfg(idb: &Idb) -> String {
+pub fn cfg(idb: &Database) -> String {
     let Some(cfg) = idb
         .functions()
         .take(4000)
-        .find_map(|f| f.cfg().ok().filter(|c| c.len() >= 2))
+        .find_map(|f| f.flowchart().ok().filter(|c| c.len() >= 2))
     else {
         return "no multi-block function in prefix".to_string();
     };
@@ -184,7 +184,7 @@ pub fn cfg(idb: &Idb) -> String {
 
 /// Decompiling the first functions succeeds where Hex-Rays can, and the extracted ctree's node
 /// counts agree with the independent visitor counts.
-pub fn decompile(idb: &Idb) -> String {
+pub fn decompile(idb: &Database) -> String {
     use idakit::ctree::{NodeRef, StatementKind};
     let mut decompiled = 0usize;
     let mut deep_checked = false;
@@ -231,11 +231,11 @@ pub fn decompile(idb: &Idb) -> String {
     format!("{decompiled} decompiled")
 }
 
-/// A function with a stored prototype walks into a `Function`-rooted [`TypeImage`] whose child
+/// A function with a stored prototype walks into a `Function`-rooted [`Type`] whose child
 /// handles resolve, and a named aggregate it references round-trips through `type_named` to a
 /// resolvable root. Best-effort: a stripped database may carry no prototypes, and a referenced
 /// name need not be a local type.
-pub fn types(idb: &Idb) -> String {
+pub fn types(idb: &Database) -> String {
     let mut typed = 0usize;
     let mut checked_proto = false;
     let mut named = 0usize;
@@ -247,7 +247,7 @@ pub fn types(idb: &Idb) -> String {
         typed += 1;
 
         if !checked_proto {
-            let TypeKind::Function { ret, params, .. } = image.kind() else {
+            let TypeShape::Function { ret, params, .. } = image.shape() else {
                 panic!("prototype root at {:#x} is not a Function", f.address());
             };
             let _ = image.get(*ret);
@@ -261,7 +261,7 @@ pub fn types(idb: &Idb) -> String {
         // A referenced name need not be a local type, so TypeNotFound is fine; only a malformed
         // walk (Extract) is a real failure.
         if named == 0
-            && let Some(name) = image.types().iter().find_map(|(_, t)| t.kind.tag_name())
+            && let Some(name) = image.types().iter().find_map(|(_, t)| t.shape.tag_name())
         {
             match idb.type_named(name) {
                 Ok(resolved) => {
@@ -290,7 +290,7 @@ pub fn types(idb: &Idb) -> String {
 /// to see rather than silently absorb -- and every scattered fragment must itself be a register
 /// or stack slot, never nested, mirroring `argpart_t`. Databases Hex-Rays can't decompile (e.g.
 /// the 68k arcade ROM, no decompiler) yield no locals and pass vacuously, like [`decompile`].
-pub fn argloc(idb: &Idb) -> String {
+pub fn argloc(idb: &Database) -> String {
     use idakit::ctree::LocalLocation;
 
     // Register / RegisterPair / Stack / RegisterRelative / Static / Scattered / Custom / Unallocated
@@ -350,7 +350,7 @@ pub fn argloc(idb: &Idb) -> String {
 /// stop -- this is the axis that actually exercises operand classification and register naming
 /// (`st`/`cr`/`dr`/`tr` and the SIMD widths) across the corpus. x86-only: our register model is
 /// x86 `RegNo`-based, so a non-x86 fixture opts out of this check in the manifest.
-pub fn decode(idb: &Idb) -> String {
+pub fn decode(idb: &Database) -> String {
     const BUDGET: usize = 20000;
     let mut insns = 0usize;
     let mut regs = 0usize;
@@ -397,7 +397,8 @@ pub fn decode(idb: &Idb) -> String {
 pub trait RegisterCheck {
     /// Assert this register's name and class agree: a regularly-spelled class produces that
     /// spelling (a `St` register named `rsp` is a bug), and a name that reads as a special
-    /// register carries that class (a `bnd0` classed `Gpr` is a bug). `address` labels failures.
+    /// register carries that class (a `bnd0` classed `GeneralPurpose` is a bug). `address` labels
+    /// failures.
     fn assert_name_matches_class(&self, address: u64);
 }
 
@@ -424,12 +425,15 @@ impl RegisterCheck for Register {
 // A non-function address is rejected -- kept out of the corpus battery (it needs a specific
 // address) but exercised by the dedicated cfg test.
 #[allow(dead_code)]
-pub fn non_function_rejected(idb: &Idb) {
+pub fn non_function_rejected(idb: &Database) {
     if let Some(start) = idb
         .segments()
         .find(|s| !s.is_executable())
         .and_then(|s| s.start())
     {
-        assert!(matches!(idb.cfg(start), Err(Error::NoFunction { .. })));
+        assert!(matches!(
+            idb.flowchart(start),
+            Err(Error::NoFunction { .. })
+        ));
     }
 }

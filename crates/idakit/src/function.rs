@@ -4,19 +4,19 @@ use std::ops::Range;
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
-use crate::cfg::{Cfg, cfg_flags};
 use crate::ctree::Ctree;
 use crate::decompile::DecompiledFunction;
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
-use crate::frame::Frame;
+use crate::flowchart::{FlowChart, flowchart_flags};
 use crate::instruction::Instruction;
-use crate::reference::References;
-use crate::ty::{TypeImage, walk_type};
+use crate::stack::StackFrame;
+use crate::types::{Type, walk_type};
+use crate::xref::Xrefs;
 
-impl Idb {
+impl Database {
     /// A typed cursor at `address`; does not verify a function lives there (absence
     /// surfaces lazily). Use [`functions`](Self::functions) to enumerate real ones.
     #[inline]
@@ -37,12 +37,12 @@ impl Idb {
 #[derive(Clone, Copy)]
 pub struct Function<'db> {
     address: Address,
-    db: &'db Idb,
+    db: &'db Database,
 }
 
 impl<'db> Function<'db> {
     #[inline]
-    pub(crate) fn new(address: Address, db: &'db Idb) -> Self {
+    pub(crate) fn new(address: Address, db: &'db Database) -> Self {
         Self { address, db }
     }
 
@@ -68,11 +68,11 @@ impl<'db> Function<'db> {
         read_string(|buf, cap| self.db.func_type(self.address, buf, cap))
     }
 
-    /// Walk this function's stored prototype into an owned [`TypeImage`] -- the structured
+    /// Walk this function's stored prototype into an owned [`Type`] -- the structured
     /// counterpart to [`prototype`](Self::prototype), whose root is a
-    /// [`TypeKind::Function`](crate::TypeKind::Function). `Ok(None)` if the kernel has no type
+    /// [`TypeShape::Function`](crate::TypeShape::Function). `Ok(None)` if the kernel has no type
     /// info for the function.
-    pub fn prototype_type(&self) -> Result<Option<TypeImage>> {
+    pub fn prototype_type(&self) -> Result<Option<Type>> {
         // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
         walk_type(|v, ctx, root| unsafe {
             sys::idakit_func_type_walk(self.address.get(), v, ctx, root)
@@ -84,10 +84,10 @@ impl<'db> Function<'db> {
     }
 
     /// Lazily iterate this function's chunks: the entry chunk first, then any tail chunks in
-    /// address order. A contiguous function yields exactly one [`Chunk`].
+    /// address order. A contiguous function yields exactly one [`FunctionChunk`].
     #[must_use]
-    pub fn chunks(&self) -> Chunks<'db> {
-        Chunks::new(self.address, self.db)
+    pub fn chunks(&self) -> FunctionChunks<'db> {
+        FunctionChunks::new(self.address, self.db)
     }
 
     /// Lazily iterate this function's instructions, in address order within each chunk,
@@ -134,14 +134,14 @@ impl<'db> Function<'db> {
 
     /// Lazily iterate cross-references targeting this function's entry.
     #[must_use]
-    pub fn references_to(&self) -> References<'db> {
-        self.db.references_to(self.address)
+    pub fn xrefs_to(&self) -> Xrefs<'db> {
+        self.db.xrefs_to(self.address)
     }
 
     /// Lazily iterate cross-references originating at this function's entry.
     #[must_use]
-    pub fn references_from(&self) -> References<'db> {
-        self.db.references_from(self.address)
+    pub fn xrefs_from(&self) -> Xrefs<'db> {
+        self.db.xrefs_from(self.address)
     }
 
     /// Decompile this function.
@@ -160,16 +160,16 @@ impl<'db> Function<'db> {
     }
 
     /// Snapshot this function's stack frame, or `Ok(None)` if it has none. The disassembly-level
-    /// stack layout, no decompilation needed; see [`Idb::frame`].
-    pub fn frame(&self) -> Result<Option<Frame>> {
+    /// stack layout, no decompilation needed; see [`Database::frame`].
+    pub fn frame(&self) -> Result<Option<StackFrame>> {
         self.db.frame(self.address)
     }
 
-    /// Snapshot this view's scalar facts into an owned [`FunctionImage`] that can leave the
+    /// Snapshot this view's scalar facts into an owned [`FunctionSnapshot`] that can leave the
     /// kernel thread.
     #[must_use]
-    pub fn image(&self) -> FunctionImage {
-        FunctionImage {
+    pub fn snapshot(&self) -> FunctionSnapshot {
+        FunctionSnapshot {
             address: self.address,
             name: self.name(),
             prototype: self.prototype(),
@@ -180,10 +180,10 @@ impl<'db> Function<'db> {
 #[bon::bon]
 impl<'db> Function<'db> {
     /// Build this function's control-flow graph with default options. The whole function is
-    /// covered, tail chunks included. See [`Cfg`] and [`cfg_with`](Self::cfg_with) for the
-    /// knobs.
-    pub fn cfg(&self) -> Result<Cfg> {
-        self.db.cfg(self.address)
+    /// covered, tail chunks included. See [`FlowChart`] and [`flowchart_with`](Self::flowchart_with)
+    /// for the knobs.
+    pub fn flowchart(&self) -> Result<FlowChart> {
+        self.db.flowchart(self.address)
     }
 
     /// Build this function's CFG with non-default options: `call_ends` splits a block after
@@ -192,22 +192,24 @@ impl<'db> Function<'db> {
     /// and `predecessors(false)` skips predecessor lists (a cheaper build when only forward
     /// edges are needed).
     #[builder]
-    pub fn cfg_with(
+    pub fn flowchart_with(
         &self,
         #[builder(default = false)] call_ends: bool,
         #[builder(default = true)] externals: bool,
         #[builder(default = true)] predecessors: bool,
-    ) -> Result<Cfg> {
-        self.db
-            .build_cfg(self.address, cfg_flags(call_ends, externals, predecessors))
+    ) -> Result<FlowChart> {
+        self.db.build_flowchart(
+            self.address,
+            flowchart_flags(call_ends, externals, predecessors),
+        )
     }
 }
 
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
-/// `Function` borrows a `!Send` [`Idb`]; collect images inside an [`Ida::call`](crate::Ida::call)
-/// job to carry results back out.
+/// `Function` borrows a `!Send` [`Database`]; collect snapshots inside an
+/// [`Ida::call`](crate::Ida::call) job to carry results back out.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FunctionImage {
+pub struct FunctionSnapshot {
     /// Entry address.
     pub address: Address,
     /// Name and how IDA assigned it.
@@ -341,14 +343,14 @@ impl PartialOrd for Function<'_> {
 
 /// Lazy iterator over every function in the database, in kernel order.
 pub struct Functions<'db> {
-    db: &'db Idb,
+    db: &'db Database,
     next: usize,
     count: usize,
 }
 
 impl<'db> Functions<'db> {
     #[inline]
-    pub(crate) fn new(db: &'db Idb) -> Self {
+    pub(crate) fn new(db: &'db Database) -> Self {
         Self {
             db,
             next: 0,
@@ -383,7 +385,7 @@ impl<'db> Iterator for Functions<'db> {
 /// A function is one chunk when contiguous, or several when the compiler scattered its body
 /// into tail chunks placed elsewhere. Yielded by [`Function::chunks`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Chunk {
+pub struct FunctionChunk {
     /// First address of the chunk.
     pub start: Address,
     /// One-past-the-last address of the chunk.
@@ -392,16 +394,16 @@ pub struct Chunk {
 
 /// Lazy iterator over a function's chunks, entry chunk first then tail chunks in address
 /// order, from [`Function::chunks`].
-pub struct Chunks<'db> {
-    db: &'db Idb,
+pub struct FunctionChunks<'db> {
+    db: &'db Database,
     address: Address,
     next: i32,
     count: i32,
 }
 
-impl<'db> Chunks<'db> {
+impl<'db> FunctionChunks<'db> {
     #[inline]
-    pub(crate) fn new(address: Address, db: &'db Idb) -> Self {
+    pub(crate) fn new(address: Address, db: &'db Database) -> Self {
         Self {
             db,
             address,
@@ -411,10 +413,10 @@ impl<'db> Chunks<'db> {
     }
 }
 
-impl Iterator for Chunks<'_> {
-    type Item = Chunk;
+impl Iterator for FunctionChunks<'_> {
+    type Item = FunctionChunk;
 
-    fn next(&mut self) -> Option<Chunk> {
+    fn next(&mut self) -> Option<FunctionChunk> {
         if self.next >= self.count {
             return None;
         }
@@ -424,7 +426,7 @@ impl Iterator for Chunks<'_> {
         if self.db.func_chunk(self.address, idx, &mut start, &mut end) == 0 {
             return None;
         }
-        Some(Chunk {
+        Some(FunctionChunk {
             start: Address::try_new(start)?,
             end: Address::try_new(end)?,
         })
@@ -438,14 +440,14 @@ impl Iterator for Chunks<'_> {
 
 /// Lazy iterator over a function's instructions, across all its chunks.
 ///
-/// Code-gated: it decodes only addresses the kernel classifies as code ([`Idb::is_code`])
+/// Code-gated: it decodes only addresses the kernel classifies as code ([`Database::is_code`])
 /// and steps over data items (jump tables, embedded constants) and the alignment tail. This
-/// gate is the point of the iterator -- [`Idb::decode`] turns any bytes into an [`Instruction`], so
+/// gate is the point of the iterator -- [`Database::decode`] turns any bytes into an [`Instruction`], so
 /// a plain linear decode past a function's `ret` yields garbage; `is_code` keeps the stream
 /// to real instructions.
 pub struct Instructions<'db> {
-    db: &'db Idb,
-    chunks: Chunks<'db>,
+    db: &'db Database,
+    chunks: FunctionChunks<'db>,
     /// `(next address to examine, current chunk end)`; `None` until the first chunk loads and
     /// again once the last chunk drains.
     cursor: Option<(Address, Address)>,
@@ -453,10 +455,10 @@ pub struct Instructions<'db> {
 
 impl<'db> Instructions<'db> {
     #[inline]
-    pub(crate) fn new(db: &'db Idb, address: Address) -> Self {
+    pub(crate) fn new(db: &'db Database, address: Address) -> Self {
         Self {
             db,
-            chunks: Chunks::new(address, db),
+            chunks: FunctionChunks::new(address, db),
             cursor: None,
         }
     }
@@ -490,10 +492,11 @@ impl Iterator for Instructions<'_> {
     }
 }
 
-impl Idb {
+impl Database {
     /// Lazily decode the instructions in the half-open range `[range.start, range.end)`,
     /// code-gated like [`Function::instructions`]. The ranged twin of that walk -- pass a
-    /// [`Block`](crate::Block)'s [`range`](crate::Block::range) to iterate one basic block.
+    /// [`BasicBlock`](crate::BasicBlock)'s [`range`](crate::BasicBlock::range) to iterate one
+    /// basic block.
     #[must_use]
     pub fn instructions_in(&self, range: Range<Address>) -> InstructionsIn<'_> {
         InstructionsIn {
@@ -505,9 +508,9 @@ impl Idb {
 }
 
 /// Lazy iterator over the instructions in a fixed `[start, end)` range, code-gated like
-/// [`Instructions`]. From [`Idb::instructions_in`].
+/// [`Instructions`]. From [`Database::instructions_in`].
 pub struct InstructionsIn<'db> {
-    db: &'db Idb,
+    db: &'db Database,
     cursor: Address,
     end: Address,
 }
@@ -541,7 +544,7 @@ mod tests {
     const fn assert_send<T: Send>() {}
 
     // Both owned so they can cross the kernel-thread boundary, unlike the borrowed Function view.
-    const _: () = assert_send::<FunctionImage>();
+    const _: () = assert_send::<FunctionSnapshot>();
     const _: () = assert_send::<FunctionName>();
 
     #[test]

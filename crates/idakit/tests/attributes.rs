@@ -4,14 +4,14 @@
 
 mod common;
 
-use idakit::{Bitness, Idb};
+use idakit::{Bitness, Database};
 
 #[test]
 fn attributes() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb) {
+fn run(idb: &mut Database) {
     let first = idb.functions().next().expect("a function");
     let address = first.address();
     let end = first.end().expect("function has an end");

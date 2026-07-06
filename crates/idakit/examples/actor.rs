@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Sig scan: build a hex pattern from the first function's opening bytes and count
         // how often that exact sequence recurs across the image. A `Pattern` borrows the
-        // `Idb`, so it is built, searched, and dropped inside a single kernel call.
+        // `Database`, so it is built, searched, and dropped inside a single kernel call.
         let hits = ida.call(|idb| {
             let Some(address) = idb.functions().next().map(|f| f.address()) else {
                 return 0;

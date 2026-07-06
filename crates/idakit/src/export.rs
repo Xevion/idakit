@@ -1,10 +1,10 @@
 //! [`Export`]: a borrowed view of one export (entry point), keyed by kernel index.
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::ffi::read_string;
 
-impl Idb {
+impl Database {
     /// Iterate every export (entry point) in the database, in kernel order.
     #[inline]
     #[must_use]
@@ -19,12 +19,12 @@ impl Idb {
 #[derive(Clone, Copy)]
 pub struct Export<'db> {
     index: usize,
-    db: &'db Idb,
+    db: &'db Database,
 }
 
 impl<'db> Export<'db> {
     #[inline]
-    pub(crate) fn new(index: usize, db: &'db Idb) -> Self {
+    pub(crate) fn new(index: usize, db: &'db Database) -> Self {
         Self { index, db }
     }
 
@@ -88,14 +88,14 @@ impl std::hash::Hash for Export<'_> {
 
 /// Lazy iterator over every export in the database, in kernel order.
 pub struct Exports<'db> {
-    db: &'db Idb,
+    db: &'db Database,
     next: usize,
     count: usize,
 }
 
 impl<'db> Exports<'db> {
     #[inline]
-    pub(crate) fn new(db: &'db Idb) -> Self {
+    pub(crate) fn new(db: &'db Database) -> Self {
         Self {
             db,
             next: 0,

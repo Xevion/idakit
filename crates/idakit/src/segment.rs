@@ -2,12 +2,12 @@
 
 use idakit_sys as sys;
 
-use crate::Idb;
+use crate::Database;
 use crate::address::Address;
 use crate::bitness::Bitness;
 use crate::ffi::read_string;
 
-impl Idb {
+impl Database {
     /// Iterate every segment in the database, in kernel order.
     #[inline]
     #[must_use]
@@ -20,12 +20,12 @@ impl Idb {
 #[derive(Clone, Copy)]
 pub struct Segment<'db> {
     index: i32,
-    db: &'db Idb,
+    db: &'db Database,
 }
 
 impl<'db> Segment<'db> {
     #[inline]
-    pub(crate) fn new(index: i32, db: &'db Idb) -> Self {
+    pub(crate) fn new(index: i32, db: &'db Database) -> Self {
         Self { index, db }
     }
 
@@ -133,14 +133,14 @@ impl PartialOrd for Segment<'_> {
 
 /// Lazy iterator over every segment in the database, in kernel order.
 pub struct Segments<'db> {
-    db: &'db Idb,
+    db: &'db Database,
     next: i32,
     count: i32,
 }
 
 impl<'db> Segments<'db> {
     #[inline]
-    pub(crate) fn new(db: &'db Idb) -> Self {
+    pub(crate) fn new(db: &'db Database) -> Self {
         Self {
             db,
             next: 0,

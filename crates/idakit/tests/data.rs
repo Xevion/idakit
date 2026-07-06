@@ -4,14 +4,14 @@
 
 mod common;
 
-use idakit::{Address, BADADDR, Idb};
+use idakit::{Address, BADADDR, Database};
 
 #[test]
 fn data() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb) {
+fn run(idb: &mut Database) {
     // A mapped address: the first function's entry.
     let entry = idb.functions().next().expect("a function").address();
 
