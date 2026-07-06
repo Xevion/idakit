@@ -171,11 +171,6 @@ extern "C" void idakit_cfunc_ctree_expr_gap(void *h, int *v_hist, int *w_hist) {
   }
 }
 
-// Streaming ctree walk. The facade reads the SDK ctree depth-first and, per node, calls
-// one Rust callback in `v` to mint the owned node; children are emitted before parents,
-// so each call receives its children as the handles their own callbacks returned. The
-// facade interns nothing: named types are referenced by name (recursion-safe) and filled
-// once, guarded by `defined`. All identity, dedup, and meaning live on the Rust side.
 namespace {
 
 struct walker_t {

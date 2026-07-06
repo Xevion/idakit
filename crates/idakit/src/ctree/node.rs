@@ -673,10 +673,12 @@ mod tests {
         assert!(LocalLocation::from_argloc(3, 5, 0, 0, vec![]) == Register(5));
         assert!(LocalLocation::from_argloc(4, 5, 6, 0, vec![]) == RegisterPair { low: 5, high: 6 });
         assert!(
-            LocalLocation::from_argloc(5, 5, 0, 16, vec![]) == RegisterRelative { reg: 5, offset: 16 }
+            LocalLocation::from_argloc(5, 5, 0, 16, vec![])
+                == RegisterRelative { reg: 5, offset: 16 }
         );
         assert!(
-            LocalLocation::from_argloc(6, 0, 0, 0x1000, vec![]) == Static(Address::new_const(0x1000))
+            LocalLocation::from_argloc(6, 0, 0, 0x1000, vec![])
+                == Static(Address::new_const(0x1000))
         );
         // ALOC_CUSTOM is 7 or higher.
         assert!(LocalLocation::from_argloc(7, 0, 0, 0, vec![]) == Custom);

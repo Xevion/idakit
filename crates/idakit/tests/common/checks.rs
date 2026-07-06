@@ -19,6 +19,7 @@ pub const CHECKS: &[(&str, Check)] = &[
     ("cfg", cfg),
     ("decompile", decompile),
     ("types", types),
+    ("argloc", argloc),
 ];
 
 /// The database has functions and segments, the first function is named, and its entry bytes
@@ -201,7 +202,7 @@ pub fn decompile(idb: &Idb) -> String {
         assert!(
             actual == expected,
             "ctree extraction emitted {actual} expression nodes; a faithful walk should emit \
-             {expected} (SDK visits {visitor_total}, less {} elided empty operand slots) in {:?}",
+             {expected} (SDK visits {visitor_total}, less {} elided empty operand slots) in {}",
             visitor_total - expected,
             f.name()
         );
@@ -281,6 +282,66 @@ pub fn types(idb: &Idb) -> String {
         return "no typed prototypes in prefix".to_string();
     }
     format!("{typed} typed prototypes, {named} named round-trips")
+}
+
+/// Every decompiled local's [`LocalLocation`] is one the model structures, tallied by variant so
+/// the corpus matrix surfaces the per-architecture argloc spread. `Custom` (`ALOC_CUSTOM`) is a
+/// tripwire -- it means a processor module produced an argloc idakit doesn't model, which we want
+/// to see rather than silently absorb -- and every scattered fragment must itself be a register
+/// or stack slot, never nested, mirroring `argpart_t`. Databases Hex-Rays can't decompile (e.g.
+/// the 68k arcade ROM, no decompiler) yield no locals and pass vacuously, like [`decompile`].
+pub fn argloc(idb: &Idb) -> String {
+    use idakit::ctree::LocalLocation;
+
+    // Register / RegisterPair / Stack / RegisterRelative / Static / Scattered / Custom / Unallocated
+    let mut n = [0usize; 8];
+    let index = |loc: &LocalLocation| match loc {
+        LocalLocation::Register(_) => 0,
+        LocalLocation::RegisterPair { .. } => 1,
+        LocalLocation::Stack(_) => 2,
+        LocalLocation::RegisterRelative { .. } => 3,
+        LocalLocation::Static(_) => 4,
+        LocalLocation::Scattered(_) => 5,
+        LocalLocation::Custom => 6,
+        LocalLocation::Unallocated => 7,
+    };
+
+    let mut decompiled = 0usize;
+    let mut lvars = 0usize;
+    for f in idb.functions().take(200) {
+        let Ok(cf) = f.decompile() else { continue };
+        let Ok(tree) = cf.ctree() else { continue };
+        decompiled += 1;
+        for lv in tree.lvars() {
+            lvars += 1;
+            n[index(&lv.location)] += 1;
+            if let LocalLocation::Scattered(pieces) = &lv.location {
+                for p in pieces {
+                    assert!(
+                        matches!(
+                            p.location,
+                            LocalLocation::Register(_) | LocalLocation::Stack(_)
+                        ),
+                        "scattered fragment is neither register nor stack: {:?}",
+                        p.location
+                    );
+                }
+            }
+        }
+    }
+
+    if lvars == 0 {
+        return format!("{decompiled} decompiled, no locals");
+    }
+    assert!(
+        n[6] == 0,
+        "{} local(s) mapped to Custom (ALOC_CUSTOM) -- an unmodeled argloc surfaced",
+        n[6]
+    );
+    format!(
+        "{decompiled} fns, {lvars} lvars | reg={} pair={} stack={} rrel={} static={} scatter={} none={}",
+        n[0], n[1], n[2], n[3], n[4], n[5], n[7]
+    )
 }
 
 /// Strict decode over a bounded prefix of real code: every code head decodes with no silent
