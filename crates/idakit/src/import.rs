@@ -23,8 +23,9 @@ impl Idb {
 }
 
 /// One imported symbol: an import-table slot (IAT entry / thunk) bound to a symbol in some
-/// module. Imported either by [`name`](Self::name) or by [`ordinal`](Self::ordinal) -- exactly
-/// one is present. Owned, as it outlives the snapshot it was read from.
+/// module. Carries a [`name`](Self::name), an [`ordinal`](Self::ordinal), or -- for a
+/// by-ordinal import IDA has resolved a name for -- both; they are not mutually exclusive.
+/// Owned, as it outlives the snapshot it was read from.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Import {
     address: Address,
@@ -41,7 +42,8 @@ impl Import {
         self.address
     }
 
-    /// The imported symbol name, or `None` when imported by [`ordinal`](Self::ordinal).
+    /// The imported symbol name -- present for a by-name import, or when IDA has resolved a
+    /// name for a by-ordinal one; `None` for a bare by-ordinal import.
     #[inline]
     #[must_use]
     pub fn name(&self) -> Option<&str> {
