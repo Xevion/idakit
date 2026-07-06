@@ -64,10 +64,19 @@ impl<'db> Segment<'db> {
         Some(self.db.bytes(start, len))
     }
 
-    /// The segment's class (e.g. `CODE`, `DATA`, `BSS`), or `None` if it has none.
+    /// The segment's raw class string (e.g. `CODE`, `DATA`, `BSS`), or `None` if it has none.
+    /// [`class`](Self::class) classifies this into a [`SegmentClass`]; use this accessor when
+    /// the raw text itself (rather than its meaning) is what's wanted.
     #[must_use]
-    pub fn class(&self) -> Option<String> {
+    pub fn class_name(&self) -> Option<String> {
         read_string(|buf, cap| self.db.seg_class(self.index, buf, cap))
+    }
+
+    /// The segment's class, classified from its [`class_name`](Self::class_name) string, or
+    /// `None` if it has none.
+    #[must_use]
+    pub fn class(&self) -> Option<SegmentClass> {
+        self.class_name().map(|s| SegmentClass::from_raw(&s))
     }
 
     /// The segment's addressing width, or `None` if the segment reports an unrecognized one.
@@ -170,3 +179,101 @@ impl<'db> Iterator for Segments<'db> {
 }
 
 impl ExactSizeIterator for Segments<'_> {}
+
+/// A segment's classification, from its [`class_name`](Segment::class_name) string.
+///
+/// IDA documents the segment class as arbitrary text (max 8 characters): a handful of
+/// predefined names map to `SEG_*` segment types, but a loader or user can set anything.
+/// [`Other`](Self::Other) carries any class string outside that predefined set (e.g. `UNK`,
+/// or a loader-specific name).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SegmentClass {
+    /// `CODE`: executable code.
+    Code,
+    /// `DATA`: general read/write data.
+    Data,
+    /// `CONST`: read-only data.
+    Const,
+    /// `STACK`: the stack segment.
+    Stack,
+    /// `BSS`: uninitialized data.
+    Bss,
+    /// `XTRN`: IDA's extern-definitions pseudo-segment (imports/externs).
+    External,
+    /// `COMM`: communal (COMMON-block) definitions.
+    Common,
+    /// `ABS`: absolute-symbol definitions.
+    Absolute,
+    /// Any class string outside the predefined set -- loader- or user-defined.
+    Other(String),
+}
+
+impl SegmentClass {
+    /// Classify a raw class string. The eight predefined names match exactly
+    /// (case-sensitive, uppercase); anything else -- including `UNK` -- becomes
+    /// [`Other`](Self::Other).
+    fn from_raw(raw: &str) -> Self {
+        match raw {
+            "CODE" => Self::Code,
+            "DATA" => Self::Data,
+            "CONST" => Self::Const,
+            "STACK" => Self::Stack,
+            "BSS" => Self::Bss,
+            "XTRN" => Self::External,
+            "COMM" => Self::Common,
+            "ABS" => Self::Absolute,
+            other => Self::Other(other.to_owned()),
+        }
+    }
+}
+
+impl std::fmt::Display for SegmentClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Code => "CODE",
+            Self::Data => "DATA",
+            Self::Const => "CONST",
+            Self::Stack => "STACK",
+            Self::Bss => "BSS",
+            Self::External => "XTRN",
+            Self::Common => "COMM",
+            Self::Absolute => "ABS",
+            Self::Other(s) => s,
+        })
+    }
+}
+
+/// Reconstruct the raw class string via [`Display`](std::fmt::Display).
+impl From<SegmentClass> for String {
+    #[inline]
+    fn from(class: SegmentClass) -> Self {
+        class.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+    use rstest::rstest;
+
+    use super::*;
+
+    /// Each predefined class string round-trips through [`SegmentClass::from_raw`] and back
+    /// through [`Display`](std::fmt::Display); an unmodeled string (`RDATA`) falls to
+    /// [`Other`](SegmentClass::Other) and still round-trips its own text.
+    #[rstest]
+    #[case("CODE", SegmentClass::Code)]
+    #[case("DATA", SegmentClass::Data)]
+    #[case("CONST", SegmentClass::Const)]
+    #[case("STACK", SegmentClass::Stack)]
+    #[case("BSS", SegmentClass::Bss)]
+    #[case("XTRN", SegmentClass::External)]
+    #[case("COMM", SegmentClass::Common)]
+    #[case("ABS", SegmentClass::Absolute)]
+    #[case("RDATA", SegmentClass::Other(String::from("RDATA")))]
+    fn classifies_and_round_trips(#[case] raw: &str, #[case] expect: SegmentClass) {
+        let classified = SegmentClass::from_raw(raw);
+        assert!(classified == expect);
+        assert!(classified.to_string() == raw);
+    }
+}

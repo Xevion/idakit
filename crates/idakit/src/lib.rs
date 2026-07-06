@@ -122,7 +122,7 @@ pub mod prelude {
     pub use crate::meta::DatabaseInfo;
     pub use crate::name::{Name, Names};
     pub use crate::search::{Matches, Pattern};
-    pub use crate::segment::{Segment, Segments};
+    pub use crate::segment::{Segment, SegmentClass, Segments};
     pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
     pub use crate::strings::{StringLiteral, Strings};
     pub use crate::types::{EnumMember, Type, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
