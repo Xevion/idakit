@@ -336,17 +336,55 @@ struct walker_t {
     for (const lvar_t &l : *lv) {
       uint32_t flags = (l.is_arg_var() ? 1u : 0u) | (l.is_result_var() ? 2u : 0u) |
                        (l.is_used_byref() ? 4u : 0u);
-      uint32_t loc_kind = 0;
-      int64_t loc_val = 0;
-      if (l.is_stk_var()) {
-        loc_kind = 2;
-        loc_val = (int64_t)l.get_stkoff();
-      } else if (l.is_reg_var()) {
-        loc_kind = 1;
-        loc_val = (int64_t)l.get_reg1();
+      const vdloc_t &loc = l.location;
+      idakit_lvar_loc_t out = {};
+      out.atype = (uint32_t)loc.atype();
+      std::vector<idakit_loc_piece_t> pieces;
+      switch (loc.atype()) {
+      case ALOC_STACK:
+        out.sval = (int64_t)l.get_stkoff();
+        break;
+      case ALOC_REG1:
+        out.reg1 = (uint32_t)loc.reg1();
+        break;
+      case ALOC_REG2:
+        out.reg1 = (uint32_t)loc.reg1();
+        out.reg2 = (uint32_t)loc.reg2();
+        break;
+      case ALOC_RREL: {
+        const rrel_t &rr = loc.get_rrel();
+        out.reg1 = (uint32_t)rr.reg;
+        out.sval = (int64_t)rr.off;
+        break;
+      }
+      case ALOC_STATIC:
+        out.sval = (int64_t)loc.get_ea();
+        break;
+      case ALOC_DIST: {
+        const scattered_aloc_t &sc = loc.scattered();
+        pieces.reserve(sc.size());
+        for (const argpart_t &p : sc) {
+          idakit_loc_piece_t pc = {};
+          pc.atype = (uint32_t)p.atype();
+          if (p.is_reg1())
+            pc.reg = (uint32_t)p.reg1();
+          else if (p.is_stkoff())
+            pc.sval = (int64_t)p.stkoff();
+          else if (p.is_ea())
+            pc.sval = (int64_t)p.get_ea();
+          pc.off = p.off;
+          pc.size = p.size;
+          pieces.push_back(pc);
+        }
+        out.pieces = pieces.data();
+        out.npieces = (uint32_t)pieces.size();
+        break;
+      }
+      default:
+        break; // ALOC_NONE / ALOC_CUSTOM: atype alone carries it
       }
       v->l_lvar(ctx, l.name.c_str(), l.name.length(), tw.ty(l.tif), flags, (uint32_t)l.width,
-                l.cmt.c_str(), l.cmt.length(), loc_kind, loc_val);
+                l.cmt.c_str(), l.cmt.length(), &out);
     }
   }
 };

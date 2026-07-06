@@ -70,15 +70,90 @@ pub struct LocalId(
     pub u32,
 );
 
-/// Where a local variable lives, as the decompiler placed it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// Where a local variable lives, as the decompiler placed it. A faithful mirror of IDA's
+/// `argloc_t` space (typeinf.hpp, IDA 9.3).
+///
+/// [`Register`](LocalLocation::Register) and [`Stack`](LocalLocation::Stack) cover essentially
+/// every x86-64 local; the pair / register-relative / scattered / static forms are artifacts of
+/// other architectures' calling conventions (AArch64 register pairs, AAPCS struct-scatter, MIPS
+/// / PPC register-relative, ...) and are rare-to-absent on x86-64. The variants are noted with
+/// their `ALOC_*` origin so the mapping stays checkable against the SDK.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum LocalLocation {
-    /// In a register (the microcode register number).
+    /// In a single register (the microcode register number). The SDK forbids an in-register
+    /// offset on a decompiler location (`vdloc_t::regoff` is private), so there is none here.
+    /// (`ALOC_REG1`)
     Register(u32),
-    /// On the stack, at this frame offset.
+    /// Split across a register pair -- low half in `low`, high half in `high`. Arises for values
+    /// wider than one register on register-based ABIs; does not occur on x86-64. (`ALOC_REG2`)
+    RegisterPair {
+        /// Microcode register number holding the low half.
+        low: u32,
+        /// Microcode register number holding the high half.
+        high: u32,
+    },
+    /// On the stack, at this frame offset. (`ALOC_STACK`)
     Stack(i64),
-    /// Scattered or otherwise not a single register/stack slot.
-    Other,
+    /// Register-relative: the value lives at `[reg + offset]`. Uncommon. (`ALOC_RREL`)
+    RegisterRelative {
+        /// Base microcode register number.
+        reg: u32,
+        /// Byte offset added to the base register.
+        offset: i64,
+    },
+    /// At a fixed global address. Uncommon for a local. (`ALOC_STATIC`)
+    Static(Address),
+    /// Scattered across several register/stack fragments, each covering a byte range of the
+    /// value. Arises from struct-by-value on register ABIs; effectively absent on x86-64.
+    /// (`ALOC_DIST`)
+    Scattered(Vec<LocationPiece>),
+    /// A processor-module-specific custom location idakit does not structure. (`ALOC_CUSTOM`)
+    Custom,
+    /// No location assigned -- the decompiler left the variable unallocated. (`ALOC_NONE`)
+    Unallocated,
+}
+
+impl LocalLocation {
+    /// Build from the facade's decoded `argloc_t` fields. `atype` is the `ALOC_*` discriminant;
+    /// the other fields are read per the SDK's union (only the ones the `atype` selects are
+    /// meaningful). `pieces` is populated only for a scattered (`ALOC_DIST`) location.
+    pub(crate) fn from_argloc(
+        atype: u32,
+        reg1: u32,
+        reg2: u32,
+        sval: i64,
+        pieces: Vec<LocationPiece>,
+    ) -> Self {
+        match atype {
+            0 => LocalLocation::Unallocated,
+            1 => LocalLocation::Stack(sval),
+            2 => LocalLocation::Scattered(pieces),
+            3 => LocalLocation::Register(reg1),
+            4 => LocalLocation::RegisterPair {
+                low: reg1,
+                high: reg2,
+            },
+            5 => LocalLocation::RegisterRelative {
+                reg: reg1,
+                offset: sval,
+            },
+            6 => LocalLocation::Static(Address::new_const(sval as u64)),
+            // ALOC_CUSTOM is 7 or higher; no other argloc types are defined.
+            _ => LocalLocation::Custom,
+        }
+    }
+}
+
+/// One fragment of a [`Scattered`](LocalLocation::Scattered) local: where the fragment lives and
+/// which byte range of the whole value it covers.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct LocationPiece {
+    /// Where this fragment lives -- a register or stack slot, never itself scattered.
+    pub location: LocalLocation,
+    /// Byte offset of this fragment within the whole value.
+    pub offset: u32,
+    /// Byte size of this fragment.
+    pub size: u32,
 }
 
 /// One local variable of a decompiled function: its name, resolved type, and role.
@@ -586,5 +661,35 @@ mod tests {
         assert!(expression.is_expression() && !expression.is_statement());
         assert!(statement.as_statement() == Some(Idx::from_raw(0)));
         assert!(statement.is_statement() && !statement.is_expression());
+    }
+
+    /// `from_argloc` maps each `ALOC_*` discriminant to its variant, reading only the fields the
+    /// discriminant selects, and folds `ALOC_CUSTOM` (7 or higher) into `Custom`.
+    #[test]
+    fn from_argloc_maps_every_atype() {
+        use LocalLocation::*;
+        assert!(LocalLocation::from_argloc(0, 0, 0, 0, vec![]) == Unallocated);
+        assert!(LocalLocation::from_argloc(1, 0, 0, -8, vec![]) == Stack(-8));
+        assert!(LocalLocation::from_argloc(3, 5, 0, 0, vec![]) == Register(5));
+        assert!(LocalLocation::from_argloc(4, 5, 6, 0, vec![]) == RegisterPair { low: 5, high: 6 });
+        assert!(
+            LocalLocation::from_argloc(5, 5, 0, 16, vec![]) == RegisterRelative { reg: 5, offset: 16 }
+        );
+        assert!(
+            LocalLocation::from_argloc(6, 0, 0, 0x1000, vec![]) == Static(Address::new_const(0x1000))
+        );
+        // ALOC_CUSTOM is 7 or higher.
+        assert!(LocalLocation::from_argloc(7, 0, 0, 0, vec![]) == Custom);
+        assert!(LocalLocation::from_argloc(42, 0, 0, 0, vec![]) == Custom);
+
+        // A scattered location carries its fragments verbatim.
+        let piece = LocationPiece {
+            location: Stack(16),
+            offset: 0,
+            size: 8,
+        };
+        assert!(
+            LocalLocation::from_argloc(2, 0, 0, 0, vec![piece.clone()]) == Scattered(vec![piece])
+        );
     }
 }

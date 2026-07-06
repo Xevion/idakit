@@ -37,6 +37,34 @@ pub struct CaseDesc {
     pub body: u32,
 }
 
+/// One fragment of a scattered (`ALOC_DIST`) local's location, as the facade passes it inside
+/// [`LvarLoc::pieces`]. `atype` is the fragment's own `ALOC_*` (a register or stack slot).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct LocPiece {
+    pub atype: u32,
+    pub reg: u32,
+    pub sval: i64,
+    pub off: u32,
+    pub size: u32,
+}
+
+/// A local variable's location, decoded from IDA's `argloc_t` and passed to
+/// [`EmitVtbl::l_lvar`]. `atype` is the `ALOC_*` discriminant; only the fields it selects are
+/// meaningful: `reg1` (REG1 / REG2 low / RREL reg), `reg2` (REG2 high), `sval` (STACK offset /
+/// STATIC ea / RREL displacement). `pieces`/`npieces` describe a scattered location and are
+/// empty otherwise.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct LvarLoc {
+    pub atype: u32,
+    pub reg1: u32,
+    pub reg2: u32,
+    pub sval: i64,
+    pub pieces: *const LocPiece,
+    pub npieces: u32,
+}
+
 /// The type-emit callbacks, shared by every walk that builds an interned type table (the
 /// ctree walk via [`EmitVtbl::types`] and the bare-tinfo walks). `#[repr(C)]` and field order
 /// mirror `idakit_type_vtbl_t`. Every name/member-name span borrows a C++ stack temporary
@@ -108,8 +136,7 @@ pub struct EmitVtbl {
         u32,
         *const c_char,
         usize,
-        u32,
-        i64,
+        *const LvarLoc,
     ),
 }
 

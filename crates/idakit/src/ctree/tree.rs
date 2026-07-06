@@ -598,7 +598,7 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: None,
-            location: LocalLocation::Other,
+            location: LocalLocation::Register(0),
         }
     }
 

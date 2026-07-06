@@ -14,11 +14,12 @@
 
 use std::ffi::{c_char, c_void};
 
-use idakit_sys::{CaseDesc, EmitVtbl, IDAKIT_NONE};
+use idakit_sys::{CaseDesc, EmitVtbl, IDAKIT_NONE, LvarLoc};
 use snafu::Snafu;
 
 use super::node::{
-    Case, ExpressionId, ExpressionKind, Local, LocalId, LocalLocation, StatementId, StatementKind,
+    Case, ExpressionId, ExpressionKind, Local, LocalId, LocalLocation, LocationPiece, StatementId,
+    StatementKind,
 };
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::{Ctree, CtreeBuilder};
@@ -596,14 +597,25 @@ unsafe extern "C" fn cb_lvar(
     width: u32,
     comment: *const c_char,
     comment_len: usize,
-    loc_kind: u32,
-    loc_val: i64,
+    loc: *const LvarLoc,
 ) {
-    let location = match loc_kind {
-        1 => LocalLocation::Register(loc_val as u32),
-        2 => LocalLocation::Stack(loc_val),
-        _ => LocalLocation::Other,
+    // SAFETY: `loc` is a valid, non-null pointer for the duration of this call (facade invariant).
+    let loc = unsafe { &*loc };
+    // ALOC_DIST (2): read the scattered fragments; each is a scalar (register/stack) argloc.
+    let pieces = if loc.atype == 2 && !loc.pieces.is_null() {
+        // SAFETY: `pieces` points at `npieces` valid `LocPiece`, live for this call.
+        let raw = unsafe { slice(&loc.pieces, loc.npieces as usize) };
+        raw.iter()
+            .map(|p| LocationPiece {
+                location: LocalLocation::from_argloc(p.atype, p.reg, 0, p.sval, Vec::new()),
+                offset: p.off,
+                size: p.size,
+            })
+            .collect()
+    } else {
+        Vec::new()
     };
+    let location = LocalLocation::from_argloc(loc.atype, loc.reg1, loc.reg2, loc.sval, pieces);
     let lvar = Local {
         name: unsafe { lossy(name, name_len) }.unwrap_or_default(),
         ty: tid(ty),

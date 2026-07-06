@@ -317,6 +317,31 @@ int idakit_frame_type_walk(idakit_ea_t ea, const idakit_frame_vtbl_t *v, void *c
 int idakit_type_walk(const char *name, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
 int idakit_func_type_walk(idakit_ea_t ea, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
 
+/* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
+ * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the
+ * byte range of the whole value this fragment covers. */
+typedef struct idakit_loc_piece_t {
+  uint32_t atype;
+  uint32_t reg;
+  int64_t sval;
+  uint32_t off;
+  uint32_t size;
+} idakit_loc_piece_t;
+
+/* A local variable's location, decoded from IDA's argloc_t. `atype` is the ALOC_* discriminant;
+ * only the fields it selects are meaningful: reg1 (REG1/REG2 low/RREL reg), reg2 (REG2 high),
+ * sval (STACK offset / STATIC ea / RREL displacement). pieces/npieces describe a scattered
+ * location and are null/0 otherwise. The pieces array is a walk-owned temporary, valid only for
+ * the l_lvar call it is passed to. */
+typedef struct idakit_lvar_loc_t {
+  uint32_t atype;
+  uint32_t reg1;
+  uint32_t reg2;
+  int64_t sval;
+  const idakit_loc_piece_t *pieces;
+  uint32_t npieces;
+} idakit_lvar_loc_t;
+
 /* The callbacks the facade invokes while walking. Every function returns the handle of
  * the node/type it minted (except the void ones). Scalar `kind` codes and `ctype` values
  * are interpreted on the Rust side. `ty` is the node's resolved type handle.
@@ -369,10 +394,10 @@ typedef struct idakit_emit_vtbl_t {
   idakit_type_vtbl_t types;
 
   /* locals. Append one lvar; the call order is the lvar index that `e_var.idx` refers to. flags:
-   * bit0 is_arg, bit1 is_result, bit2 is_byref. loc_kind: 0 other, 1 register, 2 stack. */
+   * bit0 is_arg, bit1 is_result, bit2 is_byref. `loc` carries the decoded argloc_t. */
   void (*l_lvar)(void *ctx, const char *name, size_t name_len, uint32_t ty, uint32_t flags,
-                 uint32_t width, const char *comment, size_t comment_len, uint32_t loc_kind,
-                 int64_t loc_val);
+                 uint32_t width, const char *comment, size_t comment_len,
+                 const idakit_lvar_loc_t *loc);
 } idakit_emit_vtbl_t;
 
 /* Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) and writing the root statement handle
