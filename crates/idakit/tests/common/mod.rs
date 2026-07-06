@@ -54,22 +54,20 @@ impl TestDb {
         Self::source().map(Self::copy_of)
     }
 
-    /// The shared canonical database path: `IDAKIT_TEST_DB` (an absolute `.i64`) when set,
-    /// else `$IDADIR/libida.so.i64` (IDADIR default `~/ida-pro-9.3`) when it exists. Read this
-    /// directly only for lock-free byte access (advisory locks don't block plain reads), e.g.
-    /// a truncated fixture; to *open* a database, take a copy with [`acquire`](Self::acquire).
+    /// The shared canonical database path: an explicit `IDAKIT_TEST_DB` override (an absolute
+    /// `.i64`, rarely used), else the corpus manifest's [`canonical`](corpus::canonical) fixture
+    /// -- the one binary the dedicated tests open, identical on every platform so their
+    /// assertions never depend on the host. `None` when no corpus is configured, which skips the
+    /// dedicated tests. Read this directly only for lock-free byte access (advisory locks don't
+    /// block plain reads), e.g. a truncated fixture; to *open* a database, take a copy with
+    /// [`acquire`](Self::acquire).
     pub fn source() -> Option<PathBuf> {
         if let Ok(db) = std::env::var("IDAKIT_TEST_DB")
             && !db.is_empty()
         {
             return Some(PathBuf::from(db));
         }
-        let idadir = std::env::var("IDADIR").unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            format!("{home}/ida-pro-9.3")
-        });
-        let path = PathBuf::from(idadir).join("libida.so.i64");
-        path.exists().then_some(path)
+        corpus::canonical()
     }
 
     /// A private copy of `src` in a scratch dir, removed on drop. Panics if the source is

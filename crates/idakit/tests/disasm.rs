@@ -2,8 +2,8 @@
 //!
 //! A normal `#[test]`: the kernel runs on the thread `Ida::run` spawns (8 MiB stack), so no
 //! `harness = false`; the nextest `serial-kernel` group keeps it off the other kernel tests'
-//! toes. Runs against `IDAKIT_TEST_DB` or `$IDADIR/libida.so.i64` (see [`common::test_db`]);
-//! skips when neither is present. It decodes a
+//! toes. Runs against the corpus manifest's canonical fixture (see [`common::TestDb`]);
+//! skips when no corpus is configured. It decodes a
 //! slice of each function's instruction stream, asserts structural invariants, and
 //! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
 //! that must agree. Read-only; never opens for write.

@@ -36,21 +36,9 @@ impl Fixture {
 /// Every openable fixture in the manifest, resolved to an absolute path and sorted by name.
 /// Empty when no corpus is configured.
 pub fn fixtures() -> Vec<Fixture> {
-    LOAD_ENV.call_once(|| {
-        let _ = dotenvy::dotenv();
-    });
-
-    let Some(manifest) = manifest_path() else {
+    let Some((parsed, root)) = parse() else {
         return Vec::new();
     };
-    let Ok(text) = std::fs::read_to_string(&manifest) else {
-        return Vec::new();
-    };
-    let Ok(parsed) = toml::from_str::<Manifest>(&text) else {
-        return Vec::new();
-    };
-    let root = manifest.parent().unwrap_or_else(|| Path::new("."));
-
     let mut out: Vec<Fixture> = parsed
         .fixture
         .into_iter()
@@ -64,6 +52,37 @@ pub fn fixtures() -> Vec<Fixture> {
         .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
+}
+
+/// The manifest-designated canonical fixture: the one deterministic database the dedicated
+/// single-DB integration tests open. Identical on every platform, so their assertions never
+/// depend on which binary a host happens to carry. `None` when no corpus is configured, no
+/// `[corpus].canonical` is set, or it names no openable fixture.
+pub fn canonical() -> Option<PathBuf> {
+    let (parsed, root) = parse()?;
+    let target = parsed.corpus?.canonical?;
+    parsed
+        .fixture
+        .into_iter()
+        .find(|e| e.path == target && e.opens.runnable())
+        .map(|e| root.join(&e.path))
+        .filter(|p| p.is_file())
+}
+
+/// Load the `.env`, locate the manifest, and parse it, returning it alongside its parent dir
+/// (the root every fixture `path` is relative to). `None` when no corpus is configured or the
+/// manifest is missing or malformed.
+fn parse() -> Option<(Manifest, PathBuf)> {
+    LOAD_ENV.call_once(|| {
+        let _ = dotenvy::dotenv();
+    });
+    let manifest = manifest_path()?;
+    let text = std::fs::read_to_string(&manifest).ok()?;
+    let parsed = toml::from_str::<Manifest>(&text).ok()?;
+    let root = manifest
+        .parent()
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    Some((parsed, root))
 }
 
 fn manifest_path() -> Option<PathBuf> {
@@ -125,7 +144,16 @@ fn display_name(rel: &str) -> String {
 #[derive(Deserialize)]
 struct Manifest {
     #[serde(default)]
+    corpus: Option<Corpus>,
+    #[serde(default)]
     fixture: Vec<Entry>,
+}
+
+/// The manifest's global `[corpus]` table. Only the fields the tests consume are modeled.
+#[derive(Deserialize)]
+struct Corpus {
+    /// Relative `path` of the one fixture the dedicated single-DB tests open (see [`canonical`]).
+    canonical: Option<String>,
 }
 
 #[derive(Deserialize)]

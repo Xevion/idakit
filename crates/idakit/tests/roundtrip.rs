@@ -2,8 +2,8 @@
 //!
 //! A normal `#[test]`: the kernel runs on the thread `Ida::run` spawns (8 MiB stack), so no
 //! `harness = false`. The nextest `serial-kernel` group serializes it against the other
-//! kernel tests. Runs against `IDAKIT_TEST_DB` or `$IDADIR/libida.so.i64` (see
-//! [`common::test_db`]); skips when neither is present.
+//! kernel tests. Runs against the corpus manifest's canonical fixture (see
+//! [`common::TestDb`]); skips when no corpus is configured.
 
 mod common;
 
