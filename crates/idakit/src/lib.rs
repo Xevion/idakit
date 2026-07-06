@@ -109,7 +109,7 @@ pub use reference::{CodeReference, DataReference, Reference, ReferenceKind, Refe
 pub use search::{Matches, Pattern};
 pub use segment::{Segment, Segments};
 pub use strings::{StringLiteral, Strings};
-pub use ty::{Member, Members, TypeInfo};
+pub use ty::TypeImage;
 pub use types::{EnumMember, TypeData, TypeId, TypeKind, TypeMember, TypeTable};
 
 use crate::kernel::KernelClaim;

@@ -14,6 +14,7 @@ use crate::ffi::read_string;
 use crate::frame::Frame;
 use crate::instruction::Instruction;
 use crate::reference::References;
+use crate::ty::{TypeImage, walk_type};
 
 impl Idb {
     /// A typed cursor at `address`; does not verify a function lives there (absence
@@ -64,6 +65,21 @@ impl<'db> Function<'db> {
     #[must_use]
     pub fn prototype(&self) -> Option<String> {
         read_string(|buf, cap| self.db.func_type(self.address, buf, cap))
+    }
+
+    /// Walk this function's stored prototype into an owned [`TypeImage`] -- the structured
+    /// counterpart to [`prototype`](Self::prototype), whose root is a
+    /// [`TypeKind::Function`](crate::TypeKind::Function). `Ok(None)` if the kernel has no type
+    /// info for the function.
+    pub fn prototype_type(&self) -> Result<Option<TypeImage>> {
+        // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
+        walk_type(|v, ctx, root| unsafe {
+            sys::idakit_func_type_walk(self.address.get(), v, ctx, root)
+        })
+        .map_err(|source| Error::Extract {
+            address: self.address.get(),
+            source,
+        })
     }
 
     /// Lazily iterate this function's chunks: the entry chunk first, then any tail chunks in

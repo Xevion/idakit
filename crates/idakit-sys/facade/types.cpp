@@ -4,9 +4,10 @@
 
 #include <ida.hpp>
 
-#include <typeinf.hpp> // tinfo_t, udt_type_data_t, print_type
+#include <typeinf.hpp> // tinfo_t, udt_type_data_t, print_type, get_tinfo
 
 #include "idakit_facade.h"
+#include "type_walk.hpp"
 
 extern "C" int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap) {
   try {
@@ -107,6 +108,46 @@ extern "C" int64_t idakit_type_member_type(void *h, size_t i, char *buf, size_t 
     t->udt[i].type.print(&ts);
     qstrncpy(buf, ts.c_str(), cap);
     return (int64_t)ts.length();
+  } catch (...) {
+    std::abort();
+  }
+}
+
+// Structured counterparts to idakit_type_print / idakit_func_type: instead of a rendered string,
+// drive the shared tinfo walker so a named type or function prototype resolves into one interned
+// type table on the consumer side, with the root handle written to *root.
+extern "C" int idakit_type_walk(const char *name, const idakit_type_vtbl_t *v, void *ctx,
+                                uint32_t *root) {
+  if (v == nullptr || root == nullptr)
+    return 1;
+  try {
+    tinfo_t tif;
+    if (!tif.get_named_type(get_idati(), name))
+      return 1;
+    idakit_facade::type_walker_t tw;
+    tw.v = v;
+    tw.ctx = ctx;
+    *root = tw.ty(tif);
+    return 0;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_func_type_walk(idakit_ea_t ea, const idakit_type_vtbl_t *v, void *ctx,
+                                     uint32_t *root) {
+  if (v == nullptr || root == nullptr)
+    return 1;
+  try {
+    tinfo_t tif;
+    // get_tinfo yields the function's stored prototype; a function IDA never typed has none.
+    if (!get_tinfo(&tif, (ea_t)ea) || tif.empty())
+      return 1;
+    idakit_facade::type_walker_t tw;
+    tw.v = v;
+    tw.ctx = ctx;
+    *root = tw.ty(tif);
+    return 0;
   } catch (...) {
     std::abort();
   }

@@ -31,6 +31,38 @@ fn run(idb: &mut idakit::Idb) {
     let _ = first.references_from().count();
     let _ = first.prototype();
 
+    // Structured prototype walk: drive idakit_func_type_walk over real functions. Not every
+    // function is typed, so scan for the first that resolves and validate its shape end-to-end.
+    {
+        use idakit::TypeKind;
+        let mut typed = 0usize;
+        let mut example = None;
+        for f in idb.functions().take(2000) {
+            if let Some(image) = f.prototype_type().expect("prototype walk") {
+                typed += 1;
+                if example.is_none() {
+                    example = Some((f.address(), image));
+                }
+            }
+        }
+        if let Some((ea, image)) = example {
+            let TypeKind::Function { ret, params, .. } = image.kind() else {
+                panic!("a function prototype's root should be a Function type");
+            };
+            // Every child handle resolves against the image's own table.
+            let _ = image.get(*ret);
+            for p in params {
+                let _ = image.get(*p);
+            }
+            println!(
+                "prototype at {ea:#x}: {} params, {typed} typed functions in sample",
+                params.len()
+            );
+        } else {
+            println!("no typed function prototypes in sample");
+        }
+    }
+
     // Exercise the RAII owned-handle path (best-effort).
     match first.decompile() {
         Ok(cf) => {

@@ -1,7 +1,7 @@
 //! [`Frame`]: an owned, `Send` snapshot of a function's stack frame.
 //!
 //! IDA models a function frame as a UDT, so idakit reads it much like a struct -- but with stack
-//! semantics the generic [`TypeInfo`](crate::TypeInfo) walk lacks: each [`FrameVar`] carries its
+//! semantics the generic [`TypeImage`](crate::TypeImage) walk lacks: each [`FrameVar`] carries its
 //! frame-pointer-relative [`offset`](FrameVar::offset) (the `var_18`/`arg_4` displacement IDA
 //! displays), and its [`kind`](FrameVar::kind) distinguishes a real stack variable from IDA's
 //! reserved return-address and saved-register slots. Materialized on the kernel thread and handed

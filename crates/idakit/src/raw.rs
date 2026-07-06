@@ -1,8 +1,8 @@
 //! The crate's kernel-global FFI boundary, as private [`Idb`] methods.
 //!
 //! Every `idakit-sys` call that operates on the implicit current database lives
-//! here as one thin wrapper. The handle-scoped calls (`DecompiledFunction`, `TypeInfo`) stay on
-//! those types, since they own the handle they act on.
+//! here as one thin wrapper. The handle-scoped calls (`DecompiledFunction`) stay on
+//! that type, since it owns the handle it acts on.
 //!
 //! # Safety
 //!
@@ -214,10 +214,6 @@ impl Idb {
     /// [`References`]: crate::References
     pub(crate) fn xref_open(&self, address: Address, is_to: bool) -> *mut c_void {
         unsafe { sys::idakit_xref_open(address.get(), is_to as u8) }
-    }
-
-    pub(crate) fn type_open(&self, name: *const c_char) -> *mut c_void {
-        unsafe { sys::idakit_type_open(name) }
     }
 
     pub(crate) fn hexrays_init(&self) -> c_int {

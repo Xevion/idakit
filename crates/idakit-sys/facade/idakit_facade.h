@@ -327,6 +327,14 @@ typedef struct idakit_frame_vtbl_t {
 int idakit_frame_type_walk(idakit_ea_t ea, const idakit_frame_vtbl_t *v, void *ctx,
                            uint64_t *frame_size);
 
+/* Structured walks of a standalone type, driving the shared type vtbl `v` (with `ctx`) to mint
+ * the type into one interned table and writing its root handle to `*root`. type_walk resolves the
+ * local named type `name`; func_type_walk the stored prototype of the function at `ea`. Each
+ * returns 0 on success, non-zero (leaving `*root` untouched) if there is no such named type / the
+ * function has no type info. */
+int idakit_type_walk(const char *name, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
+int idakit_func_type_walk(idakit_ea_t ea, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
+
 /* The callbacks the facade invokes while walking. Every function returns the handle of
  * the node/type it minted (except the void ones). Scalar `kind` codes and `ctype` values
  * are interpreted on the Rust side. `ty` is the node's resolved type handle.
