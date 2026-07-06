@@ -132,8 +132,11 @@ pub struct StatementNode {
 }
 
 /// An expression kind. Child links are arena handles; leaves carry their value.
+///
+/// A closed mirror of the finalized (`CMAT_FINAL`) ctree's `cot_*` set: extraction rejects an
+/// unmodeled tag (`UnknownExpressionTag`) rather than widening this. A new node kind in a later
+/// IDA is a deliberate, breaking addition, since idakit pins to one minor.
 #[derive(Clone, Debug, PartialEq)]
-#[non_exhaustive]
 pub enum ExpressionKind {
     /// `x OP y`
     Binary {
@@ -313,8 +316,10 @@ pub struct Case {
 }
 
 /// A statement kind. Child links are arena handles.
+///
+/// A closed mirror of the finalized ctree's `cit_*` set, on the same terms as
+/// [`ExpressionKind`]: unmodeled tags are rejected at extraction, not folded in here.
 #[derive(Clone, Debug, PartialEq)]
-#[non_exhaustive]
 pub enum StatementKind {
     /// `{ ... }`
     Block(Vec<StatementId>),

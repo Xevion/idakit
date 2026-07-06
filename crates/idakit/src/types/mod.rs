@@ -55,8 +55,11 @@ pub struct EnumMember {
 
 /// The shape of a type. Child types are [`TypeId`] handles, so recursion and sharing
 /// need no nesting.
+///
+/// A closed set: a named type with no structural body becomes [`Opaque`](TypeKind::Opaque)
+/// rather than a catch-all, and [`Unknown`](TypeKind::Unknown) is only the transient
+/// build-time placeholder. A new shape in a later IDA is a deliberate, breaking addition.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-#[non_exhaustive]
 pub enum TypeKind {
     /// `void`
     Void,

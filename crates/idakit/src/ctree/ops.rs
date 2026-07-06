@@ -5,12 +5,12 @@
 //! the ~50 arithmetic/logic ops into separate node kinds.
 //!
 //! Discriminants are the raw `ctype_t` values from `hexrays.hpp` (IDA 9.3), so the
-//! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the
-//! SDK mapping: `raw()` is a free cast and `from_raw()` lowers to a jump table. An operator
-//! outside the set rejects rather than folding into a catch-all; a new `ctype_t` in a later
-//! IDA is a deliberate, breaking widening, since idakit pins to one minor. Signed / unsigned
-//! / float variants are kept distinct because in decompiled code the operator is what reveals
-//! operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
+//! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the SDK
+//! mapping: `u16::from(op)` is a free cast and `Op::try_from(raw)` lowers to a jump table. An
+//! operator outside the set rejects rather than folding into a catch-all; a new `ctype_t` in a
+//! later IDA is a deliberate, breaking widening, since idakit pins to one minor. Signed /
+//! unsigned / float variants are kept distinct because in decompiled code the operator is what
+//! reveals operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
@@ -147,38 +147,6 @@ pub enum UnOp {
     PreDec = 56,
 }
 
-/// Wraps the derived `From<Self> for u16` / `TryFrom<u16>` in the crate's `raw()` /
-/// `from_raw()` naming (cf. [`Reference::from_raw`](crate::Reference)). The `$reject` text names
-/// what falls outside this group so each `from_raw` doc explains its own gaps.
-macro_rules! ctype_op {
-    ($ty:ident, $reject:literal) => {
-        impl $ty {
-            /// The raw `ctype_t` discriminant.
-            #[inline]
-            #[must_use]
-            pub fn raw(self) -> u16 {
-                self.into()
-            }
-
-            // Single-line `concat!` keeps rustfmt idempotent -- it re-indents a
-            // multi-line `concat!` in a macro body deeper on every run.
-            #[doc = concat!("The operator for a raw `ctype_t`, or `None` if it is not ", $reject, ".")]
-            #[must_use]
-            pub fn from_raw(v: u16) -> Option<Self> {
-                Self::try_from(v).ok()
-            }
-        }
-    };
-}
-
-ctype_op!(BinOp, "a binary operator");
-ctype_op!(AssignOp, "an assignment");
-ctype_op!(
-    UnOp,
-    "one of the bare unary operators (cast, deref, and member-of are their own \
-     expression variants)"
-);
-
 impl BinOp {
     /// The C source spelling of this operator (`+`, `<<`, `&&`, ...). Signed/unsigned and
     /// integer/float variants that print the same collapse here (`Sdiv`/`Udiv`/`Fdiv` ->
@@ -259,44 +227,44 @@ mod tests {
     #[case(BinOp::Sdiv, 38)]
     #[case(BinOp::Fdiv, 45)]
     fn binop_raw_matches_ctype(#[case] op: BinOp, #[case] raw: u16) {
-        assert!(op.raw() == raw);
-        // `raw`/`from_raw` round-trip within the group.
-        assert!(BinOp::from_raw(raw) == Some(op));
+        assert!(u16::from(op) == raw);
+        // `From`/`TryFrom` round-trip within the group.
+        assert!(BinOp::try_from(raw).ok() == Some(op));
     }
 
     #[rstest]
     #[case(AssignOp::Assign, 2)]
     #[case(AssignOp::UmodAssign, 15)]
     fn assignop_raw_matches_ctype(#[case] op: AssignOp, #[case] raw: u16) {
-        assert!(op.raw() == raw);
-        assert!(AssignOp::from_raw(raw) == Some(op));
+        assert!(u16::from(op) == raw);
+        assert!(AssignOp::try_from(raw).ok() == Some(op));
     }
 
     #[rstest]
     #[case(UnOp::Neg, 47)]
     #[case(UnOp::PreDec, 56)]
     fn unop_raw_matches_ctype(#[case] op: UnOp, #[case] raw: u16) {
-        assert!(op.raw() == raw);
-        assert!(UnOp::from_raw(raw) == Some(op));
+        assert!(u16::from(op) == raw);
+        assert!(UnOp::try_from(raw).ok() == Some(op));
     }
 
-    /// `from_raw` is group-exclusive: a discriminant from another `ctype_t` group (or a
+    /// `try_from` is group-exclusive: a discriminant from another `ctype_t` group (or a
     /// non-operator) is rejected, never silently coerced.
     #[rstest]
     // 2 = cot_asg (assignment), not a plain binary operator; 0 = cot_empty.
     #[case::asg_is_not_binary(2)]
     #[case::empty_is_not_binary(0)]
-    fn binop_from_raw_rejects_non_binary(#[case] v: u16) {
-        assert!(let None = BinOp::from_raw(v));
+    fn binop_rejects_non_binary(#[case] v: u16) {
+        assert!(BinOp::try_from(v).is_err());
     }
 
     #[test]
-    fn from_raw_rejects_cross_group_discriminants() {
+    fn try_from_rejects_cross_group_discriminants() {
         // 35 = cot_add (binary), not an assignment.
-        assert!(let None = AssignOp::from_raw(35));
+        assert!(AssignOp::try_from(35).is_err());
         // 48 = cot_cast, 51 = cot_ptr -- their own expression variants, not bare unaries.
-        assert!(let None = UnOp::from_raw(48));
-        assert!(let None = UnOp::from_raw(51));
+        assert!(UnOp::try_from(48).is_err());
+        assert!(UnOp::try_from(51).is_err());
     }
 
     /// A few canonical glyphs, and the signed/unsigned/float collapse.

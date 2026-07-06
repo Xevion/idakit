@@ -28,7 +28,7 @@ use crate::ffi::{lossy, slice};
 use crate::types::{TypeBuilder, TypeSink, raw, tid, type_vtbl};
 
 /// Structural `ctype_t` values the generic operator callback dispatches by name
-/// (operators proper go through `from_raw`).
+/// (operators proper go through the `TryFrom<u16>` derives).
 mod ct {
     pub const EMPTY: u32 = 0;
     pub const TERN: u32 = 16;
@@ -226,21 +226,21 @@ impl CallbackBuilder {
             return ExpressionKind::Internal;
         }
         let op16 = u16::try_from(ctype).ok();
-        if let Some(op) = op16.and_then(AssignOp::from_raw) {
+        if let Some(op) = op16.and_then(|v| AssignOp::try_from(v).ok()) {
             return ExpressionKind::Assign {
                 op,
                 x: eid(x),
                 y: eid(y),
             };
         }
-        if let Some(op) = op16.and_then(BinOp::from_raw) {
+        if let Some(op) = op16.and_then(|v| BinOp::try_from(v).ok()) {
             return ExpressionKind::Binary {
                 op,
                 x: eid(x),
                 y: eid(y),
             };
         }
-        if let Some(op) = op16.and_then(UnOp::from_raw) {
+        if let Some(op) = op16.and_then(|v| UnOp::try_from(v).ok()) {
             return ExpressionKind::Unary { op, x: eid(x) };
         }
         match ctype {
