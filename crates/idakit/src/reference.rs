@@ -1,12 +1,14 @@
 //! Cross-references: [`Reference`] and its [`ReferenceKind`] classification. The IDA
 //! reference-type byte is in two overlapping spaces (code/data) split here into
-//! [`CodeReference`]/[`DataReference`]; unknown bytes degrade to `Unknown`.
+//! [`CodeReference`]/[`DataReference`], each a closed mirror of `cref_t`/`dref_t` that
+//! rejects a byte outside the set rather than folding it into a catch-all.
 
 use std::ffi::c_void;
 use std::marker::PhantomData;
 
 use idakit_sys as sys;
-use num_enum::FromPrimitive;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use strum::VariantArray;
 
 use crate::Idb;
 use crate::address::Address;
@@ -42,17 +44,20 @@ pub struct Reference {
 }
 
 impl Reference {
-    /// Build from the facade's `(from, to, type, iscode)` tuple. `None` if either
-    /// endpoint is `BADADDR`.
+    /// Build from the facade's `(from, to, type, iscode)` tuple. `None` -- and so skipped by the
+    /// iterator -- if either endpoint is `BADADDR`, or if `ty` is outside the modelled
+    /// `cref_t`/`dref_t` set (version drift: the set is complete for 9.3, so this does not occur
+    /// on real data). `ty` is IDA's already-masked base type; the `XREF_USER` flag rides a
+    /// separate field idakit does not yet surface.
     #[inline]
     #[must_use]
     pub(crate) fn from_raw(from: u64, to: u64, ty: u8, iscode: u8) -> Option<Self> {
         let from = Address::try_new(from)?;
         let to = Address::try_new(to)?;
         let kind = if iscode != 0 {
-            ReferenceKind::Code(CodeReference::from_primitive(ty))
+            ReferenceKind::Code(CodeReference::try_from(ty).ok()?)
         } else {
-            ReferenceKind::Data(DataReference::from_primitive(ty))
+            ReferenceKind::Data(DataReference::try_from(ty).ok()?)
         };
         Some(Self { from, to, kind })
     }
@@ -120,10 +125,16 @@ pub enum ReferenceKind {
     Data(DataReference),
 }
 
-/// Code cross-reference type, mirroring IDA's `cref_t`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, FromPrimitive)]
+/// Code cross-reference type -- a closed mirror of IDA's `cref_t` (xref.hpp, IDA 9.3). A byte
+/// outside this set does not decode -- its `TryFrom<u8>` conversion fails.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, TryFromPrimitive, IntoPrimitive, VariantArray,
+)]
 #[repr(u8)]
 pub enum CodeReference {
+    /// `fl_U`: IDA's own "unknown" flow type, kept for compatibility with old databases -- a
+    /// real `cref_t` value, not a catch-all for unrecognized bytes.
+    Unknown = 0,
     /// A far call.
     CallFar = 16,
     /// A near call.
@@ -132,30 +143,35 @@ pub enum CodeReference {
     JumpFar = 18,
     /// A near jump.
     JumpNear = 19,
+    /// `fl_USobsolete`: an obsolete user-specified code xref; modern IDA does not emit it, kept
+    /// for a complete mirror of the SDK set.
+    UserObsolete = 20,
     /// Ordinary sequential flow into the next instruction.
     Flow = 21,
-    /// An unrecognized code-reference type byte.
-    #[num_enum(default)]
-    Unknown = 0,
 }
 
-/// Data cross-reference type, mirroring IDA's `dref_t`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, FromPrimitive)]
+/// Data cross-reference type -- a closed mirror of IDA's `dref_t` (xref.hpp, IDA 9.3). A byte
+/// outside this set does not decode -- its `TryFrom<u8>` conversion fails.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, TryFromPrimitive, IntoPrimitive, VariantArray,
+)]
 #[repr(u8)]
 pub enum DataReference {
+    /// `dr_U`: IDA's own "unknown" data type, kept for compatibility with old databases -- a
+    /// real `dref_t` value, not a catch-all for unrecognized bytes.
+    Unknown = 0,
     /// An offset (address-of) reference.
     Offset = 1,
     /// A write access.
     Write = 2,
     /// A read access.
     Read = 3,
-    /// A textual reference.
+    /// A textual reference (forced operands only).
     Text = 4,
     /// An informational reference.
     Informational = 5,
-    /// An unrecognized data-reference type byte.
-    #[num_enum(default)]
-    Unknown = 0,
+    /// `dr_S`: a reference to an enum member / symbolic constant.
+    Symbolic = 6,
 }
 
 #[cfg(test)]
@@ -165,22 +181,42 @@ mod tests {
 
     use super::*;
 
-    /// The `(type, iscode)` byte pair classifies into the right space and variant, and an
-    /// unrecognized byte degrades to that space's `Unknown` rather than crossing over.
+    /// The `(type, iscode)` byte pair classifies into the right space and variant, `iscode`
+    /// selecting the space so the same byte reads differently as code vs data.
     #[rstest]
     #[case::call_near(17, 1, ReferenceKind::Code(CodeReference::CallNear))]
     #[case::jump_near(19, 1, ReferenceKind::Code(CodeReference::JumpNear))]
     #[case::flow(21, 1, ReferenceKind::Code(CodeReference::Flow))]
     #[case::data_write(2, 0, ReferenceKind::Data(DataReference::Write))]
     #[case::data_read(3, 0, ReferenceKind::Data(DataReference::Read))]
-    #[case::unknown_in_code_space(99, 1, ReferenceKind::Code(CodeReference::Unknown))]
-    #[case::unknown_in_data_space(99, 0, ReferenceKind::Data(DataReference::Unknown))]
+    #[case::symbolic(6, 0, ReferenceKind::Data(DataReference::Symbolic))]
     fn classifies_by_type_byte(#[case] ty: u8, #[case] iscode: u8, #[case] expect: ReferenceKind) {
         let x = Reference::from_raw(0x1000, 0x2000, ty, iscode).expect("valid edge");
         assert!(x.kind == expect);
         assert!(x.is_code() == matches!(expect, ReferenceKind::Code(_)));
         assert!(x.from.get() == 0x1000);
         assert!(x.to.get() == 0x2000);
+    }
+
+    /// A type byte outside the `cref_t`/`dref_t` set does not decode, so the iterator skips it
+    /// rather than folding it into a catch-all.
+    #[rstest]
+    #[case::unmapped_code(99, 1)]
+    #[case::unmapped_data(99, 0)]
+    fn unmapped_type_is_skipped(#[case] ty: u8, #[case] iscode: u8) {
+        assert!(Reference::from_raw(0x1000, 0x2000, ty, iscode).is_none());
+    }
+
+    /// Every modelled variant round-trips through its raw `cref_t`/`dref_t` discriminant, so a
+    /// variant whose discriminant drifts from the SDK value fails here.
+    #[test]
+    fn every_variant_round_trips() {
+        for &c in CodeReference::VARIANTS {
+            assert!(CodeReference::try_from(u8::from(c)).ok() == Some(c));
+        }
+        for &d in DataReference::VARIANTS {
+            assert!(DataReference::try_from(u8::from(d)).ok() == Some(d));
+        }
     }
 
     /// A `BADADDR` at either endpoint is not a usable edge.
