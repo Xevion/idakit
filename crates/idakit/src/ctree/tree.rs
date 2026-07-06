@@ -33,6 +33,46 @@ fn for_each_child(
 /// read-only analysis snapshot -- there is no in-place mutation, and it does not track
 /// the live database, so it goes stale if the function is re-decompiled. Writing back to
 /// IDA is a separate concern, not routed through these handles.
+///
+/// Real trees come from decompiling a function ([`Idb::decompile`](crate::Idb::decompile));
+/// [`CtreeBuilder`] builds one directly, with no kernel, for testing matchers against a
+/// known shape:
+///
+/// ```
+/// use idakit::Address;
+/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeData, TypeKind};
+///
+/// let mut b = CtreeBuilder::new();
+/// let ty = b.intern_type(TypeData {
+///     kind: TypeKind::Unknown,
+///     size: None,
+/// });
+/// let arg = b.push_lvar(Local {
+///     name: "a".into(),
+///     ty,
+///     is_arg: true,
+///     is_result: false,
+///     is_byref: false,
+///     width: 8,
+///     comment: None,
+///     location: LocalLocation::Register(0),
+/// });
+///
+/// // `foo(a);`
+/// let a = b.var(ty, arg);
+/// let foo = b.obj(ty, Address::new_const(0x1000), Some("foo"));
+/// let call = b.call_expression(ty, foo, vec![a]);
+/// let stmt = b.expression_statement(call);
+/// let block = b.block(vec![stmt]);
+/// let tree = b.finish(block);
+///
+/// // Whole-tree scans find the call and the local reference without walking the tree shape.
+/// assert_eq!(
+///     tree.calls().collect::<Vec<_>>(),
+///     vec![(call, foo, [a].as_slice())]
+/// );
+/// assert_eq!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>(), vec![arg]);
+/// ```
 #[derive(Debug)]
 pub struct Ctree {
     expressions: Arena<ExpressionNode>,

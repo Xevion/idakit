@@ -47,6 +47,38 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 /// layout -- and the untyped shape -- `*((_QWORD *)this + 2)` or `(char *)this + 16` as raw
 /// pointer arithmetic -- resolve to the same `(this, 16)`. The untyped form is what shows up
 /// in stripped binaries, so threading it is what makes these matchers useful there.
+///
+/// ```
+/// use idakit::ctree::query::base_var;
+/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeData, TypeKind};
+///
+/// let mut b = CtreeBuilder::new();
+/// let ty = b.intern_type(TypeData {
+///     kind: TypeKind::Unknown,
+///     size: None,
+/// });
+/// let this = b.push_lvar(Local {
+///     name: "this".into(),
+///     ty,
+///     is_arg: true,
+///     is_result: false,
+///     is_byref: false,
+///     width: 8,
+///     comment: None,
+///     location: LocalLocation::Register(0),
+/// });
+///
+/// // `(T)this->field`, at byte offset 16 -- the cast real decompiler output wraps around it.
+/// let v = b.var(ty, this);
+/// let member = b.member_ptr(ty, v, 16);
+/// let cast = b.cast(ty, member);
+/// let stmt = b.expression_statement(cast);
+/// let block = b.block(vec![stmt]);
+/// let tree = b.finish(block);
+///
+/// // The cast is peeled and the member offset threaded back to its base local.
+/// assert_eq!(base_var(&tree, cast), Some((this, 16)));
+/// ```
 pub fn base_var(tree: &Ctree, e: ExpressionId) -> Option<(LocalId, i64)> {
     // Casts and `&` rename nothing; peel them first so the match below sees the place node.
     let e = strip_casts(tree, e);
