@@ -58,8 +58,6 @@ impl Idb {
             })
         }
     }
-
-    // TODO: enumerate strings, imports/exports, and entry points.
 }
 
 /// A named address from the database's name list, yielded by [`Names`].

@@ -19,7 +19,9 @@ use crate::Address;
 /// A reference to a global/static the decompiler named, as surfaced by [`global_target`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GlobalRef {
+    /// The global's address.
     pub address: Address,
+    /// Its symbol name, if the decompiler gave it one.
     pub name: Option<String>,
 }
 

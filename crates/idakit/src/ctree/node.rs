@@ -20,7 +20,9 @@ pub type StatementId = Idx<StatementNode>;
 /// uniform navigation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum NodeRef {
+    /// An expression node.
     Expression(ExpressionId),
+    /// A statement node.
     Statement(StatementId),
 }
 
@@ -63,7 +65,10 @@ impl NodeRef {
 /// Index of a local variable in the decompiled function's lvar table
 /// ([`Ctree::lvar`](super::Ctree::lvar)).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct LocalId(pub u32);
+pub struct LocalId(
+    /// The variable's index in the lvar table.
+    pub u32,
+);
 
 /// Where a local variable lives, as the decompiler placed it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -80,6 +85,7 @@ pub enum LocalLocation {
 /// [`ExpressionKind::Var`] indexes the tree's lvar table to one of these.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Local {
+    /// The variable's name, as the decompiler named it.
     pub name: String,
     /// The variable's type, into the tree's [`TypeTable`](super::TypeTable).
     pub ty: TypeId,
@@ -93,6 +99,7 @@ pub struct Local {
     pub width: u32,
     /// The user's comment on the variable, if any.
     pub comment: Option<String>,
+    /// Where the decompiler placed the variable (register, stack, or scattered).
     pub location: LocalLocation,
 }
 
@@ -102,10 +109,13 @@ pub struct Local {
 /// instruction (`Option<Address>` is niche-optimized to a bare `u64`; see [`Address`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExpressionNode {
+    /// The backing instruction's address, or `None` for a synthetic node.
     pub address: Option<Address>,
     /// The expression's resolved type, into the tree's [`TypeTable`](super::TypeTable).
     pub ty: TypeId,
+    /// The parent node, or `None` for the root.
     pub parent: Option<NodeRef>,
+    /// What this expression is.
     pub kind: ExpressionKind,
 }
 
@@ -113,8 +123,11 @@ pub struct ExpressionNode {
 /// nodes with no backing instruction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatementNode {
+    /// The backing instruction's address, or `None` for a synthetic node.
     pub address: Option<Address>,
+    /// The parent node, or `None` for the root.
     pub parent: Option<NodeRef>,
+    /// What this statement is.
     pub kind: StatementKind,
 }
 
@@ -124,36 +137,55 @@ pub struct StatementNode {
 pub enum ExpressionKind {
     /// `x OP y`
     Binary {
+        /// The binary operator.
         op: BinOp,
+        /// The left operand.
         x: ExpressionId,
+        /// The right operand.
         y: ExpressionId,
     },
     /// `x OP= y`
     Assign {
+        /// The compound-assignment operator.
         op: AssignOp,
+        /// The assignment target.
         x: ExpressionId,
+        /// The assigned value.
         y: ExpressionId,
     },
     /// `OP x` (or `x OP` for post-inc/dec)
-    Unary { op: UnOp, x: ExpressionId },
+    Unary {
+        /// The unary operator.
+        op: UnOp,
+        /// The operand.
+        x: ExpressionId,
+    },
     /// `cond ? then_ : else_`
     Ternary {
+        /// The condition.
         cond: ExpressionId,
+        /// The value when `cond` is true.
         then_: ExpressionId,
+        /// The value when `cond` is false.
         else_: ExpressionId,
     },
     /// `callee(args...)`
     Call {
+        /// The called expression.
         callee: ExpressionId,
+        /// The arguments, in order.
         args: Vec<ExpressionId>,
     },
     /// `array[index]`
     Index {
+        /// The indexed expression.
         array: ExpressionId,
+        /// The index expression.
         index: ExpressionId,
     },
     /// `obj.field`, the member at `byte_offset`
     MemberRef {
+        /// The aggregate expression.
         obj: ExpressionId,
         /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
         /// `cot_memref.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
@@ -161,15 +193,24 @@ pub enum ExpressionKind {
     },
     /// `obj->field`, the member at `byte_offset`
     MemberPtr {
+        /// The pointer-to-aggregate expression.
         obj: ExpressionId,
         /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
         /// `cot_memptr.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
         byte_offset: u32,
     },
     /// `(T)x` -- the target type is carried on the node (added with the type arena).
-    Cast { x: ExpressionId },
+    Cast {
+        /// The cast operand.
+        x: ExpressionId,
+    },
     /// `*x`, dereferencing `size` bytes
-    Deref { x: ExpressionId, size: u32 },
+    Deref {
+        /// The pointer expression.
+        x: ExpressionId,
+        /// The access size in bytes.
+        size: u32,
+    },
     /// `sizeof(x)`
     Sizeof(ExpressionId),
     /// integer literal (raw bits; signedness comes from the node's type)
@@ -184,7 +225,9 @@ pub enum ExpressionKind {
     Str(String),
     /// reference to a global/static at `address`, carrying its symbol name when it has one
     Obj {
+        /// The global's address.
         address: Address,
+        /// Its symbol name, if it has one.
         name: Option<String>,
     },
     /// reference to a local variable
@@ -263,7 +306,9 @@ expression_accessors! {
 /// One `case` of a `switch`: its values (empty = `default`) and body.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Case {
+    /// The case's match values; empty for the `default` case.
     pub values: Vec<u64>,
+    /// The statement run when the case matches.
     pub body: StatementId,
 }
 
@@ -277,30 +322,43 @@ pub enum StatementKind {
     Expression(ExpressionId),
     /// `if (cond) then_ [else else_]`
     If {
+        /// The condition.
         cond: ExpressionId,
+        /// The branch taken when `cond` is true.
         then_: StatementId,
+        /// The `else` branch, if any.
         else_: Option<StatementId>,
     },
     /// `for (init; cond; step) body`
     For {
+        /// The initializer, if any.
         init: Option<ExpressionId>,
+        /// The loop condition, if any.
         cond: Option<ExpressionId>,
+        /// The per-iteration step, if any.
         step: Option<ExpressionId>,
+        /// The loop body.
         body: StatementId,
     },
     /// `while (cond) body`
     While {
+        /// The loop condition.
         cond: ExpressionId,
+        /// The loop body.
         body: StatementId,
     },
     /// `do body while (cond)`
     Do {
+        /// The loop body.
         body: StatementId,
+        /// The loop condition.
         cond: ExpressionId,
     },
     /// `switch (expression) { cases }`
     Switch {
+        /// The switched-on expression.
         expression: ExpressionId,
+        /// The cases, including any `default`.
         cases: Vec<Case>,
     },
     /// `break;`
@@ -310,12 +368,17 @@ pub enum StatementKind {
     /// `return [expression];`
     Return(Option<ExpressionId>),
     /// `goto label;`
-    Goto { label: i32 },
+    Goto {
+        /// The target label number.
+        label: i32,
+    },
     /// an inline-asm block, as the addresses of its instructions
     Asm(Vec<Address>),
     /// `try body { catches }`
     Try {
+        /// The guarded body.
         body: StatementId,
+        /// The catch handlers.
         catches: Vec<StatementId>,
     },
     /// `throw [expression];`

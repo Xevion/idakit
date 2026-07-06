@@ -44,20 +44,34 @@ mod ct {
 /// Why a ctree walk could not be turned into a [`Ctree`].
 #[derive(Debug, Snafu, PartialEq, Eq)]
 pub enum ExtractError {
+    /// The facade returned no walkable ctree (a null `cfunc`).
     #[snafu(display("the facade could not walk the ctree (null cfunc)"))]
     WalkFailed,
 
+    /// A node carried an expression `ctype` the walker does not model.
     #[snafu(display("unmodeled expression ctype {tag}"))]
-    UnknownExpressionTag { tag: u32 },
+    UnknownExpressionTag {
+        /// The unmodeled raw `ctype_t` value.
+        tag: u32,
+    },
 
+    /// A node required an address but carried the `BADADDR` sentinel.
     #[snafu(display("a node carries the BADADDR sentinel as a required address"))]
     BadEa,
 
+    /// A scalar's byte width exceeds any real scalar.
     #[snafu(display("a scalar reports {bytes} bytes, wider than any real scalar"))]
-    ScalarTooWide { bytes: u32 },
+    ScalarTooWide {
+        /// The over-wide byte count.
+        bytes: u32,
+    },
 
+    /// Aggregate extraction left type placeholders that were never filled.
     #[snafu(display("{count} type placeholder(s) were referenced but never filled"))]
-    UnfilledType { count: usize },
+    UnfilledType {
+        /// How many placeholders remained unfilled.
+        count: usize,
+    },
 }
 
 /// A node's own source address: `None` for a synthetic node (the BADADDR sentinel).

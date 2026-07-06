@@ -31,8 +31,6 @@ impl Idb {
     pub fn functions(&self) -> Functions<'_> {
         Functions::new(self)
     }
-
-    // TODO: basic blocks and CFG over the decoded instruction stream.
 }
 
 /// A borrowed view of one function, valid while the database stays open.

@@ -2,9 +2,6 @@
 //!
 //! A decompiled function is materialized on the kernel thread into owned arenas of
 //! nodes and types, then handed back as a `Send` value any worker thread can analyze.
-// TODO: document the ctree ADT (node/types/query) and drop this allow; the rest of
-// the public API is `deny(missing_docs)`.
-#![allow(missing_docs)]
 
 mod extract;
 mod node;

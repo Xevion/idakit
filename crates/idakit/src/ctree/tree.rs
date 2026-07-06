@@ -254,6 +254,7 @@ pub struct CtreeBuilder {
 }
 
 impl CtreeBuilder {
+    /// An empty builder. Allocate nodes children-first, then [`finish`](Self::finish).
     #[must_use]
     pub fn new() -> Self {
         Self {
