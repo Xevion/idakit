@@ -187,20 +187,6 @@ void idakit_xref_close(void *cursor);
 
 int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap); /* prototype text, <0 on miss */
 
-size_t idakit_type_ordinal_count(void); /* # of local named types */
-int64_t idakit_type_ordinal_name(uint32_t ordinal, char *buf, size_t cap);
-void *idakit_type_open(const char *name); /* opaque tinfo, NULL if unknown */
-void idakit_type_dispose(void *h);
-int64_t idakit_type_size(void *h);                         /* byte size, <0 if unknown */
-int64_t idakit_type_print(void *h, char *buf, size_t cap); /* full type decl text */
-size_t idakit_type_nmembers(void *h);                      /* 0 if not a struct/union */
-int idakit_type_member_info(void *h, size_t i, uint64_t *offset,
-                            uint64_t *size); /* 1 if member i exists; offset/size in BYTES */
-int64_t idakit_type_member_name(void *h, size_t i, char *buf,
-                                size_t cap); /* name length, <0 if absent */
-int64_t idakit_type_member_type(void *h, size_t i, char *buf,
-                                size_t cap); /* type repr length, <0 if absent */
-
 /* Disassembly-level control-flow graph (gdl.hpp qflow_chart_t). cfg_build constructs the
  * flow chart for the function containing `ea` -- including tail chunks -- with the given
  * FC_ flags, returning an opaque handle (NULL if no function is there); the block list is
@@ -219,21 +205,9 @@ int idakit_cfg_npred(const void *h, int n);
 int idakit_cfg_pred(const void *h, int n, int i);
 void idakit_cfg_free(void *h);
 
-/* Function stack frame (frame.hpp). frame_build snapshots the frame of the function containing
- * ea into an owned handle (NULL if no function or no frame); frame_size is its total byte size.
- * Variables are indexed [0, frame_nvars): frame_var fills the fp-relative offset (as IDA
- * displays it -- var_18 sits at -0x18), byte size, and flags (bit0 = return address, bit1 =
- * saved registers; both clear = an ordinary variable/argument); name/type copy snprintf-style.
- * Release with frame_free. */
-void *idakit_frame_build(idakit_ea_t ea);
-uint64_t idakit_frame_size(const void *h);
-size_t idakit_frame_nvars(const void *h);
-int idakit_frame_var(const void *h, size_t i, int64_t *offset, uint64_t *size, uint32_t *flags);
-int64_t idakit_frame_var_name(const void *h, size_t i, char *buf, size_t cap);
-int64_t idakit_frame_var_type(const void *h, size_t i, char *buf, size_t cap);
-void idakit_frame_free(void *h);
-/* The structured frame-type walk (idakit_frame_type_walk) lives with the shared type vtbl
- * below, since it drives that machinery. */
+/* The disassembly-level stack frame (frame.hpp) is exposed only through the structured
+ * frame-type walk (idakit_frame_type_walk), which lives with the shared type vtbl below since it
+ * drives that machinery. */
 
 int idakit_hexrays_init(void); /* 1 = decompiler ready, 0 = unavailable */
 void *idakit_decompile(idakit_ea_t ea, char *errbuf,
@@ -312,7 +286,8 @@ typedef struct idakit_type_vtbl_t {
 
 /* Structured frame-type walk. `types` drives the shared tinfo walker to mint each variable's
  * type on the consumer side (building one interned table); `f_var` then reports the variable,
- * with its resolved type handle `ty` and the same offset/size/flags as idakit_frame_var. */
+ * with its fp-relative offset (var_18 sits at -0x18), byte size, and flags (bit0 = return
+ * address, bit1 = saved registers; both clear = an ordinary variable/argument). */
 typedef struct idakit_frame_vtbl_t {
   idakit_type_vtbl_t types;
   void (*f_var)(void *ctx, const char *name, size_t name_len, int64_t offset, uint64_t size,

@@ -1,5 +1,6 @@
 //! `TypeTable`: an interned arena of resolved types carried by an owned snapshot off the
-//! kernel thread -- currently the decompiler [`Ctree`](crate::ctree::Ctree).
+//! kernel thread -- the decompiler [`Ctree`](crate::ctree::Ctree), a function's
+//! [`Frame`](crate::Frame), or a standalone [`TypeImage`](crate::TypeImage).
 //!
 //! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
 //! types share one handle, and recursion (a struct pointing at itself) is a [`TypeId`]
@@ -140,6 +141,23 @@ impl TypeKind {
     pub fn pointee(&self) -> Option<TypeId> {
         match self {
             TypeKind::Ptr(elem) => Some(*elem),
+            _ => None,
+        }
+    }
+
+    /// The tag of a named aggregate ([`Struct`](TypeKind::Struct)/[`Union`](TypeKind::Union)/
+    /// [`Enum`](TypeKind::Enum), unless anonymous) or the alias of a
+    /// [`Typedef`](TypeKind::Typedef); `None` for an anonymous or structural type. Borrows from
+    /// `self`, so the caller clones only when it needs an owned name -- e.g. feeding it back to
+    /// [`Idb::type_named`](crate::Idb::type_named) takes the borrow directly.
+    #[inline]
+    #[must_use]
+    pub fn tag_name(&self) -> Option<&str> {
+        match self {
+            TypeKind::Struct { name, .. }
+            | TypeKind::Union { name, .. }
+            | TypeKind::Enum { name, .. } => name.as_deref(),
+            TypeKind::Typedef { name, .. } => Some(name.as_str()),
             _ => None,
         }
     }
@@ -298,6 +316,35 @@ mod tests {
         assert!(table.get(ptr).kind.pointee() == Some(elem));
         assert!(let None = table.get(elem).kind.pointee());
         assert!(let None = TypeKind::Void.pointee());
+    }
+
+    /// `tag_name` yields a named aggregate's tag and a typedef's alias, and `None` for an
+    /// anonymous or structural type.
+    #[test]
+    fn tag_name_reads_named_types_only() {
+        let named = TypeKind::Struct {
+            name: Some("pt".into()),
+            members: vec![],
+        };
+        assert!(named.tag_name() == Some("pt"));
+        let anon = TypeKind::Struct {
+            name: None,
+            members: vec![],
+        };
+        assert!(anon.tag_name().is_none());
+
+        let underlying = TypeTable::new().alloc_placeholder();
+        let alias = TypeKind::Typedef {
+            name: "u32".into(),
+            underlying,
+        };
+        assert!(alias.tag_name() == Some("u32"));
+
+        let scalar = TypeKind::Int {
+            bytes: 4,
+            signed: true,
+        };
+        assert!(scalar.tag_name().is_none());
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! summary and panics (via `assert!`) on a violation, so it works as a `#[test]` body and as a
 //! `libtest-mimic` trial alike. The registry [`CHECKS`] is the corpus matrix's check axis.
 
-use idakit::{CodeReference, Error, Idb, ReferenceKind};
+use idakit::{CodeReference, Error, Idb, ReferenceKind, TypeKind};
 
 /// One named invariant over an open database.
 pub type Check = fn(&Idb) -> String;
@@ -15,6 +15,7 @@ pub const CHECKS: &[(&str, Check)] = &[
     ("disasm", disasm),
     ("cfg", cfg),
     ("decompile", decompile),
+    ("types", types),
 ];
 
 /// The database has functions and segments, the first function is named, and its entry bytes
@@ -224,6 +225,59 @@ pub fn decompile(idb: &Idb) -> String {
         deep_checked = true;
     }
     format!("{decompiled} decompiled")
+}
+
+/// A function with a stored prototype walks into a `Function`-rooted [`TypeImage`] whose child
+/// handles resolve, and a named aggregate it references round-trips through `type_named` to a
+/// resolvable root. Best-effort: a stripped database may carry no prototypes, and a referenced
+/// name need not be a local type.
+pub fn types(idb: &Idb) -> String {
+    let mut typed = 0usize;
+    let mut checked_proto = false;
+    let mut named = 0usize;
+
+    for f in idb.functions().take(2000) {
+        let Ok(Some(image)) = f.prototype_type() else {
+            continue;
+        };
+        typed += 1;
+
+        if !checked_proto {
+            let TypeKind::Function { ret, params, .. } = image.kind() else {
+                panic!("prototype root at {:#x} is not a Function", f.address());
+            };
+            let _ = image.get(*ret);
+            for p in params {
+                let _ = image.get(*p);
+            }
+            checked_proto = true;
+        }
+
+        // Round-trip the first named aggregate this prototype references back through type_named.
+        // A referenced name need not be a local type, so TypeNotFound is fine; only a malformed
+        // walk (Extract) is a real failure.
+        if named == 0
+            && let Some(name) = image.types().iter().find_map(|(_, t)| t.kind.tag_name())
+        {
+            match idb.type_named(name) {
+                Ok(resolved) => {
+                    let _ = resolved.get(resolved.root());
+                    named += 1;
+                }
+                Err(Error::TypeNotFound { .. }) => {}
+                Err(e) => panic!("type_named({name:?}) failed unexpectedly: {e}"),
+            }
+        }
+
+        if checked_proto && named > 0 {
+            break;
+        }
+    }
+
+    if typed == 0 {
+        return "no typed prototypes in prefix".to_string();
+    }
+    format!("{typed} typed prototypes, {named} named round-trips")
 }
 
 // A non-function address is rejected -- kept out of the corpus battery (it needs a specific

@@ -16,9 +16,8 @@
 //!
 //! # Owned handles
 //!
-//! `idakit_decompile` and `idakit_type_open` return opaque `*mut c_void` handles
-//! that are owned by the caller. Each must be released with its matching
-//! `*_dispose` function (`idakit_cfunc_dispose` / `idakit_type_dispose`); the reference
+//! `idakit_decompile` returns an opaque `*mut c_void` handle owned by the caller,
+//! released with its matching `*_dispose` function (`idakit_cfunc_dispose`); the reference
 //! cursor from `idakit_xref_open` is released with `idakit_xref_close` instead.
 //! Passing a handle to any other function after release is undefined behaviour.
 

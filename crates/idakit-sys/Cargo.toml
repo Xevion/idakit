@@ -45,9 +45,5 @@ name = "bytesxref"
 path = "examples/bytesxref.rs"
 
 [[example]]
-name = "typeinfo"
-path = "examples/typeinfo.rs"
-
-[[example]]
 name = "writeop"
 path = "examples/writeop.rs"

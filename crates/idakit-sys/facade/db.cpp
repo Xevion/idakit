@@ -675,108 +675,18 @@ extern "C" uint8_t idakit_xref_next(void *cursor, idakit_ea_t *from, idakit_ea_t
 
 extern "C" void idakit_xref_close(void *cursor) { delete (idakit_xref_cursor *)cursor; }
 
-// A function frame is a UDT tinfo (get_func_frame). We snapshot it -- its size and every
-// variable's fp-relative offset (as IDA displays them), byte size, name, type, and special-member
-// kind -- into an owned handle so the Rust side indexes a flat, detached list.
+// A function frame is a UDT tinfo (get_func_frame); idakit_frame_type_walk drives the shared type
+// walker over its members. These flags mark the two members IDA reserves in every frame.
 namespace {
 
 // bit0 = return address, bit1 = saved registers; both clear = an ordinary variable/argument.
 constexpr uint32_t FRAME_VAR_RETADDR = 1;
 constexpr uint32_t FRAME_VAR_SAVREGS = 2;
 
-struct frame_var_row {
-  int64_t offset; // fp-relative, e.g. var_18 -> -0x18
-  uint64_t size;
-  uint32_t flags;
-  qstring name;
-  qstring type;
-};
-
-struct frame_data {
-  uint64_t size;
-  qvector<frame_var_row> vars;
-};
-
 } // namespace
 
-extern "C" void *idakit_frame_build(idakit_ea_t ea) {
-  try {
-    func_t *pfn = get_func((ea_t)ea);
-    if (pfn == nullptr)
-      return nullptr;
-    tinfo_t tif;
-    udt_type_data_t udt;
-    if (!get_func_frame(&tif, pfn) || !tif.get_udt_details(&udt))
-      return nullptr;
-    auto *fd = new frame_data;
-    fd->size = (uint64_t)get_frame_size(pfn);
-    for (const udm_t &m : udt) {
-      frame_var_row &row = fd->vars.push_back();
-      // udm offset/size are in bits; soff_to_fpoff wants the byte struct offset.
-      row.offset = (int64_t)soff_to_fpoff(pfn, (uval_t)(m.offset / 8));
-      row.size = m.size / 8;
-      row.flags =
-          (m.is_retaddr() ? FRAME_VAR_RETADDR : 0) | (m.is_savregs() ? FRAME_VAR_SAVREGS : 0);
-      row.name = m.name;
-      m.type.print(&row.type);
-    }
-    return fd;
-  } catch (...) {
-    std::abort();
-  }
-}
-
-extern "C" uint64_t idakit_frame_size(const void *h) {
-  const frame_data *fd = (const frame_data *)h;
-  return fd != nullptr ? fd->size : 0;
-}
-
-extern "C" size_t idakit_frame_nvars(const void *h) {
-  const frame_data *fd = (const frame_data *)h;
-  return fd != nullptr ? fd->vars.size() : 0;
-}
-
-extern "C" int idakit_frame_var(const void *h, size_t i, int64_t *offset, uint64_t *size,
-                                uint32_t *flags) {
-  const frame_data *fd = (const frame_data *)h;
-  if (fd == nullptr || i >= fd->vars.size())
-    return 0;
-  const frame_var_row &row = fd->vars[i];
-  *offset = row.offset;
-  *size = row.size;
-  *flags = row.flags;
-  return 1;
-}
-
-extern "C" int64_t idakit_frame_var_name(const void *h, size_t i, char *buf, size_t cap) {
-  const frame_data *fd = (const frame_data *)h;
-  if (fd == nullptr || i >= fd->vars.size()) {
-    if (cap > 0)
-      buf[0] = 0;
-    return -1;
-  }
-  const qstring &name = fd->vars[i].name;
-  qstrncpy(buf, name.c_str(), cap);
-  return (int64_t)name.length();
-}
-
-extern "C" int64_t idakit_frame_var_type(const void *h, size_t i, char *buf, size_t cap) {
-  const frame_data *fd = (const frame_data *)h;
-  if (fd == nullptr || i >= fd->vars.size()) {
-    if (cap > 0)
-      buf[0] = 0;
-    return -1;
-  }
-  const qstring &type = fd->vars[i].type;
-  qstrncpy(buf, type.c_str(), cap);
-  return (int64_t)type.length();
-}
-
-extern "C" void idakit_frame_free(void *h) { delete (frame_data *)h; }
-
-// Structured counterpart to idakit_frame_build: one shared type walk over the frame UDT, so a
-// named type used by two variables is emitted once, reporting each variable with its resolved
-// type handle instead of a printed string.
+// One shared type walk over the frame UDT, so a named type used by two variables is emitted once,
+// reporting each variable with its resolved type handle instead of a printed string.
 extern "C" int idakit_frame_type_walk(idakit_ea_t ea, const idakit_frame_vtbl_t *v, void *ctx,
                                       uint64_t *frame_size) {
   if (v == nullptr || frame_size == nullptr)
