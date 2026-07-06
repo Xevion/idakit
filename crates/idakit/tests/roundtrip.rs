@@ -9,21 +9,10 @@ mod common;
 
 #[test]
 fn roundtrip() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    idakit::Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut idakit::Idb) {
     let func_count = idb.functions().count();
     let seg_count = idb.segments().count();
     assert!(func_count > 0, "expected at least one function");
@@ -152,8 +141,6 @@ fn run(idb: &mut idakit::Idb, db: &str) {
     // Leave the DB as found.
     idb.rename(address, &original)
         .expect("restore rename failed");
-
-    idb.close(false);
 
     println!("roundtrip OK: {func_count} funcs, {seg_count} segs, rename/comment verified");
 }

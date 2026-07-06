@@ -4,25 +4,14 @@
 
 mod common;
 
-use idakit::{FrameVar, Ida, Idb};
+use idakit::{FrameVar, Idb};
 
 #[test]
 fn frame() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut Idb) {
     let mut with_frame = 0usize;
     let mut with_special = 0usize;
     let mut with_typed = 0usize;
@@ -82,6 +71,5 @@ fn run(idb: &mut Idb, db: &str) {
         "some frame variable in the sample should carry a structured type"
     );
 
-    idb.close(false);
     println!("frame OK: stack-frame extraction verified");
 }

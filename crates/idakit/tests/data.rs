@@ -4,25 +4,14 @@
 
 mod common;
 
-use idakit::{Address, BADADDR, Ida, Idb};
+use idakit::{Address, BADADDR, Idb};
 
 #[test]
 fn data() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut Idb) {
     // A mapped address: the first function's entry.
     let entry = idb.functions().next().expect("a function").address();
 
@@ -69,6 +58,5 @@ fn run(idb: &mut Idb, db: &str) {
         println!("read_string: no 1-byte string in the list to cross-check");
     }
 
-    idb.close(false);
     println!("data OK: typed integer/pointer/string reads verified");
 }

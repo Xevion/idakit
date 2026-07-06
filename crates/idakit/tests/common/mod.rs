@@ -8,6 +8,30 @@ pub mod corpus;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use idakit::{Ida, Idb};
+
+/// Open the shared test database (see [`TestDb::source`]) on the kernel thread, run `body`
+/// against it, and close it (`save = false`). Every dedicated single-DB test is this shape, so
+/// the acquire, kernel bring-up, open, and panic-resume live here once. Silently returns (skips)
+/// when no test database is available -- matching the corpus matrix's "no corpus, no cases"
+/// stance -- and a caught assertion panic re-raises with its real message, so failures keep their
+/// location.
+pub fn with_canonical_db(body: impl FnOnce(&mut Idb) + Send + 'static) {
+    let Some(db) = TestDb::acquire() else {
+        return;
+    };
+    let path = db.path().to_owned();
+    Ida::run(move |ida| {
+        ida.call(move |idb| {
+            idb.open(&path).call().expect("open failed");
+            body(idb);
+            idb.close(false);
+        })
+        .unwrap_or_else(|e| e.resume())
+    })
+    .expect("kernel init failed");
+}
+
 /// A private, disposable copy of the test database, removed on drop.
 ///
 /// IDA takes an exclusive lock on a `.i64` while it is open, so every kernel test opens its

@@ -8,28 +8,16 @@ use idakit::{Address, Error};
 
 #[test]
 fn write() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    idakit::Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut idakit::Idb) {
     let address = idb.functions().next().expect("a function").address();
 
     comment_round_trips(idb, address);
     patch_round_trips(idb, address);
     patch_rejects_unmapped(idb);
 
-    idb.close(false);
     println!("write OK: comment round-trip, patch round-trip, unmapped patch rejected");
 }
 

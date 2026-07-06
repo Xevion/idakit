@@ -13,21 +13,10 @@ use idakit::{Address, Cfg, Error, Idb};
 
 #[test]
 fn cfg() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    idakit::Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut Idb) {
     let cfg = first_multiblock_cfg(idb).expect("a function with at least two basic blocks");
     structure_is_sound(&cfg);
     entry_and_lookup(&cfg);
@@ -36,9 +25,6 @@ fn run(idb: &mut Idb, db: &str) {
     knobs_behave(idb, cfg.function());
     non_function_is_rejected(idb);
 
-    // Cfg is an owned snapshot -- it holds no borrow of `idb`, so the &mut close needs no
-    // drop dance (unlike a Pattern).
-    idb.close(false);
     println!(
         "cfg OK: {} blocks, edges sound and symmetric, exits + knobs + NoFunction verified",
         cfg.len()

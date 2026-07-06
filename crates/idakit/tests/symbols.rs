@@ -5,25 +5,14 @@
 
 mod common;
 
-use idakit::{Ida, Idb};
+use idakit::Idb;
 
 #[test]
 fn symbols() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut Idb) {
     // Every export must resolve to something: a local address or a forward target.
     let mut exports = 0usize;
     let mut named_exports = 0usize;
@@ -63,6 +52,5 @@ fn run(idb: &mut Idb, db: &str) {
         "the database has neither exports nor imports"
     );
 
-    idb.close(false);
     println!("symbols OK: export/import enumeration verified");
 }

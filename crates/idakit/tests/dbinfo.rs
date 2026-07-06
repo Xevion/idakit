@@ -5,27 +5,16 @@
 //! kernel tests. Runs against `IDAKIT_TEST_DB` or `$IDADIR/libida.so.i64` (see
 //! [`common::test_db`]); skips when neither is present. Read-only; opens `save = false`.
 
-use idakit::{Bitness, Ida, Idb, Name};
+use idakit::{Bitness, Idb, Name};
 
 mod common;
 
 #[test]
 fn dbinfo() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut Idb) {
     // Metadata snapshot: an x86 database is 32- or 64-bit, has a processor name, and its
     // full input path ends with the bare root filename.
     let meta = idb.meta();
@@ -84,6 +73,5 @@ fn run(idb: &mut Idb, db: &str) {
         println!("demangle {:?} -> {:?}", n.name, idb.demangle(&n.name));
     }
 
-    idb.close(false);
     println!("ok");
 }

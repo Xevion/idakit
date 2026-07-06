@@ -44,7 +44,6 @@ fn probe() -> Vec<usize> {
 #[test]
 fn idalib_leaves_signal_handlers_untouched() {
     let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB)");
         return;
     };
     let path = db.path().to_owned();

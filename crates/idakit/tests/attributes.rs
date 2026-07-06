@@ -4,25 +4,14 @@
 
 mod common;
 
-use idakit::{Bitness, Ida, Idb};
+use idakit::{Bitness, Idb};
 
 #[test]
 fn attributes() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut Idb) {
     let first = idb.functions().next().expect("a function");
     let address = first.address();
     let end = first.end().expect("function has an end");
@@ -84,6 +73,5 @@ fn run(idb: &mut Idb, db: &str) {
         entry_seg.name()
     );
 
-    idb.close(false);
     println!("attributes OK: function sizes/flags, segment perms/bitness/class verified");
 }

@@ -95,7 +95,6 @@ fn directory_path_is_rejected() {
 )]
 fn truncated_database_is_rejected() {
     let Some(db) = common::TestDb::source() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB)");
         return;
     };
     let scratch = Scratch::truncated("idakit-faults-truncated.i64", &db, 4096);

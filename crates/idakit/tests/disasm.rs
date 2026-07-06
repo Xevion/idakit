@@ -8,7 +8,7 @@
 //! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
 //! that must agree. Read-only; never opens for write.
 
-use idakit::{CodeReference, Ida, Idb, Operand, OperandKind, ReferenceKind};
+use idakit::{CodeReference, Idb, Operand, OperandKind, ReferenceKind};
 
 mod common;
 
@@ -49,21 +49,10 @@ fn fmt_insn(instruction: &idakit::Instruction) -> String {
 
 #[test]
 fn disasm() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut Idb) {
     const BUDGET: usize = 4000;
     let mut total = 0usize;
     let mut with_ops = 0usize;
@@ -211,6 +200,5 @@ fn run(idb: &mut Idb, db: &str) {
     let b = idb.decode(entry).expect("entry decodes again");
     assert!(a == b, "decode is not deterministic");
 
-    idb.close(false);
     println!("ok");
 }

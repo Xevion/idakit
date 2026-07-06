@@ -11,21 +11,10 @@ use idakit::{Address, Error, Pattern, PatternRejection};
 
 #[test]
 fn search() {
-    let Some(db) = common::TestDb::acquire() else {
-        eprintln!("skipping: no test database (set IDAKIT_TEST_DB or install IDA at $IDADIR)");
-        return;
-    };
-    let path = db.path().to_owned();
-    idakit::Ida::run(move |ida| {
-        ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
-    })
-    .expect("kernel init failed");
+    common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Idb, db: &str) {
-    idb.open(db).call().expect("open failed");
-
+fn run(idb: &mut idakit::Idb) {
     let first = idb.functions().next().expect("a function");
     let address = first.address();
     let bytes = idb.bytes(address, 8);
@@ -36,9 +25,6 @@ fn run(idb: &mut idakit::Idb, db: &str) {
     range_excludes_start(idb, address, &bytes);
     rejections_trip(idb);
 
-    // Every pattern above has been dropped (built and consumed inside the helpers), so the
-    // &mut close is unborrowed.
-    idb.close(false);
     println!("search OK: all four constructor forms match; rejections trip typed errors");
 }
 
