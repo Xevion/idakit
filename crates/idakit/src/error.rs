@@ -215,8 +215,8 @@ pub enum Error {
         address: u64,
     },
 
-    /// A binary search pattern was rejected by [`Pattern::compile`](crate::Pattern::compile).
-    /// `kind` is a typed reason; see [`PatternRejection`].
+    /// A binary search pattern was rejected while building a [`Pattern`](crate::Pattern)
+    /// (e.g. via [`hex`](crate::Pattern::hex)). `kind` is a typed reason; see [`PatternRejection`].
     #[snafu(display("invalid search pattern {pattern:?}: {kind}"))]
     PatternRejected {
         /// The pattern string that was rejected.

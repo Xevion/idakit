@@ -5,7 +5,7 @@ default:
     @just --list
 
 # One-stop gate mirroring CI: a clean run here means CI will very likely pass.
-check: fmt-check actionlint clippy tidy test
+check: fmt-check actionlint clippy tidy doc test
 
 build:
     cargo build --workspace
@@ -48,6 +48,12 @@ tidy:
 
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
+
+# Build the API docs with warnings-as-errors: broken intra-doc links, malformed code blocks,
+# bad HTML, and bare URLs fail here the same way a missing doc does. DOCS_RS short-circuits
+# build.rs's native work, so this needs no IDA runtime and mirrors what docs.rs renders.
+doc:
+    DOCS_RS=1 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Lint the GitHub Actions workflows (auto-discovers .github/workflows/).
 actionlint:

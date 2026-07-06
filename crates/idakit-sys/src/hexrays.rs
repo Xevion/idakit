@@ -8,7 +8,7 @@ use crate::Address;
 /// Absent optional child / sentinel, matching `IDAKIT_NONE` in the facade.
 pub const IDAKIT_NONE: u32 = 0xFFFF_FFFF;
 
-/// One struct/union member, as the facade passes it to [`EmitVtbl::t_fill_struct`].
+/// One struct/union member, as the facade passes it to [`TypeVtbl::t_fill_struct`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct MemberDesc {
@@ -19,7 +19,7 @@ pub struct MemberDesc {
     pub bitfield_width: u32,
 }
 
-/// One enum constant, as passed to [`EmitVtbl::t_fill_enum`].
+/// One enum constant, as passed to [`TypeVtbl::t_fill_enum`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct EnumConstDesc {

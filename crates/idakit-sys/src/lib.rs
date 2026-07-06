@@ -20,6 +20,16 @@
 //! released with its matching `*_dispose` function (`idakit_cfunc_dispose`); the reference
 //! cursor from `idakit_xref_open` is released with `idakit_xref_close` instead.
 //! Passing a handle to any other function after release is undefined behaviour.
+#![deny(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::invalid_rust_codeblocks,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks,
+    rustdoc::redundant_explicit_links
+)]
 
 /// IDA's effective address (`ea_t`), compiled `__EA64__`.
 pub type Address = u64;

@@ -1,6 +1,8 @@
-# fmt lints on a stock runner. The build and tests link native dependencies that build.rs
-# resolves from IDADIR, so the `test` matrix fetches a prebuilt bundle from S3 first. The
-# S3_* secrets gate it: forks without them skip the matrix and still get fmt.
+# fmt and doc lints run on a stock runner: rustfmt needs no native deps, and `just doc` builds
+# under DOCS_RS, which short-circuits build.rs so rustdoc needs no IDA runtime. The build and
+# tests link native dependencies that build.rs resolves from IDADIR, so the `test` matrix
+# fetches a prebuilt bundle from S3 first. The S3_* secrets gate it: forks without them skip
+# the matrix and still get fmt + doc.
 
 name: ci
 
@@ -27,6 +29,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - run: just fmt-check
+      # Doc-lint (broken intra-doc links, bad code blocks) under DOCS_RS, so no IDA runtime.
+      - run: just doc
 
   test:
     name: test (${{ matrix.platform }} @ ${{ matrix.version }})

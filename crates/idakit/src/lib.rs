@@ -53,6 +53,16 @@
 //! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64` -- the facade
 //! is compiled `__EA64__`.
 #![deny(missing_docs)]
+#![deny(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::invalid_rust_codeblocks,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks,
+    rustdoc::redundant_explicit_links
+)]
 
 use std::cell::Cell;
 use std::marker::PhantomData;
