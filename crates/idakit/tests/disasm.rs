@@ -8,7 +8,7 @@
 //! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
 //! that must agree. Read-only; never opens for write.
 
-use idakit::{CodeReference, Idb, Operand, OperandKind, ReferenceKind};
+use idakit::{CodeReference, Idb, Operand, OperandKind, Origin, ReferenceKind};
 
 mod common;
 
@@ -101,7 +101,7 @@ fn run(idb: &mut Idb) {
                 && (instruction.flow.is_call || instruction.flow.is_jump)
                 && let Some(target) = instruction.flow.target
             {
-                let matched = idb.references_from(address).any(|x| {
+                let matched = idb.references_from(address).find(|x| {
                     x.to == target
                         && matches!(
                             x.kind,
@@ -113,7 +113,15 @@ fn run(idb: &mut Idb) {
                             )
                         )
                 });
-                if matched {
+                if let Some(reference) = matched {
+                    // A branch IDA itself decoded is analysis-made, never user-marked. Asserting it
+                    // also proves the `xrefblk_t::user` byte flows through the facade rather than
+                    // arriving uninitialized (which would surface as a spurious `User`).
+                    assert!(
+                        reference.origin == Origin::Analysis,
+                        "direct branch xref at {address:#x} should be analysis-made, got {:?}",
+                        reference.origin
+                    );
                     checked_target = true;
                     println!(
                         "cross-checked direct {} at {:#x} -> {:#x} against reference graph",

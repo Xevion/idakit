@@ -670,7 +670,7 @@ extern "C" void *idakit_xref_open(idakit_ea_t ea, uint8_t is_to) {
 }
 
 extern "C" uint8_t idakit_xref_next(void *cursor, idakit_ea_t *from, idakit_ea_t *to, uint8_t *type,
-                                    uint8_t *iscode) {
+                                    uint8_t *iscode, uint8_t *user) {
   auto *c = (idakit_xref_cursor *)cursor;
   bool ok;
   if (!c->started) {
@@ -685,6 +685,7 @@ extern "C" uint8_t idakit_xref_next(void *cursor, idakit_ea_t *from, idakit_ea_t
   *to = (idakit_ea_t)c->xb.to;
   *type = c->xb.type;
   *iscode = c->xb.iscode;
+  *user = c->xb.user;
   return 1;
 }
 

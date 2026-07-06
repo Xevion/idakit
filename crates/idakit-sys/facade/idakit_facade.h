@@ -185,11 +185,11 @@ int idakit_has_dummy_name(uint64_t flags);
 
 /* Cross-reference cursor (ordinary flow excluded). `is_to` selects xrefs TO ea (callers
  * of ea) vs FROM ea (what ea references). Open returns an opaque cursor; step it with
- * next (writes from/to/type/iscode, returns 1 until exhausted, then 0); release with
- * close. type is the cref_t/dref_t byte. */
+ * next (writes from/to/type/iscode/user, returns 1 until exhausted, then 0); release with
+ * close. type is the cref_t/dref_t byte; user is xrefblk_t::user (1 = user-defined, 0 = IDA). */
 void *idakit_xref_open(idakit_ea_t ea, uint8_t is_to);
 uint8_t idakit_xref_next(void *cursor, idakit_ea_t *from, idakit_ea_t *to, uint8_t *type,
-                         uint8_t *iscode);
+                         uint8_t *iscode, uint8_t *user);
 void idakit_xref_close(void *cursor);
 
 int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap); /* prototype text, <0 on miss */

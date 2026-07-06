@@ -115,7 +115,7 @@ pub use instruction::{
 pub use kernel::{Ida, IdaConfig, IdaConfigBuilder};
 pub use meta::Meta;
 pub use name::{Name, Names};
-pub use reference::{CodeReference, DataReference, Reference, ReferenceKind, References};
+pub use reference::{CodeReference, DataReference, Origin, Reference, ReferenceKind, References};
 pub use search::{Matches, Pattern};
 pub use segment::{Segment, Segments};
 pub use strings::{StringLiteral, Strings};

@@ -2,7 +2,8 @@
 //!
 //! `idakit_xref_open` returns an owned handle the caller must release with
 //! `idakit_xref_close`; `is_to` selects xrefs *to* `address` (1) or *from* it (0).
-//! `idakit_xref_next` writes the edge endpoints and returns 1 until exhausted.
+//! `idakit_xref_next` writes the edge endpoints and returns 1 until exhausted. `user` reports
+//! `xrefblk_t::user`: 1 for a user-defined xref, 0 for one IDA's analysis generated.
 
 use std::ffi::c_void;
 
@@ -16,6 +17,7 @@ unsafe extern "C" {
         to: *mut Address,
         type_: *mut u8,
         iscode: *mut u8,
+        user: *mut u8,
     ) -> u8;
     pub fn idakit_xref_close(cursor: *mut c_void);
 }

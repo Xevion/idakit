@@ -23,8 +23,8 @@ fn references_to(address: Address) -> Vec<(Address, u8, u8)> {
     let mut out = Vec::new();
     unsafe {
         let cursor = idakit_xref_open(address, 1);
-        let (mut from, mut to, mut ty, mut iscode) = (0u64, 0u64, 0u8, 0u8);
-        while idakit_xref_next(cursor, &mut from, &mut to, &mut ty, &mut iscode) != 0 {
+        let (mut from, mut to, mut ty, mut iscode, mut user) = (0u64, 0u64, 0u8, 0u8, 0u8);
+        while idakit_xref_next(cursor, &mut from, &mut to, &mut ty, &mut iscode, &mut user) != 0 {
             out.push((from, ty, iscode));
         }
         idakit_xref_close(cursor);
