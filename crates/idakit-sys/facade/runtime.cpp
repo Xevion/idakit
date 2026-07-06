@@ -279,15 +279,20 @@ void end_capture(capture_t &cap) { (void)cap; }
 
 using namespace idakit_facade;
 
-// idalib prints a goodbye banner to stdout at process exit, after the test harness has already
-// listed its tests -- which corrupts a stdout parser like `nextest --list`. We register (from a
-// static object's constructor, portable across MSVC/GCC/clang unlike __attribute__((constructor)))
-// an atexit that redirects fd 1 to the null device. Our constructor runs after the idalib image's
-// own initializers (dependency images init before the main binary), so where idalib arms the
-// banner at load its atexit is registered before ours and, atexit being LIFO, ours runs first --
-// sending the banner to the null fd. Whole-archive linking (build.rs) keeps this object in every
-// binary, even ones that call no facade function -- else the linker drops it and the banner
-// leaks. On Windows this relies on idalib and the test binary sharing the UCRT's fd table.
+// idalib writes a goodbye banner to stdout during teardown -- on Windows at idalib.dll's
+// DLL_PROCESS_DETACH -- which corrupts a stdout parser like `nextest --list`. From a static ctor
+// (portable across MSVC/GCC/clang unlike __attribute__((constructor))) we register an atexit that
+// points fd 1 at the null device. The CRT runs atexit handlers before it detaches dependency DLLs,
+// so the redirect is already in place when idalib emits the banner -- it lands in the null fd.
+// Flush first so any legitimate buffered stdout still reaches the real fd 1.
+//
+// This runs only on the normal CRT exit path. On Windows std::process::exit is ExitProcess, which
+// skips atexit -- the swallow never runs and the banner leaks; returning from main (or exit())
+// runs it. POSIX std::process::exit calls exit(), which runs atexit, so Unix is unaffected. Test
+// binaries must therefore return from main, not call std::process::exit (see corpus_matrix).
+// Whole-archive linking (build.rs) keeps this object in every binary, even ones that call no
+// facade function. On Windows this relies on idalib and the test binary sharing the UCRT's fd
+// table.
 namespace {
 void swallow_exit_banner() {
   (void)fflush(nullptr);

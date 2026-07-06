@@ -10,6 +10,7 @@
 mod common;
 
 use std::path::Path;
+use std::process::ExitCode;
 use std::sync::Mutex;
 
 use libtest_mimic::{Arguments, Failed, Trial};
@@ -20,7 +21,12 @@ use common::checks::Check;
 // `cargo test` run threads them). Under nextest each trial is its own process, so uncontended.
 static KERNEL_GATE: Mutex<()> = Mutex::new(());
 
-fn main() {
+// Return the exit code from `main` rather than `Conclusion::exit()`, which calls
+// `std::process::exit`. On Windows that is `ExitProcess`, which skips the CRT `atexit` handlers --
+// including the facade's idalib exit-banner swallow (see runtime.cpp). Skipping it lets the banner
+// corrupt `nextest --list` (an empty list becomes a stray `\r\n`). Returning from `main` takes the
+// normal CRT exit path, so the swallow runs. (Unix was unaffected: its `process::exit` runs atexit.)
+fn main() -> ExitCode {
     let args = Arguments::from_args();
     let fixtures = common::corpus::fixtures();
 
@@ -38,7 +44,7 @@ fn main() {
         }
     }
 
-    libtest_mimic::run(&args, trials).exit();
+    libtest_mimic::run(&args, trials).exit_code()
 }
 
 fn run_one(src: &Path, check: Check) -> Result<(), Failed> {
