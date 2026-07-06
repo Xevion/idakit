@@ -2,16 +2,15 @@
 //!
 //! Following `syn`'s `BinOp`/`UnOp` split, the ctree carries the operator as data on
 //! a few structural node variants (`Binary`/`Unary`/`Assign`) rather than exploding
-//! the ~50 arithmetic/logic ops into separate node kinds. Each enum is
-//! `#[non_exhaustive]`: a future IDA SDK that adds an operator should widen these, not
-//! break every downstream `match` (cf. the clang crate's `EntityKind`, which broke
-//! across LLVM releases for exactly this reason).
+//! the ~50 arithmetic/logic ops into separate node kinds.
 //!
 //! Discriminants are the raw `ctype_t` values from `hexrays.hpp` (IDA 9.3), so the
 //! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the
-//! SDK mapping: `raw()` is a free cast and `from_raw()` lowers to a jump table. Signed
-//! / unsigned / float variants are kept distinct because in decompiled code the
-//! operator is what reveals operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
+//! SDK mapping: `raw()` is a free cast and `from_raw()` lowers to a jump table. An operator
+//! outside the set rejects rather than folding into a catch-all; a new `ctype_t` in a later
+//! IDA is a deliberate, breaking widening, since idakit pins to one minor. Signed / unsigned
+//! / float variants are kept distinct because in decompiled code the operator is what reveals
+//! operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
@@ -21,7 +20,6 @@ use strum::VariantArray;
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
-#[non_exhaustive]
 pub enum BinOp {
     /// `x, y`
     Comma = 1,
@@ -90,7 +88,6 @@ pub enum BinOp {
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
-#[non_exhaustive]
 pub enum AssignOp {
     /// `x = y`
     Assign = 2,
@@ -129,7 +126,6 @@ pub enum AssignOp {
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
-#[non_exhaustive]
 pub enum UnOp {
     /// `-x` floating-point
     FNeg = 46,

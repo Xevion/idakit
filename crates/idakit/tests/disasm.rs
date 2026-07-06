@@ -32,8 +32,6 @@ fn fmt_op(op: &Operand) -> String {
             s.push(']');
             s
         }
-        // `OperandKind` is `#[non_exhaustive]`; a future kind renders as a placeholder.
-        _ => String::from("?"),
     }
 }
 

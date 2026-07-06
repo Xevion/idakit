@@ -17,10 +17,8 @@ impl Idb {
 ///
 /// A closed set: IDA reports a width in bits, and a value that is not one of these three
 /// (including the `0` the facade returns for an absent segment) becomes `None` at the
-/// conversion boundary rather than a silent default. `#[non_exhaustive]` reserves room for
-/// a future width without a breaking change.
+/// conversion boundary rather than a silent default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
 pub enum Bitness {
     /// 16-bit addressing.
     Bits16,

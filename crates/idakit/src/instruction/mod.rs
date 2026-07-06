@@ -141,10 +141,8 @@ pub enum DecodeError {
 ///
 /// A closed set that grows only when a decoder is *implemented*: decoding under a
 /// processor with no wired decoder is a [`DecodeError::UnsupportedProcessor`], not a
-/// variant here. `#[non_exhaustive]` reserves room for future decoders without a breaking
-/// change.
+/// variant here. Adding a decoder is a deliberate, breaking widening.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
 pub enum Isa {
     /// 32-bit x86.
     X86,
@@ -216,10 +214,9 @@ pub struct Operand {
 ///
 /// Closed on purpose: the per-processor decoder maps *every* raw operand type -- including
 /// the SIMD/mask register types x86 encodes above the documented range -- into one of
-/// these. `#[non_exhaustive]` guards against a future operand *category*, not against
-/// unknown raw bytes (those are a [`DecodeError`]).
+/// these. A future operand *category* is a deliberate, breaking widening; an unknown raw
+/// byte is a [`DecodeError`], never a new variant callers must pre-guard.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum OperandKind {
     /// A register, of any class (folds every register operand type).
     Register(Register),
