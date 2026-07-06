@@ -69,6 +69,9 @@ thread_local int g_exit_code = 0;
 thread_local bool g_trapped = false;
 // Captured stdout+stderr from the last guarded call.
 thread_local std::string g_output;
+// Captured msg() text from the last guarded call, via the HT_UI hook (see begin_ui_capture). Kept
+// separate from g_output because end_capture clears g_output before draining the fd pipe.
+thread_local std::string g_ui_output;
 
 namespace {
 typedef void (*exit_fn)(int);
@@ -274,6 +277,60 @@ void end_capture(capture_t &cap) {
 capture_t begin_capture() { return capture_t{}; }
 void end_capture(capture_t &cap) { (void)cap; }
 #endif // !_WIN32
+
+// The msg() channel. A loader/format rejection reports its reason via msg() -> callui(ui_msg),
+// which in headless is a no-op sink: the text never reaches fd 1/2, so begin_capture's stderr
+// pipe misses it and a trapped open would yield no diagnostic. An HT_UI hook catches ui_msg at
+// the source (kernwin.hpp: the kernel dispatches HT_UI even when the UI sink is a no-op). Portable
+// (SDK-only), unlike the POSIX fd capture above.
+namespace {
+constexpr size_t UI_CAP = 8192; // bound so a msg() storm can't grow the buffer without limit
+
+ssize_t idaapi ui_msg_capture_cb(void *, int code, va_list va) {
+  if (code != ui_msg || g_ui_output.size() >= UI_CAP)
+    return 0;
+  // ui_msg args (kernwin.hpp): const char *format, then its va_list. The reason often arrives as a
+  // %s arg (msg("%s -> %s", reason, "OK")), so expand rather than read the format. va_list is an
+  // array type, so the inner one decays to a pointer in the outer va; take that pointer and deref.
+  const char *format = va_arg(va, const char *);
+  va_list *pargs = va_arg(va, va_list *);
+  if (format == nullptr || pargs == nullptr)
+    return 0;
+  // va_copy: IDA walks the caller's va_list again for its own handling after the hook returns, so
+  // formatting it in place corrupts that (observed as a crash). Format a copy.
+  va_list copy;
+  va_copy(copy, *pargs);
+  char tmp[1024];
+  qvsnprintf(tmp, sizeof(tmp), format, copy);
+  va_end(copy);
+  g_ui_output += tmp;
+  return 0; // observe only; never block the event
+}
+} // namespace
+
+// Reset the buffer and install the ui_msg hook. Paired with end_ui_capture on every guarded exit
+// path (including the longjmp trap), so the hook never outlives the call.
+void begin_ui_capture() {
+  g_ui_output.clear();
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  hook_to_notification_point(HT_UI, ui_msg_capture_cb, nullptr);
+#pragma GCC diagnostic pop
+}
+
+// Remove the hook, then fold the msg() text into g_output only if the stderr capture stayed empty.
+// error()/verror() write straight to stderr (already in g_output) and carry the reason for most
+// fatals; the msg() channel only carries it for the headless loader/format rejections that never
+// touch stderr. Preferring stderr keeps existing diagnostics (e.g. the license fatal) clean.
+void end_ui_capture() {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  unhook_from_notification_point(HT_UI, ui_msg_capture_cb, nullptr);
+#pragma GCC diagnostic pop
+  if (!g_ui_output.empty() && g_output.find_first_not_of(" \t\r\n") == std::string::npos)
+    g_output = g_ui_output;
+  g_ui_output.clear();
+}
 
 } // namespace idakit_facade
 

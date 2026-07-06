@@ -11,7 +11,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use assert2::assert;
-use idakit::{Ida, Idb};
+use idakit::{Error, Ida, Idb};
 
 mod common;
 
@@ -85,6 +85,42 @@ fn garbage_bytes_are_rejected() {
 #[test]
 fn directory_path_is_rejected() {
     assert_open_rejected(std::env::temp_dir().to_string_lossy().into_owned());
+}
+
+/// A Java class newer than IDA's loader supports (major 69 = Java 25) is rejected through the
+/// `msg()` channel, which in headless routes to a no-op sink and never reaches stderr. The
+/// `KernelExit` diagnostic must still carry the loader's reason -- it was `None` while only the
+/// stderr channel was captured.
+#[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "the rejection makes idalib exit(); trapping it needs the Linux-only exit trap"
+)]
+fn unsupported_java_class_reports_reason() {
+    // Minimal class file: magic, minor=0, major=69, a one-entry constant pool, then zeroed
+    // section counts -- enough for IDA's Java loader to recognize the format and reject the version.
+    const TOO_NEW_CLASS: &[u8] = &[
+        0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x45, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    let scratch = Scratch::new("idakit-faults-toonew.class", TOO_NEW_CLASS);
+    let path = scratch.path();
+    Ida::run(move |ida| {
+        ida.call(move |idb| {
+            let err = idb
+                .open(&path)
+                .call()
+                .expect_err("too-new class should be rejected");
+            assert!(let Error::KernelExit { diagnostic, .. } = &err);
+            let diag = diagnostic.as_deref().unwrap_or("");
+            assert!(
+                diag.contains("Java file format"),
+                "KernelExit diagnostic should carry the loader reason, got {diagnostic:?}"
+            );
+        })
+        .unwrap_or_else(|e| e.resume())
+    })
+    .expect("kernel init failed");
 }
 
 #[test]

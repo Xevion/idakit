@@ -31,6 +31,11 @@ struct capture_t {
 void install_fatal_traps();
 capture_t begin_capture();
 void end_capture(capture_t &cap);
+// msg()-channel capture: an HT_UI hook that catches ui_msg text the fd capture can't see (headless
+// routes msg() to a no-op sink). Paired like begin/end_capture; end_ui_capture folds the text into
+// g_output only when the stderr capture stayed empty. See runtime.cpp.
+void begin_ui_capture();
+void end_ui_capture();
 
 // Run fn() with the fatal paths armed, returning `trapval` instead of letting the process die
 // on any of them: exit()/abort() are trapped via the GOT and longjmp back here, and interr()
@@ -43,12 +48,16 @@ template <class T, class F> T guarded(T trapval, bool capture, F &&fn) {
   g_trapped = false;
   g_output.clear();
   capture_t cap = capture ? begin_capture() : capture_t{};
+  if (capture)
+    begin_ui_capture();
   bool prev_throws = set_interr_throws(true);
   // Called on every exit path. Not an RAII guard: a longjmp over a non-trivial destructor is
   // UB, and this runs on the longjmp path too. Reference captures make its destructor trivial.
   auto finish = [&] {
     set_interr_throws(prev_throws);
     end_capture(cap);
+    if (capture)
+      end_ui_capture();
   };
   if (setjmp(g_exit_jmp) != 0) {
     g_trapped = true;
