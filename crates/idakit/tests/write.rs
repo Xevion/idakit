@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::{Address, Error};
+use idakit::prelude::*;
 
 #[test]
 fn write() {

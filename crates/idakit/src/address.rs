@@ -1,6 +1,6 @@
 //! Typed effective addresses: [`Address`].
 //!
-//! An `Address` is any `ea_t` except the [`BADADDR`] sentinel (`0` is a valid
+//! An `Address` is any `ea_t` except the `BADADDR` sentinel (`0` is a valid
 //! address). It stores `!raw` in a [`NonZeroU64`], so the niche sits on the
 //! sentinel and `Option<Address>` is `u64`-sized -- `BADADDR`-on-failure maps straight
 //! to `None`.
@@ -8,12 +8,11 @@
 use std::num::NonZeroU64;
 use std::ops::Add;
 
-/// The IDA "no address" sentinel. An [`Address`] never holds this.
-pub const BADADDR: u64 = u64::MAX;
+use idakit_sys::BADADDR;
 
 const MAX_EA: u64 = BADADDR - 1;
 
-/// A validated effective address: any `ea_t` except [`BADADDR`].
+/// A validated effective address: any `ea_t` except `BADADDR`.
 ///
 /// Ordering is by the real address: the niche stores `!raw`, so a *derived* `Ord` would
 /// compare inverted bits and reverse the order. Callers expect an `Address` to sort like the

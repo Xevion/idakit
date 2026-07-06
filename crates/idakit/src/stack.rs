@@ -1,7 +1,7 @@
 //! [`StackFrame`]: an owned, `Send` snapshot of a function's stack frame.
 //!
 //! IDA models a function frame as a UDT, so idakit reads it much like a struct -- but with stack
-//! semantics the generic [`Type`](crate::Type) walk lacks: each [`StackSlot`] carries its
+//! semantics the generic [`Type`](crate::types::Type) walk lacks: each [`StackSlot`] carries its
 //! frame-pointer-relative [`offset`](StackSlot::offset) (the `var_18`/`arg_4` displacement IDA
 //! displays), and its [`kind`](StackSlot::kind) distinguishes a real stack variable from IDA's
 //! reserved return-address and saved-register slots. Materialized on the kernel thread and handed
@@ -125,7 +125,7 @@ impl StackSlot {
 }
 
 /// An owned, `Send` snapshot of a function's stack frame. Build with
-/// [`Function::frame`](crate::Function::frame)/[`Database::frame`], then read its
+/// [`Function::frame`](crate::function::Function::frame)/[`Database::frame`], then read its
 /// [`size`](Self::size) and [`slots`](Self::slots). Detached from the kernel, so it inspects on
 /// any thread.
 #[derive(Debug)]

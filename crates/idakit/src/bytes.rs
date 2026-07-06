@@ -11,8 +11,8 @@ use crate::ffi::{read_string, with_cstr};
 
 impl Database {
     /// Whether the kernel classifies the item at `address` as an instruction. This is the gate
-    /// [`Function::instructions`](crate::Function::instructions) walks by: [`decode`](Self::decode)
-    /// will happily turn arbitrary bytes into an [`Instruction`](crate::Instruction), so only `is_code`
+    /// [`Function::instructions`](crate::function::Function::instructions) walks by: [`decode`](Self::decode)
+    /// will happily turn arbitrary bytes into an [`Instruction`](crate::instruction::Instruction), so only `is_code`
     /// separates real instructions from data (or a function's alignment tail) that merely
     /// happens to decode.
     #[must_use]

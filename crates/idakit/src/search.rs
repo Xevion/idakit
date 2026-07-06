@@ -1,6 +1,6 @@
 //! [`Pattern`]: a compiled binary search pattern, and [`Matches`], the lazy iterator over
 //! its occurrences. A `Pattern` owns a kernel handle freed on [`Drop`]; being `!Send`, it
-//! (like [`DecompiledFunction`](crate::DecompiledFunction)) stays on the kernel thread.
+//! (like [`DecompiledFunction`](crate::decompile::DecompiledFunction)) stays on the kernel thread.
 //!
 //! Four constructors name their grammar so intent is explicit at the call site:
 //! [`hex`](Pattern::hex) (`"48 8B 4? ? 90"`, nibble + byte wildcards, parsed here),

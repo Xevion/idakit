@@ -3,6 +3,8 @@
 //!
 //!   cargo run -p idakit --example probe_argloc -- <db.i64> [max-funcs]
 
+use idakit::prelude::*;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use idakit::ctree::LocalLocation as L;
     let mut args = std::env::args().skip(1);
@@ -11,8 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("usage: probe_argloc <db.i64> [max-funcs]");
     let max: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(2000);
 
-    idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
-        ida.call(move |idb| -> Result<(), idakit::Error> {
+    Ida::run(move |ida| -> Result<(), Error> {
+        ida.call(move |idb| -> Result<(), Error> {
             idb.open(&bin).run_auto(false).call()?;
 
             let mut n = [0usize; 8];

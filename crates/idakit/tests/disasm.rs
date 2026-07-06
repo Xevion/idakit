@@ -8,7 +8,7 @@
 //! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
 //! that must agree. Read-only; never opens for write.
 
-use idakit::{CodeXref, Database, Operand, OperandKind, XrefKind, XrefOrigin};
+use idakit::prelude::*;
 
 mod common;
 
@@ -35,7 +35,7 @@ fn fmt_op(op: &Operand) -> String {
     }
 }
 
-fn fmt_insn(instruction: &idakit::Instruction) -> String {
+fn fmt_insn(instruction: &Instruction) -> String {
     let ops: Vec<String> = instruction.ops.iter().map(fmt_op).collect();
     format!(
         "{:#x}  {:<8} {}",

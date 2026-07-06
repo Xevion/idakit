@@ -2,13 +2,15 @@
 //!
 //! # The kernel thread
 //!
-//! The IDA kernel is single-threaded and thread-affine. [`Ida::here`] brings it up *on
+//! The IDA kernel is single-threaded and thread-affine. [`Ida::here`](crate::kernel::Ida::here) brings it up *on
 //! the current thread* and hands back the open [`Database`] -- no kernel thread, no closure --
 //! for programs that own their thread (scripts, tests, CLIs):
 //!
 //! ```no_run
+//! use idakit::kernel::Ida;
+//!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut idb = idakit::Ida::here()?;
+//! let mut idb = Ida::here()?;
 //! idb.open("/path/to/db.i64").call()?;
 //! for function in idb.functions() {
 //!     println!("{:#x} {}", function.address().get(), function.name());
@@ -19,15 +21,15 @@
 //! ```
 //!
 //! When the current thread must stay free (GUI/async) or many threads drive the kernel,
-//! [`Ida::run`] hosts it on a dedicated thread and runs your app on the caller; any
-//! thread marshals work onto the kernel with [`Ida::call`]:
+//! [`Ida::run`](crate::kernel::Ida::run) hosts it on a dedicated thread and runs your app on the caller; any
+//! thread marshals work onto the kernel with [`Ida::call`](crate::kernel::Ida::call):
 //!
 //! ```no_run
-//! use idakit::{Ida, Database};
+//! use idakit::prelude::*;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! Ida::run(|ida| {
-//!     ida.call(|idb: &mut Database| -> idakit::Result<()> {
+//!     ida.call(|idb: &mut Database| -> Result<()> {
 //!         idb.open("/path/to/db.i64").call()?;
 //!         idb.close(false);
 //!         Ok(())
@@ -38,12 +40,13 @@
 //! ```
 //!
 //! The kernel is a process global: only one `Database` is live at a time (a second
-//! [`here`](Ida::here)/[`run`](Ida::run) yields [`InitError::AlreadyRunning`]).
+//! [`here`](crate::kernel::Ida::here)/[`run`](crate::kernel::Ida::run) yields
+//! [`InitError::AlreadyRunning`](crate::error::InitError::AlreadyRunning)).
 //!
 //! # Read/write separation
 //!
 //! [`Database`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` and
-//! return lightweight views ([`Function`], [`Segment`], ...); writes take `&mut Database`, so a read
+//! return lightweight views ([`Function`](crate::function::Function), [`Segment`](crate::segment::Segment), ...); writes take `&mut Database`, so a read
 //! view can't be held across a mutation.
 //!
 //! # Building
@@ -67,64 +70,70 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
 
-use idakit_sys as sys;
+pub use idakit_sys as sys;
 
-mod address;
-mod arena;
-mod bitness;
+pub mod address;
+pub mod arena;
+pub mod bitness;
 mod bytes;
 mod claim;
 pub mod ctree;
 mod data;
-mod decompile;
-mod error;
-mod export;
+pub mod decompile;
+pub mod error;
+pub mod export;
 mod ffi;
-mod flowchart;
-mod function;
-mod import;
-mod instruction;
-mod kernel;
-mod meta;
-mod name;
+pub mod flowchart;
+pub mod function;
+pub mod import;
+pub mod instruction;
+pub mod kernel;
+pub mod meta;
+pub mod name;
 mod raw;
-mod search;
-mod segment;
-mod stack;
-mod strings;
-mod types;
-mod xref;
+pub mod search;
+pub mod segment;
+pub mod stack;
+pub mod strings;
+pub mod types;
+pub mod xref;
 
-pub use address::{Address, BADADDR};
-pub use bitness::Bitness;
-pub use ctree::{AssignOp, BinOp, UnOp};
-pub use decompile::{CtreeCounts, DecompiledFunction};
-pub use error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
-pub use export::{Export, Exports};
-pub use flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
-pub use function::{
-    Function, FunctionChunk, FunctionChunks, FunctionName, FunctionSnapshot, Functions,
-    Instructions, InstructionsIn,
-};
-pub use import::{Import, Imports};
-pub use instruction::{
-    Access, DecodeError, Flow, Instruction, Isa, Memory, Operand, OperandDataType, OperandKind,
-    Register, RegisterClass,
-};
-pub use kernel::{Ida, IdaConfig, IdaConfigBuilder};
-pub use meta::DatabaseInfo;
-pub use name::{Name, Names};
-pub use search::{Matches, Pattern};
-pub use segment::{Segment, Segments};
-pub use stack::{StackFrame, StackSlot, StackSlotKind};
-pub use strings::{StringLiteral, Strings};
-pub use types::{EnumMember, Type, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
-pub use xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
+/// Re-exports of the crate's primary types, for a single glob import
+/// (`use idakit::prelude::*;`).
+pub mod prelude {
+    pub use crate::Database;
+    pub use crate::address::Address;
+    pub use crate::bitness::Bitness;
+    pub use crate::ctree::{AssignOp, BinOp, UnOp};
+    pub use crate::decompile::{CtreeCounts, DecompiledFunction};
+    pub use crate::error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
+    pub use crate::export::{Export, Exports};
+    pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
+    pub use crate::function::{
+        Function, FunctionChunk, FunctionChunks, FunctionName, FunctionSnapshot, Functions,
+        Instructions, InstructionsIn,
+    };
+    pub use crate::import::{Import, Imports};
+    pub use crate::instruction::{
+        Access, DecodeError, Flow, Instruction, Isa, Memory, Operand, OperandDataType, OperandKind,
+        Register, RegisterClass,
+    };
+    pub use crate::kernel::{Ida, IdaConfig, IdaConfigBuilder};
+    pub use crate::meta::DatabaseInfo;
+    pub use crate::name::{Name, Names};
+    pub use crate::search::{Matches, Pattern};
+    pub use crate::segment::{Segment, Segments};
+    pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
+    pub use crate::strings::{StringLiteral, Strings};
+    pub use crate::types::{EnumMember, Type, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
+    pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
+}
 
+use crate::error::{Error, Result};
 use crate::kernel::KernelClaim;
 
 /// The open database. `!Send + !Sync`, so it stays on the kernel thread. Reads borrow
-/// `&Database` (returning [`Function`]/[`Segment`] views); writes take `&mut Database`, so a read
+/// `&Database` (returning [`Function`](crate::function::Function)/[`Segment`](crate::segment::Segment) views); writes take `&mut Database`, so a read
 /// view can't be held across a write.
 pub struct Database {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.

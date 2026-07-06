@@ -2,9 +2,7 @@
 //! summary and panics (via `assert!`) on a violation, so it works as a `#[test]` body and as a
 //! `libtest-mimic` trial alike. The registry [`CHECKS`] is the corpus matrix's check axis.
 
-use idakit::{
-    CodeXref, Database, DecodeError, Error, Register, RegisterClass, TypeShape, XrefKind,
-};
+use idakit::prelude::*;
 
 /// One named invariant over an open database.
 pub type Check = fn(&Database) -> String;

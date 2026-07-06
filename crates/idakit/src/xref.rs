@@ -277,7 +277,7 @@ mod tests {
     /// A `BADADDR` at either endpoint is not a usable edge.
     #[test]
     fn badaddr_endpoint_is_rejected() {
-        let bad = crate::address::BADADDR;
+        let bad = sys::BADADDR;
         assert!(Xref::from_raw(bad, 0x2000, 3, 0, 0).is_none());
         assert!(Xref::from_raw(0x1000, bad, 3, 0, 0).is_none());
     }

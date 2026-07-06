@@ -69,11 +69,11 @@ impl fmt::Display for ReasonTail<'_> {
     }
 }
 
-/// Why a [`Pattern`](crate::Pattern) constructor rejected its input. Carried by
+/// Why a [`Pattern`](crate::search::Pattern) constructor rejected its input. Carried by
 /// [`Error::PatternRejected`]; a typed reason rather than an opaque message.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PatternRejection {
-    /// A [`hex`](crate::Pattern::hex) token was neither a hex byte, a nibble pattern
+    /// A [`hex`](crate::search::Pattern::hex) token was neither a hex byte, a nibble pattern
     /// (`4?`/`?B`), nor a wildcard (`?`/`??`).
     BadToken {
         /// The offending token, verbatim.
@@ -82,7 +82,7 @@ pub enum PatternRejection {
         index: usize,
     },
 
-    /// A [`code_mask`](crate::Pattern::code_mask) mask character was not one of `x`/`X`
+    /// A [`code_mask`](crate::search::Pattern::code_mask) mask character was not one of `x`/`X`
     /// (match) or `?`/`.` (wildcard).
     BadMaskChar {
         /// The offending mask character.
@@ -92,7 +92,7 @@ pub enum PatternRejection {
     },
 
     /// A mask's length did not match the byte sequence it applies to
-    /// ([`bytes`](crate::Pattern::bytes)/[`code_mask`](crate::Pattern::code_mask)).
+    /// ([`bytes`](crate::search::Pattern::bytes)/[`code_mask`](crate::search::Pattern::code_mask)).
     MaskMismatch {
         /// Number of pattern bytes.
         bytes: usize,
@@ -108,7 +108,7 @@ pub enum PatternRejection {
         total: usize,
     },
 
-    /// IDA's parser rejected an [`ida`](crate::Pattern::ida) pattern outright (an empty
+    /// IDA's parser rejected an [`ida`](crate::search::Pattern::ida) pattern outright (an empty
     /// string, an unterminated `"`). `detail` is IDA's own diagnostic, when it gave one.
     Unparseable {
         /// IDA's parser message, when non-empty.
@@ -208,7 +208,7 @@ pub enum Error {
     },
 
     /// No function covers the requested address -- e.g. building a
-    /// [`FlowChart`](crate::FlowChart) at an address IDA has not attributed to any function.
+    /// [`FlowChart`](crate::flowchart::FlowChart) at an address IDA has not attributed to any function.
     #[snafu(display("no function at {address:#x}"))]
     NoFunction {
         /// The address that lies in no function.
@@ -226,8 +226,8 @@ pub enum Error {
         raw: u8,
     },
 
-    /// A binary search pattern was rejected while building a [`Pattern`](crate::Pattern)
-    /// (e.g. via [`hex`](crate::Pattern::hex)). `kind` is a typed reason; see [`PatternRejection`].
+    /// A binary search pattern was rejected while building a [`Pattern`](crate::search::Pattern)
+    /// (e.g. via [`hex`](crate::search::Pattern::hex)). `kind` is a typed reason; see [`PatternRejection`].
     #[snafu(display("invalid search pattern {pattern:?}: {kind}"))]
     PatternRejected {
         /// The pattern string that was rejected.
@@ -275,7 +275,7 @@ pub enum Error {
         diagnostic: Option<String>,
     },
 
-    /// A marshaled [`call`](crate::Ida::call) did not return: the kernel closure panicked or
+    /// A marshaled [`call`](crate::kernel::Ida::call) did not return: the kernel closure panicked or
     /// the thread is gone. `?` converts a [`CallError`] into this via [`From`], flattening
     /// the call boundary into one [`Result`]; the panic payload is reduced to its message.
     /// Handle [`CallError`] directly to inspect or [`resume`](CallError::resume) it.
@@ -299,7 +299,7 @@ impl From<CallError> for Error {
     }
 }
 
-/// Why a marshaled [`call`](crate::Ida::call) did not return a value.
+/// Why a marshaled [`call`](crate::kernel::Ida::call) did not return a value.
 pub enum CallError {
     /// The closure panicked on the kernel thread. The original payload is kept so it
     /// can be inspected with [`message`](CallError::message) or re-raised with
@@ -366,7 +366,7 @@ impl fmt::Debug for CallError {
 
 impl std::error::Error for CallError {}
 
-/// Why the kernel thread could not be brought up in [`run`](crate::Ida::run).
+/// Why the kernel thread could not be brought up in [`run`](crate::kernel::Ida::run).
 #[derive(Debug, Snafu)]
 pub enum InitError {
     /// The kernel "main" thread could not be re-claimed (unrecognized
@@ -389,7 +389,7 @@ pub enum InitError {
     KernelGone,
 
     /// A kernel is already live; the kernel is a process global, so drop the existing
-    /// [`Database`](crate::Database) before [`here`](crate::Ida::here)/[`run`](crate::Ida::run) again.
+    /// [`Database`](crate::Database) before [`here`](crate::kernel::Ida::here)/[`run`](crate::kernel::Ida::run) again.
     #[snafu(display("a kernel is already live in this process"))]
     AlreadyRunning,
 }

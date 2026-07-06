@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::{Database, FunctionName};
+use idakit::prelude::*;
 
 #[test]
 fn function_names_are_total() {
@@ -13,7 +13,7 @@ fn function_names_are_total() {
         return;
     };
     let path = db.path().to_owned();
-    idakit::Ida::run(move |ida| {
+    Ida::run(move |ida| {
         ida.call(move |idb| run(idb, &path))
             .unwrap_or_else(|e| e.resume())
     })

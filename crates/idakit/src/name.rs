@@ -8,7 +8,7 @@ use crate::ffi::{read_string, with_cstr};
 
 impl Database {
     /// The name at `address` -- a label, function, or data name -- or `None` if the address is
-    /// unnamed. This is the whole-database counterpart to [`Function::name`](crate::Function::name),
+    /// unnamed. This is the whole-database counterpart to [`Function::name`](crate::function::Function::name),
     /// which is specific to a function entry.
     #[must_use]
     pub fn name(&self, address: Address) -> Option<String> {

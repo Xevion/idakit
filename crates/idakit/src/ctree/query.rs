@@ -14,7 +14,7 @@
 use super::node::{ExpressionId, ExpressionKind, LocalId};
 use super::ops::{BinOp, UnOp};
 use super::tree::Ctree;
-use crate::Address;
+use crate::address::Address;
 
 /// A reference to a global/static the decompiler named, as surfaced by [`global_target`].
 #[derive(Clone, Debug, PartialEq, Eq)]

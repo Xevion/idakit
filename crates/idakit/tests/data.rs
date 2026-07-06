@@ -4,7 +4,8 @@
 
 mod common;
 
-use idakit::{Address, BADADDR, Database};
+use idakit::prelude::*;
+use idakit_sys::BADADDR;
 
 #[test]
 fn data() {

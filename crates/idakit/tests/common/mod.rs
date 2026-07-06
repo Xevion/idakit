@@ -8,7 +8,7 @@ pub mod corpus;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use idakit::{Database, Ida};
+use idakit::prelude::{Database, Ida};
 
 /// Open the shared test database (see [`TestDb::source`]) on the kernel thread, run `body`
 /// against it, and close it (`save = false`). Every dedicated single-DB test is this shape, so

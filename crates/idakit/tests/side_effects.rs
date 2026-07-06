@@ -4,7 +4,7 @@
 //! the process-global env from leaking between cases.
 
 use assert2::assert;
-use idakit::Ida;
+use idakit::kernel::Ida;
 use idakit_sys::idakit_get_batch;
 
 /// Bring-up sets `TVHEADLESS=1` so libidalib never attempts GUI/Qt init.

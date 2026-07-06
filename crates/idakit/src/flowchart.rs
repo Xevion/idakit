@@ -1,7 +1,7 @@
 //! [`FlowChart`]: an owned, `Send` control-flow graph of one function.
 //!
 //! IDA builds a function's whole flow chart eagerly (`qflow_chart_t`), so -- unlike the lazy
-//! [`Function`]/[`Segment`](crate::Segment) views that re-query per accessor -- a CFG is a
+//! [`Function`](crate::function::Function)/[`Segment`](crate::segment::Segment) views that re-query per accessor -- a CFG is a
 //! snapshot from the start. It is materialized on the kernel thread and handed back as an
 //! owned [`FlowChart`] any worker can traverse: an append-only arena of [`BasicBlock`]s keyed by
 //! [`BasicBlockId`], with successor/predecessor edges as block handles. A [`BasicBlock`] carries
@@ -38,7 +38,7 @@ pub type BasicBlockId = Idx<BasicBlock>;
 /// [`ExternalExit`]s rather than blocks -- so a real [`BasicBlock`] is never one of them.
 ///
 /// A closed set: `TryFrom<u8>` rejects any `fc_block_type_t` outside it (a newer SDK's value
-/// surfaces as [`Error::UnknownBlockKind`](crate::Error::UnknownBlockKind) at CFG build, a
+/// surfaces as [`Error::UnknownBlockKind`] at CFG build, a
 /// deliberate version-drift break) rather than absorbing it into a catch-all every downstream
 /// `match` would then have to carry.
 #[derive(
@@ -159,7 +159,7 @@ impl BasicBlock {
 }
 
 /// An owned, `Send` control-flow graph of one function. Materialize with
-/// [`Function::flowchart`](crate::Function::flowchart)/[`Database::flowchart`], then traverse
+/// [`Function::flowchart`](crate::function::Function::flowchart)/[`Database::flowchart`], then traverse
 /// the [`BasicBlock`] arena by [`BasicBlockId`]. Detached from the kernel, so it analyzes on any
 /// thread.
 #[derive(Debug)]
@@ -223,7 +223,7 @@ impl Database {
     /// Build the control-flow graph of the function containing `address` with default options:
     /// external exits recorded, predecessors computed, calls do not split a block. `Err` with
     /// [`Error::NoFunction`] when no function covers `address`. For the knobs, use
-    /// [`Function::flowchart_with`](crate::Function::flowchart_with).
+    /// [`Function::flowchart_with`](crate::function::Function::flowchart_with).
     pub fn flowchart(&self, address: Address) -> Result<FlowChart> {
         self.build_flowchart(address, 0)
     }

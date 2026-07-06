@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use idakit::ctree::{Ctree, ExpressionId, LocalId, NodeRef};
-use idakit::{Address, Database};
+use idakit::prelude::*;
 
 /// Calls whose return value introduces taint (matched as a substring of the name).
 const SOURCES: &[&str] = &["recv", "read", "fgets", "getenv", "scanf", "gets"];
@@ -129,7 +129,7 @@ struct Totals {
     nodes: u64,
 }
 
-fn run(idb: &mut Database, db: &str) -> Result<(), idakit::Error> {
+fn run(idb: &mut Database, db: &str) -> Result<(), Error> {
     idb.open(db).call()?;
 
     let limit = std::env::var("TAINT_LIMIT")
@@ -240,9 +240,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .expect("usage: taint <db.i64>  (set TAINT_LIMIT to cap the sweep)");
 
-    idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
-        ida.call(move |idb| run(idb, &db))?
-    })??;
+    Ida::run(move |ida| -> Result<(), Error> { ida.call(move |idb| run(idb, &db))? })??;
 
     Ok(())
 }

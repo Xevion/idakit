@@ -40,7 +40,7 @@ impl Database {
 
 /// An owned, `Send` snapshot of one resolved type: a [`root`](Self::root) [`TypeId`] into an
 /// interned [`TypeTable`] holding it and every type it references. Build with
-/// [`Database::type_named`] or [`Function::prototype_type`](crate::Function::prototype_type), then
+/// [`Database::type_named`] or [`Function::prototype_type`](crate::function::Function::prototype_type), then
 /// walk it via [`shape`](Self::shape)/[`members`](Self::members) and resolve child handles with
 /// [`get`](Self::get). Detached from the kernel, so it inspects on any thread.
 #[derive(Debug)]

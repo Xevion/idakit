@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use libtest_mimic::{Arguments, Failed, Trial};
 
 use common::checks::Check;
-use idakit::Ida;
+use idakit::kernel::Ida;
 
 // Serializes trials that share a process (bare `cargo test`); uncontended under nextest.
 static KERNEL_GATE: Mutex<()> = Mutex::new(());

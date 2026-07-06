@@ -5,13 +5,15 @@
 //!
 //!   cargo run -p idakit --example analyze -- <path/to/binary>
 
+use idakit::prelude::*;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bin = std::env::args()
         .nth(1)
         .expect("usage: analyze <path/to/binary>");
 
-    idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
-        ida.call(move |idb| -> Result<(), idakit::Error> {
+    Ida::run(move |ida| -> Result<(), Error> {
+        ida.call(move |idb| -> Result<(), Error> {
             idb.open(&bin).run_auto(true).call()?;
 
             let funcs = idb.functions().count();

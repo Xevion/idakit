@@ -2,7 +2,7 @@
 //! with plain `Ida::run` / `Ida::here` staying as the zero-config shortcuts.
 
 use assert2::assert;
-use idakit::Ida;
+use idakit::kernel::Ida;
 
 #[test]
 fn new_run_returns_closure_value() {

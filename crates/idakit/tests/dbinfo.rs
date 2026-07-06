@@ -5,7 +5,7 @@
 //! kernel tests. Runs against the corpus manifest's canonical fixture (see
 //! [`common::TestDb`]); skips when no corpus is configured. Read-only; opens `save = false`.
 
-use idakit::{Bitness, Database, Name};
+use idakit::prelude::*;
 
 mod common;
 

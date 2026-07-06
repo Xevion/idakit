@@ -4,11 +4,13 @@
 
 use std::thread;
 
+use idakit::prelude::*;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = std::env::args().nth(1).expect("usage: actor <db.i64>");
 
     // `run` -> Err on kernel setup; the app closure -> Err on an operational failure.
-    idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
+    Ida::run(move |ida| -> Result<(), Error> {
         {
             let db = db.clone();
             ida.call(move |idb| idb.open(&db).call())??;
@@ -31,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|b| format!("{b:02X}"))
                 .collect::<Vec<_>>()
                 .join(" ");
-            match idakit::Pattern::hex(idb, &sig) {
+            match Pattern::hex(idb, &sig) {
                 Ok(pat) => idb.search(&pat).count(),
                 Err(_) => 0,
             }

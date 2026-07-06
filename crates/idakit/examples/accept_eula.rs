@@ -3,8 +3,10 @@
 //!
 //!   cargo run -p idakit --example accept_eula
 
+use idakit::kernel::Ida;
+
 fn main() {
-    let idb = idakit::Ida::here().expect("kernel init failed");
+    let idb = Ida::here().expect("kernel init failed");
     if idb.accept_eula() {
         println!("EULA accepted for this $HOME");
     } else {

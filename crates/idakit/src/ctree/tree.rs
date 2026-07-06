@@ -7,7 +7,7 @@ use super::node::{
     StatementKind, StatementNode,
 };
 use super::ops::{AssignOp, BinOp, UnOp};
-use crate::Address;
+use crate::address::Address;
 use crate::arena::Arena;
 use crate::types::{TypeBuilder, TypeId, TypeTable, TypeValue};
 
@@ -39,7 +39,7 @@ fn for_each_child(
 /// known shape:
 ///
 /// ```
-/// use idakit::Address;
+/// use idakit::address::Address;
 /// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeShape, TypeValue};
 ///
 /// let mut b = CtreeBuilder::new();

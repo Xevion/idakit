@@ -7,7 +7,7 @@
 //! resolved value.
 
 use super::ops::{AssignOp, BinOp, UnOp};
-use crate::Address;
+use crate::address::Address;
 use crate::arena::Idx;
 use crate::types::TypeId;
 

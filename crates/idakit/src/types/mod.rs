@@ -1,6 +1,6 @@
 //! `TypeTable`: an interned arena of resolved types carried by an owned snapshot off the
 //! kernel thread -- the decompiler [`Ctree`](crate::ctree::Ctree), a function's
-//! [`StackFrame`](crate::StackFrame), or a standalone [`Type`](crate::Type).
+//! [`StackFrame`](crate::stack::StackFrame), or a standalone [`Type`].
 //!
 //! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
 //! types share one handle, and recursion (a struct pointing at itself) is a [`TypeId`]

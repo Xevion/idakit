@@ -9,7 +9,7 @@
 
 mod common;
 
-use idakit::{Address, Database, Error, FlowChart};
+use idakit::prelude::*;
 
 #[test]
 fn cfg() {

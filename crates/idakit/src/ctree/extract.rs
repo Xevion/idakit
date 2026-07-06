@@ -23,7 +23,7 @@ use super::node::{
 };
 use super::ops::{AssignOp, BinOp, UnOp};
 use super::tree::{Ctree, CtreeBuilder};
-use crate::Address;
+use crate::address::Address;
 use crate::arena::Idx;
 use crate::ffi::{lossy, slice};
 use crate::types::{TypeBuilder, TypeSink, raw, tid, type_vtbl};

@@ -19,7 +19,7 @@ use std::process::{Command, Stdio};
 use assert2::assert;
 use idakit::ctree::Ctree;
 use idakit::ctree::query::{base_var, global_target};
-use idakit::{Address, AssignOp};
+use idakit::prelude::*;
 
 /// A store of a global's address into a `this`-relative slot -- a vtable install in a
 /// constructor (`this->__vftable = &vtbl`). `this_offset` is the byte offset within the
@@ -119,7 +119,7 @@ fn ctor() {
 
     let bin_str = bin.to_string_lossy().into_owned();
 
-    idakit::Ida::run(move |ida| {
+    Ida::run(move |ida| {
         ida.call(move |idb| {
             idb.open(&bin_str)
                 .run_auto(true)

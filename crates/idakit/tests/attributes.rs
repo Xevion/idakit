@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::{Bitness, Database};
+use idakit::prelude::*;
 
 #[test]
 fn attributes() {

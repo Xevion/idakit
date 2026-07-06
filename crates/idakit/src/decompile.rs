@@ -14,7 +14,7 @@ use crate::ffi::read_string;
 
 impl Database {
     /// Decompile the function at `address` and materialize its ctree. Sugar for
-    /// [`function(address)`](Self::function)`.`[`ctree()`](crate::Function::ctree).
+    /// [`function(address)`](Self::function)`.`[`ctree()`](crate::function::Function::ctree).
     pub fn ctree(&self, address: Address) -> Result<Ctree> {
         self.function(address).ctree()
     }

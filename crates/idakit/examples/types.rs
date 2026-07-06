@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 
-use idakit::{Address, Error, Ida, StackFrame, StackSlotKind, Type, TypeId, TypeShape, TypeTable};
+use idakit::prelude::*;
 
 const SHOW_PROTOS: usize = 12;
 const FRAME_BUDGET: usize = 3000;
@@ -149,8 +149,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = argv.next().expect("usage: types <db.i64> [TypeName]");
     let arg_type = argv.next();
 
-    Ida::run(move |ida| -> Result<(), idakit::Error> {
-        ida.call(move |idb| -> Result<(), idakit::Error> {
+    Ida::run(move |ida| -> Result<(), Error> {
+        ida.call(move |idb| -> Result<(), Error> {
             idb.open(&db).call()?;
 
             // Prototypes are sparse in a stripped release binary -- scan every function, not a

@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::Database;
+use idakit::prelude::*;
 
 #[test]
 fn strings() {

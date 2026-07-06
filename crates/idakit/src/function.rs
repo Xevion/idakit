@@ -70,7 +70,7 @@ impl<'db> Function<'db> {
 
     /// Walk this function's stored prototype into an owned [`Type`] -- the structured
     /// counterpart to [`prototype`](Self::prototype), whose root is a
-    /// [`TypeShape::Function`](crate::TypeShape::Function). `Ok(None)` if the kernel has no type
+    /// [`TypeShape::Function`](crate::types::TypeShape::Function). `Ok(None)` if the kernel has no type
     /// info for the function.
     pub fn prototype_type(&self) -> Result<Option<Type>> {
         // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
@@ -188,7 +188,7 @@ impl<'db> Function<'db> {
 
     /// Build this function's CFG with non-default options: `call_ends` splits a block after
     /// every call instruction, `externals(false)` drops the out-of-function
-    /// [`ExternalExit`](crate::ExternalExit) edges (jump/call targets outside the function),
+    /// [`ExternalExit`](crate::flowchart::ExternalExit) edges (jump/call targets outside the function),
     /// and `predecessors(false)` skips predecessor lists (a cheaper build when only forward
     /// edges are needed).
     #[builder]
@@ -207,7 +207,7 @@ impl<'db> Function<'db> {
 
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
 /// `Function` borrows a `!Send` [`Database`]; collect snapshots inside an
-/// [`Ida::call`](crate::Ida::call) job to carry results back out.
+/// [`Ida::call`](crate::kernel::Ida::call) job to carry results back out.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FunctionSnapshot {
     /// Entry address.
@@ -495,7 +495,7 @@ impl Iterator for Instructions<'_> {
 impl Database {
     /// Lazily decode the instructions in the half-open range `[range.start, range.end)`,
     /// code-gated like [`Function::instructions`]. The ranged twin of that walk -- pass a
-    /// [`BasicBlock`](crate::BasicBlock)'s [`range`](crate::BasicBlock::range) to iterate one
+    /// [`BasicBlock`](crate::flowchart::BasicBlock)'s [`range`](crate::flowchart::BasicBlock::range) to iterate one
     /// basic block.
     #[must_use]
     pub fn instructions_in(&self, range: Range<Address>) -> InstructionsIn<'_> {

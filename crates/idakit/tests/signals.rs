@@ -11,7 +11,7 @@
 use std::ffi::c_int;
 
 use assert2::assert;
-use idakit::Ida;
+use idakit::kernel::Ida;
 
 mod common;
 

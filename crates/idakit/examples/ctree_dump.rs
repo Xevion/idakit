@@ -4,6 +4,8 @@
 //!
 //!   cargo run -p idakit --example ctree_dump -- <binary> [name-substring]
 
+use idakit::prelude::*;
+
 /// Recursively print each node's kind, indented by depth -- the structural ground truth
 /// behind the render.
 fn dump(tree: &idakit::ctree::Ctree, node: idakit::ctree::NodeRef, depth: usize) {
@@ -33,8 +35,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("usage: ctree_dump <binary> [name-substring]");
     let filter = args.next().unwrap_or_default();
 
-    idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
-        ida.call(move |idb| -> Result<(), idakit::Error> {
+    Ida::run(move |ida| -> Result<(), Error> {
+        ida.call(move |idb| -> Result<(), Error> {
             idb.open(&bin).run_auto(true).call()?;
 
             let mut matched = 0;

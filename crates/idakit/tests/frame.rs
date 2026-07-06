@@ -4,7 +4,7 @@
 
 mod common;
 
-use idakit::{Database, StackSlot};
+use idakit::prelude::*;
 
 #[test]
 fn frame() {

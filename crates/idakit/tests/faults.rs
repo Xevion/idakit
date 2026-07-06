@@ -11,7 +11,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use assert2::assert;
-use idakit::{Database, Error, Ida};
+use idakit::prelude::*;
 
 mod common;
 

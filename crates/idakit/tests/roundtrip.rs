@@ -7,6 +7,8 @@
 
 mod common;
 
+use idakit::prelude::*;
+
 #[test]
 fn roundtrip() {
     common::with_canonical_db(run);
@@ -34,7 +36,6 @@ fn run(idb: &mut idakit::Database) {
     // Structured prototype walk: drive idakit_func_type_walk over real functions. Not every
     // function is typed, so scan for the first that resolves and validate its shape end-to-end.
     {
-        use idakit::TypeShape;
         let mut typed = 0usize;
         let mut example = None;
         for f in idb.functions().take(2000) {
@@ -148,7 +149,7 @@ fn run(idb: &mut idakit::Database) {
     // Decompile-failure path: an unmapped address has no function, so the
     // kernel returns null and the facade reports the reason. Confirm a real
     // reason (sourced from the facade buffer, not a stale qerrno) propagates.
-    let nowhere = idakit::Address::new_const(0xffff_ffff_f000);
+    let nowhere = Address::new_const(0xffff_ffff_f000);
     match idb.decompile(nowhere) {
         Ok(_) => panic!("expected decompile to fail at unmapped {nowhere:#x}"),
         Err(e) => {

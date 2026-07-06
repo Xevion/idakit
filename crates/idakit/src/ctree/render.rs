@@ -487,7 +487,7 @@ fn bin_prec(op: BinOp) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Address;
+    use crate::address::Address;
     use crate::ctree::node::{Local, LocalLocation};
     use crate::ctree::ops::AssignOp;
     use crate::ctree::tree::CtreeBuilder;

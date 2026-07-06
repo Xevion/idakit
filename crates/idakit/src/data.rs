@@ -44,8 +44,8 @@ impl Database {
 
     /// Read a pointer at `address` -- a value the width of the database's address size (4 bytes
     /// for a 32-bit image, 8 for 64-bit) -- as an [`Address`]. `None` if the database reports no
-    /// recognized [`Bitness`], the bytes are unmapped, or the stored value is
-    /// [`BADADDR`](crate::BADADDR).
+    /// recognized [`Bitness`], the bytes are unmapped, or the stored value is the `BADADDR`
+    /// sentinel.
     #[must_use]
     pub fn read_pointer(&self, address: Address) -> Option<Address> {
         let raw = match self.bitness()? {

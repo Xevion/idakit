@@ -12,7 +12,7 @@
 mod common;
 
 use common::checks::RegisterCheck;
-use idakit::{Database, DecodeError, RegisterClass};
+use idakit::prelude::*;
 
 #[test]
 fn decode_is_strict_and_consistent() {
@@ -21,7 +21,7 @@ fn decode_is_strict_and_consistent() {
         return;
     };
     let path = db.path().to_owned();
-    idakit::Ida::run(move |ida| {
+    Ida::run(move |ida| {
         ida.call(move |idb| run(idb, &path))
             .unwrap_or_else(|e| e.resume())
     })

@@ -180,7 +180,7 @@ mod tests {
             index: none_reg(),
             disp: 0,
             value: 0,
-            addr: crate::address::BADADDR,
+            addr: sys::BADADDR,
             sel: 0,
         }
     }
@@ -188,7 +188,7 @@ mod tests {
     fn blank_insn() -> sys::InstructionRaw {
         sys::InstructionRaw {
             address: 0x1000,
-            target: crate::address::BADADDR,
+            target: sys::BADADDR,
             itype: 0,
             len: 0,
             isa: 1,
@@ -233,7 +233,7 @@ mod tests {
         op.index = gpr(0, 8, "rax");
         op.scale = 4;
         op.disp = 8;
-        op.addr = crate::address::BADADDR; // no static target for [rbp+rax*4+8]
+        op.addr = sys::BADADDR; // no static target for [rbp+rax*4+8]
 
         let mapped = operand(&op, at()).expect("valid mem operand");
         assert!(let OperandKind::Memory(m) = &mapped.kind);
@@ -347,7 +347,7 @@ mod tests {
     fn near_operand_without_target_is_rejected() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_NEAR;
-        op.addr = crate::address::BADADDR; // an unresolved near target
+        op.addr = sys::BADADDR; // an unresolved near target
         assert!(let Err(DecodeError::MalformedOperand { .. }) = operand(&op, at()));
     }
 

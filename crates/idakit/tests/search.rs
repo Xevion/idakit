@@ -7,7 +7,7 @@
 
 mod common;
 
-use idakit::{Address, Error, Pattern, PatternRejection};
+use idakit::prelude::*;
 
 #[test]
 fn search() {
@@ -129,7 +129,7 @@ fn rejections_trip(idb: &idakit::Database) {
 }
 
 /// Assert a compile result is `NoAnchor { total }`.
-fn let_no_anchor(r: idakit::Result<Pattern<'_>>, total: usize) {
+fn let_no_anchor(r: Result<Pattern<'_>>, total: usize) {
     assert!(
         matches!(
             r,

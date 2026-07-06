@@ -4,7 +4,7 @@
 //! typed by `T` so an `Idx<ExpressionData>` cannot be used where an `Idx<TypeValue>` is
 //! expected. The arena only appends, so a handle stays valid for the arena's life.
 //! Being lifetime-free and (for `T: Send`) `Send` is what lets a materialized graph --
-//! the decompiler ctree, a function's [`FlowChart`](crate::FlowChart) -- move off the kernel thread
+//! the decompiler ctree, a function's [`FlowChart`](crate::flowchart::FlowChart) -- move off the kernel thread
 //! to a worker.
 
 use std::fmt;

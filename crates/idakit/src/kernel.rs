@@ -1,7 +1,7 @@
 //! [`Ida`]: the kernel-thread host and marshalling handle. Brings IDA's single-threaded,
 //! thread-affine kernel up -- either on the current thread ([`Ida::here`]) or on a
 //! dedicated `"idakit-kernel"` thread ([`Ida::run`]) -- and gates it behind a process-wide
-//! [`KernelClaim`] so only one [`Database`] is ever live.
+//! claim (`KernelClaim`) so only one [`Database`] is ever live.
 
 use std::ffi::c_int;
 use std::panic::{AssertUnwindSafe, catch_unwind};

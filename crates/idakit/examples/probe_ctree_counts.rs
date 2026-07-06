@@ -4,6 +4,8 @@
 //!
 //!   cargo run -p idakit --example probe_ctree_counts -- <db-copy.i64>
 
+use idakit::prelude::*;
+
 fn dump(tree: &idakit::ctree::Ctree, node: idakit::ctree::NodeRef, depth: usize) {
     use idakit::ctree::NodeRef;
     let pad = "  ".repeat(depth);
@@ -29,8 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .expect("usage: probe_ctree_counts <db.i64>");
 
-    idakit::Ida::run(move |ida| -> Result<(), idakit::Error> {
-        ida.call(move |idb| -> Result<(), idakit::Error> {
+    Ida::run(move |ida| -> Result<(), Error> {
+        ida.call(move |idb| -> Result<(), Error> {
             idb.open(&bin).run_auto(false).call()?;
 
             let eas: Vec<_> = idb
