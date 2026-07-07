@@ -1,7 +1,8 @@
-//! [`Ida`]: the kernel-thread host and marshalling handle. Brings IDA's single-threaded,
-//! thread-affine kernel up -- either on the current thread ([`Ida::here`]) or on a
-//! dedicated `"idakit-kernel"` thread ([`Ida::run`]) -- and gates it behind a process-wide
-//! claim (`KernelClaim`) so only one [`Database`] is ever live.
+//! [`Ida`]: the kernel-thread host and marshalling handle.
+//!
+//! Brings IDA's single-threaded, thread-affine kernel up, either on the current thread
+//! ([`Ida::here`]) or on a dedicated `"idakit-kernel"` thread ([`Ida::run`]), and gates it
+//! behind a process-wide claim (`KernelClaim`) so only one [`Database`] is ever live.
 
 use std::ffi::c_int;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -41,41 +42,56 @@ impl Drop for KernelClaim {
 
 type Job = Box<dyn FnOnce(&mut Database) + Send>;
 
-/// A `Send + Clone` handle to the kernel; marshal closures to it from any thread.
+/// A `Send + Clone` handle to the kernel; marshals closures to it from any thread.
 #[derive(Clone)]
 pub struct Ida {
     tx: Sender<Job>,
 }
 
-/// Default kernel-thread stack: the OS main thread's 8 MiB, idalib's native habitat.
-/// (`init_library` alone overflows below ~3 MiB; spawned stacks don't autogrow.)
+/// Default kernel-thread stack size: the OS main thread's 8 MiB, idalib's native habitat.
+///
+/// `init_library` alone overflows below ~3 MiB; spawned stacks don't autogrow.
 const KERNEL_STACK_DEFAULT: usize = 8 << 20;
 
 impl Ida {
-    /// Start configuring kernel bring-up; chain setters (`stack_size`, and policies as they
-    /// land), then finish with `.run(app)` or `.here()`. The [`run`](Self::run) /
-    /// [`here`](Self::here) shortcuts skip the builder for the defaults.
+    /// Starts configuring kernel bring-up.
+    ///
+    /// Chains setters (`stack_size`, and policies as they land), then finishes with
+    /// `.run(app)` or `.here()`. The [`run`](Self::run) and [`here`](Self::here) shortcuts
+    /// skip the builder for the defaults.
     // Deliberate builder entry (Command::new style), not a constructor returning Self.
     #[allow(clippy::new_ret_no_self)]
     pub fn new() -> IdaConfigBuilder {
         IdaConfig::builder()
     }
 
-    /// Bring the kernel up *on the current thread* and return the open database -- no
-    /// kernel thread, no closure. The `!Send` [`Database`] lives here; dropping it releases
-    /// the kernel. For scripts, tests, and CLIs that own their thread. Prefer
-    /// [`run`](Self::run) when the current thread must stay free or many threads drive
-    /// the kernel. Configure bring-up with [`new`](Self::new).
+    /// Brings the kernel up on the current thread and returns the open database.
+    ///
+    /// No kernel thread, no closure. The `!Send` [`Database`] lives here, and dropping it
+    /// releases the kernel. For scripts, tests, and CLIs that own their thread; prefer
+    /// [`run`](Self::run) when the current thread must stay free or many threads drive the
+    /// kernel. Configure bring-up with [`new`](Self::new).
+    ///
+    /// # Errors
+    /// [`InitError::AlreadyRunning`] if a kernel is already live in the process,
+    /// [`InitError::Claim`] if the kernel thread could not be claimed, or
+    /// [`InitError::InitLibrary`] if `init_library` returned nonzero.
     pub fn here() -> Result<Database, InitError> {
         IdaConfig::builder().here()
     }
 
-    /// Spawn the kernel thread and run `app` on the current thread with an [`Ida`]
-    /// handle, marshaling work onto the kernel via [`call`](Self::call). Returns once
-    /// `app` does. 8 MiB kernel stack; size it with [`run_with_stack`](Self::run_with_stack).
-    /// Configure bring-up with [`new`](Self::new).
+    /// Spawns the kernel thread and runs `app` on the current thread with an [`Ida`] handle.
     ///
-    /// `Err` only on kernel setup; a panic in `app` propagates inline (it runs here).
+    /// `app` marshals work onto the kernel via [`call`](Self::call), and this returns once
+    /// `app` does. Uses an 8 MiB kernel stack; size it with
+    /// [`run_with_stack`](Self::run_with_stack). Configure bring-up with [`new`](Self::new).
+    /// A panic in `app` propagates inline, since `app` runs on the caller's thread.
+    ///
+    /// # Errors
+    /// [`InitError::AlreadyRunning`] if a kernel is already live in the process,
+    /// [`InitError::Claim`] if the kernel thread could not be claimed, or
+    /// [`InitError::InitLibrary`] if `init_library` returned nonzero. Never for a panic in
+    /// `app`.
     pub fn run<R, F>(app: F) -> Result<R, InitError>
     where
         F: FnOnce(Ida) -> R,
@@ -83,8 +99,13 @@ impl Ida {
         IdaConfig::builder().run(app)
     }
 
-    /// [`run`](Self::run) with an explicit kernel-stack size. Raise it above 8 MiB only
-    /// for unusually deep decompilation; the reservation commits lazily.
+    /// [`run`](Self::run) with an explicit kernel-stack size.
+    ///
+    /// Raise it above 8 MiB only for unusually deep decompilation; the reservation commits
+    /// lazily.
+    ///
+    /// # Errors
+    /// Same as [`run`](Self::run).
     pub fn run_with_stack<R, F>(stack_size: usize, app: F) -> Result<R, InitError>
     where
         F: FnOnce(Ida) -> R,
@@ -92,9 +113,14 @@ impl Ida {
         IdaConfig::builder().stack_size(stack_size).run(app)
     }
 
-    /// Run a closure against the open database on the kernel thread, from any thread.
+    /// Runs a closure against the open database on the kernel thread, from any thread.
+    ///
     /// A panic in `f` is caught on the kernel thread and returned as
     /// [`CallError::Panicked`], leaving the kernel alive for later calls.
+    ///
+    /// # Errors
+    /// [`CallError::Panicked`] if `f` panics, or [`CallError::Disconnected`] if the kernel
+    /// thread is gone.
     pub fn call<R, F>(&self, f: F) -> Result<R, CallError>
     where
         F: FnOnce(&mut Database) -> R + Send + 'static,
@@ -121,13 +147,14 @@ impl Ida {
     }
 }
 
-/// Kernel bring-up configuration, built via [`Ida::new`] and finished with
-/// [`run`](IdaConfigBuilder::run) or [`here`](IdaConfigBuilder::here). Policy setters
-/// (console, signals, batch, ...) land here as they're implemented.
+/// Kernel bring-up configuration, built via [`Ida::new`].
+///
+/// Finishes with [`run`](IdaConfigBuilder::run) or [`here`](IdaConfigBuilder::here). Policy
+/// setters (console, signals, batch, ...) land here as they're implemented.
 #[derive(bon::Builder)]
 pub struct IdaConfig {
     /// Kernel-thread stack in bytes; ignored by [`here`](IdaConfigBuilder::here), which runs
-    /// on the current thread. Defaults to 8 MiB -- raise only for deep decompilation.
+    /// on the current thread. Defaults to 8 MiB; raise only for deep decompilation.
     #[builder(default = KERNEL_STACK_DEFAULT)]
     stack_size: usize,
 
@@ -139,7 +166,13 @@ pub struct IdaConfig {
 }
 
 impl IdaConfig {
-    /// Bring the kernel up on a dedicated thread and run `app`; see [`Ida::run`].
+    /// Brings the kernel up on a dedicated thread and runs `app`; see [`Ida::run`].
+    ///
+    /// # Errors
+    /// Propagates [`Ida::run`]'s error.
+    ///
+    /// # Panics
+    /// If the OS refuses to spawn the kernel thread.
     pub fn run<R, F>(self, app: F) -> Result<R, InitError>
     where
         F: FnOnce(Ida) -> R,
@@ -195,7 +228,10 @@ impl IdaConfig {
         Ok(result)
     }
 
-    /// Bring the kernel up on the current thread and return the [`Database`]; see [`Ida::here`].
+    /// Brings the kernel up on the current thread and returns the [`Database`]; see [`Ida::here`].
+    ///
+    /// # Errors
+    /// Propagates [`Ida::here`]'s error.
     pub fn here(self) -> Result<Database, InitError> {
         let claim = KernelClaim::acquire()?;
         bring_up_kernel(&self)?;
@@ -205,9 +241,12 @@ impl IdaConfig {
 
 use ida_config_builder::{IsComplete, State};
 
-/// Finish the builder in place, without an intervening `.build()`.
+/// Finishes the builder in place, without an intervening `.build()`.
 impl<S: State> IdaConfigBuilder<S> {
-    /// Bring the kernel up on a dedicated thread and run `app`; see [`Ida::run`].
+    /// Brings the kernel up on a dedicated thread and runs `app`; see [`Ida::run`].
+    ///
+    /// # Errors
+    /// Propagates [`Ida::run`]'s error.
     pub fn run<R, F>(self, app: F) -> Result<R, InitError>
     where
         S: IsComplete,
@@ -216,7 +255,10 @@ impl<S: State> IdaConfigBuilder<S> {
         self.build().run(app)
     }
 
-    /// Bring the kernel up on the current thread and return the [`Database`]; see [`Ida::here`].
+    /// Brings the kernel up on the current thread and returns the [`Database`]; see [`Ida::here`].
+    ///
+    /// # Errors
+    /// Propagates [`Ida::here`]'s error.
     pub fn here(self) -> Result<Database, InitError>
     where
         S: IsComplete,
@@ -225,8 +267,10 @@ impl<S: State> IdaConfigBuilder<S> {
     }
 }
 
-/// Steal `g_main` for the calling thread, initialize the library once, then apply the
-/// per-bring-up policy (`batch`). The steal is correct on any thread (OS-main or spawned).
+/// Steals `g_main` for the calling thread, initializes the library once, then applies the
+/// per-bring-up policy (`batch`).
+///
+/// The steal is correct on any thread (OS-main or spawned).
 fn bring_up_kernel(cfg: &IdaConfig) -> Result<(), InitError> {
     claim::steal_main().map_err(|reason| InitError::Claim { reason })?;
     if !KERNEL_INITED.swap(true, Ordering::AcqRel) {

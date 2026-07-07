@@ -1,14 +1,14 @@
-//! Operand value types, mirroring IDA's `op_dtype_t`.
+//! [`OperandDataType`]: the value type of an operand, mirroring IDA's `op_dtype_t`.
 //!
 //! Discriminants are the raw `dt_*` values from `ua.hpp`, so the `IntoPrimitive`/
 //! `TryFromPrimitive` derives are the single source of truth for the SDK mapping. This mirror
-//! is pinned to one IDA minor (9.3): the `dt_*` set is fixed there, so the enum is exhaustive
+//! is pinned to one IDA minor (9.3), where the `dt_*` set is fixed, so the enum is exhaustive
 //! and an alignment test ties it to the facade. A later SDK that grows the set (as 9.x grew
-//! `dt_half`) is a deliberate, breaking widening -- an out-of-domain value decodes to
+//! `dt_half`) is a deliberate, breaking widening. An out-of-domain value decodes to
 //! [`DecodeError::UnsupportedDataType`](super::DecodeError), never a silent fallback.
 //!
-//! `data_type` is the *value* type, distinct from the addressing-mode size: `dt_float` and
-//! `dt_dword` are both four bytes but differ here, which is exactly why the operand keeps
+//! `data_type` is the *value* type, distinct from the addressing-mode size, since `dt_float`
+//! and `dt_dword` are both four bytes but differ here. This is exactly why the operand keeps
 //! the data_type rather than only a byte count.
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -61,11 +61,13 @@ pub enum OperandDataType {
 }
 
 impl OperandDataType {
-    /// Fixed byte width, when the type has one. `None` for variable-size
-    /// ([`Tbyte`](Self::Tbyte), [`Ldbl`](Self::Ldbl), [`PackReal`](Self::PackReal)),
-    /// pointer ([`Code`](Self::Code), [`String`](Self::String), [`Unicode`](Self::Unicode)),
-    /// or sizeless ([`Void`](Self::Void), [`BitField`](Self::BitField)) types, whose true
-    /// size is processor- or context-dependent and can't be answered off the kernel thread.
+    /// Fixed byte width, when the type has one.
+    ///
+    /// `None` for variable-size ([`Tbyte`](Self::Tbyte), [`Ldbl`](Self::Ldbl),
+    /// [`PackReal`](Self::PackReal)), pointer ([`Code`](Self::Code), [`String`](Self::String),
+    /// [`Unicode`](Self::Unicode)), or sizeless ([`Void`](Self::Void), [`BitField`](Self::BitField))
+    /// types, whose true size is processor- or context-dependent and can't be answered off the
+    /// kernel thread.
     #[must_use]
     pub fn bytes(self) -> Option<u32> {
         Some(match self {

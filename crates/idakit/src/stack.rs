@@ -1,6 +1,6 @@
 //! [`StackFrame`]: an owned, `Send` snapshot of a function's stack frame.
 //!
-//! IDA models a function frame as a UDT, so idakit reads it much like a struct -- but with stack
+//! IDA models a function frame as a UDT, so idakit reads it much like a struct, but with stack
 //! semantics the generic [`Type`](crate::types::Type) walk lacks: each [`StackSlot`] carries its
 //! frame-pointer-relative [`offset`](StackSlot::offset) (the `var_18`/`arg_4` displacement IDA
 //! displays), and its [`kind`](StackSlot::kind) distinguishes a real stack variable from IDA's
@@ -46,9 +46,10 @@ pub enum StackSlotKind {
 }
 
 impl StackSlotKind {
-    /// Build from the facade's `(flags, name, ty)` parts. A reserved slot (either flag set) drops
-    /// the synthetic name/type; return-address wins a (never-real) tie so the mapping stays total
-    /// and deterministic.
+    /// Builds from the facade's `(flags, name, ty)` parts.
+    ///
+    /// A reserved slot (either flag set) drops the synthetic name/type; return-address wins a
+    /// (never-real) tie so the mapping stays total and deterministic.
     fn from_parts(flags: u32, name: String, ty: Option<TypeId>) -> Self {
         if flags & sys::FRAME_VAR_RETADDR != 0 {
             Self::ReturnAddress
@@ -85,15 +86,16 @@ impl StackSlot {
         self.size
     }
 
-    /// What this slot is -- a real variable (with name/type) or a reserved slot.
+    /// What this slot is: a real variable (with name/type) or a reserved slot.
     #[inline]
     #[must_use]
     pub const fn kind(&self) -> &StackSlotKind {
         &self.kind
     }
 
-    /// The variable's name, or `None` for a reserved slot. Shortcut into
-    /// [`kind`](Self::kind).
+    /// The variable's name, or `None` for a reserved slot.
+    ///
+    /// Shortcut into [`kind`](Self::kind).
     #[inline]
     #[must_use]
     pub fn name(&self) -> Option<&str> {
@@ -104,8 +106,10 @@ impl StackSlot {
     }
 
     /// The variable's structured type handle, or `None` for a reserved slot or an untyped stack
-    /// slot. Resolve it against the owning [`StackFrame`] with [`StackFrame::type_of`]. Shortcut
-    /// into [`kind`](Self::kind).
+    /// slot.
+    ///
+    /// Resolve it against the owning [`StackFrame`] with [`StackFrame::type_of`]. Shortcut into
+    /// [`kind`](Self::kind).
     #[inline]
     #[must_use]
     pub fn ty(&self) -> Option<TypeId> {
@@ -124,10 +128,11 @@ impl StackSlot {
     }
 }
 
-/// An owned, `Send` snapshot of a function's stack frame. Build with
-/// [`Function::frame`](crate::function::Function::frame)/[`Database::frame`], then read its
-/// [`size`](Self::size) and [`slots`](Self::slots). Detached from the kernel, so it inspects on
-/// any thread.
+/// An owned, `Send` snapshot of a function's stack frame.
+///
+/// Build with [`Function::frame`](crate::function::Function::frame)/[`Database::frame`], then
+/// read its [`size`](Self::size) and [`slots`](Self::slots). Detached from the kernel, so it
+/// inspects on any thread.
 #[derive(Debug)]
 pub struct StackFrame {
     size: u64,
@@ -143,25 +148,30 @@ impl StackFrame {
         self.size
     }
 
-    /// The interned type table backing every [`StackSlot::ty`] handle. The frame's own arena,
-    /// materialized on the kernel thread, so it resolves types on any thread.
+    /// The interned type table backing every [`StackSlot::ty`] handle.
+    ///
+    /// The frame's own arena, materialized on the kernel thread, so it resolves types on any
+    /// thread.
     #[inline]
     #[must_use]
     pub const fn types(&self) -> &TypeTable {
         &self.types
     }
 
-    /// Resolve a [`StackSlot::ty`] handle to its type. Handles come from this frame's own
-    /// [`types`](Self::types) table, so this never panics on a handle taken from `self`.
+    /// Resolves a [`StackSlot::ty`] handle to its type.
+    ///
+    /// Handles come from this frame's own [`types`](Self::types) table, so this never panics on
+    /// a handle taken from `self`.
     #[inline]
     #[must_use]
     pub fn type_of(&self, id: TypeId) -> &TypeValue {
         self.types.get(id)
     }
 
-    /// Every slot in the frame, in IDA's member order (low to high offset) -- real variables and
-    /// reserved slots alike, told apart by [`StackSlot::kind`]. Use
-    /// [`variables`](Self::variables) for just the real ones.
+    /// Every slot in the frame, in IDA's member order (low to high offset), real variables and
+    /// reserved slots alike, told apart by [`StackSlot::kind`].
+    ///
+    /// Use [`variables`](Self::variables) for just the real ones.
     #[inline]
     #[must_use]
     pub fn slots(&self) -> &[StackSlot] {
@@ -201,8 +211,10 @@ impl TypeSink for FrameBuilder {
     }
 }
 
-/// Append one frame variable. `ty` is [`IDAKIT_NONE`](sys::IDAKIT_NONE) for a reserved or
-/// untyped slot, otherwise a handle into the shared table.
+/// Appends one frame variable.
+///
+/// `ty` is [`IDAKIT_NONE`](sys::IDAKIT_NONE) for a reserved or untyped slot, otherwise a handle
+/// into the shared table.
 unsafe extern "C" fn cb_f_var(
     ctx: *mut c_void,
     name: *const c_char,
@@ -225,10 +237,14 @@ unsafe extern "C" fn cb_f_var(
 }
 
 impl Database {
-    /// Snapshot the stack frame of the function containing `address`: `Ok(None)` if no function
-    /// covers it or the function has no frame, `Err` only if a variable's type could not be
-    /// structured. The disassembly-level view of the function's stack layout -- no decompilation
-    /// needed. For the decompiler's richer locals, see [`ctree`](Self::ctree).
+    /// Snapshots the stack frame of the function containing `address`.
+    ///
+    /// Returns `Ok(None)` if no function covers `address` or the function has no frame. This is
+    /// the disassembly-level view of the function's stack layout, needing no decompilation; for
+    /// the decompiler's richer locals, see [`ctree`](Self::ctree).
+    ///
+    /// # Errors
+    /// [`Error::Extract`] if a variable's type could not be structured.
     pub fn frame(&self, address: Address) -> Result<Option<StackFrame>> {
         let mut fb = FrameBuilder {
             types: TypeBuilder::new(),

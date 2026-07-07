@@ -1,10 +1,10 @@
-//! Structured type introspection: prototypes, named types, and a stack frame over one interned table.
+//! Structured type introspection over prototypes, named types, and a stack frame in one interned table.
 //!
 //! Every function prototype, named type, and stack frame walks out of the kernel as an owned
-//! snapshot whose every parameter, member, and slot is a real `TypeId` you resolve by handle -- the
-//! idiomatic counterpart to a rendered declaration string. A prototype names a class only opaquely
-//! (`fb::JsObject *`); resolving that name tells you whether the database carries its field layout
-//! or merely a forward declaration.
+//! snapshot whose every parameter, member, and slot is a real `TypeId` you resolve by handle,
+//! the idiomatic counterpart to a rendered declaration string. A prototype names a class only
+//! opaquely (`fb::JsObject *`), and resolving that name tells you whether the database carries
+//! its field layout or merely a forward declaration.
 //!
 //! Run: cargo run -p idakit --example types -- path/to/database.i64 [TypeName]
 
@@ -16,9 +16,10 @@ const SHOW_PROTOS: usize = 12;
 const FRAME_BUDGET: usize = 3000;
 const MAX_NAMES: usize = 64;
 
-/// A one-line rendering of the type at `id`. Aggregates render as their tag only (so a recursive
-/// type stays finite); `Ptr`/`Array`/`Function` recurse into element types, bottoming out at a
-/// named tag or scalar.
+/// A one-line rendering of the type at `id`.
+///
+/// Aggregates render as their tag only (so a recursive type stays finite). `Ptr`/`Array`/
+/// `Function` recurse into element types, bottoming out at a named tag or scalar.
 fn one_line(table: &TypeTable, id: TypeId) -> String {
     match &table.get(id).shape {
         TypeShape::Void => "void".to_owned(),
@@ -54,8 +55,10 @@ fn one_line(table: &TypeTable, id: TypeId) -> String {
 }
 
 /// A type name worth resolving via [`Database::type_named`]: a definition's tag
-/// ([`TypeShape::tag_name`]) or an [`Opaque`](TypeShape::Opaque) reference -- the latter is a name
-/// a prototype mentions without carrying a body here, which resolving may or may not expand.
+/// ([`TypeShape::tag_name`]) or an [`Opaque`](TypeShape::Opaque) reference.
+///
+/// The latter is a name a prototype mentions without carrying a body here, which resolving
+/// may or may not expand.
 fn referenced_name(shape: &TypeShape) -> Option<&str> {
     match shape {
         TypeShape::Opaque(name) => Some(name),
@@ -71,8 +74,10 @@ fn param_count(image: &Type) -> usize {
     }
 }
 
-/// Print an aggregate's fields, one per line, recursing into embedded (non-pointer) aggregates so
-/// nesting is visible. `seen` breaks cycles; `indent` bounds depth.
+/// Prints an aggregate's fields, one per line, recursing into embedded (non-pointer)
+/// aggregates so nesting is visible.
+///
+/// `seen` breaks cycles; `indent` bounds depth.
 fn layout(table: &TypeTable, id: TypeId, indent: usize, seen: &mut HashSet<TypeId>) {
     const MAX_DEPTH: usize = 3;
     let (TypeShape::Struct { members, .. } | TypeShape::Union { members, .. }) =
@@ -94,8 +99,10 @@ fn layout(table: &TypeTable, id: TypeId, indent: usize, seen: &mut HashSet<TypeI
     }
 }
 
-/// Print a resolved named type: its root shape, size, and -- if the database carries a body -- its
-/// full field layout. A forward-declared name resolves but has no layout to show; say so.
+/// Prints a resolved named type: its root shape, size, and (if the database carries a body)
+/// its full field layout.
+///
+/// A forward-declared name resolves but has no layout to show, so say so.
 fn print_layout(image: &Type, name: &str) {
     let (table, root) = (image.types(), image.root());
     println!("\n-- layout: {name} --");
@@ -120,7 +127,7 @@ fn soff(offset: i64) -> String {
     }
 }
 
-/// Print a function's stack frame: total size and every slot's offset, label, and resolved type.
+/// Prints a function's stack frame: total size and every slot's offset, label, and resolved type.
 fn print_frame(frame: &StackFrame, ea: Address) {
     println!(
         "\n== stack frame: {ea:#x}  ({} bytes, {} slots) ==",

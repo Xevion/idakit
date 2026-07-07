@@ -88,7 +88,7 @@ pub struct TypeVtbl {
 /// The callbacks the facade invokes while streaming a ctree walk. The consumer (idakit)
 /// builds owned nodes inside each callback and returns the handle the parent will
 /// reference; children are emitted before parents. `#[repr(C)]` and field order mirror
-/// `idakit_emit_vtbl_t` exactly -- the facade indexes by offset.
+/// `idakit_emit_vtbl_t` exactly, since the facade indexes by offset.
 ///
 /// Every `*const c_char`/byte-slice pointer passed to a callback (names, string literals,
 /// member and enum-constant names, comments, value arrays) borrows a C++ stack temporary
@@ -152,8 +152,8 @@ unsafe extern "C" {
         n_expr: *mut c_int,
         n_calls: *mut c_int,
     );
-    /// Diagnostic: fill two 256-int per-op expression histograms -- `v_hist` from the SDK's
-    /// `ctree_visitor_t` (ground truth), `w_hist` from a mirror of the extraction walker's
+    /// Diagnostic: fill two 256-int per-op expression histograms, `v_hist` from the SDK's
+    /// `ctree_visitor_t` (ground truth) and `w_hist` from a mirror of the extraction walker's
     /// recursion. Their per-op difference localizes any extraction under/over-visit.
     pub fn idakit_cfunc_ctree_expr_gap(cfunc: *mut c_void, v_hist: *mut c_int, w_hist: *mut c_int);
     /// Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) per node and writing the root

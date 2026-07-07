@@ -23,9 +23,11 @@ impl Database {
 }
 
 /// One imported symbol: an import-table slot (IAT entry / thunk) bound to a symbol in some
-/// module. Carries a [`name`](Self::name), an [`ordinal`](Self::ordinal), or -- for a
-/// by-ordinal import IDA has resolved a name for -- both; they are not mutually exclusive.
-/// Owned, as it outlives the snapshot it was read from.
+/// module.
+///
+/// Carries a [`name`](Self::name), an [`ordinal`](Self::ordinal), or, for a by-ordinal import
+/// IDA has resolved a name for, both; they are not mutually exclusive. Owned, as it outlives
+/// the snapshot it was read from.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Import {
     address: Address,
@@ -35,23 +37,24 @@ pub struct Import {
 }
 
 impl Import {
-    /// The import-table slot address -- the IAT entry / thunk this import resolves.
+    /// The import-table slot address: the IAT entry / thunk this import resolves.
     #[inline]
     #[must_use]
     pub fn address(&self) -> Address {
         self.address
     }
 
-    /// The imported symbol name -- present for a by-name import, or when IDA has resolved a
-    /// name for a by-ordinal one; `None` for a bare by-ordinal import.
+    /// The imported symbol name, present for a by-name import, or when IDA has resolved a name
+    /// for a by-ordinal one; `None` for a bare by-ordinal import.
     #[inline]
     #[must_use]
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
 
-    /// The import ordinal, or `None` when imported by [`name`](Self::name). IDA encodes
-    /// "by name" as ordinal `0`, which maps to `None` here.
+    /// The import ordinal, or `None` when imported by [`name`](Self::name).
+    ///
+    /// IDA encodes "by name" as ordinal `0`, which maps to `None` here.
     #[inline]
     #[must_use]
     pub fn ordinal(&self) -> Option<u64> {
@@ -67,9 +70,10 @@ impl Import {
     }
 }
 
-/// Lazy iterator over the database's imports; frees the snapshot on drop. Borrows `&Database`, so it
-/// can't outlive the database or coexist with a write. `size_hint`'s lower bound is `0`: a slot
-/// with no valid address is skipped.
+/// Lazy iterator over the database's imports; frees the snapshot on drop.
+///
+/// Borrows `&Database`, so it can't outlive the database or coexist with a write. `size_hint`'s
+/// lower bound is `0`: a slot with no valid address is skipped.
 pub struct Imports<'db> {
     handle: *mut c_void,
     next: usize,

@@ -1,4 +1,5 @@
-//! [`DecompiledFunction`]: an owned decompiled function; disposes its handle on [`Drop`].
+//! [`DecompiledFunction`]: an owned decompiled function that disposes its handle on [`Drop`].
+//!
 //! Exposes pseudocode and ctree counts (the borrowed `ExpressionKind` AST is a later phase).
 
 use std::ffi::c_void;
@@ -13,13 +14,23 @@ use crate::error::{Error, Result};
 use crate::ffi::read_string;
 
 impl Database {
-    /// Decompile the function at `address` and materialize its ctree. Sugar for
+    /// Decompiles the function at `address` and materializes its ctree.
+    ///
+    /// Sugar for
     /// [`function(address)`](Self::function)`.`[`ctree()`](crate::function::Function::ctree).
+    ///
+    /// # Errors
+    /// Propagates [`Function::ctree`](crate::function::Function::ctree)'s errors.
     pub fn ctree(&self, address: Address) -> Result<Ctree> {
         self.function(address).ctree()
     }
 
-    /// Decompile the function containing `address` (inits Hex-Rays on first use).
+    /// Decompiles the function containing `address` (inits Hex-Rays on first use).
+    ///
+    /// # Errors
+    /// [`Error::HexRaysInit`] if the decompiler could not be initialized, [`Error::Decompile`]
+    /// if Hex-Rays rejected the function, or [`Error::KernelExit`] if decompilation trapped a
+    /// fatal exit.
     pub fn decompile(&self, address: Address) -> Result<DecompiledFunction<'_>> {
         if !self.hexrays_ready.get() {
             let rc = self.hexrays_init();
@@ -55,11 +66,12 @@ pub struct CtreeCounts {
     pub calls: i32,
 }
 
-/// An owned decompiled function. Disposes its kernel handle on drop.
+/// An owned decompiled function.
 ///
-/// `handle` is the safety invariant for every call below: non-null (checked at
-/// construction), from `idakit_decompile`, disposed exactly once on [`Drop`]. The
-/// raw pointer makes `DecompiledFunction` `!Send`, so it lives only on the kernel thread.
+/// Disposes its kernel handle on drop. `handle` is the safety invariant for every call below:
+/// non-null (checked at construction), from `idakit_decompile`, disposed exactly once on
+/// [`Drop`]. The raw pointer makes `DecompiledFunction` `!Send`, so it lives only on the kernel
+/// thread.
 pub struct DecompiledFunction<'db> {
     handle: *mut c_void,
     _db: PhantomData<&'db Database>,
@@ -101,12 +113,14 @@ impl<'db> DecompiledFunction<'db> {
         }
     }
 
-    /// Diagnostic anchor for extraction fidelity: `(visitor_total, expected)` where `visitor_total`
-    /// is every expression the SDK's own ctree visitor sees, and `expected` is how many the
-    /// extraction walker should materialize -- `visitor_total` minus the `cot_empty` placeholders
-    /// sitting in *optional* operand slots (a `for(;;)` init/cond/step, a bare `return;`) that the
-    /// walker faithfully elides to `None`. A faithful [`ctree`](Self::ctree) has exactly `expected`
-    /// expression nodes; a shortfall or surplus is a real drop or invention.
+    /// Diagnostic anchor for extraction fidelity: `(visitor_total, expected)` where
+    /// `visitor_total` is every expression the SDK's own ctree visitor sees, and `expected` is
+    /// how many the extraction walker should materialize, namely `visitor_total` minus the
+    /// `cot_empty` placeholders sitting in *optional* operand slots (a `for(;;)` init/cond/step,
+    /// a bare `return;`) that the walker faithfully elides to `None`.
+    ///
+    /// A faithful [`ctree`](Self::ctree) has exactly `expected` expression nodes; a shortfall or
+    /// surplus is a real drop or invention.
     #[must_use]
     pub fn expr_extraction_expectation(&self) -> (i32, i32) {
         let (mut v, mut w) = ([0i32; 256], [0i32; 256]);
@@ -117,9 +131,12 @@ impl<'db> DecompiledFunction<'db> {
         (v.iter().sum(), w.iter().sum())
     }
 
-    /// Materialize the whole ctree as an owned, `Send` [`Ctree`]: the facade streams a
-    /// depth-first walk on this (kernel) thread, minting owned nodes through callbacks
-    /// so any worker can then analyze the result.
+    /// Materializes the whole ctree as an owned, `Send` [`Ctree`]: the facade streams a
+    /// depth-first walk on this (kernel) thread, minting owned nodes through callbacks so any
+    /// worker can then analyze the result.
+    ///
+    /// # Errors
+    /// [`ExtractError`] if the ctree fails to materialize.
     pub fn ctree(&self) -> Result<Ctree, ExtractError> {
         // SAFETY: live handle (see type docs); `walk` copies everything it needs out of
         // the SDK objects, so the result outlives this `cfunc`.

@@ -1,9 +1,8 @@
 //! Typed effective addresses: [`Address`].
 //!
 //! An `Address` is any `ea_t` except the `BADADDR` sentinel (`0` is a valid
-//! address). It stores `!raw` in a [`NonZeroU64`], so the niche sits on the
-//! sentinel and `Option<Address>` is `u64`-sized -- `BADADDR`-on-failure maps straight
-//! to `None`.
+//! address). It stores `!raw` in a [`NonZeroU64`], so the niche sits on the sentinel and
+//! `Option<Address>` is `u64`-sized. `BADADDR`-on-failure maps straight to `None`.
 
 use std::num::NonZeroU64;
 use std::ops::Add;
@@ -16,8 +15,8 @@ const MAX_EA: u64 = BADADDR - 1;
 ///
 /// Ordering is by the real address: the niche stores `!raw`, so a *derived* `Ord` would
 /// compare inverted bits and reverse the order. Callers expect an `Address` to sort like the
-/// `ea_t` it wraps -- linear walks, chunk bounds, `BTreeMap` keys -- so `Ord`/`PartialOrd`
-/// are hand-written over [`get`](Self::get).
+/// `ea_t` it wraps (linear walks, chunk bounds, `BTreeMap` keys), so `Ord`/`PartialOrd` are
+/// hand-written over [`get`](Self::get).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Address(NonZeroU64);
 
@@ -33,7 +32,10 @@ impl Address {
         }
     }
 
-    /// Const constructor for literals. Panics (at compile time) if `raw == BADADDR`.
+    /// Const constructor for literals.
+    ///
+    /// # Panics
+    /// At compile time, if `raw == BADADDR`.
     #[inline]
     #[must_use]
     pub const fn new_const(raw: u64) -> Self {
@@ -113,8 +115,9 @@ impl Add<u64> for Address {
 }
 
 impl Address {
-    /// The non-negative byte span `end - self`, saturating to `0` when `end` is below
-    /// `self`. The natural length of a `[self, end)` range, so a caller reads
+    /// The non-negative byte span `end - self`, saturating to `0` when `end` is below `self`.
+    ///
+    /// The natural length of a `[self, end)` range, so a caller reads
     /// `start.distance_to(end)` rather than an unsigned-cast subtraction.
     #[inline]
     #[must_use]

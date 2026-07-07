@@ -1,7 +1,7 @@
 //! Mapping from the facade's flat `InstructionRaw` POD into the owned [`Instruction`] ADT.
 //!
 //! The facade has already done the processor-specific work on the kernel thread (folding
-//! raw operand types into semantic kinds, resolving register names and control flow); this
+//! raw operand types into semantic kinds, resolving register names and control flow). This
 //! is the pure, kernel-free rebuild into idakit types, so it is exercised directly by unit
 //! tests over hand-built PODs.
 
@@ -15,8 +15,10 @@ use super::{
 };
 use crate::address::Address;
 
-/// Copy a NUL-terminated facade name buffer into an owned string. Register names and
-/// mnemonics are ASCII; a malformed byte degrades lossily rather than failing.
+/// Copies a NUL-terminated facade name buffer into an owned string.
+///
+/// Register names and mnemonics are ASCII, so a malformed byte degrades lossily rather than
+/// failing.
 fn name(buf: &[c_char]) -> Box<str> {
     // SAFETY: the facade fills these fixed buffers with `qstrncpy`, which always
     // NUL-terminates within the buffer, so a terminator exists in range.
@@ -24,10 +26,12 @@ fn name(buf: &[c_char]) -> Box<str> {
     s.to_string_lossy().into_owned().into_boxed_str()
 }
 
-/// Rebuild a register slot; `None` for the absent-register sentinel (a memory operand with
-/// no base/index). The facade only emits a modelled RegClass code -- an unmodelled register
-/// is rejected at the facade with `-4` and never reaches here, so a code outside the enum is
-/// pure ABI drift, not runtime data.
+/// Rebuilds a register slot, or `None` for the absent-register sentinel (a memory operand
+/// with no base/index).
+///
+/// The facade only emits a modelled `RegClass` code. An unmodelled register is rejected at
+/// the facade with `-4` and never reaches here, so a code outside the enum is pure ABI
+/// drift, not runtime data.
 fn register(r: &sys::InstructionRegister) -> Option<Register> {
     if r.num == sys::IDAKIT_REG_NONE {
         return None;
@@ -92,9 +96,10 @@ fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, Dec
     })
 }
 
-/// Rebuild an owned [`Instruction`] from a successfully-decoded (`rc == 0`) raw POD. `address`
-/// is the decode site (the facade fills `raw.address` with it), passed through so operand
-/// errors carry it without re-parsing the sentinel-carrying raw field.
+/// Rebuilds an owned [`Instruction`] from a successfully-decoded (`rc == 0`) raw POD.
+///
+/// `address` is the decode site, filled into `raw.address` by the facade and passed through
+/// so operand errors carry it without re-parsing the sentinel-carrying raw field.
 pub(crate) fn insn_from_raw(
     raw: &sys::InstructionRaw,
     address: Address,

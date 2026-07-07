@@ -13,8 +13,8 @@ use crate::ffi::read_string;
 impl Database {
     /// Iterate every string literal IDA located in the database.
     ///
-    /// This (re)builds IDA's string list first -- an O(database) scan -- then walks it. Collect
-    /// the result once if you iterate repeatedly, rather than calling this again.
+    /// This (re)builds IDA's string list first, an O(database) scan, then walks it. Collect the
+    /// result once if you iterate repeatedly, rather than calling this again.
     #[must_use]
     pub fn strings(&self) -> Strings<'_> {
         self.strlist_build();
@@ -23,8 +23,10 @@ impl Database {
 }
 
 /// A string literal IDA located: its [`address`](Self::address), octet [`len`](Self::len), and
-/// decoded [`text`](Self::text). A borrowed view valid while the database stays open -- the raw
-/// STRTYPE fields are read once at iteration; the text is decoded on demand.
+/// decoded [`text`](Self::text).
+///
+/// A borrowed view valid while the database stays open, with the raw STRTYPE fields read once
+/// at iteration; the text is decoded on demand.
 #[derive(Clone, Copy)]
 pub struct StringLiteral<'db> {
     address: Address,
@@ -80,8 +82,9 @@ impl<'db> StringLiteral<'db> {
         is_pascal_of(self.raw_type)
     }
 
-    /// The decoded string as UTF-8, or `None` if the bytes can't be read. Undecodable units
-    /// become the Unicode replacement character (U+FFFD) rather than failing.
+    /// The decoded string as UTF-8, or `None` if the bytes can't be read.
+    ///
+    /// Undecodable units become the Unicode replacement character (U+FFFD) rather than failing.
     #[must_use]
     pub fn text(&self) -> Option<String> {
         read_string(|buf, cap| {
@@ -115,22 +118,24 @@ impl std::hash::Hash for StringLiteral<'_> {
     }
 }
 
-/// Bytes per character encoded in a STRTYPE code (`STRWIDTH`): 1, 2, or 4. Only the low byte
-/// carries width/layout; the high byte's encoding index is irrelevant here.
+/// Bytes per character encoded in a STRTYPE code (`STRWIDTH`): 1, 2, or 4.
+///
+/// Only the low byte carries width/layout; the high byte's encoding index is irrelevant here.
 fn char_width_of(raw_type: i32) -> u8 {
     1u8 << ((raw_type & sys::STRWIDTH_MASK) as u8)
 }
 
-/// Whether a STRTYPE layout is Pascal (length-prefixed) rather than terminated -- `STRLYT`
+/// Whether a STRTYPE layout is Pascal (length-prefixed) rather than terminated: `STRLYT`
 /// values 1..=3 (`PASCAL1`/`PASCAL2`/`PASCAL4`).
 fn is_pascal_of(raw_type: i32) -> bool {
     let layout = (raw_type & sys::STRLYT_MASK) >> sys::STRLYT_SHIFT;
     (1..=3).contains(&layout)
 }
 
-/// Lazy iterator over IDA's string list, in list order. Borrows `&Database`, so it can't outlive the
-/// database or coexist with a write. `size_hint`'s lower bound is `0`: a list entry with no
-/// readable address is skipped.
+/// Lazy iterator over IDA's string list, in list order.
+///
+/// Borrows `&Database`, so it can't outlive the database or coexist with a write. `size_hint`'s
+/// lower bound is `0`: a list entry with no readable address is skipped.
 pub struct Strings<'db> {
     db: &'db Database,
     next: usize,

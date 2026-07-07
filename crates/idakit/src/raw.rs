@@ -6,12 +6,12 @@
 //!
 //! # Safety
 //!
-//! Every method below is sound by one invariant, discharged here once: an [`Database`]
+//! Every method below is sound by one invariant, discharged here once. A [`Database`]
 //! is `!Send` and constructed only inside the kernel-thread pump of
 //! [`Ida::run`](crate::Ida::run), so holding `&self` proves we are on the kernel
-//! thread with the library initialized and a database open: exactly the
+//! thread with the library initialized and a database open, exactly the
 //! thread-affinity and live-database preconditions the kernel demands. `&mut self`
-//! adds exclusivity for writes. Raw buffer pointers are valid for the call;
+//! adds exclusivity for writes. Raw buffer pointers are valid for the call, and
 //! string getters fill `(buf, cap)` and return the value's full length.
 
 use std::ffi::{c_char, c_int, c_void};
@@ -33,7 +33,7 @@ impl Database {
     }
 
     /// Human-readable reason for `code` (`qstrerror` already folds in the C `errno`
-    /// text for `eOS`). Never empty: falls back to the raw `error_t`.
+    /// text for `eOS`). Never empty, since it falls back to the raw `error_t`.
     pub(crate) fn error_reason(&self, code: Qerrno) -> String {
         // SAFETY: qstrerror returns a borrowed thread-local string; copied now.
         let reason = unsafe { cstr(sys::qstrerror(code.code())) };
@@ -44,8 +44,9 @@ impl Database {
         }
     }
 
-    /// The current `qerrno` plus its reason, but `None` reason when it is `eOk`: a
-    /// failing path that set no code would otherwise borrow a stale, misleading one.
+    /// The current `qerrno` plus its reason, but `None` reason when it is `eOk`.
+    ///
+    /// A failing path that set no code would otherwise borrow a stale, misleading reason.
     pub(crate) fn last_reason(&self) -> (Qerrno, Option<String>) {
         let qerrno = self.qerrno();
         let reason = match qerrno {
@@ -55,9 +56,11 @@ impl Database {
         (qerrno, reason)
     }
 
-    /// Open via the facade's guarded wrapper: IDA's fatal `exit()` path (an unaccepted
-    /// license, a corrupt input it refuses) is trapped and surfaced as the
-    /// [`sys::IDAKIT_EXIT_TRAPPED`] sentinel instead of killing the process.
+    /// Opens via the facade's guarded wrapper.
+    ///
+    /// IDA's fatal `exit()` path (an unaccepted license, a corrupt input it refuses) is
+    /// trapped and surfaced as the [`sys::IDAKIT_EXIT_TRAPPED`] sentinel instead of killing
+    /// the process.
     pub(crate) fn open_database(&mut self, path: *const c_char, run_auto: bool) -> c_int {
         unsafe { sys::idakit_guarded_open(path, run_auto as c_int) }
     }
@@ -74,20 +77,21 @@ impl Database {
             .unwrap_or_default()
     }
 
-    /// Record EULA acceptance in IDA's registry; returns whether it now reads accepted.
+    /// Records EULA acceptance in IDA's registry, and returns whether it now reads accepted.
     pub(crate) fn reg_accept_eula(&self) -> bool {
         unsafe { sys::idakit_accept_eula() != 0 }
     }
 
-    /// Block until the auto-analysis queue drains. Only meaningful after an
+    /// Blocks until the auto-analysis queue drains. Only meaningful after an
     /// `open_database(run_auto = true)`, which enables but does not await analysis.
     /// Guarded: returns [`sys::IDAKIT_EXIT_TRAPPED`] if analysis hit a fatal exit().
     pub(crate) fn auto_wait(&self) -> c_int {
         unsafe { sys::idakit_guarded_auto_wait() }
     }
 
-    /// Guarded close; a fatal during a save is trapped (returns the sentinel) rather than
-    /// killing the process. Best-effort -- by the time we close, the result is moot.
+    /// Guarded close, where a fatal during a save is trapped (returns the sentinel) rather
+    /// than killing the process. Best-effort, since by the time we close, the result is
+    /// moot.
     pub(crate) fn close_database(&mut self, save: bool) {
         unsafe { sys::idakit_guarded_close(save as c_int) };
     }
@@ -207,9 +211,10 @@ impl Database {
         unsafe { sys::idakit_nlist_name(idx, buf, cap) }
     }
 
-    /// Open an reference cursor over the current database; `is_to` selects xrefs targeting
-    /// `address` vs originating at it. The returned handle is owned by the [`Xrefs`] iterator,
-    /// which closes it on drop.
+    /// Opens a reference cursor over the current database.
+    ///
+    /// `is_to` selects xrefs targeting `address` vs originating at it. The returned handle
+    /// is owned by the [`Xrefs`] iterator, which closes it on drop.
     ///
     /// [`Xrefs`]: crate::Xrefs
     pub(crate) fn xref_open(&self, address: Address, is_to: bool) -> *mut c_void {
@@ -220,8 +225,10 @@ impl Database {
         unsafe { sys::idakit_hexrays_init() }
     }
 
-    /// Decompile the function at `address`. On failure the handle is null and the second
-    /// element carries the Hex-Rays failure reason copied out of the facade buffer.
+    /// Decompiles the function at `address`.
+    ///
+    /// On failure the handle is null and the second element carries the Hex-Rays failure
+    /// reason copied out of the facade buffer.
     pub(crate) fn decompile_at(&self, address: Address) -> (*mut c_void, String) {
         let mut err = [0u8; 256];
         // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates
@@ -359,15 +366,16 @@ impl Database {
         unsafe { sys::idakit_export_forwarder(idx, buf, cap) }
     }
 
-    /// Materialize the import table into an owned snapshot handle; the [`Imports`] iterator owns
-    /// it and frees it on drop.
+    /// Materializes the import table into an owned snapshot handle.
+    ///
+    /// The [`Imports`] iterator owns it and frees it on drop.
     ///
     /// [`Imports`]: crate::Imports
     pub(crate) fn imports_build(&self) -> *mut c_void {
         unsafe { sys::idakit_imports_build() }
     }
 
-    /// (Re)build IDA's global string list; a query-time scan, not a database mutation.
+    /// (Re)builds IDA's global string list, a query-time scan, not a database mutation.
     pub(crate) fn strlist_build(&self) {
         unsafe { sys::idakit_strlist_build() };
     }

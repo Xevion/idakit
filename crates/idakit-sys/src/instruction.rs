@@ -120,10 +120,10 @@ unsafe extern "C" {
     pub fn idakit_decode_insn(address: Address, out: *mut InstructionRaw) -> c_int;
 
     /// Fill `out` (length [`IDAKIT_REG_CLASS_COUNT`]) with the facade's RegisterClass codes
-    /// in the Rust enum's discriminant order -- an alignment source for a mirror test.
+    /// in the Rust enum's discriminant order, as an alignment source for a mirror test.
     pub fn idakit_reg_class_ids(out: *mut u8);
 
     /// Fill `out` (length [`IDAKIT_OP_DTYPE_COUNT`]) with this SDK's `op_dtype_t` (`dt_*`)
-    /// values in idakit `DataType`'s discriminant order -- an alignment source for a mirror test.
+    /// values in idakit `DataType`'s discriminant order, as an alignment source for a mirror test.
     pub fn idakit_op_dtype_ids(out: *mut u8);
 }

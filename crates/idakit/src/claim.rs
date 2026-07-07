@@ -19,15 +19,16 @@ use idakit_sys as sys;
 struct MainClaim(*mut *mut c_void);
 
 impl MainClaim {
-    /// Recover `g_main`'s address by decoding the PC-relative load in
-    /// `is_main_thread`'s prologue ([`decode_g_main`], per target arch).
+    /// Recovers `g_main`'s address by decoding the PC-relative load in `is_main_thread`'s
+    /// prologue ([`decode_g_main`], per target arch).
     fn locate() -> Result<Self, String> {
         let g_main = decode_g_main(sys::is_main_thread as *const u8)?;
         Ok(Self(g_main as *mut *mut c_void))
     }
 
-    /// Re-point `g_main` at the calling thread. Run on the kernel thread before
-    /// `init_library`.
+    /// Re-points `g_main` at the calling thread.
+    ///
+    /// Run on the kernel thread before `init_library`.
     fn reclaim(self) -> Result<(), String> {
         // SAFETY: `self.0` addresses libida's writable `g_main` (a `qthread_t`).
         // Nulling it makes the next `is_main_thread()` claim this thread. Runs once
@@ -43,12 +44,14 @@ impl MainClaim {
     }
 }
 
-/// x86-64: `is_main_thread` loads `g_main` with `mov register, [rip+disp32]` (REX.W `48 8b`,
-/// ModRM mod=00 rm=101). The Linux build emits it as the first instruction; the macOS and
-/// Windows builds push a stack frame first, so scan a short window for the first such load
-/// (the aarch64 path scans for the same reason). `g_main` sits at rip (past the 7-byte
-/// instruction) + disp32. On Windows the function's address is first an import/incremental-link
-/// thunk (`jmp qword [rip+disp32]`, `ff 25`); [`follow_jmp_thunk`] resolves it to the body.
+/// x86-64: decodes `is_main_thread`'s `g_main` load, `mov register, [rip+disp32]` (REX.W
+/// `48 8b`, ModRM mod=00 rm=101).
+///
+/// The Linux build emits it as the first instruction; the macOS and Windows builds push a
+/// stack frame first, so this scans a short window for the first such load (the aarch64 path
+/// scans for the same reason). `g_main` sits at rip (past the 7-byte instruction) + disp32.
+/// On Windows the function's address is first an import/incremental-link thunk (`jmp qword
+/// [rip+disp32]`, `ff 25`); [`follow_jmp_thunk`] resolves it to the body.
 #[cfg(target_arch = "x86_64")]
 fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
     // SAFETY: `entry` is a mapped code pointer; a thunk and its slot are mapped (see fn doc).
@@ -72,14 +75,16 @@ fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
     ))
 }
 
-/// Follow a `jmp qword [rip+disp32]` thunk (`ff 25 disp32`) to its target. On Windows the
-/// address of an imported function is such a thunk rather than the body; the real address
-/// lives in the pointer slot at rip+disp32. Elsewhere the address is already the body (its
-/// leading bytes are the prologue), so `entry` is returned unchanged.
+/// Follows a `jmp qword [rip+disp32]` thunk (`ff 25 disp32`) to its target.
+///
+/// On Windows the address of an imported function is such a thunk rather than the body; the
+/// real address lives in the pointer slot at rip+disp32. Elsewhere the address is already the
+/// body (its leading bytes are the prologue), so `entry` is returned unchanged.
 ///
 /// # Safety
 /// `entry` must be a mapped code pointer. When it is a thunk, its 6-byte instruction and the
-/// pointer slot it references (both in the same image) must be mapped -- true for a real thunk.
+/// pointer slot it references (both in the same image) must be mapped, which holds for a
+/// real thunk.
 #[cfg(target_arch = "x86_64")]
 unsafe fn follow_jmp_thunk(entry: *const u8) -> *const u8 {
     // SAFETY: caller guarantees `entry` is a mapped code pointer, so its first 6 bytes read.
@@ -94,9 +99,11 @@ unsafe fn follow_jmp_thunk(entry: *const u8) -> *const u8 {
     entry
 }
 
-/// aarch64: `is_main_thread` materializes `&g_main` with an `adrp Xd, page` +
-/// `ldr Xt, [Xd, off]` pair. A stack-save prologue precedes it, so scan a short
-/// window for the first such pair: `g_main = (adrp_pc & !0xfff) + (page << 12) + off`.
+/// aarch64: decodes `is_main_thread`'s `&g_main` materialization, an `adrp Xd, page` +
+/// `ldr Xt, [Xd, off]` pair.
+///
+/// A stack-save prologue precedes it, so this scans a short window for the first such pair:
+/// `g_main = (adrp_pc & !0xfff) + (page << 12) + off`.
 #[cfg(target_arch = "aarch64")]
 fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
     const WINDOW: usize = 8;
@@ -133,8 +140,9 @@ fn decode_g_main(_entry: *const u8) -> Result<*const u8, String> {
     compile_error!("g_main steal supports x86-64 and aarch64 only");
 }
 
-/// Claim the kernel "main" thread for the caller, before `init_library`. `Err`
-/// carries why the steal could not be done (no recovery: the kernel needs it).
+/// Claims the kernel "main" thread for the caller, before `init_library`.
+///
+/// `Err` carries why the steal could not be done (no recovery: the kernel needs it).
 pub(crate) fn steal_main() -> Result<(), String> {
     MainClaim::locate()?.reclaim()
 }

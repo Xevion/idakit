@@ -345,8 +345,11 @@ impl CtreeBuilder {
         self.types.type_size(id)
     }
 
-    /// Append a local variable; the returned [`LocalId`] (its index) is what
+    /// Appends a local variable, returning the [`LocalId`] (its index) that
     /// [`ExpressionKind::Var`] carries.
+    ///
+    /// # Panics
+    /// If the ctree exceeds `u32::MAX` locals (unreachable in practice).
     pub fn push_lvar(&mut self, lvar: Local) -> LocalId {
         let id = LocalId(u32::try_from(self.lvars.len()).expect("ctree exceeded u32 lvars"));
         self.lvars.push(lvar);

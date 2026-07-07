@@ -1,13 +1,16 @@
-//! Auto-analyze a binary and dump the ctree of matching functions: IDA's own
-//! pseudocode beside our owned-tree render. A development lens for seeing the real
-//! node shapes the decompiler produces (e.g. how a constructor installs a vtable).
+//! Auto-analyzes a binary and dumps the ctree of matching functions, IDA's own pseudocode
+//! beside our owned-tree render.
+//!
+//! A development lens for seeing the real node shapes the decompiler produces (e.g. how a
+//! constructor installs a vtable).
 //!
 //!   cargo run -p idakit --example ctree_dump -- <binary> [name-substring]
 
 use idakit::prelude::*;
 
-/// Recursively print each node's kind, indented by depth -- the structural ground truth
-/// behind the render.
+/// Recursively prints each node's kind, indented by depth.
+///
+/// The structural ground truth behind the render.
 fn dump(tree: &idakit::ctree::Ctree, node: idakit::ctree::NodeRef, depth: usize) {
     use idakit::ctree::NodeRef;
     let pad = "  ".repeat(depth);

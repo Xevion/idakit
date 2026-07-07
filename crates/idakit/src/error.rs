@@ -327,8 +327,11 @@ impl CallError {
         }
     }
 
-    /// Re-raise the original panic on the current thread. [`Disconnected`] carries no
-    /// payload, so it panics with a generic message instead.
+    /// Re-raise the original panic on the current thread.
+    ///
+    /// # Panics
+    /// Always, by design: it resumes the caught unwind, or panics with a generic message for
+    /// [`Disconnected`], which carries no payload.
     ///
     /// [`Disconnected`]: CallError::Disconnected
     pub fn resume(self) -> ! {

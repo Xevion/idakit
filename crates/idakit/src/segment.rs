@@ -65,6 +65,7 @@ impl<'db> Segment<'db> {
     }
 
     /// The segment's raw class string (e.g. `CODE`, `DATA`, `BSS`), or `None` if it has none.
+    ///
     /// [`class`](Self::class) classifies this into a [`SegmentClass`]; use this accessor when
     /// the raw text itself (rather than its meaning) is what's wanted.
     #[must_use]
@@ -85,8 +86,10 @@ impl<'db> Segment<'db> {
         Bitness::try_from_bits(self.db.seg_bitness(self.index).max(0) as u8)
     }
 
-    /// Whether the segment is readable (`SEGPERM_READ`). All three permission predicates
-    /// read `false` when the input format recorded no permission bits.
+    /// Whether the segment is readable (`SEGPERM_READ`).
+    ///
+    /// All three permission predicates read `false` when the input format recorded no
+    /// permission bits.
     #[must_use]
     pub fn is_readable(&self) -> bool {
         self.db.seg_perm(self.index) & sys::SEGPERM_READ != 0
@@ -204,14 +207,15 @@ pub enum SegmentClass {
     Common,
     /// `ABS`: absolute-symbol definitions.
     Absolute,
-    /// Any class string outside the predefined set -- loader- or user-defined.
+    /// Any class string outside the predefined set, loader- or user-defined.
     Other(String),
 }
 
 impl SegmentClass {
-    /// Classify a raw class string. The eight predefined names match exactly
-    /// (case-sensitive, uppercase); anything else -- including `UNK` -- becomes
-    /// [`Other`](Self::Other).
+    /// Classifies a raw class string.
+    ///
+    /// The eight predefined names match exactly (case-sensitive, uppercase); anything else,
+    /// including `UNK`, becomes [`Other`](Self::Other).
     fn from_raw(raw: &str) -> Self {
         match raw {
             "CODE" => Self::Code,

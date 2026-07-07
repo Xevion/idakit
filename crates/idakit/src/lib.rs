@@ -2,9 +2,9 @@
 //!
 //! # The kernel thread
 //!
-//! The IDA kernel is single-threaded and thread-affine. [`Ida::here`](crate::kernel::Ida::here) brings it up *on
-//! the current thread* and hands back the open [`Database`] -- no kernel thread, no closure --
-//! for programs that own their thread (scripts, tests, CLIs):
+//! The IDA kernel is single-threaded and thread-affine. [`Ida::here`](crate::kernel::Ida::here) brings it up on
+//! the current thread and hands back the open [`Database`], with no kernel thread and no
+//! closure, for programs that own their thread (scripts, tests, CLIs):
 //!
 //! ```no_run
 //! use idakit::kernel::Ida;
@@ -53,7 +53,7 @@
 //!
 //! Linking needs a real IDA install (`IDADIR`, holding `libida.so`); the build compiles
 //! a small C++ facade against the IDA SDK headers, fetched to match the installed IDA
-//! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64` -- the facade
+//! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64`, since the facade
 //! is compiled `__EA64__`.
 #![deny(missing_docs)]
 #![deny(
@@ -66,6 +66,8 @@
     rustdoc::unescaped_backticks,
     rustdoc::redundant_explicit_links
 )]
+// Public fallible/panicking items document their failure modes (`just clippy` runs `-D warnings`).
+#![warn(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -140,9 +142,11 @@ pub mod prelude {
 use crate::error::{Error, Result};
 use crate::kernel::KernelClaim;
 
-/// The open database. `!Send + !Sync`, so it stays on the kernel thread. Reads borrow
-/// `&Database` (returning [`Function`](crate::function::Function)/[`Segment`](crate::segment::Segment) views); writes take `&mut Database`, so a read
-/// view can't be held across a write.
+/// The open database.
+///
+/// `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` (returning
+/// [`Function`](crate::function::Function)/[`Segment`](crate::segment::Segment) views);
+/// writes take `&mut Database`, so a read view can't be held across a write.
 pub struct Database {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.
     hexrays_ready: Cell<bool>,
@@ -151,15 +155,21 @@ pub struct Database {
     _not_send: PhantomData<*const ()>,
 }
 
-/// Database-open builder: `idb.open(path).run_auto(true).call()`. `path` stays a
-/// positional argument; options chain before the terminal `.call()`.
+/// Database-open builder: `idb.open(path).run_auto(true).call()`.
+///
+/// `path` stays a positional argument; options chain before the terminal `.call()`.
 #[bon::bon]
 impl Database {
-    /// Open a database file. Re-opening after [`close`](Self::close) works.
+    /// Opens a database file.
     ///
-    /// With `run_auto` set, IDA's auto-analysis runs and this blocks until it drains,
-    /// turning a raw binary into a fully analyzed database; it defaults to `false`,
-    /// which opens an already-analyzed `.i64` as-is.
+    /// Re-opening after [`close`](Self::close) works. With `run_auto` set, IDA's
+    /// auto-analysis runs and this blocks until it drains, turning a raw binary into a
+    /// fully analyzed database; it defaults to `false`, which opens an already-analyzed
+    /// `.i64` as-is.
+    ///
+    /// # Errors
+    /// [`Error::Open`] if the database can't be opened, or [`Error::KernelExit`] if IDA
+    /// terminates the process mid-operation (e.g. an unaccepted license).
     #[builder]
     pub fn open(
         &mut self,
@@ -217,12 +227,16 @@ impl Database {
         self.close_database(save);
     }
 
-    /// Open `path`, run `f` against the open database, and close it (without saving) on every exit:
-    /// a normal return, an early `?`, or a panic. The read-only scoping the two-database workflows
-    /// want, so a `close` can't be forgotten:
-    /// `let catalog = idb.with_open(&path, |idb| Ok(idb.type_catalog()))?;`. Opens without
-    /// auto-analysis (an already-analyzed `.i64`); use [`open`](Self::open) directly when you need
-    /// `run_auto`, or to save on close.
+    /// Opens `path`, runs `f` against the open database, and closes it (without saving) on
+    /// every exit: a normal return, an early `?`, or a panic.
+    ///
+    /// This is the read-only scoping two-database workflows want, so a `close` can't be
+    /// forgotten: `let catalog = idb.with_open(&path, |idb| Ok(idb.type_catalog()))?;`. Opens
+    /// without auto-analysis (an already-analyzed `.i64`); use [`open`](Self::open) directly
+    /// when you need `run_auto`, or to save on close.
+    ///
+    /// # Errors
+    /// Propagates [`open`](Self::open)'s error, or whatever `f` returns.
     pub fn with_open<T>(
         &mut self,
         path: impl AsRef<str>,
@@ -233,16 +247,17 @@ impl Database {
         f(&mut *closer.db)
     }
 
-    /// Record EULA acceptance in IDA's registry (`$HOME/.idapro`), a one-time setup per
-    /// home. Headless `idalib` refuses to [`open`](Self::open) a database until this is
-    /// set, aborting with [`Error::KernelExit`] (`"License not yet accepted, cannot run in
-    /// batch mode"`). Returns whether the registry now reads accepted.
+    /// Records EULA acceptance in IDA's registry (`$HOME/.idapro`), a one-time setup per home.
+    ///
+    /// Headless `idalib` refuses to [`open`](Self::open) a database until this is set,
+    /// aborting with [`Error::KernelExit`] (`"License not yet accepted, cannot run in batch
+    /// mode"`). Returns whether the registry now reads accepted.
     pub fn accept_eula(&self) -> bool {
         self.reg_accept_eula()
     }
 
-    /// Build a [`Error::KernelExit`] from the facade's trap state -- the code IDA passed to
-    /// `exit()` and whatever it printed on the way out (captured, when the call captured).
+    /// Builds an [`Error::KernelExit`] from the facade's trap state: the code IDA passed to
+    /// `exit()`, and whatever it printed on the way out (captured, when the call captured).
     pub(crate) fn kernel_exit_error(&self) -> Error {
         let captured = self.last_output();
         let trimmed = captured.trim();

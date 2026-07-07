@@ -33,8 +33,9 @@ impl Database {
     }
 
     /// Search `range` (end exclusive) for `pattern`, lazily yielding each match address in
-    /// ascending order. Each hit advances the scan one byte past it, so overlapping
-    /// occurrences are all reported.
+    /// ascending order.
+    ///
+    /// Each hit advances the scan one byte past it, so overlapping occurrences are all reported.
     #[must_use]
     pub fn search_in<'p, 'db>(
         &self,
@@ -49,12 +50,13 @@ impl Database {
     }
 }
 
-/// A compiled binary search pattern. Frees its kernel handle on drop.
+/// A compiled binary search pattern that frees its kernel handle on drop.
 ///
 /// `handle` is the safety invariant for the searches below: non-null (checked at
 /// construction), from a facade `idakit_binpat_*` builder, freed exactly once on [`Drop`].
-/// The raw pointer makes `Pattern` `!Send`, so it lives only on the kernel thread; it borrows
-/// the [`Database`] it was built against, so that database stays open while the pattern exists.
+/// The raw pointer makes `Pattern` `!Send`, so it lives only on the kernel thread, and it
+/// borrows the [`Database`] it was built against, so that database stays open while the
+/// pattern exists.
 pub struct Pattern<'db> {
     handle: *mut c_void,
     /// `BIN_SEARCH_*` flags applied per search: `BITMASK` for the byte/mask forms (so mask
@@ -64,14 +66,16 @@ pub struct Pattern<'db> {
 }
 
 impl<'db> Pattern<'db> {
-    /// Compile an IDA-style hex signature: whitespace-separated tokens, each a hex byte
-    /// (`48`), a byte wildcard (`?` or `??`), or a nibble pattern with one wildcard half
-    /// (`4?`, `?B`). `Err` with a [`PatternRejection::BadToken`] naming the first token that
-    /// is none of these, or [`NoAnchor`](PatternRejection::NoAnchor) if every byte is a
-    /// wildcard.
+    /// Compile an IDA-style hex signature.
     ///
-    /// This grammar is parsed here, not by IDA -- a mistyped byte is a hard error, never the
-    /// silent ASCII fallback [`ida`](Self::ida) would give it.
+    /// Each whitespace-separated token is a hex byte (`48`), a byte wildcard (`?` or `??`), or a
+    /// nibble pattern with one wildcard half (`4?`, `?B`). This grammar is parsed here, not by
+    /// IDA, so a mistyped byte is a hard error rather than the silent ASCII fallback
+    /// [`ida`](Self::ida) would give it.
+    ///
+    /// # Errors
+    /// [`Error::PatternRejected`] with [`PatternRejection::BadToken`] naming the first token
+    /// that is none of these, or [`PatternRejection::NoAnchor`] if every byte is a wildcard.
     pub fn hex(db: &'db Database, pattern: impl AsRef<str>) -> Result<Self> {
         let pattern = pattern.as_ref();
         let (bytes, mask) = parse_hex(pattern).map_err(|kind| Error::PatternRejected {
@@ -81,11 +85,15 @@ impl<'db> Pattern<'db> {
         Self::from_parts(db, pattern.to_owned(), &bytes, Some(&mask))
     }
 
-    /// Compile from a code byte sequence and a parallel mask string: `x`/`X` matches the
-    /// byte, `?`/`.` wildcards it (the `\x..`+mask convention of shared sig dumps). `Err`
-    /// on a mask character outside that set ([`BadMaskChar`](PatternRejection::BadMaskChar)),
-    /// a length mismatch ([`MaskMismatch`](PatternRejection::MaskMismatch)), or an
-    /// all-wildcard mask ([`NoAnchor`](PatternRejection::NoAnchor)).
+    /// Compile from a code byte sequence and a parallel mask string.
+    ///
+    /// `x`/`X` matches the byte and `?`/`.` wildcards it, the `\x..`-plus-mask convention of
+    /// shared sig dumps.
+    ///
+    /// # Errors
+    /// [`Error::PatternRejected`] with [`PatternRejection::BadMaskChar`] for a mask character
+    /// outside that set, [`PatternRejection::MaskMismatch`] for a length mismatch, or
+    /// [`PatternRejection::NoAnchor`] for an all-wildcard mask.
     pub fn code_mask(db: &'db Database, code: &[u8], mask: impl AsRef<str>) -> Result<Self> {
         let mask = mask.as_ref();
         let repr = render(code);
@@ -106,7 +114,9 @@ impl<'db> Pattern<'db> {
     }
 
     /// Build a pattern from raw bytes plus a per-byte bit mask, or from `bytes.len()` bytes
-    /// checked in full. Shared by the parsing constructors and [`bytes`](Self::bytes).
+    /// checked in full.
+    ///
+    /// Shared by the parsing constructors and [`bytes`](Self::bytes).
     fn from_parts(
         db: &'db Database,
         repr: String,
@@ -139,9 +149,13 @@ impl<'db> Pattern<'db> {
 
 #[bon::bon]
 impl<'db> Pattern<'db> {
-    /// Build a pattern from raw bytes. Without `mask`, every byte must match; with one (same
-    /// length), a mask byte is applied bitwise -- `0xFF` full byte, `0x00` wildcard, `0xF0`
-    /// high nibble, `0x0F` low nibble. `Err` on a length mismatch or an all-wildcard mask.
+    /// Build a pattern from raw bytes.
+    ///
+    /// Without `mask`, every byte must match. With one (same length), a mask byte is applied
+    /// bitwise: `0xFF` full byte, `0x00` wildcard, `0xF0` high nibble, `0x0F` low nibble.
+    ///
+    /// # Errors
+    /// [`Error::PatternRejected`] on a length mismatch or an all-wildcard mask.
     #[builder]
     pub fn bytes<'a>(
         #[builder(start_fn)] db: &'db Database,
@@ -162,11 +176,14 @@ impl<'db> Pattern<'db> {
         Self::from_parts(db, render(data), data, mask)
     }
 
-    /// Compile via IDA's own parser -- the full grammar (`"..."` string literals, `'c'` char
-    /// constants, radix-`radix` numbers) including its lenient ASCII fallback for bare
-    /// tokens. `case_sensitive` matches string literals exactly (default insensitive). `Err`
-    /// is [`Unparseable`](PatternRejection::Unparseable) when IDA rejects it outright or
-    /// [`NoAnchor`](PatternRejection::NoAnchor) when it compiles to only wildcards.
+    /// Compile via IDA's own parser: the full grammar (`"..."` string literals, `'c'` char
+    /// constants, radix-`radix` numbers) including its lenient ASCII fallback for bare tokens.
+    ///
+    /// `case_sensitive` matches string literals exactly (default insensitive).
+    ///
+    /// # Errors
+    /// [`Error::PatternRejected`] with [`PatternRejection::Unparseable`] when IDA rejects it
+    /// outright, or [`PatternRejection::NoAnchor`] when it compiles to only wildcards.
     #[builder]
     pub fn ida(
         #[builder(start_fn)] db: &'db Database,
@@ -251,7 +268,7 @@ fn parse_hex(s: &str) -> std::result::Result<(Vec<u8>, Vec<u8>), PatternRejectio
     Ok((bytes, mask))
 }
 
-/// One hex-signature token to `(byte, mask)`; `None` if it is not a byte, nibble, or
+/// One hex-signature token to `(byte, mask)`, or `None` if it is not a byte, nibble, or
 /// wildcard. A single hex digit is its low-nibble byte value (`3` -> `0x03`), matching IDA.
 fn parse_hex_token(tok: &str) -> Option<(u8, u8)> {
     let mut chars = tok.chars();

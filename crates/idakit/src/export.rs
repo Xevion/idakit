@@ -13,8 +13,9 @@ impl Database {
     }
 }
 
-/// A borrowed view of one export (entry point), valid while the database stays open. A pure
-/// re-export has no local [`address`](Self::address) and resolves through a
+/// A borrowed view of one export (entry point), valid while the database stays open.
+///
+/// A pure re-export has no local [`address`](Self::address) and resolves through a
 /// [`forwarder`](Self::forwarder) instead.
 #[derive(Clone, Copy)]
 pub struct Export<'db> {
@@ -42,7 +43,7 @@ impl<'db> Export<'db> {
         Address::try_new(self.db.export_ea(self.index))
     }
 
-    /// The export's ordinal, or -- for a name-only entry with no ordinal -- its entry index.
+    /// The export's ordinal, or, for a name-only entry with no ordinal, its entry index.
     #[inline]
     #[must_use]
     pub fn ordinal(&self) -> u64 {

@@ -153,7 +153,7 @@ int64_t idakit_get_cmt(idakit_ea_t ea, uint8_t rptble, char *buf, size_t cap);
 
 /* Patch `size` bytes at ea (bytes.hpp patch_bytes; originals are saved and recoverable via
  * IDA's get_original_*). Returns 0 without patching anything when any target byte is
- * unmapped -- so a bad address fails cleanly instead of patching a truncated prefix -- and 1
+ * unmapped, so a bad address fails cleanly instead of patching a truncated prefix, and 1
  * on success. */
 int idakit_patch_bytes(idakit_ea_t ea, const void *buf, size_t size);
 
@@ -195,7 +195,7 @@ void idakit_xref_close(void *cursor);
 int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap); /* prototype text, <0 on miss */
 
 /* Disassembly-level control-flow graph (gdl.hpp qflow_chart_t). cfg_build constructs the
- * flow chart for the function containing `ea` -- including tail chunks -- with the given
+ * flow chart for the function containing `ea`, including tail chunks, with the given
  * FC_ flags, returning an opaque handle (NULL if no function is there); the block list is
  * fully materialized at build time. Blocks are indexed [0, nblocks); block() fills the
  * range and fc_block_type_t `kind`. The first nproper() blocks are the function's own; the
@@ -232,7 +232,7 @@ void idakit_cfunc_ctree_expr_gap(void *cfunc, int *v_hist, int *w_hist);
  * the corresponding owned node. Children are emitted before their parent (post-order),
  * so each callback receives its children as the `uint32_t` handles their own callbacks
  * returned; the facade just threads them through the recursion. The facade owns no node
- * storage and does no interning -- all identity, dedup, and meaning live on the Rust side.
+ * storage and does no interning; all identity, dedup, and meaning live on the Rust side.
  *
  * Handles are opaque to the facade. `0xFFFFFFFF` (IDAKIT_NONE) marks an absent optional
  * child. `ctx` is passed back to every callback untouched. */
@@ -356,7 +356,7 @@ typedef struct idakit_lvar_loc_t {
  *
  * Pointer lifetime: every `const char*`/byte span passed to a callback (names, string
  * literals, member/enum-constant names, comments, value arrays) points into a C++ stack
- * temporary owned by the walk -- a local `qstring`, `udt_type_data_t`, `enum_type_data_t`,
+ * temporary owned by the walk, a local `qstring`, `udt_type_data_t`, `enum_type_data_t`,
  * or `std::vector`. It is borrowed for that single callback invocation only and is
  * invalidated as soon as the callback returns; a callback that needs it longer must copy
  * it before returning. */
@@ -418,7 +418,7 @@ int idakit_cfunc_walk_ctree(void *cfunc, const idakit_emit_vtbl_t *vtbl, void *c
  * IDAKIT_MAX_OPS operands, so a fixed struct beats a streaming vtable here. */
 #define IDAKIT_MAX_OPS 8
 
-/* idakit_op_t::kind -- semantic operand classification (raw optype is folded away). */
+/* idakit_op_t::kind: semantic operand classification (raw optype is folded away). */
 #define IDAKIT_OP_REG 0
 #define IDAKIT_OP_MEM 1
 #define IDAKIT_OP_IMM 2

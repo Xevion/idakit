@@ -42,10 +42,11 @@ impl Database {
         (self.get_u64(address, &mut out) != 0).then_some(out)
     }
 
-    /// Read a pointer at `address` -- a value the width of the database's address size (4 bytes
-    /// for a 32-bit image, 8 for 64-bit) -- as an [`Address`]. `None` if the database reports no
-    /// recognized [`Bitness`], the bytes are unmapped, or the stored value is the `BADADDR`
-    /// sentinel.
+    /// Read a pointer at `address` as an [`Address`].
+    ///
+    /// The pointer is the width of the database's address size (4 bytes for a 32-bit image, 8
+    /// for 64-bit). `None` if the database reports no recognized [`Bitness`], the bytes are
+    /// unmapped, or the stored value is the `BADADDR` sentinel.
     #[must_use]
     pub fn read_pointer(&self, address: Address) -> Option<Address> {
         let raw = match self.bitness()? {
@@ -57,9 +58,11 @@ impl Database {
     }
 
     /// Read the C string (1-byte units, NUL-terminated) at `address`, decoded as UTF-8, or
-    /// `None` if `address` holds no string. The length is auto-detected up to the terminator;
-    /// undecodable bytes become the Unicode replacement character (U+FFFD). For wide strings and
-    /// a whole-database sweep, use [`strings`](Database::strings) instead.
+    /// `None` if `address` holds no string.
+    ///
+    /// The length is auto-detected up to the terminator, and undecodable bytes become the
+    /// Unicode replacement character (U+FFFD). For wide strings and a whole-database sweep, use
+    /// [`strings`](Database::strings) instead.
     #[must_use]
     pub fn read_string(&self, address: Address) -> Option<String> {
         // Fully qualified: `Database::read_string` (this method) and the `ffi::read_string` buffer

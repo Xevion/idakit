@@ -1,19 +1,20 @@
-//! A minimal append-only index arena, modeled on rust-analyzer's `la_arena`.
+//! [`Arena<T>`]: a minimal append-only index arena, modeled on rust-analyzer's `la_arena`.
 //!
-//! [`Idx<T>`] is a 32-bit handle into an [`Arena<T>`]: `Copy`, lifetime-free, and
-//! typed by `T` so an `Idx<ExpressionData>` cannot be used where an `Idx<TypeValue>` is
-//! expected. The arena only appends, so a handle stays valid for the arena's life.
-//! Being lifetime-free and (for `T: Send`) `Send` is what lets a materialized graph --
-//! the decompiler ctree, a function's [`FlowChart`](crate::flowchart::FlowChart) -- move off the kernel thread
-//! to a worker.
+//! [`Idx<T>`] is a 32-bit handle into an [`Arena<T>`]: `Copy`, lifetime-free, and typed by
+//! `T` so an `Idx<ExpressionData>` cannot be used where an `Idx<TypeValue>` is expected. The
+//! arena only appends, so a handle stays valid for the arena's life. Being lifetime-free and
+//! (for `T: Send`) `Send` is what lets a materialized graph, the decompiler ctree or a
+//! function's [`FlowChart`](crate::flowchart::FlowChart), move off the kernel thread to a
+//! worker.
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
-/// A typed handle into an [`Arena<T>`]. Cheap (`Copy`), `Send`/`Sync` regardless of
-/// `T`, and stable for the life of the arena.
+/// A typed handle into an [`Arena<T>`].
+///
+/// Cheap (`Copy`), `Send`/`Sync` regardless of `T`, and stable for the life of the arena.
 pub struct Idx<T> {
     raw: u32,
     // `fn() -> T` keeps `Idx<T>` covariant in `T` and unconditionally `Send + Sync`,
@@ -22,8 +23,10 @@ pub struct Idx<T> {
 }
 
 impl<T> Idx<T> {
-    /// Reconstruct a handle from a raw index. `pub(crate)` for the ctree builder, which
-    /// receives node indices back across the facade boundary as bare `u32`s.
+    /// Reconstructs a handle from a raw index.
+    ///
+    /// `pub(crate)` for the ctree builder, which receives node indices back across the
+    /// facade boundary as bare `u32`s.
     #[inline]
     pub(crate) fn from_raw(raw: u32) -> Self {
         Self {
@@ -32,8 +35,10 @@ impl<T> Idx<T> {
         }
     }
 
-    /// Handle for an arena position. The single place the `usize` index is narrowed to
-    /// the 32-bit handle, so `alloc` and `iter` agree on the bound.
+    /// Handle for an arena position.
+    ///
+    /// The single place the `usize` index is narrowed to the 32-bit handle, so `alloc` and
+    /// `iter` agree on the bound.
     #[inline]
     fn from_index(index: usize) -> Self {
         let raw = u32::try_from(index).expect("ctree arena exceeded u32 nodes");
@@ -88,7 +93,7 @@ impl<T> Arena<T> {
         Self { data: Vec::new() }
     }
 
-    /// Append a value, returning a stable handle to it.
+    /// Appends a value, returning a stable handle to it.
     #[inline]
     pub fn alloc(&mut self, value: T) -> Idx<T> {
         let idx = Idx::from_index(self.data.len());
@@ -108,7 +113,7 @@ impl<T> Arena<T> {
         self.data.is_empty()
     }
 
-    /// Iterate every `(handle, value)` in allocation order.
+    /// Iterates every `(handle, value)` pair in allocation order.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (Idx<T>, &T)> {
         self.data
             .iter()

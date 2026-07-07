@@ -2,7 +2,7 @@
 //!
 //! The declarations are split into per-domain source modules (`runtime`, `function`, `bytes`,
 //! `hexrays`, ...) that mirror the facade's translation units, but every item is re-exported
-//! flat at the crate root -- the public surface is a single namespace
+//! flat at the crate root, so the public surface is a single namespace
 //! (`idakit_sys::idakit_func_qty`, `idakit_sys::InstructionRaw`), not a module hierarchy. There are
 //! no safe wrappers here; those belong in `idakit`.
 //!

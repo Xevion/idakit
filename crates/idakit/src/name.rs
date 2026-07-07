@@ -7,16 +7,20 @@ use crate::error::{Error, Result};
 use crate::ffi::{read_string, with_cstr};
 
 impl Database {
-    /// The name at `address` -- a label, function, or data name -- or `None` if the address is
-    /// unnamed. This is the whole-database counterpart to [`Function::name`](crate::function::Function::name),
-    /// which is specific to a function entry.
+    /// The name at `address` (a label, function, or data name), or `None` if the address is
+    /// unnamed.
+    ///
+    /// This is the whole-database counterpart to
+    /// [`Function::name`](crate::function::Function::name), which is specific to a function
+    /// entry.
     #[must_use]
     pub fn name(&self, address: Address) -> Option<String> {
         read_string(|buf, cap| self.get_ea_name(address, buf, cap))
     }
 
-    /// The address a name resolves to, or `None` if no such name exists. A name with an
-    /// interior NUL can name nothing, so it too yields `None`. The inverse of
+    /// The address a name resolves to, or `None` if no such name exists.
+    ///
+    /// A name with an interior NUL can name nothing, so it too yields `None`. The inverse of
     /// [`name`](Self::name).
     #[must_use]
     pub fn address_of(&self, name: impl AsRef<str>) -> Option<Address> {
@@ -27,9 +31,11 @@ impl Database {
         .flatten()
     }
 
-    /// Demangle a mangled symbol into readable form, or `None` if `name` is not a mangled
-    /// name (or carries an interior NUL). Names read from the database are already display
-    /// form; this is for turning a raw linker symbol back into source-level text.
+    /// Demangle a mangled symbol into readable form, or `None` if `name` is not a mangled name
+    /// (or carries an interior NUL).
+    ///
+    /// Names read from the database are already display form. This is for turning a raw linker
+    /// symbol back into source-level text.
     #[must_use]
     pub fn demangle(&self, name: impl AsRef<str>) -> Option<String> {
         with_cstr(name.as_ref(), "name", |p| {
@@ -46,6 +52,9 @@ impl Database {
     }
 
     /// Rename the item at `address`.
+    ///
+    /// # Errors
+    /// [`Error::WriteRejected`] if the kernel rejects the rename.
     pub fn rename(&mut self, address: Address, name: &str) -> Result<()> {
         let ok = with_cstr(name, "name", |p| self.set_name(address, p))?;
         if ok {

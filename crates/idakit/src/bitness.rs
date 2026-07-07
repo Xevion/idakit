@@ -3,9 +3,10 @@
 use crate::Database;
 
 impl Database {
-    /// The database's addressing width, or `None` if it reports an unrecognized one. The width
-    /// of a [`read_pointer`](Database::read_pointer) and one field of the [`info`](Database::info)
-    /// snapshot.
+    /// The database's addressing width, or `None` if it reports an unrecognized one.
+    ///
+    /// The width of a [`read_pointer`](Database::read_pointer) and one field of the
+    /// [`info`](Database::info) snapshot.
     #[inline]
     #[must_use]
     pub fn bitness(&self) -> Option<Bitness> {
@@ -29,8 +30,10 @@ pub enum Bitness {
 }
 
 impl Bitness {
-    /// Interpret a raw bit width -- `16`, `32`, or `64`. `None` for any other value, which
-    /// is how the facade's `0` (no such segment) and any unexpected width surface.
+    /// Interprets a raw bit width: `16`, `32`, or `64`.
+    ///
+    /// `None` for any other value, which is how the facade's `0` (no such segment) and any
+    /// unexpected width surface.
     #[inline]
     #[must_use]
     pub const fn try_from_bits(bits: u8) -> Option<Self> {
