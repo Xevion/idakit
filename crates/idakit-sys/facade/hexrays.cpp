@@ -119,6 +119,58 @@ extern "C" void idakit_cfunc_ctree_counts(void *h, int *n_insn, int *n_expr, int
   }
 }
 
+// Diagnostic: per-op expression histograms. `v_hist` counts every cexpr the SDK visits (ground
+// truth). `w_hist` counts every cexpr the extraction walker materializes -- i.e. all of them
+// except a cot_empty placeholder sitting in an *optional* operand slot (a `for(;;)` init/cond/step
+// or a bare `return;`/`throw;`), which the walker's `opt_expr` elides to `None`. Their per-op
+// difference thus names any real over/under-visit; a faithful walker differs only at cot_empty.
+// One CV_PARENTS visitor computes both (no hand recursion -> no phantom null-deref paths). Arrays
+// are 256 ints indexed by `ctype_t`.
+namespace {
+struct expr_gap_visitor_t : public ctree_visitor_t {
+  int *v;
+  int *w;
+  expr_gap_visitor_t(int *vh, int *wh) : ctree_visitor_t(CV_PARENTS), v(vh), w(wh) {}
+  bool elided_empty(const cexpr_t *e) {
+    if (e->op != cot_empty)
+      return false;
+    const cinsn_t *p = parent_insn();
+    if (p == nullptr)
+      return false;
+    switch (p->op) {
+    case cit_for:
+      return e == &p->cfor->init || e == &p->cfor->expr || e == &p->cfor->step;
+    case cit_return:
+      return e == &p->creturn->expr;
+    case cit_throw:
+      return e == &p->cthrow->expr;
+    default:
+      return false;
+    }
+  }
+  int idaapi visit_expr(cexpr_t *e) override {
+    v[e->op]++;
+    if (!elided_empty(e))
+      w[e->op]++;
+    return 0;
+  }
+};
+} // namespace
+
+extern "C" void idakit_cfunc_ctree_expr_gap(void *h, int *v_hist, int *w_hist) {
+  for (int k = 0; k < 256; ++k)
+    v_hist[k] = w_hist[k] = 0;
+  if (h == nullptr)
+    return;
+  try {
+    cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
+    expr_gap_visitor_t vis(v_hist, w_hist);
+    vis.apply_to(&cf->body, nullptr);
+  } catch (...) {
+    std::abort();
+  }
+}
+
 // Streaming ctree walk. The facade reads the SDK ctree depth-first and, per node, calls
 // one Rust callback in `v` to mint the owned node; children are emitted before parents,
 // so each call receives its children as the handles their own callbacks returned. The

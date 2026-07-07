@@ -101,6 +101,22 @@ impl<'db> DecompiledFunction<'db> {
         }
     }
 
+    /// Diagnostic anchor for extraction fidelity: `(visitor_total, expected)` where `visitor_total`
+    /// is every expression the SDK's own ctree visitor sees, and `expected` is how many the
+    /// extraction walker should materialize -- `visitor_total` minus the `cot_empty` placeholders
+    /// sitting in *optional* operand slots (a `for(;;)` init/cond/step, a bare `return;`) that the
+    /// walker faithfully elides to `None`. A faithful [`ctree`](Self::ctree) has exactly `expected`
+    /// expression nodes; a shortfall or surplus is a real drop or invention.
+    #[must_use]
+    pub fn expr_extraction_expectation(&self) -> (i32, i32) {
+        let (mut v, mut w) = ([0i32; 256], [0i32; 256]);
+        // SAFETY: live handle (see type docs); both out-params are 256-int buffers.
+        unsafe {
+            sys::idakit_cfunc_ctree_expr_gap(self.handle, v.as_mut_ptr(), w.as_mut_ptr());
+        }
+        (v.iter().sum(), w.iter().sum())
+    }
+
     /// Materialize the whole ctree as an owned, `Send` [`Ctree`]: the facade streams a
     /// depth-first walk on this (kernel) thread, minting owned nodes through callbacks
     /// so any worker can then analyze the result.

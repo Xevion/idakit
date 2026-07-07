@@ -125,6 +125,10 @@ unsafe extern "C" {
         n_expr: *mut c_int,
         n_calls: *mut c_int,
     );
+    /// Diagnostic: fill two 256-int per-op expression histograms -- `v_hist` from the SDK's
+    /// `ctree_visitor_t` (ground truth), `w_hist` from a mirror of the extraction walker's
+    /// recursion. Their per-op difference localizes any extraction under/over-visit.
+    pub fn idakit_cfunc_ctree_expr_gap(cfunc: *mut c_void, v_hist: *mut c_int, w_hist: *mut c_int);
     /// Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) per node and writing the root
     /// statement handle to `*root`. Returns 0 on success, non-zero if `cfunc` is null.
     pub fn idakit_cfunc_walk_ctree(

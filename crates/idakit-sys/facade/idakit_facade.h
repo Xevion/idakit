@@ -241,6 +241,10 @@ void *idakit_decompile(idakit_ea_t ea, char *errbuf,
 void idakit_cfunc_dispose(void *cfunc);
 int64_t idakit_cfunc_pseudocode(void *cfunc, char *buf, size_t cap); /* tag-stripped text length */
 void idakit_cfunc_ctree_counts(void *cfunc, int *n_insn, int *n_expr, int *n_calls);
+/* Diagnostic: per-op expression histograms (256 ints each), from the SDK visitor (v_hist,
+ * ground truth) and a mirror of the extraction walker's recursion (w_hist). Their difference
+ * names the op the walker mis-visits. */
+void idakit_cfunc_ctree_expr_gap(void *cfunc, int *v_hist, int *w_hist);
 
 /* Streaming ctree extraction. The facade is a pure SDK walker: it reads a decompiled
  * function's ctree depth-first and, per node, calls one Rust callback in `vtbl` to mint

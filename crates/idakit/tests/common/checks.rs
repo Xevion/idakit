@@ -182,26 +182,38 @@ pub fn cfg(idb: &Idb) -> String {
 pub fn decompile(idb: &Idb) -> String {
     use idakit::ctree::{NodeRef, StatementKind};
     let mut decompiled = 0usize;
-    let mut checked = false;
+    let mut deep_checked = false;
     for f in idb.functions().take(50) {
         let Ok(cf) = f.decompile() else { continue };
         decompiled += 1;
-        if checked {
+        let Ok(tree) = cf.ctree() else { continue };
+
+        // Extraction fidelity, per function: the materialized expression count must equal what a
+        // faithful walk should emit -- the SDK visitor's total minus the cot_empty placeholders it
+        // counts in optional operand slots (a `for(;;)` init/cond/step, a bare `return;`) that the
+        // walker elides to `None`. A shortfall/surplus is a real dropped or invented node.
+        let (visitor_total, expected) = cf.expr_extraction_expectation();
+        let actual = tree.expressions().count() as i32;
+        assert!(
+            actual == expected,
+            "ctree extraction emitted {actual} expression nodes; a faithful walk should emit \
+             {expected} (SDK visits {visitor_total}, less {} elided empty operand slots) in {:?}",
+            visitor_total - expected,
+            f.name()
+        );
+
+        if deep_checked {
             continue;
         }
-        let c = cf.counts();
-        let Ok(tree) = cf.ctree() else { continue };
         let root = tree.root();
         assert!(
             matches!(tree.statement(root).kind, StatementKind::Block(_)),
             "ctree root should be a block"
         );
+        // Statements are never elided (cit_empty materializes as StatementKind::Empty), so their
+        // count matches the SDK visitor exactly -- unlike expressions, checked above.
         assert!(
-            tree.expressions().count() == c.expressions as usize,
-            "extracted expression count disagrees with the visitor"
-        );
-        assert!(
-            tree.statements().count() == c.insns as usize,
+            tree.statements().count() == cf.counts().insns as usize,
             "extracted statement count disagrees with the visitor"
         );
         let reachable = tree.descendants(NodeRef::Statement(root)).count();
@@ -209,7 +221,7 @@ pub fn decompile(idb: &Idb) -> String {
             reachable == tree.expressions().count() + tree.statements().count(),
             "not every ctree node is reachable from the root"
         );
-        checked = true;
+        deep_checked = true;
     }
     format!("{decompiled} decompiled")
 }
