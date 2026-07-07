@@ -1,0 +1,49 @@
+name: fetch-corpus
+description: Fetch the platform-independent CI-tier corpus fixtures from R2 (content-addressed blobs + a filtered manifest) and export IDAKIT_CORPUS_MANIFEST.
+
+runs:
+  using: composite
+  steps:
+    # Credentials arrive as job-level env (AWS_*, S3_ENDPOINT, S3_BUCKET), the same set
+    # fetch-runtime uses. Materializes the CI-tier corpus into a per-run temp dir and points
+    # IDAKIT_CORPUS_MANIFEST at its manifest; the tests' corpus discovery reads that to fan out
+    # the matrix and to source the dedicated tests' canonical database. The fixtures are host-
+    # independent (an analyzed .i64 opens the same on every OS), so every platform fetches the
+    # identical tier -- that sameness is the whole point.
+    - shell: bash
+      run: |
+        set -euo pipefail
+        tmp="$RUNNER_TEMP"
+        [ "${RUNNER_OS:-}" = Windows ] && tmp="$(cygpath -u "$RUNNER_TEMP")"
+        dest="$tmp/corpus"
+        mkdir -p "$dest"
+
+        aws s3 cp "s3://$S3_BUCKET/corpus/manifest.toml" "$dest/manifest.toml" \
+          --endpoint-url "$S3_ENDPOINT" --only-show-errors
+
+        # macOS ships `shasum`, not coreutils `sha256sum`; pick whichever exists.
+        sha_of() {
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+          else shasum -a 256 "$1" | cut -d' ' -f1; fi
+        }
+
+        # The published manifest is machine-generated with a fixed shape (path then sha256 per
+        # fixture), so a two-line awk extracts the pairs without a TOML parser.
+        awk -F' = ' '
+          /^path = /   { p=$2; gsub(/"/,"",p) }
+          /^sha256 = / { s=$2; gsub(/"/,"",s); print p"\t"s }
+        ' "$dest/manifest.toml" > "$dest/index.tsv"
+
+        while IFS=$'\t' read -r rel sha; do
+          out="$dest/$rel"
+          mkdir -p "$(dirname "$out")"
+          aws s3 cp "s3://$S3_BUCKET/corpus/blobs/$sha" "$out" \
+            --endpoint-url "$S3_ENDPOINT" --only-show-errors
+          got="$(sha_of "$out")"
+          [ "$got" = "$sha" ] || { echo "sha256 mismatch for $rel: $got != $sha" >&2; exit 1; }
+        done < "$dest/index.tsv"
+
+        manifest="$dest/manifest.toml"
+        [ "${RUNNER_OS:-}" = Windows ] && manifest="$(cygpath -w "$manifest")"
+        echo "IDAKIT_CORPUS_MANIFEST=$manifest" >> "$GITHUB_ENV"
+        echo "fetched $(wc -l < "$dest/index.tsv") corpus fixtures into $dest"
