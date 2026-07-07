@@ -13,16 +13,26 @@ use super::{CanonicalOptions, CanonicalType, TypeDiff, TypeKey};
 use crate::Database;
 
 impl Database {
-    /// Snapshot every named type in the database into an owned [`TypeCatalog`] under the strict
-    /// (ABI-exact) policy. Types that fail to resolve are dropped and counted in
-    /// [`skipped`](TypeCatalog::skipped).
+    /// Snapshots every named type into an owned [`TypeCatalog`] under the strict (ABI-exact)
+    /// policy.
+    ///
+    /// Types that fail to resolve are dropped and counted in [`skipped`](TypeCatalog::skipped).
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let catalog = db.type_catalog();
+    /// println!("{} named types, {} skipped", catalog.len(), catalog.skipped());
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
     #[must_use]
     pub fn type_catalog(&self) -> TypeCatalog {
         self.type_catalog_with(CanonicalOptions::strict())
     }
 
-    /// [`type_catalog`](Self::type_catalog) under an explicit [`CanonicalOptions`] lens, e.g.
-    /// [`logical`](CanonicalOptions::logical) to compare two databases across architectures.
+    /// [`type_catalog`](Self::type_catalog) under an explicit [`CanonicalOptions`] lens.
+    ///
+    /// E.g. [`logical`](CanonicalOptions::logical) to compare two databases across architectures.
     #[must_use]
     pub fn type_catalog_with(&self, opts: CanonicalOptions) -> TypeCatalog {
         let mut types = BTreeMap::new();
@@ -53,9 +63,11 @@ struct Entry {
     key: TypeKey,
 }
 
-/// An owned, `Send` snapshot of a database's named types, each reduced to a table-free
-/// [`CanonicalType`] and keyed by name, built under one [`CanonicalOptions`] lens. Survives the
-/// database that produced it, so two catalogs compare in memory with [`diff`](Self::diff).
+/// An owned, `Send` snapshot of a database's named types.
+///
+/// Each type is reduced to a table-free [`CanonicalType`] and keyed by name, built under one
+/// [`CanonicalOptions`] lens. Survives the database that produced it, so two catalogs compare in
+/// memory with [`diff`](Self::diff).
 #[derive(Clone, Debug)]
 pub struct TypeCatalog {
     types: BTreeMap<String, Entry>,
@@ -114,10 +126,11 @@ impl TypeCatalog {
         self.opts
     }
 
-    /// Pair this catalog's types against `other`'s by name and classify each: identical (equal
-    /// key), drifted (a structural [`TypeDiff`]), or unique to one side. Both catalogs should be
-    /// built under the same [`CanonicalOptions`] (an ABI catalog and a logical one are not
-    /// comparable), which a debug build asserts.
+    /// Pairs this catalog's types against `other`'s by name and classifies each: identical (equal
+    /// key), drifted (a structural [`TypeDiff`]), or unique to one side.
+    ///
+    /// Both catalogs should be built under the same [`CanonicalOptions`]: an ABI catalog and a
+    /// logical one are not comparable, which a debug build asserts.
     #[must_use]
     pub fn diff(&self, other: &TypeCatalog) -> CatalogDiff {
         debug_assert_eq!(

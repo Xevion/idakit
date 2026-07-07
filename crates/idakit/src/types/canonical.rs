@@ -52,8 +52,10 @@ impl AggregateKind {
     }
 }
 
-/// One field of a canonical aggregate. Layout facets (`bit_offset`) are present only when
-/// [`CanonicalOptions`] folds sizes in; `bitfield_width` is declared structure, always kept.
+/// One field of a canonical aggregate.
+///
+/// Layout facets (`bit_offset`) are present only when [`CanonicalOptions`] folds sizes in;
+/// `bitfield_width` is declared structure, always kept.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CanonicalMember {
     /// The field's name; empty if IDA gave none.
@@ -66,10 +68,11 @@ pub struct CanonicalMember {
     pub ty: CanonicalType,
 }
 
-/// A table-free structural form of a type. Children are inlined by value; a named aggregate is a
-/// [`Named`](CanonicalType::Named) reference rather than a nested body, so two databases produce
-/// equal values for equal types. A closed mirror of [`TypeShape`], with the table-relative
-/// [`TypeId`] handles resolved away.
+/// A table-free structural form of a type.
+///
+/// Children are inlined by value; a named aggregate is a [`Named`](CanonicalType::Named) reference
+/// rather than a nested body, so two databases produce equal values for equal types. A closed
+/// mirror of [`TypeShape`], with the table-relative [`TypeId`] handles resolved away.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum CanonicalType {
     /// `void`.
@@ -158,10 +161,11 @@ pub enum CanonicalType {
     BackRef(usize),
 }
 
-/// A stable 128-bit fingerprint of a [`CanonicalType`]. Equal types hash equal on any machine and
-/// any run (SipHash-1-3 guarantees cross-platform stability), so it keys a `HashMap` spanning
-/// databases or a persisted type index. At 128 bits a collision is negligible, so an equal key can
-/// be treated as an equal type.
+/// A stable 128-bit fingerprint of a [`CanonicalType`].
+///
+/// Equal types hash equal on any machine and any run (SipHash-1-3 guarantees cross-platform
+/// stability), so it keys a `HashMap` spanning databases or a persisted type index. At 128 bits a
+/// collision is negligible, so an equal key can be treated as an equal type.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct TypeKey(pub u128);
 
@@ -172,9 +176,10 @@ impl fmt::Display for TypeKey {
     }
 }
 
-/// The nominal identity of a type: the name that pairs it with a type from another database
-/// before their bodies are compared. `None` for an anonymous or purely structural type, which
-/// has no cross-database name to pair on.
+/// The nominal identity of a type: the name that pairs it with a type from another database before
+/// their bodies are compared.
+///
+/// `None` for an anonymous or purely structural type, which has no cross-database name to pair on.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum TypeIdentity {
     /// A tagged aggregate, identified by tag and kind.
@@ -191,10 +196,11 @@ pub enum TypeIdentity {
     },
 }
 
-/// How much of a type's layout the canonical form folds in. [`strict`](Self::strict) keys on the
-/// exact ABI (widths, offsets), the right lens for a same-architecture diff.
-/// [`logical`](Self::logical) drops those, matching a type by shape across architectures where
-/// `long` and pointers change width.
+/// How much of a type's layout the canonical form folds in.
+///
+/// [`strict`](Self::strict) keys on the exact ABI (widths, offsets), the right lens for a
+/// same-architecture diff. [`logical`](Self::logical) drops those, matching a type by shape across
+/// architectures where `long` and pointers change width.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CanonicalOptions {
     /// Fold concrete byte widths and bit offsets into the key.
@@ -257,6 +263,13 @@ impl Default for CanonicalOptions {
 
 impl CanonicalType {
     /// The stable 128-bit [`TypeKey`] for this canonical form.
+    ///
+    /// ```
+    /// use idakit::prelude::*;
+    /// let t = CanonicalType::Int { bytes: Some(4), signed: true };
+    /// assert_eq!(t.to_string(), "i32");
+    /// assert_eq!(t.key(), t.key()); // stable across calls
+    /// ```
     #[must_use]
     pub fn key(&self) -> TypeKey {
         // Zero-keyed SipHash-1-3: the point is a fixed, cross-run/platform-stable digest, not
@@ -267,7 +280,16 @@ impl CanonicalType {
     }
 
     /// The nominal [`identity`](TypeIdentity) of this type, or `None` when it is anonymous or
-    /// purely structural. Reads only the root, since pairing happens before bodies are compared.
+    /// purely structural.
+    ///
+    /// Reads only the root, since pairing happens before bodies are compared.
+    ///
+    /// ```
+    /// use idakit::prelude::*;
+    /// let named = CanonicalType::Named { tag: "point".into(), kind: AggregateKind::Struct };
+    /// assert!(named.identity().is_some());
+    /// assert!(CanonicalType::Int { bytes: Some(4), signed: true }.identity().is_none());
+    /// ```
     #[must_use]
     pub fn identity(&self) -> Option<TypeIdentity> {
         match self {
@@ -301,9 +323,10 @@ fn is_synthetic(tag: &str) -> bool {
     tag.is_empty() || tag.starts_with('$')
 }
 
-/// Walk a `(table, root)` into a table-free [`CanonicalType`] under `opts`. Backs
-/// [`Type::canonical`]; a ctree or frame holding its own `(table, id)` pair canonicalizes the same
-/// way.
+/// Walks a `(table, root)` into a table-free [`CanonicalType`] under `opts`.
+///
+/// Backs [`Type::canonical`]; a ctree or frame holding its own `(table, id)` pair canonicalizes
+/// the same way.
 #[must_use]
 pub fn canonicalize(table: &TypeTable, root: TypeId, opts: CanonicalOptions) -> CanonicalType {
     let mut stack = Vec::new();
@@ -488,8 +511,10 @@ impl Type {
     }
 
     /// The structural [`TypeDiff`] from `self` to `other` under the strict (ABI-exact) policy,
-    /// empty when the two types are identical. The ergonomic form of [`CanonicalType::diff`], for
-    /// types resolved from two different databases.
+    /// empty when the two types are identical.
+    ///
+    /// The ergonomic form of [`CanonicalType::diff`], for types resolved from two different
+    /// databases.
     #[must_use]
     pub fn diff(&self, other: &Type) -> TypeDiff {
         self.canonical().diff(&other.canonical())
@@ -684,7 +709,9 @@ impl CanonicalType {
 }
 
 /// A structural difference between two [`CanonicalType`]s: an ordered list of [`Change`]s, empty
-/// when the two are identical. Produced by [`CanonicalType::diff`] / [`Type::diff`].
+/// when the two are identical.
+///
+/// Produced by [`CanonicalType::diff`] / [`Type::diff`].
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct TypeDiff {
     changes: Vec<Change>,
@@ -842,6 +869,14 @@ impl CanonicalType {
     /// referenced type's own drift surfaces only when *it* is diffed as a root. A pure offset cascade
     /// (the shift an inserted field imposes on its followers) is deliberately not spelled out: the
     /// size change and the inserted member already carry it.
+    ///
+    /// ```
+    /// use idakit::prelude::*;
+    /// let a = CanonicalType::Int { bytes: Some(4), signed: true };
+    /// let b = CanonicalType::Int { bytes: Some(8), signed: true };
+    /// assert!(!a.diff(&b).is_empty());
+    /// assert!(a.diff(&a).is_empty()); // a type never differs from itself
+    /// ```
     #[must_use]
     pub fn diff(&self, other: &CanonicalType) -> TypeDiff {
         let mut changes = Vec::new();

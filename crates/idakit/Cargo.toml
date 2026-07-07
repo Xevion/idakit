@@ -18,11 +18,14 @@ targets = []
 
 [dependencies]
 bon = "3.9.3"
+dotenvy = "0.15.7"
 idakit-sys = { path = "../idakit-sys" }
 num_enum = "0.7.6"
+serde = { version = "1.0.228", features = ["derive"] }
 siphasher = "1.0.3"
 snafu = "0.9.1"
 strum = { version = "0.28.0", features = ["derive"] }
+toml = "1.1.2"
 tracing = "0.1.44"
 
 [[example]]
@@ -56,7 +59,6 @@ harness = false
 
 [dev-dependencies]
 assert2 = "0.4.0"
-dotenvy = "0.15.7"
 # test-shims exposes idakit_get_batch etc. for side-effect assertions; dev-only, so it never
 # reaches a production build of idakit.
 idakit-sys = { path = "../idakit-sys", features = ["test-shims"] }
@@ -64,5 +66,3 @@ libc = "0.2.186"
 libtest-mimic = "0.8.2"
 proptest = "1.11.0"
 rstest = "0.26.1"
-serde = { version = "1.0.228", features = ["derive"] }
-toml = "1.1.2"

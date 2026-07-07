@@ -15,10 +15,19 @@ use crate::error::{Error, Result};
 use crate::ffi::read_string;
 
 impl Database {
-    /// Enumerate the database's local named types, in ordinal order. Each item is a cheap
-    /// [`NamedType`] cursor: reading its [`name`](NamedType::name) is a metadata lookup, while
-    /// [`resolve`](NamedType::resolve) walks it into an owned [`Type`]. Anonymous types are
-    /// skipped.
+    /// Enumerates the database's local named types, in ordinal order.
+    ///
+    /// Each item is a cheap [`NamedType`] cursor: reading its [`name`](NamedType::name) is a
+    /// metadata lookup, while [`resolve`](NamedType::resolve) walks it into an owned [`Type`].
+    /// Anonymous types (structural, with no tag) are skipped.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let names: Vec<String> = db.named_types().map(|t| t.name()).collect();
+    /// assert!(names.iter().all(|n| !n.is_empty()));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
     #[inline]
     #[must_use]
     pub fn named_types(&self) -> NamedTypes<'_> {
@@ -26,8 +35,9 @@ impl Database {
     }
 }
 
-/// A borrowed view of one local named type, keyed by its type-library ordinal. Cheap to hold and
-/// copy; [`resolve`](Self::resolve) performs the structural walk.
+/// A borrowed view of one local named type, keyed by its type-library ordinal.
+///
+/// Cheap to hold and copy; [`resolve`](Self::resolve) performs the structural walk.
 #[derive(Clone, Copy)]
 pub struct NamedType<'db> {
     db: &'db Database,
@@ -53,9 +63,13 @@ impl<'db> NamedType<'db> {
         read_string(|buf, cap| self.db.type_name_at(self.ordinal, buf, cap)).unwrap_or_default()
     }
 
-    /// Walk this type into an owned, `Send` [`Type`] snapshot: the structured form
-    /// [`Database::type_named`] yields, keyed by ordinal instead of name. `Err` if the walked
-    /// table is malformed.
+    /// Walks this type into an owned, `Send` [`Type`] snapshot.
+    ///
+    /// The structured form [`Database::type_named`] yields, keyed by ordinal instead of name.
+    ///
+    /// # Errors
+    /// [`Error::TypeNotFound`] if a live ordinal refuses to walk (near-unreachable), or
+    /// [`Error::Extract`] if the walked table is malformed.
     pub fn resolve(&self) -> Result<Type> {
         // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
         match walk_type(|v, ctx, root| unsafe {
@@ -68,15 +82,23 @@ impl<'db> NamedType<'db> {
         }
     }
 
-    /// [`resolve`](Self::resolve) this type and reduce it to its table-free [`CanonicalType`] under
-    /// the strict (ABI-exact) policy, in one step. The common case when snapshotting a database's
-    /// types for cross-database comparison.
+    /// Resolves this type and reduces it to its table-free [`CanonicalType`] under the strict
+    /// (ABI-exact) policy, in one step.
+    ///
+    /// The common case when snapshotting a database's types for cross-database comparison.
+    ///
+    /// # Errors
+    /// Propagates [`resolve`](Self::resolve)'s error when the type can't be walked.
     pub fn canonical(&self) -> Result<CanonicalType> {
         Ok(self.resolve()?.canonical())
     }
 
-    /// [`canonical`](Self::canonical) under an explicit [`CanonicalOptions`] lens (e.g.
-    /// [`logical`](CanonicalOptions::logical) for a cross-architecture comparison).
+    /// [`canonical`](Self::canonical) under an explicit [`CanonicalOptions`] lens.
+    ///
+    /// E.g. [`logical`](CanonicalOptions::logical) for a cross-architecture comparison.
+    ///
+    /// # Errors
+    /// Propagates [`resolve`](Self::resolve)'s error when the type can't be walked.
     pub fn canonical_with(&self, opts: CanonicalOptions) -> Result<CanonicalType> {
         Ok(self.resolve()?.canonical_with(opts))
     }

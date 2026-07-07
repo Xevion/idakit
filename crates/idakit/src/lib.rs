@@ -80,6 +80,8 @@ mod claim;
 pub mod ctree;
 mod data;
 pub mod decompile;
+#[doc(hidden)]
+pub mod doctest;
 pub mod error;
 pub mod export;
 mod ffi;

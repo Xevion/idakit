@@ -1,6 +1,6 @@
 //! `TypeTable`: an interned arena of resolved types carried by an owned snapshot off the
-//! kernel thread -- the decompiler [`Ctree`](crate::ctree::Ctree), a function's
-//! [`StackFrame`](crate::stack::StackFrame), or a standalone [`Type`].
+//! kernel thread (the decompiler [`Ctree`](crate::ctree::Ctree), a function's
+//! [`StackFrame`](crate::stack::StackFrame), or a standalone [`Type`]).
 //!
 //! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
 //! types share one handle, and recursion (a struct pointing at itself) is a [`TypeId`]
@@ -148,9 +148,10 @@ pub enum TypeShape {
 }
 
 impl TypeShape {
-    /// The type a pointer addresses, or `None` for a non-pointer. A structural accessor --
-    /// the pointer analogue of reading a struct's members -- so callers needn't re-match
-    /// the [`Ptr`](TypeShape::Ptr) variant by hand.
+    /// The type a pointer addresses, or `None` for a non-pointer.
+    ///
+    /// A structural accessor (the pointer analogue of reading a struct's members), so callers
+    /// needn't re-match the [`Ptr`](TypeShape::Ptr) variant by hand.
     #[inline]
     #[must_use]
     pub fn pointee(&self) -> Option<TypeId> {
@@ -162,9 +163,10 @@ impl TypeShape {
 
     /// The tag of a named aggregate ([`Struct`](TypeShape::Struct)/[`Union`](TypeShape::Union)/
     /// [`Enum`](TypeShape::Enum), unless anonymous) or the alias of a
-    /// [`Typedef`](TypeShape::Typedef); `None` for an anonymous or structural type. Borrows from
-    /// `self`, so the caller clones only when it needs an owned name -- e.g. feeding it back to
-    /// [`Database::type_named`](crate::Database::type_named) takes the borrow directly.
+    /// [`Typedef`](TypeShape::Typedef); `None` for an anonymous or structural type.
+    ///
+    /// Borrows from `self`, so the caller clones only when it needs an owned name; e.g. feeding it
+    /// back to [`Database::type_named`](crate::Database::type_named) takes the borrow directly.
     #[inline]
     #[must_use]
     pub fn tag_name(&self) -> Option<&str> {
