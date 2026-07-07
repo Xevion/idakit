@@ -26,4 +26,20 @@ unsafe extern "C" {
         ctx: *mut c_void,
         root: *mut u32,
     ) -> c_int;
+
+    /// Exclusive upper bound on local-type ordinals: valid ordinals run `1..limit`.
+    pub fn idakit_type_ordinal_limit() -> u32;
+
+    /// Name of the type at `ordinal` into `(buf, cap)`, returning its full length (0 for an
+    /// anonymous type, negative if the ordinal holds no type).
+    pub fn idakit_type_name_at(ordinal: u32, buf: *mut c_char, cap: usize) -> i64;
+
+    /// Walk the type at `ordinal` into one interned table via `v` (with `ctx`), writing its root
+    /// handle to `*root`. The ordinal counterpart to [`idakit_type_walk`]; non-zero if empty.
+    pub fn idakit_type_walk_ordinal(
+        ordinal: u32,
+        v: *const TypeVtbl,
+        ctx: *mut c_void,
+        root: *mut u32,
+    ) -> c_int;
 }

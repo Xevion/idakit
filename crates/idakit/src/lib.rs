@@ -125,7 +125,11 @@ pub mod prelude {
     pub use crate::segment::{Segment, SegmentClass, Segments};
     pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
     pub use crate::strings::{StringLiteral, Strings};
-    pub use crate::types::{EnumMember, Type, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
+    pub use crate::types::{
+        AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, CatalogDiff, Change,
+        ChangeKind, EnumMember, NamedType, NamedTypes, Type, TypeCatalog, TypeDiff, TypeId,
+        TypeIdentity, TypeKey, TypeMember, TypeShape, TypeTable, TypeValue, canonicalize,
+    };
     pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
 }
 
@@ -209,6 +213,22 @@ impl Database {
         self.close_database(save);
     }
 
+    /// Open `path`, run `f` against the open database, and close it (without saving) on every exit:
+    /// a normal return, an early `?`, or a panic. The read-only scoping the two-database workflows
+    /// want, so a `close` can't be forgotten:
+    /// `let catalog = idb.with_open(&path, |idb| Ok(idb.type_catalog()))?;`. Opens without
+    /// auto-analysis (an already-analyzed `.i64`); use [`open`](Self::open) directly when you need
+    /// `run_auto`, or to save on close.
+    pub fn with_open<T>(
+        &mut self,
+        path: impl AsRef<str>,
+        f: impl FnOnce(&mut Database) -> Result<T>,
+    ) -> Result<T> {
+        self.open(path).call()?;
+        let closer = CloseOnDrop { db: self };
+        f(&mut *closer.db)
+    }
+
     /// Record EULA acceptance in IDA's registry (`$HOME/.idapro`), a one-time setup per
     /// home. Headless `idalib` refuses to [`open`](Self::open) a database until this is
     /// set, aborting with [`Error::KernelExit`] (`"License not yet accepted, cannot run in
@@ -226,5 +246,17 @@ impl Database {
             code: self.last_exit_code(),
             diagnostic: (!trimmed.is_empty()).then(|| trimmed.to_owned()),
         }
+    }
+}
+
+/// Closes the borrowed database on drop, so [`Database::with_open`] releases it on every exit path,
+/// including a panic unwinding through the caller's closure.
+struct CloseOnDrop<'db> {
+    db: &'db mut Database,
+}
+
+impl Drop for CloseOnDrop<'_> {
+    fn drop(&mut self) {
+        self.db.close(false);
     }
 }

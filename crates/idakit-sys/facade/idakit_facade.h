@@ -317,6 +317,14 @@ int idakit_frame_type_walk(idakit_ea_t ea, const idakit_frame_vtbl_t *v, void *c
 int idakit_type_walk(const char *name, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
 int idakit_func_type_walk(idakit_ea_t ea, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
 
+/* Enumerate the local type library by ordinal: valid ordinals run 1..idakit_type_ordinal_limit().
+ * type_name_at writes the ordinal's name (0-length for an anonymous type, -1 if the ordinal is
+ * empty); type_walk_ordinal is idakit_type_walk keyed by ordinal instead of name. */
+uint32_t idakit_type_ordinal_limit(void);
+int64_t idakit_type_name_at(uint32_t ordinal, char *buf, size_t cap);
+int idakit_type_walk_ordinal(uint32_t ordinal, const idakit_type_vtbl_t *v, void *ctx,
+                             uint32_t *root);
+
 /* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
  * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the
  * byte range of the whole value this fragment covers. */

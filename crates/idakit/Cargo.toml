@@ -20,6 +20,7 @@ targets = []
 bon = "3.9.3"
 idakit-sys = { path = "../idakit-sys" }
 num_enum = "0.7.6"
+siphasher = "1.0.3"
 snafu = "0.9.1"
 strum = { version = "0.28.0", features = ["derive"] }
 tracing = "0.1.44"

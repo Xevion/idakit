@@ -14,10 +14,19 @@ use std::collections::HashMap;
 use crate::arena::{Arena, Idx};
 
 mod builder;
+mod canonical;
+mod catalog;
+mod named;
 mod resolved;
 mod sink;
 
 pub(crate) use builder::TypeBuilder;
+pub use canonical::{
+    AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, Change, ChangeKind, TypeDiff,
+    TypeIdentity, TypeKey, canonicalize,
+};
+pub use catalog::{CatalogDiff, TypeCatalog};
+pub use named::{NamedType, NamedTypes};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;
 pub(crate) use sink::{TypeSink, raw, reborrow, tid, type_vtbl};

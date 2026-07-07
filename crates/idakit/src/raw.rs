@@ -295,6 +295,14 @@ impl Database {
         unsafe { sys::idakit_func_type(address.get(), buf, cap) }
     }
 
+    pub(crate) fn type_ordinal_limit(&self) -> u32 {
+        unsafe { sys::idakit_type_ordinal_limit() }
+    }
+
+    pub(crate) fn type_name_at(&self, ordinal: u32, buf: *mut c_char, cap: usize) -> i64 {
+        unsafe { sys::idakit_type_name_at(ordinal, buf, cap) }
+    }
+
     pub(crate) fn func_end(&self, address: Address) -> sys::Address {
         unsafe { sys::idakit_func_end(address.get()) }
     }

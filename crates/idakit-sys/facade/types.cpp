@@ -63,3 +63,49 @@ extern "C" int idakit_func_type_walk(idakit_ea_t ea, const idakit_type_vtbl_t *v
     std::abort();
   }
 }
+
+// Local-type enumeration. Ordinals run 1..limit; get_ordinal_limit is the exclusive upper bound.
+extern "C" uint32_t idakit_type_ordinal_limit() {
+  try {
+    return get_ordinal_limit(get_idati());
+  } catch (...) {
+    std::abort();
+  }
+}
+
+// Name of the type at `ordinal`: full length written snprintf-style, 0 for an anonymous type
+// (empty name), -1 if no type occupies the ordinal.
+extern "C" int64_t idakit_type_name_at(uint32_t ordinal, char *buf, size_t cap) {
+  try {
+    const char *name = get_numbered_type_name(get_idati(), ordinal);
+    if (name == nullptr) {
+      if (cap > 0)
+        buf[0] = 0;
+      return -1;
+    }
+    qstring out(name);
+    qstrncpy(buf, out.c_str(), cap);
+    return (int64_t)out.length();
+  } catch (...) {
+    std::abort();
+  }
+}
+
+// Walk the type at `ordinal` into one interned table, the ordinal counterpart to idakit_type_walk.
+extern "C" int idakit_type_walk_ordinal(uint32_t ordinal, const idakit_type_vtbl_t *v, void *ctx,
+                                        uint32_t *root) {
+  if (v == nullptr || root == nullptr)
+    return 1;
+  try {
+    tinfo_t tif;
+    if (!tif.get_numbered_type(get_idati(), ordinal))
+      return 1;
+    idakit_facade::type_walker_t tw;
+    tw.v = v;
+    tw.ctx = ctx;
+    *root = tw.ty(tif);
+    return 0;
+  } catch (...) {
+    std::abort();
+  }
+}

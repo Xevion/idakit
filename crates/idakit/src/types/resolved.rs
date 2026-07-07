@@ -7,12 +7,16 @@
 //! Materialized on the kernel thread and handed back owned, so it analyzes anywhere -- the type
 //! analogue of the decompiler's [`Ctree`](crate::ctree::Ctree).
 
+use std::cell::OnceCell;
 use std::ffi::{c_int, c_void};
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use idakit_sys as sys;
 
 use super::{
-    TypeBuilder, TypeId, TypeMember, TypeShape, TypeSink, TypeTable, TypeValue, tid, type_vtbl,
+    TypeBuilder, TypeId, TypeKey, TypeMember, TypeShape, TypeSink, TypeTable, TypeValue, tid,
+    type_vtbl,
 };
 use crate::Database;
 use crate::ctree::ExtractError;
@@ -47,9 +51,20 @@ impl Database {
 pub struct Type {
     types: TypeTable,
     root: TypeId,
+    /// Cached strict [`TypeKey`], computed once on first [`key`](Self::key) (or `==`/`Hash`).
+    /// `OnceCell<TypeKey>` keeps `Type` `Send`; see the `assert_send` proof in tests.
+    key: OnceCell<TypeKey>,
 }
 
 impl Type {
+    /// This type's stable [`TypeKey`] under the strict policy: the cross-database fingerprint,
+    /// computed once (walking and hashing the tree) and cached for every later use, including the
+    /// equality and hashing below.
+    #[must_use]
+    pub fn key(&self) -> TypeKey {
+        *self.key.get_or_init(|| self.canonical().key())
+    }
+
     /// The handle of the type this image was built for -- the named type, or the function
     /// prototype (a [`TypeShape::Function`]).
     #[inline]
@@ -100,6 +115,33 @@ impl Type {
     }
 }
 
+/// Structural identity: two `Type`s are equal when their strict canonical [`key`](Type::key)s
+/// match, so a type resolved from one database equals the same type from another even though their
+/// [`TypeId`] arenas are unrelated.
+impl PartialEq for Type {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for Type {}
+
+impl Hash for Type {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.key().hash(state);
+    }
+}
+
+impl fmt::Display for Type {
+    /// The canonical one-line form (see [`CanonicalType`](crate::types::CanonicalType)).
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.canonical())
+    }
+}
+
 /// Accumulates a standalone type walk: the shared [`TypeBuilder`] the walker interns into.
 struct ResolvedTypeBuilder {
     types: TypeBuilder,
@@ -144,6 +186,7 @@ pub(crate) fn walk_type(
     Ok(Some(Type {
         root: tid(root),
         types: b.types.into_table(),
+        key: OnceCell::new(),
     }))
 }
 
@@ -186,7 +229,11 @@ mod tests {
             },
             size: Some(4),
         });
-        let img = Type { types, root };
+        let img = Type {
+            types,
+            root,
+            key: OnceCell::new(),
+        };
 
         assert!(img.root() == root);
         assert!(img.size() == Some(4));
@@ -207,7 +254,11 @@ mod tests {
     fn scalar_root_has_no_members() {
         let mut types = TypeTable::new();
         let root = u32_type(&mut types);
-        let img = Type { types, root };
+        let img = Type {
+            types,
+            root,
+            key: OnceCell::new(),
+        };
         assert!(img.members().is_none());
     }
 }
