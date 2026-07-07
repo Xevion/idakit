@@ -70,8 +70,4 @@ jobs:
       # the corpus matrix and the dedicated tests (which source their canonical database from it)
       # run against the same fixtures on every platform.
       - uses: ./.github/actions/fetch-corpus
-      # The test fixture is a small x86-64 program; the arm64 runner cross-compiles it
-      # (gcc + the x86-64 target libc headers/libs it Recommends but doesn't Depend on).
-      - if: matrix.platform == 'linux-arm64'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-x86-64-linux-gnu libc6-dev-amd64-cross
       - run: just ci-test

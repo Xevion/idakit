@@ -53,25 +53,9 @@ clippy:
 actionlint:
     actionlint
 
-# Build the fixture database (gcc a sample, auto-analyze it into an .i64) and run the whole
-# suite against it. The kernel-touching integration tests skip without IDAKIT_TEST_DB.
+# Like `test`, but --no-fail-fast so one run surfaces every platform's failures. In CI the
+# fetch-corpus step exports IDAKIT_CORPUS_MANIFEST, so the dedicated tests source the same
+# host-independent canonical fixture the corpus matrix uses.
 ci-test:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    work="$(mktemp -d)"
-    # On Windows this recipe runs under git-bash but cargo/clang are native; a mixed C:/-style
-    # path is understood by both, so the fixture and DB paths agree across the boundary.
-    case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) work="$(cygpath -m "$work")" ;; esac
-    # Force an x86-64 fixture even on an arm64 host, so the suite runs against an identical
-    # target everywhere: arm64 Linux cross-compiles, macOS builds the x86-64 slice, and Windows'
-    # clang defaults to the x86_64-pc-windows-msvc target.
-    case "$(uname -s)" in
-      Darwin) cc=(clang -arch x86_64) ;;
-      MINGW*|MSYS*|CYGWIN*) cc=(clang) ;;
-      *) if [ "$(uname -m)" = x86_64 ]; then cc=(gcc); else cc=(x86_64-linux-gnu-gcc); fi ;;
-    esac
-    "${cc[@]}" -O1 -g -o "$work/sample" crates/idakit/tests/fixtures/sample.c
-    cargo run -q -p idakit --example make_fixture -- "$work/sample"
-    test -f "$work/sample.i64" || { echo "make_fixture produced no .i64" >&2; exit 1; }
-    IDAKIT_TEST_DB="$work/sample.i64" cargo nextest run --workspace --no-fail-fast
+    cargo nextest run --workspace --no-fail-fast
     cargo test --workspace --doc
