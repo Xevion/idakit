@@ -1,4 +1,5 @@
-//! Corpus fan-out matrix: one runtime-generated test per database (see [`common::corpus`]). Each
+//! Corpus fan-out matrix: one runtime-generated test per database (fixtures from `idakit::corpus`,
+//! re-exported through `common`). Each
 //! opens one private copy and runs every [`common::checks`] invariant against it -- open dominates,
 //! so it's amortized across the check axis rather than paid per check.
 //!
@@ -27,7 +28,7 @@ static KERNEL_GATE: Mutex<()> = Mutex::new(());
 // normal CRT exit path, so the swallow runs. (Unix was unaffected: its `process::exit` runs atexit.)
 fn main() -> ExitCode {
     let args = Arguments::from_args();
-    let fixtures = common::corpus::fixtures();
+    let fixtures = common::fixtures();
 
     let mut trials = Vec::new();
     for fx in fixtures {
@@ -45,7 +46,7 @@ fn run_db(src: &Path, skips: &[String]) -> Result<(), Failed> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    let db = common::corpus::working_copy(src).map_err(|e| Failed::from(e.to_string()))?;
+    let db = common::working_copy(src).map_err(|e| Failed::from(e.to_string()))?;
     let path = db.path().to_owned();
     let skips = skips.to_vec();
 

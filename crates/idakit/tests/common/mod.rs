@@ -1,9 +1,12 @@
 //! Shared helpers for the kernel-touching integration tests.
 // Each test binary pulls in this whole module but uses only a subset of it.
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 pub mod checks;
-pub mod corpus;
+
+// Corpus resolution lives in the crate's shared `idakit::corpus` (one source of truth with the
+// doctest harness); re-export the test-facing surface so callers reach it through `common`.
+pub use idakit::corpus::{Fixture, WorkingCopy, canonical, display_name, fixtures, working_copy};
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -55,7 +58,7 @@ impl TestDb {
     }
 
     /// The shared canonical database path: an explicit `IDAKIT_TEST_DB` override (an absolute
-    /// `.i64`, rarely used), else the corpus manifest's [`canonical`](corpus::canonical) fixture
+    /// `.i64`, rarely used), else the corpus manifest's [`canonical`](idakit::corpus::canonical) fixture
     /// -- the one binary the dedicated tests open, identical on every platform so their
     /// assertions never depend on the host. `None` when no corpus is configured, which skips the
     /// dedicated tests. Read this directly only for lock-free byte access (advisory locks don't
@@ -67,7 +70,7 @@ impl TestDb {
         {
             return Some(PathBuf::from(db));
         }
-        corpus::canonical()
+        canonical()
     }
 
     /// A private copy of `src` in a scratch dir, removed on drop. Panics if the source is

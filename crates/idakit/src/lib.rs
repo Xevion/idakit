@@ -77,6 +77,8 @@ pub mod arena;
 pub mod bitness;
 mod bytes;
 mod claim;
+#[doc(hidden)]
+pub mod corpus;
 pub mod ctree;
 mod data;
 pub mod decompile;
