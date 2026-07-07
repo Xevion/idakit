@@ -1,7 +1,8 @@
-//! A non-trivial consumer of the materialized ctree, used as a stress test and a
-//! benchmark. For every function in the database it runs a crude intra-procedural
-//! taint pass (call-return sources -> lvar def/use fixpoint -> dangerous-call sinks)
-//! and times the work in four separate phases:
+//! A non-trivial consumer of the materialized ctree, used as a stress test and a benchmark.
+//!
+//! For every function in the database it runs a crude intra-procedural taint pass
+//! (call-return sources -> lvar def/use fixpoint -> dangerous-call sinks) and times the
+//! work in four separate phases:
 //!
 //!   decompile   -- Hex-Rays, kernel thread, serial and unavoidable
 //!   extract     -- `cfunc.ctree()`, the facade DFS + Rust rebuild, kernel thread
@@ -35,19 +36,22 @@ fn matches(name: &str, set: &[&str]) -> bool {
     set.iter().any(|n| name.contains(n))
 }
 
-/// A function lifted into a Send-able analysis input. The callee-name map is the
-/// telling part: the ctree's `Call` carries only an `Obj(address)`/`Helper`, so the names
-/// every analysis actually keys on have to be resolved *here*, on the kernel thread,
-/// and folded in -- the bare tree cannot answer "what does this call?" off-thread.
+/// A function lifted into a Send-able analysis input.
+///
+/// The callee-name map is the telling part, since the ctree's `Call` carries only an
+/// `Obj(address)`/`Helper`, so the names every analysis actually keys on have to be resolved
+/// *here*, on the kernel thread, and folded in. The bare tree cannot answer "what does this
+/// call?" off-thread.
 struct TaintInput {
     tree: Ctree,
     /// Call expression -> resolved callee name (only the ones that resolve to a symbol).
     callees: HashMap<ExpressionId, String>,
 }
 
-/// Resolve a call's callee to a name, if it is a direct symbol or a decompiler helper.
-/// Indirect calls (through a variable or computed pointer) stay unresolved. Enrichment
-/// win: the symbol name now rides on the `Obj` node, so this no longer needs the kernel.
+/// Resolves a call's callee to a name, if it is a direct symbol or a decompiler helper.
+///
+/// Indirect calls (through a variable or computed pointer) stay unresolved. The symbol name
+/// rides on the `Obj` node, so this needs no kernel access.
 fn callee_name(tree: &Ctree, callee: ExpressionId) -> Option<String> {
     let kind = tree.kind(callee);
     if let Some((_, name)) = kind.as_obj() {
@@ -56,8 +60,10 @@ fn callee_name(tree: &Ctree, callee: ExpressionId) -> Option<String> {
     kind.as_helper().map(str::to_owned)
 }
 
-/// Build the callee-name map for a tree. Now that the tree carries callee names, this is
-/// pure (no `Database`) -- the kernel-thread name resolution that used to dominate is gone.
+/// Builds the callee-name map for a tree.
+///
+/// The tree carries callee names directly, so this is pure: no `Database` access, no
+/// kernel-thread name resolution.
 fn resolve_callees(tree: &Ctree) -> HashMap<ExpressionId, String> {
     let mut map = HashMap::new();
     for (id, callee, _) in tree.calls() {
@@ -68,8 +74,9 @@ fn resolve_callees(tree: &Ctree) -> HashMap<ExpressionId, String> {
     map
 }
 
-/// Does `e`'s subtree read a tainted lvar or call a source directly? Flow-insensitive
-/// and deliberately crude -- the point is to do real work proportional to tree size.
+/// Whether `e`'s subtree reads a tainted lvar or calls a source directly.
+///
+/// Flow-insensitive and deliberately crude, doing real work proportional to tree size.
 fn expression_tainted(img: &TaintInput, e: ExpressionId, tainted: &HashSet<u32>) -> bool {
     img.tree
         .expression_descendants(NodeRef::Expression(e))
@@ -79,7 +86,7 @@ fn expression_tainted(img: &TaintInput, e: ExpressionId, tainted: &HashSet<u32>)
         })
 }
 
-/// The pure phase: returns the number of source->sink flows found. No `Database` access,
+/// The pure phase returns the number of source->sink flows found. No `Database` access,
 /// so this is exactly the work that could move to a worker thread.
 fn analyze(img: &TaintInput) -> usize {
     // Collect `Var(i) = rhs` definitions once.

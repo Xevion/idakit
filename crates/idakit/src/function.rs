@@ -17,15 +17,17 @@ use crate::types::{Type, walk_type};
 use crate::xref::Xrefs;
 
 impl Database {
-    /// A typed cursor at `address`; does not verify a function lives there (absence
-    /// surfaces lazily). Use [`functions`](Self::functions) to enumerate real ones.
+    /// A typed cursor at `address`.
+    ///
+    /// Does not verify a function lives there; absence surfaces lazily. Use
+    /// [`functions`](Self::functions) to enumerate real ones.
     #[inline]
     #[must_use]
     pub fn function(&self, address: Address) -> Function<'_> {
         Function::new(address, self)
     }
 
-    /// Iterate every function in the database, in kernel order.
+    /// Iterates every function in the database, in kernel order.
     #[inline]
     #[must_use]
     pub fn functions(&self) -> Functions<'_> {
@@ -53,8 +55,10 @@ impl<'db> Function<'db> {
         self.address
     }
 
-    /// The function's name and how IDA assigned it -- see [`FunctionName`]. A function entry
-    /// always has a name (an address-derived placeholder at worst), so this is not optional.
+    /// The function's name and how IDA assigned it.
+    ///
+    /// See [`FunctionName`]. A function entry always has a name (an address-derived placeholder
+    /// at worst), so this is not optional.
     #[must_use]
     pub fn name(&self) -> FunctionName {
         let text =
@@ -68,10 +72,14 @@ impl<'db> Function<'db> {
         read_string(|buf, cap| self.db.func_type(self.address, buf, cap))
     }
 
-    /// Walk this function's stored prototype into an owned [`Type`] -- the structured
-    /// counterpart to [`prototype`](Self::prototype), whose root is a
-    /// [`TypeShape::Function`](crate::types::TypeShape::Function). `Ok(None)` if the kernel has no type
-    /// info for the function.
+    /// Walks this function's stored prototype into an owned [`Type`].
+    ///
+    /// The structured counterpart to [`prototype`](Self::prototype), whose root is a
+    /// [`TypeShape::Function`](crate::types::TypeShape::Function). `Ok(None)` if the kernel has
+    /// no type info for the function.
+    ///
+    /// # Errors
+    /// [`Error::Extract`] if the walked type is malformed.
     pub fn prototype_type(&self) -> Result<Option<Type>> {
         // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
         walk_type(|v, ctx, root| unsafe {
@@ -83,30 +91,35 @@ impl<'db> Function<'db> {
         })
     }
 
-    /// Lazily iterate this function's chunks: the entry chunk first, then any tail chunks in
-    /// address order. A contiguous function yields exactly one [`FunctionChunk`].
+    /// Lazily iterates this function's chunks, starting with the entry chunk, then any tail
+    /// chunks in address order.
+    ///
+    /// A contiguous function yields exactly one [`FunctionChunk`].
     #[must_use]
     pub fn chunks(&self) -> FunctionChunks<'db> {
         FunctionChunks::new(self.address, self.db)
     }
 
-    /// Lazily iterate this function's instructions, in address order within each chunk,
-    /// across every chunk. Data items and the alignment tail are skipped -- see
-    /// [`Instructions`].
+    /// Lazily iterates this function's instructions, in address order within each chunk,
+    /// across every chunk.
+    ///
+    /// Data items and the alignment tail are skipped; see [`Instructions`].
     #[must_use]
     pub fn instructions(&self) -> Instructions<'db> {
         Instructions::new(self.db, self.address)
     }
 
-    /// The function's exclusive end address -- the entry chunk's `end_ea`. `None` only if
-    /// the entry is no longer a function.
+    /// The function's exclusive end address: the entry chunk's `end_ea`.
+    ///
+    /// `None` only if the entry is no longer a function.
     #[must_use]
     pub fn end(&self) -> Option<Address> {
         Address::try_new(self.db.func_end(self.address))
     }
 
     /// The entry chunk's size in bytes (`end - start`), or `0` if the end is unavailable.
-    /// A chunked function's tail chunks lie outside this span -- walk [`chunks`](Self::chunks)
+    ///
+    /// A chunked function's tail chunks lie outside this span; walk [`chunks`](Self::chunks)
     /// for the full extent.
     #[must_use]
     pub fn size(&self) -> u64 {
@@ -119,38 +132,49 @@ impl<'db> Function<'db> {
         self.db.func_flags(self.address) & sys::FUNC_LIB != 0
     }
 
-    /// Whether this is a thunk -- a trampoline that jumps straight to another function
+    /// Whether this is a thunk, a trampoline that jumps straight to another function
     /// (`FUNC_THUNK`).
     #[must_use]
     pub fn is_thunk(&self) -> bool {
         self.db.func_flags(self.address) & sys::FUNC_THUNK != 0
     }
 
-    /// Whether this function does not return (`FUNC_NORET`) -- e.g. `exit`, `abort`.
+    /// Whether this function does not return (`FUNC_NORET`), e.g. `exit`, `abort`.
     #[must_use]
     pub fn is_noreturn(&self) -> bool {
         self.db.func_flags(self.address) & sys::FUNC_NORET != 0
     }
 
-    /// Lazily iterate cross-references targeting this function's entry.
+    /// Lazily iterates cross-references targeting this function's entry.
     #[must_use]
     pub fn xrefs_to(&self) -> Xrefs<'db> {
         self.db.xrefs_to(self.address)
     }
 
-    /// Lazily iterate cross-references originating at this function's entry.
+    /// Lazily iterates cross-references originating at this function's entry.
     #[must_use]
     pub fn xrefs_from(&self) -> Xrefs<'db> {
         self.db.xrefs_from(self.address)
     }
 
-    /// Decompile this function.
+    /// Decompiles this function.
+    ///
+    /// # Errors
+    /// [`Error::HexRaysInit`] if the decompiler could not be initialized, [`Error::Decompile`]
+    /// if Hex-Rays rejected this function, or [`Error::KernelExit`] if decompilation trapped a
+    /// fatal exit.
     pub fn decompile(&self) -> Result<DecompiledFunction<'db>> {
         self.db.decompile(self.address)
     }
 
-    /// Decompile and materialize the ctree in one step ([`decompile`](Self::decompile) then
-    /// [`DecompiledFunction::ctree`]). Use the two-step form when you also need the [`DecompiledFunction`] itself.
+    /// Decompiles and materializes the ctree in one step.
+    ///
+    /// [`decompile`](Self::decompile) then [`DecompiledFunction::ctree`]; use the two-step form
+    /// when you also need the [`DecompiledFunction`] itself.
+    ///
+    /// # Errors
+    /// Propagates [`decompile`](Self::decompile)'s errors, plus [`Error::Extract`] if the ctree
+    /// fails to materialize.
     pub fn ctree(&self) -> Result<Ctree> {
         let cfunc = self.decompile()?;
         cfunc.ctree().map_err(|source| Error::Extract {
@@ -159,13 +183,17 @@ impl<'db> Function<'db> {
         })
     }
 
-    /// Snapshot this function's stack frame, or `Ok(None)` if it has none. The disassembly-level
-    /// stack layout, no decompilation needed; see [`Database::frame`].
+    /// Snapshots this function's stack frame, or `Ok(None)` if it has none.
+    ///
+    /// The disassembly-level stack layout, no decompilation needed; see [`Database::frame`].
+    ///
+    /// # Errors
+    /// [`Error::Extract`] if a stack variable's type could not be structured.
     pub fn frame(&self) -> Result<Option<StackFrame>> {
         self.db.frame(self.address)
     }
 
-    /// Snapshot this view's scalar facts into an owned [`FunctionSnapshot`] that can leave the
+    /// Snapshots this view's scalar facts into an owned [`FunctionSnapshot`] that can leave the
     /// kernel thread.
     #[must_use]
     pub fn snapshot(&self) -> FunctionSnapshot {
@@ -179,18 +207,26 @@ impl<'db> Function<'db> {
 
 #[bon::bon]
 impl<'db> Function<'db> {
-    /// Build this function's control-flow graph with default options. The whole function is
-    /// covered, tail chunks included. See [`FlowChart`] and [`flowchart_with`](Self::flowchart_with)
-    /// for the knobs.
+    /// Builds this function's control-flow graph with default options.
+    ///
+    /// The whole function is covered, tail chunks included. See [`FlowChart`] and
+    /// [`flowchart_with`](Self::flowchart_with) for the knobs.
+    ///
+    /// # Errors
+    /// [`Error::NoFunction`] if the entry address no longer resolves to a function.
     pub fn flowchart(&self) -> Result<FlowChart> {
         self.db.flowchart(self.address)
     }
 
-    /// Build this function's CFG with non-default options: `call_ends` splits a block after
-    /// every call instruction, `externals(false)` drops the out-of-function
-    /// [`ExternalExit`](crate::flowchart::ExternalExit) edges (jump/call targets outside the function),
-    /// and `predecessors(false)` skips predecessor lists (a cheaper build when only forward
-    /// edges are needed).
+    /// Builds this function's CFG with non-default options.
+    ///
+    /// `call_ends` splits a block after every call instruction, `externals(false)` drops the
+    /// out-of-function [`ExternalExit`](crate::flowchart::ExternalExit) edges (jump/call targets
+    /// outside the function), and `predecessors(false)` skips predecessor lists (a cheaper
+    /// build when only forward edges are needed).
+    ///
+    /// # Errors
+    /// [`Error::NoFunction`] if the entry address no longer resolves to a function.
     #[builder]
     pub fn flowchart_with(
         &self,
@@ -220,14 +256,14 @@ pub struct FunctionSnapshot {
 
 /// A function's name together with how IDA assigned it, from [`Function::name`].
 ///
-/// Derefs to the name text, so it reads as the `str` it carries; match the variant to branch
-/// on provenance. Every function entry has a name -- IDA names even an unnamed one, at least
-/// with an address-derived placeholder -- so `name()` yields this directly, never an `Option`.
+/// Derefs to the name text, so it reads as the `str` it carries; match the variant to branch on
+/// provenance. Every function entry has a name, since IDA names even an unnamed one with at
+/// least an address-derived placeholder, so `name()` yields this directly, never an `Option`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FunctionName {
     /// An explicit name: user-assigned, or an imported/mangled symbol (`FF_NAME`).
     User(String),
-    /// A name IDA generated from analysis -- a recognized stub, library match, or thunk, e.g.
+    /// A name IDA generated from analysis (a recognized stub, library match, or thunk), e.g.
     /// `nullsub_0` or `j_malloc` (`FF_NAME | FF_LABL`).
     Auto(String),
     /// An address-derived placeholder for an otherwise-unnamed function, e.g. `sub_401000`
@@ -245,7 +281,7 @@ impl FunctionName {
         }
     }
 
-    /// Whether this is an explicit name -- user-assigned or an imported symbol.
+    /// Whether this is an explicit name, user-assigned or an imported symbol.
     #[inline]
     #[must_use]
     pub fn is_user(&self) -> bool {
@@ -266,12 +302,13 @@ impl FunctionName {
         matches!(self, Self::Dummy(_))
     }
 
-    /// Classify from an address's flags and its resolved name text. The two name bits
-    /// partition cleanly: `FF_NAME` alone is an explicit name, both bits an IDA-generated
-    /// one, `FF_LABL` alone a placeholder. A function entry always carries one of the three,
-    /// so the flag-less case folds to [`Dummy`](Self::Dummy) -- unreachable in practice,
-    /// pinned by the name sweep test. The bit logic mirrors IDA's `has_user_name`/
-    /// `has_auto_name`/`has_dummy_name`, held in step by the alignment test.
+    /// Classifies from an address's flags and its resolved name text.
+    ///
+    /// The two name bits partition cleanly: `FF_NAME` alone is an explicit name, both bits an
+    /// IDA-generated one, `FF_LABL` alone a placeholder. A function entry always carries one of
+    /// the three, so the flag-less case folds to [`Dummy`](Self::Dummy); unreachable in
+    /// practice, pinned by the name sweep test. The bit logic mirrors IDA's
+    /// `has_user_name`/`has_auto_name`/`has_dummy_name`, held in step by the alignment test.
     fn from_flags(flags: u64, text: String) -> Self {
         let named = flags & sys::FF_NAME != 0;
         let labeled = flags & sys::FF_LABL != 0;
@@ -440,11 +477,10 @@ impl Iterator for FunctionChunks<'_> {
 
 /// Lazy iterator over a function's instructions, across all its chunks.
 ///
-/// Code-gated: it decodes only addresses the kernel classifies as code ([`Database::is_code`])
-/// and steps over data items (jump tables, embedded constants) and the alignment tail. This
-/// gate is the point of the iterator -- [`Database::decode`] turns any bytes into an [`Instruction`], so
-/// a plain linear decode past a function's `ret` yields garbage; `is_code` keeps the stream
-/// to real instructions.
+/// Code-gated, decoding only addresses the kernel classifies as code ([`Database::is_code`])
+/// and stepping over data items (jump tables, embedded constants) and the alignment tail.
+/// [`Database::decode`] turns any bytes into an [`Instruction`], so a plain linear decode past a
+/// function's `ret` yields garbage; `is_code` keeps the stream to real instructions.
 pub struct Instructions<'db> {
     db: &'db Database,
     chunks: FunctionChunks<'db>,
@@ -493,10 +529,12 @@ impl Iterator for Instructions<'_> {
 }
 
 impl Database {
-    /// Lazily decode the instructions in the half-open range `[range.start, range.end)`,
-    /// code-gated like [`Function::instructions`]. The ranged twin of that walk -- pass a
-    /// [`BasicBlock`](crate::flowchart::BasicBlock)'s [`range`](crate::flowchart::BasicBlock::range) to iterate one
-    /// basic block.
+    /// Lazily decodes the instructions in the half-open range `[range.start, range.end)`,
+    /// code-gated like [`Function::instructions`].
+    ///
+    /// The ranged twin of that walk. Pass a
+    /// [`BasicBlock`](crate::flowchart::BasicBlock)'s [`range`](crate::flowchart::BasicBlock::range)
+    /// to iterate one basic block.
     #[must_use]
     pub fn instructions_in(&self, range: Range<Address>) -> InstructionsIn<'_> {
         InstructionsIn {

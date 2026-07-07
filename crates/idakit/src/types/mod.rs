@@ -4,7 +4,7 @@
 //!
 //! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
 //! types share one handle, and recursion (a struct pointing at itself) is a [`TypeId`]
-//! back-reference: a named aggregate reserves its handle via
+//! back-reference. A named aggregate reserves its handle via
 //! [`alloc_placeholder`](TypeTable::alloc_placeholder) before its body is filled, so a
 //! member can point back at it, rather than by nesting. The table stays flat, finite, and
 //! `Send`.
@@ -68,7 +68,7 @@ pub struct EnumMember {
 /// The shape of a type. Child types are [`TypeId`] handles, so recursion and sharing
 /// need no nesting.
 ///
-/// A closed set: a named type with no structural body becomes [`Opaque`](TypeShape::Opaque)
+/// A closed set. A named type with no structural body becomes [`Opaque`](TypeShape::Opaque)
 /// rather than a catch-all, and [`Unknown`](TypeShape::Unknown) is only the transient
 /// build-time placeholder. A new shape in a later IDA is a deliberate, breaking addition.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -210,7 +210,7 @@ impl TypeTable {
     }
 
     /// Reserve a handle for a not-yet-known type, returning a placeholder ([`Unknown`]).
-    /// This breaks recursion: a recursive member can reference the aggregate's handle
+    /// This breaks recursion, letting a recursive member reference the aggregate's handle
     /// before [`fill`](Self::fill) supplies its body. Not deduplicated.
     ///
     /// [`Unknown`]: TypeShape::Unknown

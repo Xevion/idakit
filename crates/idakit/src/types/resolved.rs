@@ -1,7 +1,7 @@
 //! [`Type`]: an owned, `Send` snapshot of one resolved type (a named type or a function
 //! prototype), walked out of the kernel into an interned [`TypeTable`].
 //!
-//! The structured counterpart to a rendered declaration string: the root [`TypeId`] and every
+//! The structured counterpart to a rendered declaration string. The root [`TypeId`] and every
 //! member/parameter it references are real handles into [`types`](Type::types), so a caller
 //! inspects a struct's fields or a prototype's parameters by shape, not by parsing text.
 //! Materialized on the kernel thread and handed back owned, so it analyzes anywhere: the type
@@ -24,7 +24,7 @@ use crate::error::{Error, Result};
 use crate::ffi::with_cstr;
 
 impl Database {
-    /// Resolves a named type into an owned [`Type`]: its structured shape and every member's type,
+    /// Resolves a named type into an owned [`Type`], its structured shape and every member's type
     /// interned in one [`TypeTable`].
     ///
     /// # Errors
@@ -122,7 +122,7 @@ impl Type {
     }
 }
 
-/// Structural identity: two `Type`s are equal when their strict canonical [`key`](Type::key)s
+/// Structural identity. Two `Type`s are equal when their strict canonical [`key`](Type::key)s
 /// match, so a type resolved from one database equals the same type from another even though their
 /// [`TypeId`] arenas are unrelated.
 impl PartialEq for Type {

@@ -6,9 +6,10 @@
 //!
 //! Discriminants are the raw `ctype_t` values from `hexrays.hpp` (IDA 9.3), so the
 //! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the SDK
-//! mapping: `u16::from(op)` is a free cast and `Op::try_from(raw)` lowers to a jump table. An
-//! operator outside the set rejects rather than folding into a catch-all; a new `ctype_t` in a
-//! later IDA is a deliberate, breaking widening, since idakit pins to one minor. Signed /
+//! mapping, where `u16::from(op)` is a free cast and `Op::try_from(raw)` lowers to a jump
+//! table. An operator outside the set rejects rather than folding into a catch-all; a new
+//! `ctype_t` in a later IDA is a deliberate, breaking widening, since idakit pins to one
+//! minor. Signed /
 //! unsigned / float variants are kept distinct because in decompiled code the operator is what
 //! reveals operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
 
@@ -219,7 +220,7 @@ mod tests {
     use assert2::assert;
     use rstest::rstest;
 
-    /// Spot-check raw discriminants against `hexrays.hpp` (IDA 9.3) values -- the oracle
+    /// Spot-check raw discriminants against `hexrays.hpp` (IDA 9.3) values: the oracle
     /// the `IntoPrimitive` derive is supposed to reproduce.
     #[rstest]
     #[case(BinOp::Comma, 1)]

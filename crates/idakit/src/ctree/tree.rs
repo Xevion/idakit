@@ -29,10 +29,10 @@ fn for_each_child(
 
 /// A decompiled function's ctree. The root is always a block statement.
 ///
-/// Owned and `Send`: materialized on the kernel thread, then analyzed anywhere. A
-/// read-only analysis snapshot -- there is no in-place mutation, and it does not track
-/// the live database, so it goes stale if the function is re-decompiled. Writing back to
-/// IDA is a separate concern, not routed through these handles.
+/// Owned and `Send`, materialized on the kernel thread and then analyzed anywhere. A
+/// read-only analysis snapshot with no in-place mutation. It does not track the live
+/// database, so it goes stale if the function is re-decompiled. Writing back to IDA is a
+/// separate concern, not routed through these handles.
 ///
 /// Real trees come from decompiling a function ([`Database::decompile`](crate::Database::decompile));
 /// [`CtreeBuilder`] builds one directly, with no kernel, for testing matchers against a
@@ -138,9 +138,10 @@ impl Ctree {
         self.lvars.iter()
     }
 
-    /// The first argument local -- the implicit `this` in a member function, or simply the
-    /// first parameter otherwise. `None` for a function that takes no arguments. A pure
-    /// structural accessor: it reads the lvar table's argument flags and makes no
+    /// The function's first argument local: the implicit `this` in a member function, or
+    /// simply the first parameter otherwise. `None` if the function takes no arguments.
+    ///
+    /// A pure structural accessor: it reads the lvar table's argument flags and makes no
     /// assumption about calling convention.
     #[must_use]
     pub fn this_lvar(&self) -> Option<LocalId> {
@@ -150,8 +151,9 @@ impl Ctree {
             .map(|i| LocalId(i as u32))
     }
 
-    /// Every expression node, flat, in allocation order -- for whole-tree scans like
-    /// "find all calls" that don't need the tree shape.
+    /// Every expression node, flat, in allocation order.
+    ///
+    /// Useful for whole-tree scans, like "find all calls", that don't need the tree shape.
     pub fn expressions(&self) -> impl ExactSizeIterator<Item = (ExpressionId, &ExpressionNode)> {
         self.expressions.iter()
     }
@@ -161,8 +163,10 @@ impl Ctree {
         self.statements.iter()
     }
 
-    /// Every call in the tree as `(node, callee, args)` -- the whole-tree scan behind
-    /// "find every call" without re-spelling the [`as_call`](ExpressionKind::as_call) filter.
+    /// Every call in the tree as `(node, callee, args)`.
+    ///
+    /// The whole-tree scan behind "find every call", without re-spelling the
+    /// [`as_call`](ExpressionKind::as_call) filter.
     pub fn calls(&self) -> impl Iterator<Item = (ExpressionId, ExpressionId, &[ExpressionId])> {
         self.expressions()
             .filter_map(|(id, node)| node.kind.as_call().map(|(callee, args)| (id, callee, args)))
@@ -205,10 +209,12 @@ impl Ctree {
             .map(|(id, _)| id)
     }
 
-    /// Every node -- expression then statement -- whose source address is `address`, in
-    /// allocation order. The flat, address-keyed counterpart to the structural
-    /// [`descendants`](Self::descendants) walk: it answers "what did the decompiler place at
-    /// this instruction?" without navigating the tree.
+    /// Every node whose source address is `address`, in allocation order with expressions
+    /// before statements.
+    ///
+    /// The flat, address-keyed counterpart to the structural [`descendants`](Self::descendants)
+    /// walk, answering "what did the decompiler place at this instruction?" without
+    /// navigating the tree.
     pub fn items_at(&self, address: Address) -> impl Iterator<Item = NodeRef> + '_ {
         let expressions = self
             .expressions()
@@ -239,8 +245,8 @@ impl Ctree {
         v
     }
 
-    /// Visit each direct child without allocating -- the push-based form that
-    /// [`children`](Self::children) buffers into a `Vec`.
+    /// Visit each direct child without allocating. The push-based counterpart to
+    /// [`children`](Self::children), which buffers into a `Vec`.
     pub fn children_for_each(&self, node: NodeRef, f: impl FnMut(NodeRef)) {
         for_each_child(&self.expressions, &self.statements, node, f);
     }
@@ -320,9 +326,9 @@ impl CtreeBuilder {
         self.types.intern(data)
     }
 
-    /// Reserve a placeholder type handle to fill later via [`fill_type`](Self::fill_type)
-    /// -- the recursion break for aggregate extraction
-    /// (see [`TypeTable::alloc_placeholder`]).
+    /// Reserve a placeholder type handle to fill later via [`fill_type`](Self::fill_type).
+    ///
+    /// The recursion break for aggregate extraction (see [`TypeTable::alloc_placeholder`]).
     pub fn alloc_type_placeholder(&mut self) -> TypeId {
         self.types.alloc_placeholder()
     }
@@ -470,7 +476,7 @@ impl CtreeBuilder {
         self.expression(ty, ExpressionKind::Sizeof(x)).call()
     }
 
-    /// `e;` -- an expression in statement position.
+    /// `e;`: an expression in statement position.
     pub fn expression_statement(&mut self, e: ExpressionId) -> StatementId {
         self.statement(StatementKind::Expression(e)).call()
     }
@@ -664,7 +670,7 @@ mod tests {
         assert!(expressions == vec![add, va, vb]);
     }
 
-    /// `kind`/`statement_kind` resolve a handle straight to its node kind -- the shorthand the
+    /// `kind`/`statement_kind` resolve a handle straight to its node kind: the shorthand the
     /// matchers project from.
     #[test]
     fn kind_resolves_handles_to_their_node_kind() {
@@ -761,8 +767,8 @@ mod tests {
         );
     }
 
-    /// `this_lvar` returns the first argument local -- the implicit receiver -- and `None`
-    /// when the function takes no arguments.
+    /// `this_lvar` returns the first argument local (the implicit receiver), or `None` when
+    /// the function takes no arguments.
     #[test]
     fn this_lvar_is_the_first_argument() {
         let mut b = CtreeBuilder::new();

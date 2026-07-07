@@ -16,7 +16,7 @@ pub type ExpressionId = Idx<ExpressionNode>;
 /// Handle to a [`StatementNode`].
 pub type StatementId = Idx<StatementNode>;
 
-/// A reference to any node -- expression or statement. Used for parent links and
+/// A reference to any node: an expression or a statement. Used for parent links and
 /// uniform navigation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum NodeRef {
@@ -84,8 +84,9 @@ pub enum LocalLocation {
     /// offset on a decompiler location (`vdloc_t::regoff` is private), so there is none here.
     /// (`ALOC_REG1`)
     Register(u32),
-    /// Split across a register pair -- low half in `low`, high half in `high`. Arises for values
-    /// wider than one register on register-based ABIs; does not occur on x86-64. (`ALOC_REG2`)
+    /// Split across a register pair, with the low half in `low` and the high half in `high`.
+    /// Arises for values wider than one register on register-based ABIs; does not occur on
+    /// x86-64. (`ALOC_REG2`)
     RegisterPair {
         /// Microcode register number holding the low half.
         low: u32,
@@ -109,7 +110,7 @@ pub enum LocalLocation {
     Scattered(Vec<LocationPiece>),
     /// A processor-module-specific custom location idakit does not structure. (`ALOC_CUSTOM`)
     Custom,
-    /// No location assigned -- the decompiler left the variable unallocated. (`ALOC_NONE`)
+    /// No location assigned, since the decompiler left the variable unallocated. (`ALOC_NONE`)
     Unallocated,
 }
 
@@ -148,7 +149,7 @@ impl LocalLocation {
 /// which byte range of the whole value it covers.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct LocationPiece {
-    /// Where this fragment lives -- a register or stack slot, never itself scattered.
+    /// Where this fragment lives: a register or stack slot, never itself scattered.
     pub location: LocalLocation,
     /// Byte offset of this fragment within the whole value.
     pub offset: u32,
@@ -208,9 +209,9 @@ pub struct StatementNode {
 
 /// An expression kind. Child links are arena handles; leaves carry their value.
 ///
-/// A closed mirror of the finalized (`CMAT_FINAL`) ctree's `cot_*` set: extraction rejects an
-/// unmodeled tag (`UnknownExpressionTag`) rather than widening this. A new node kind in a later
-/// IDA is a deliberate, breaking addition, since idakit pins to one minor.
+/// A closed mirror of the finalized (`CMAT_FINAL`) ctree's `cot_*` set, where extraction rejects
+/// an unmodeled tag (`UnknownExpressionTag`) rather than widening this. A new node kind in a
+/// later IDA is a deliberate, breaking addition, since idakit pins to one minor.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExpressionKind {
     /// `x OP y`
@@ -277,7 +278,7 @@ pub enum ExpressionKind {
         /// `cot_memptr.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
         byte_offset: u32,
     },
-    /// `(T)x` -- the target type is carried on the node (added with the type arena).
+    /// `(T)x`: the target type is carried on the node (added with the type arena).
     Cast {
         /// The cast operand.
         x: ExpressionId,
@@ -316,7 +317,7 @@ pub enum ExpressionKind {
     TypeExpression,
     /// empty/absent expression
     Empty,
-    /// a statement embedded in an expression -- internal to the decompiler, never
+    /// a statement embedded in an expression: internal to the decompiler, never
     /// present in a finalized (`CMAT_FINAL`) tree. Carried so materialization is
     /// total rather than lossy (the one allowance instead of a catch-all).
     Internal,
@@ -393,7 +394,7 @@ pub struct Case {
 /// A statement kind. Child links are arena handles.
 ///
 /// A closed mirror of the finalized ctree's `cit_*` set, on the same terms as
-/// [`ExpressionKind`]: unmodeled tags are rejected at extraction, not folded in here.
+/// [`ExpressionKind`], where unmodeled tags are rejected at extraction, not folded in here.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StatementKind {
     /// `{ ... }`

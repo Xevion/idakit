@@ -1,6 +1,8 @@
-//! The crate error types. Operational calls return [`Result`]; the kernel boundary
-//! has its own [`CallError`] (a job panicked / the kernel is gone) and [`InitError`]
-//! (kernel setup failed), mirroring how `std`/tokio model a task boundary.
+//! [`Error`]: the crate's error type for operational calls.
+//!
+//! The kernel boundary has its own error types: [`CallError`] (a job panicked or the kernel
+//! is gone) and [`InitError`] (kernel setup failed). This mirrors how `std`/tokio model a
+//! task boundary.
 
 use std::any::Any;
 use std::fmt;
@@ -10,8 +12,9 @@ use snafu::Snafu;
 use crate::ctree::ExtractError;
 use crate::instruction::DecodeError;
 
-/// IDA's `error_t` code, with the documented generic values named. Carried by the
-/// operational errors below; the raw integer is available via [`Qerrno::code`].
+/// IDA's `error_t` code, with the documented generic values named.
+///
+/// Carried by the operational errors below. The raw integer is available via [`Qerrno::code`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Qerrno {
     /// `eOk`: no error.
@@ -56,8 +59,9 @@ impl Qerrno {
     }
 }
 
-/// `": {reason}"` when present, empty otherwise -- for the optional tail of a
-/// [`Error::WriteRejected`] message.
+/// `": {reason}"` when present, empty otherwise.
+///
+/// Used for the optional tail of an [`Error::WriteRejected`] message.
 struct ReasonTail<'a>(&'a Option<String>);
 
 impl fmt::Display for ReasonTail<'_> {
@@ -69,8 +73,9 @@ impl fmt::Display for ReasonTail<'_> {
     }
 }
 
-/// Why a [`Pattern`](crate::search::Pattern) constructor rejected its input. Carried by
-/// [`Error::PatternRejected`]; a typed reason rather than an opaque message.
+/// Why a [`Pattern`](crate::search::Pattern) constructor rejected its input.
+///
+/// Carried by [`Error::PatternRejected`] as a typed reason rather than an opaque message.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PatternRejection {
     /// A [`hex`](crate::search::Pattern::hex) token was neither a hex byte, a nibble pattern
@@ -100,8 +105,8 @@ pub enum PatternRejection {
         mask: usize,
     },
 
-    /// The pattern pins no bit to match on: it is empty or all wildcards. A search on it
-    /// could only ever match nothing, so it is rejected rather than run. `total` is the
+    /// The pattern pins no bit to match on because it is empty or all wildcards. A search on
+    /// it could only ever match nothing, so it is rejected rather than run. `total` is the
     /// compiled length in bytes.
     NoAnchor {
         /// Total pattern bytes (every one a full wildcard).
@@ -152,8 +157,8 @@ impl fmt::Display for PatternRejection {
 #[snafu(visibility(pub(crate)))]
 pub enum Error {
     /// The database file could not be opened. `reason` is IDA's own error text via
-    /// `get_qerrno` -- e.g. `"Resource temporarily unavailable"` when another process holds
-    /// the database open.
+    /// `get_qerrno` (e.g. `"Resource temporarily unavailable"` when another process holds
+    /// the database open).
     #[snafu(display("failed to open database {path:?}: {reason}"))]
     Open {
         /// The database path that failed to open.
@@ -207,17 +212,18 @@ pub enum Error {
         name: String,
     },
 
-    /// No function covers the requested address -- e.g. building a
-    /// [`FlowChart`](crate::flowchart::FlowChart) at an address IDA has not attributed to any function.
+    /// No function covers the requested address (e.g. building a
+    /// [`FlowChart`](crate::flowchart::FlowChart) at an address IDA has not attributed to any function).
     #[snafu(display("no function at {address:#x}"))]
     NoFunction {
         /// The address that lies in no function.
         address: u64,
     },
 
-    /// A basic block reported an `fc_block_type_t` outside the modelled set -- a newer IDA SDK
-    /// added a block terminator, or the flow chart is corrupt. Empirically unreachable on 9.3;
-    /// a loud version-drift guard rather than a silently absorbed catch-all value.
+    /// A basic block reported an `fc_block_type_t` outside the modelled set, whether from a
+    /// newer IDA SDK that added a block terminator, or a corrupt flow chart. Empirically
+    /// unreachable on 9.3. A loud version-drift guard rather than a silently absorbed
+    /// catch-all value.
     #[snafu(display("unmodeled block kind {raw} in the flow chart at {block:#x}"))]
     UnknownBlockKind {
         /// Start address of the block whose kind did not map.
@@ -237,8 +243,8 @@ pub enum Error {
     },
 
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is
-    /// present only when the kernel left a usable `error_t` -- best-effort, since not
-    /// every rejection path sets one.
+    /// present only when the kernel left a usable `error_t` (best-effort, since not
+    /// every rejection path sets one).
     #[snafu(display("{op} failed at {address:#x}{}", ReasonTail(reason)))]
     WriteRejected {
         /// The kernel operation that was rejected (e.g. `"rename"`).
@@ -258,12 +264,13 @@ pub enum Error {
         arg: &'static str,
     },
 
-    /// The kernel tried to terminate the process with `exit(code)` mid-operation --
+    /// The kernel tried to terminate the process with `exit(code)` mid-operation.
+    ///
     /// IDA's reaction to an unrecoverable condition such as an unaccepted license. The
     /// facade trapped the exit and returned control, but the kernel has already torn
-    /// itself down: the [`Database`](crate::Database) is unusable and a fresh process is needed
-    /// to run IDA again. `diagnostic` is whatever IDA printed on its way out (captured,
-    /// not leaked) -- e.g. `"License not yet accepted, cannot run in batch mode"`.
+    /// itself down, so the [`Database`](crate::Database) is unusable and a fresh process is
+    /// needed to run IDA again. `diagnostic` is whatever IDA printed on its way out (captured,
+    /// not leaked), e.g. `"License not yet accepted, cannot run in batch mode"`.
     #[snafu(display(
         "the IDA kernel aborted the process (exit code {code}){}",
         ReasonTail(diagnostic)
@@ -275,9 +282,9 @@ pub enum Error {
         diagnostic: Option<String>,
     },
 
-    /// A marshaled [`call`](crate::kernel::Ida::call) did not return: the kernel closure panicked or
-    /// the thread is gone. `?` converts a [`CallError`] into this via [`From`], flattening
-    /// the call boundary into one [`Result`]; the panic payload is reduced to its message.
+    /// A marshaled [`call`](crate::kernel::Ida::call) did not return, because the kernel closure
+    /// panicked or the thread is gone. `?` converts a [`CallError`] into this via [`From`], flattening
+    /// the call boundary into one [`Result`]. The panic payload is reduced to its message.
     /// Handle [`CallError`] directly to inspect or [`resume`](CallError::resume) it.
     #[snafu(display("kernel call did not return: {reason}"))]
     Kernel {
@@ -303,10 +310,10 @@ impl From<CallError> for Error {
 pub enum CallError {
     /// The closure panicked on the kernel thread. The original payload is kept so it
     /// can be inspected with [`message`](CallError::message) or re-raised with
-    /// [`resume`](CallError::resume) -- nothing is lost to stringification.
+    /// [`resume`](CallError::resume), so nothing is lost to stringification.
     Panicked(Box<dyn Any + Send + 'static>),
 
-    /// The kernel thread is gone: it shut down or died before returning a value.
+    /// The kernel thread is gone, having shut down or died before returning a value.
     Disconnected,
 }
 
@@ -401,7 +408,7 @@ mod tests {
 
     use super::*;
 
-    /// Each error variant renders its operation, hex address, and reason -- and omits the
+    /// Each error variant renders its operation, hex address, and reason, and omits the
     /// reason clause when there is none.
     #[rstest]
     #[case::decompile(

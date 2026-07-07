@@ -1,19 +1,19 @@
-//! Decoded machine instructions: an owned, `Send` disassembly ADT.
+//! [`Instruction`]: a decoded machine instruction, owned and `Send`.
 //!
-//! [`Database::decode`](crate::Database::decode) turns the bytes at an [`Address`] into an owned [`Instruction`]
-//! -- mnemonic, operands, and control-flow facts all resolved on the kernel thread and
+//! [`Database::decode`](crate::Database::decode) turns the bytes at an [`Address`] into an owned [`Instruction`],
+//! with mnemonic, operands, and control-flow facts all resolved on the kernel thread and
 //! baked in, so the value carries no borrow and can be analyzed on any worker thread. This
-//! is the raw-disassembly counterpart to the decompiler ctree: it stays ISA-shaped (it
-//! does not lift to an IR), and, like the ctree, it materializes owned data rather than
+//! is the raw-disassembly counterpart to the decompiler ctree, staying ISA-shaped (it
+//! does not lift to an IR) and, like the ctree, materializing owned data rather than
 //! handing back a `!Send` view over kernel structures.
 //!
-//! Operands are modelled *semantically* -- [`OperandKind`] is a small closed set
+//! Operands are modelled *semantically* as [`OperandKind`], a small closed set
 //! (register / memory / immediate / branch target). IDA's raw operand-type byte is an
 //! open space (x86 alone uses values above the documented range for YMM/ZMM/mask
-//! registers), so mirroring it would be a trap; instead the per-processor decoder folds
+//! registers), so mirroring it would be a trap. Instead the per-processor decoder folds
 //! every raw type into one of these kinds. An [`Instruction`] that exists is therefore fully and
-//! faithfully decoded: an unsupported processor or an operand the decoder cannot model is
-//! a [`DecodeError`], never a partial or fallback value.
+//! faithfully decoded, because an unsupported processor or an operand the decoder cannot model
+//! becomes a [`DecodeError`] rather than a partial or fallback value.
 
 mod data_type;
 mod decode;
@@ -32,14 +32,17 @@ use crate::Database;
 use crate::address::Address;
 
 impl Database {
-    /// Decode the instruction at `address` into an owned, `Send` [`Instruction`] -- mnemonic, semantic
-    /// operands, and control-flow facts, all resolved here on the kernel thread.
+    /// Decodes the instruction at `address` into an owned, `Send` [`Instruction`].
     ///
-    /// `Err` if no instruction decodes there ([`DecodeError::NotCode`]) or the database's
-    /// processor has no decoder ([`DecodeError::UnsupportedProcessor`]); only x86/x64 are
-    /// modelled. An [`Instruction`] that is returned is *fully faithfully* decoded -- there is
-    /// no partial or fallback result: an operand the model cannot represent exactly (an
+    /// Mnemonic, semantic operands, and control-flow facts are all resolved here on the
+    /// kernel thread. An [`Instruction`] that is returned is faithfully decoded, with no
+    /// partial or fallback result. An operand the model cannot represent exactly (an
     /// unmodelled register or value type, a malformed payload) is a loud error, never a guess.
+    ///
+    /// # Errors
+    /// [`DecodeError::NotCode`] if no instruction decodes at `address`, or
+    /// [`DecodeError::UnsupportedProcessor`] if the database's processor has no decoder (only
+    /// x86/x64 are modelled).
     pub fn decode(&self, address: Address) -> Result<Instruction, DecodeError> {
         // SAFETY: `InstructionRaw` is an all-integer POD, so an all-zero bit pattern is a valid
         // value; the facade overwrites it before it reports success.
@@ -68,14 +71,14 @@ impl Database {
 
 /// Why decoding an instruction failed.
 ///
-/// [`NotCode`](Self::NotCode) is an ordinary outcome -- probing an address that isn't an
-/// instruction -- so it is a distinct, cheaply matched error rather than a variant of the
-/// crate-wide [`Error`](crate::Error); a [`From`] conversion still lets `?` flatten it into
+/// [`NotCode`](Self::NotCode) is an ordinary outcome (probing an address that isn't an
+/// instruction), so it is a distinct, cheaply matched error rather than a variant of the
+/// crate-wide [`Error`](crate::Error). A [`From`] conversion still lets `?` flatten it into
 /// an [`Error`](crate::Error) where that's wanted.
 #[derive(Debug, Snafu, PartialEq, Eq)]
 #[snafu(visibility(pub(crate)))]
 pub enum DecodeError {
-    /// No instruction decodes at `address`: the bytes there are data or undefined.
+    /// No instruction decodes at `address`, because the bytes there are data or undefined.
     #[snafu(display("no instruction at {address:#x}"))]
     NotCode {
         /// The address probed.
@@ -97,8 +100,8 @@ pub enum DecodeError {
         optype: u8,
     },
 
-    /// A register operand referred to a register in no modelled [`RegisterClass`] -- flags,
-    /// fpu/sse control-status, or a number outside the register file. Rejected loudly rather
+    /// A register operand referred to a register in no modelled [`RegisterClass`] (flags,
+    /// fpu/sse control-status, or a number outside the register file). Rejected loudly rather
     /// than mislabeled `GeneralPurpose`; empirically never emitted for a real x86 operand.
     #[snafu(display("unmodeled register {regnum} at operand {op}, {address:#x}"))]
     UnsupportedRegister {
@@ -110,9 +113,9 @@ pub enum DecodeError {
         regnum: u8,
     },
 
-    /// An operand's value type was outside this IDA minor's `op_dtype_t` domain -- only 9.3's
-    /// `dt_*` set is modelled, so a newer SDK's value is a deliberate break, not a silent
-    /// `Void`. See [`OperandDataType`].
+    /// An operand's value type was outside this IDA minor's `op_dtype_t` domain, since only
+    /// 9.3's `dt_*` set is modelled, so a newer SDK's value is a deliberate break, not a
+    /// silent `Void`. See [`OperandDataType`].
     #[snafu(display("unmodeled data type {dtype} at operand {op}, {address:#x}"))]
     UnsupportedDataType {
         /// Address of the instruction.
@@ -123,8 +126,8 @@ pub enum DecodeError {
         dtype: u8,
     },
 
-    /// A modelled operand kind arrived with a payload that contradicts it -- a near branch
-    /// whose target did not resolve, or a register operand with no register. A facade
+    /// A modelled operand kind arrived with a payload that contradicts it, such as a near
+    /// branch whose target did not resolve, or a register operand with no register. A facade
     /// contract violation; empirically impossible, kept as a loud guard rather than a panic.
     #[snafu(display("malformed operand {op} at {address:#x}: {reason}"))]
     MalformedOperand {
@@ -139,7 +142,7 @@ pub enum DecodeError {
 
 /// The instruction-set architecture a decoded instruction was read under.
 ///
-/// A closed set that grows only when a decoder is *implemented*: decoding under a
+/// A closed set that grows only when a decoder is *implemented*, so decoding under a
 /// processor with no wired decoder is a [`DecodeError::UnsupportedProcessor`], not a
 /// variant here. Adding a decoder is a deliberate, breaking widening.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -153,7 +156,7 @@ pub enum Isa {
 /// One decoded instruction: owned, `Send`, and self-describing.
 ///
 /// Keyed by its [`Address`]; fall-through is `address + len` and branch destinations are plain
-/// [`Address`]s, so an instruction stream needs no interning -- it is just an address-ordered
+/// [`Address`]s, so an instruction stream needs no interning, just an address-ordered
 /// sequence of these. Everything the kernel had to resolve (the mnemonic, register names,
 /// control-flow classification) is already here; nothing on an [`Instruction`] calls back into
 /// the kernel.
@@ -180,9 +183,10 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    /// Every register this instruction references, in operand order: each register operand,
-    /// then the base, index, and segment registers of each memory operand. Immediates and
-    /// branch targets contribute none.
+    /// Every register this instruction references, in operand order.
+    ///
+    /// Each register operand comes first, then the base, index, and segment registers of
+    /// each memory operand. Immediates and branch targets contribute none.
     pub fn registers(&self) -> impl Iterator<Item = &Register> {
         self.ops.iter().flat_map(|op| {
             let regs: [Option<&Register>; 3] = match &op.kind {
@@ -212,8 +216,8 @@ pub struct Operand {
 
 /// The semantic classification of an operand.
 ///
-/// Closed on purpose: the per-processor decoder maps *every* raw operand type -- including
-/// the SIMD/mask register types x86 encodes above the documented range -- into one of
+/// Closed on purpose, since the per-processor decoder maps *every* raw operand type (including
+/// the SIMD/mask register types x86 encodes above the documented range) into one of
 /// these. A future operand *category* is a deliberate, breaking widening; an unknown raw
 /// byte is a [`DecodeError`], never a new variant callers must pre-guard.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -255,7 +259,7 @@ pub struct Memory {
     pub scale: u8,
     /// Signed displacement.
     pub disp: i64,
-    /// Segment-override register. Currently always `None`: reliably distinguishing an
+    /// Segment-override register. Currently always `None`, since reliably distinguishing an
     /// explicit override from the default segment is deferred, so this is left unpopulated
     /// rather than guessed.
     pub segment: Option<Register>,
@@ -266,7 +270,7 @@ pub struct Memory {
 
 /// Whether an instruction reads and/or writes a given operand.
 ///
-/// Both bits come from the instruction's *canonical* per-operand feature flags -- a static
+/// Both bits come from the instruction's *canonical* per-operand feature flags: a static
 /// approximation keyed on the instruction type, not value-accurate dataflow. It does not
 /// account for conditional or implicit access; precise use/def analysis is a separate,
 /// deferred concern. The two bits are independent (an operand may be neither, either, or
@@ -283,9 +287,9 @@ pub struct Access {
 ///
 /// `is_call`/`is_ret`/`is_indirect` come from the processor's own predicates (richer than
 /// the raw feature bits); `stops` reports whether execution falls through to `address + len`.
-/// `target` is the static destination of a *direct* branch or call, when one exists --
-/// the single fact CFG assembly needs, hoisted here so each [`Instruction`] is a self-contained
-/// CFG input.
+/// `target` is the static destination of a *direct* branch or call, when one exists
+/// (the single fact CFG assembly needs), hoisted here so each [`Instruction`] is a
+/// self-contained CFG input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Flow {
     /// A call instruction.

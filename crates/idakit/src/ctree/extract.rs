@@ -1,7 +1,7 @@
 //! Building a [`Ctree`] from the facade's streaming ctree walk.
 //!
-//! The facade ([`idakit_sys::idakit_cfunc_walk_ctree`]) is a pure SDK walker: it reads a
-//! decompiled function depth-first and, per node, calls one callback in [`VTBL`] to mint
+//! The facade ([`idakit_sys::idakit_cfunc_walk_ctree`]) is a pure SDK walker, reading a
+//! decompiled function depth-first and, per node, calling one callback in [`VTBL`] to mint
 //! the owned node. Children are emitted before their parents, so each callback receives
 //! its children as the handles their own callbacks returned. [`CallbackBuilder`] holds
 //! the in-progress arenas; the `extern "C"` shims are thin adapters that decode the FFI
@@ -35,8 +35,8 @@ mod ct {
     pub const TERN: u32 = 16;
     pub const CAST: u32 = 48;
     pub const IDX: u32 = 58;
-    /// `cot_insn`: a statement in expression position -- never present in a finalized
-    /// tree, collapsed to [`ExpressionKind::Internal`](super::ExpressionKind::Internal) rather than erroring.
+    /// `cot_insn`: a statement in expression position. Never present in a finalized tree;
+    /// collapsed to [`ExpressionKind::Internal`](super::ExpressionKind::Internal) rather than erroring.
     pub const INSN: u32 = 66;
     pub const SIZEOF: u32 = 67;
     pub const TYPE: u32 = 69;
@@ -115,8 +115,8 @@ impl CallbackBuilder {
         }
     }
 
-    /// Record a deferred failure. Only the first error is kept -- later failures in the
-    /// same walk are dropped -- so callers must not assume every problem surfaces at
+    /// Record a deferred failure, keeping only the first and dropping later failures in the
+    /// same walk. Callers must not assume every problem surfaces at
     /// [`finish`](Self::finish), only that a failed walk reports *some* error.
     fn fail(&mut self, e: ExtractError) {
         if self.error.is_none() {
@@ -786,7 +786,7 @@ mod tests {
         ));
     }
 
-    /// `if` with and without an `else` -- exercises the optional-child sentinel.
+    /// `if` with and without an `else`, exercising the optional-child sentinel.
     #[test]
     fn builds_if_with_optional_else() {
         let mut cb = CallbackBuilder::new();
@@ -812,7 +812,7 @@ mod tests {
         ));
     }
 
-    /// `for`, `switch` (with the case-values pool), `try`/catches, and `asm` -- the
+    /// `for`, `switch` (with the case-values pool), `try`/catches, and `asm`: the
     /// variadic statements whose child wiring is easiest to get wrong.
     #[test]
     fn builds_variadic_statements() {
@@ -933,8 +933,8 @@ mod tests {
         assert!(a == b);
     }
 
-    /// A bodyless named type resolves to an `Opaque` leaf carrying its name -- a complete,
-    /// non-placeholder type, so `finish` accepts it (no leftover `Unknown`) and a repeat
+    /// A bodyless named type resolves to an `Opaque` leaf carrying its name: a complete,
+    /// non-placeholder type. `finish` accepts it (no leftover `Unknown`), and a repeat
     /// name dedups to one handle.
     #[test]
     fn opaque_type_carries_its_name() {
@@ -964,8 +964,8 @@ mod tests {
         assert!(cb.finish(blk).err() == Some(ExtractError::UnknownExpressionTag { tag: 999 }));
     }
 
-    /// `cot_insn` (a statement in expression position) collapses to `Internal`, not an
-    /// error -- the one allowance, since a finalized tree never contains it.
+    /// `cot_insn` (a statement in expression position) collapses to `Internal` instead of
+    /// erroring, the one allowance, since a finalized tree never contains it.
     #[test]
     fn cot_insn_collapses_to_internal() {
         let mut cb = CallbackBuilder::new();
@@ -980,7 +980,7 @@ mod tests {
         ));
     }
 
-    /// A float literal now carries its real value (the old extractor always emitted 0.0).
+    /// A float literal carries its real value, round-tripped through `fnum`.
     #[test]
     fn float_literal_round_trips() {
         let mut cb = CallbackBuilder::new();

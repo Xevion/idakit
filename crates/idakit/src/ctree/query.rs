@@ -1,4 +1,4 @@
-//! Structural primitives for querying a [`Ctree`] -- the composable layer above the bare
+//! Structural primitives for querying a [`Ctree`]: the composable layer above the bare
 //! node arenas.
 //!
 //! Decompiled expressions wrap the interesting node in address/place nodes (`Cast`, `&`,
@@ -8,8 +8,8 @@
 //! against one exact shape.
 //!
 //! These are deliberately general. The crate's constructor-analysis test (`tests/ctor.rs`)
-//! composes them into higher-level matchers -- recovering C++ vtable installs and base-ctor
-//! calls from real decompiler output -- as a worked example.
+//! composes them into higher-level matchers, recovering C++ vtable installs and base-ctor
+//! calls from real decompiler output, as a worked example.
 
 use super::node::{ExpressionId, ExpressionKind, LocalId};
 use super::ops::{BinOp, UnOp};
@@ -27,7 +27,7 @@ pub struct GlobalRef {
 
 /// Peel cast `(T)x` and address-of `&x` wrappers, which rename nothing, down to the first
 /// expression that is neither. Does not look through a dereference `*x`, which names the
-/// pointee: whether to follow that is the matcher's call. Shared by [`base_var`] and
+/// pointee. Whether to follow that is the matcher's call. Shared by [`base_var`] and
 /// [`global_target`], and public so custom matchers peel the same way.
 pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
     loop {
@@ -43,10 +43,10 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 /// Returns the local and the total offset from its base, or `None` if the expression isn't
 /// rooted at a variable.
 ///
-/// Both the typed shape -- `this->Other` as `MemberRef`/`MemberPtr` once IDA has the struct
-/// layout -- and the untyped shape -- `*((_QWORD *)this + 2)` or `(char *)this + 16` as raw
-/// pointer arithmetic -- resolve to the same `(this, 16)`. The untyped form is what shows up
-/// in stripped binaries, so threading it is what makes these matchers useful there.
+/// The typed shape (`this->Other` as `MemberRef`/`MemberPtr`, once IDA has typed the struct
+/// layout) and the untyped shape (`*((_QWORD *)this + 2)` or `(char *)this + 16`, as raw
+/// pointer arithmetic) both resolve to the same `(this, 16)`. The untyped form is what shows
+/// up in stripped binaries, so threading it is what makes these matchers useful there.
 ///
 /// ```
 /// use idakit::ctree::query::base_var;
@@ -249,8 +249,8 @@ mod tests {
         assert!(base_var(&tree, args[0]) == Some((LocalId(0), 16)));
     }
 
-    /// Untyped pointer arithmetic threads to the same offset a member access would: the
-    /// constant index is scaled by the pointee size, so `(_QWORD *)this + 2`,
+    /// Untyped pointer arithmetic threads to the same offset a member access would, since
+    /// the constant index is scaled by the pointee size, so `(_QWORD *)this + 2`,
     /// `(_DWORD *)this + 7`, and `(char *)this + 16` resolve to bytes 16, 28, and 16.
     #[rstest]
     #[case(8, 2, 16)]

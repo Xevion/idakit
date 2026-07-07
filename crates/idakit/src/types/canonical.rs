@@ -208,7 +208,7 @@ pub struct CanonicalOptions {
 }
 
 impl CanonicalOptions {
-    /// ABI-exact: widths and offsets are part of the key. The same-architecture diff lens.
+    /// ABI-exact, with widths and offsets part of the key. The same-architecture diff lens.
     #[inline]
     #[must_use]
     pub const fn strict() -> Self {
@@ -217,7 +217,7 @@ impl CanonicalOptions {
         }
     }
 
-    /// Size-abstracted: widths and offsets are dropped, so a type matches by shape across
+    /// Size-abstracted, dropping widths and offsets so a type matches by shape across
     /// architectures. Coarser, and it collapses same-shape scalars of different widths.
     #[inline]
     #[must_use]
@@ -333,7 +333,7 @@ pub fn canonicalize(table: &TypeTable, root: TypeId, opts: CanonicalOptions) -> 
     canon(table, root, opts, &mut stack, true)
 }
 
-/// The recursive core. `spell_named` is true only for the root: a named aggregate spells its body
+/// The recursive core. `spell_named` is true only for the root. A named aggregate spells its body
 /// at the root (the definition being compared) and cuts to [`Named`](CanonicalType::Named)
 /// everywhere else. `stack` holds the aggregate ids currently being spelled, so a cycle the
 /// nominal cut misses closes as a [`BackRef`](CanonicalType::BackRef).
@@ -447,8 +447,8 @@ fn nominal_cut(
     }
 }
 
-/// Canonicalize a struct or union: cut to [`Named`](CanonicalType::Named) if referenced, else
-/// spell the body, closing any residual cycle with a [`BackRef`](CanonicalType::BackRef).
+/// Canonicalize a struct or union, cutting to [`Named`](CanonicalType::Named) if referenced, or
+/// else spelling the body and closing any residual cycle with a [`BackRef`](CanonicalType::BackRef).
 #[allow(clippy::too_many_arguments)] // the plumbing (table/id/stack/opts) is inherent to a walk
 fn aggregate(
     table: &TypeTable,
@@ -867,8 +867,8 @@ impl CanonicalType {
     /// (different kind, different tag, a scalar, a pointer, a function) is one whole-node
     /// [`Retyped`](ChangeKind::Retyped). The walk stops at [`Named`](CanonicalType::Named) cuts, so a
     /// referenced type's own drift surfaces only when *it* is diffed as a root. A pure offset cascade
-    /// (the shift an inserted field imposes on its followers) is deliberately not spelled out: the
-    /// size change and the inserted member already carry it.
+    /// (the shift an inserted field imposes on its followers) is deliberately not spelled out, since
+    /// the size change and the inserted member already carry it.
     ///
     /// ```
     /// use idakit::prelude::*;
@@ -1049,7 +1049,7 @@ impl CanonicalMember {
     }
 }
 
-/// Diff two aggregates' members: pair by name, then by unique offset (rename), then add/remove.
+/// Diff two aggregates' members, pairing by name, then by unique offset (rename), then add/remove.
 fn diff_members(path: &str, lm: &[CanonicalMember], rm: &[CanonicalMember], out: &mut Vec<Change>) {
     let mut l_used = vec![false; lm.len()];
     let mut r_used = vec![false; rm.len()];

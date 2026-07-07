@@ -1,11 +1,11 @@
 //! Render an owned [`Ctree`] back to C-like pseudocode.
 //!
-//! This is a *fidelity* tool, not a faithful reproduction of IDA's printer: it proves
+//! This is a *fidelity* tool, not a faithful reproduction of IDA's printer. It proves
 //! the extracted tree is structurally sound (operators mapped right, operands not
 //! dropped, precedence preserved) by turning it back into readable source. It uses only
 //! [`Ctree`]'s public navigation, so it stays a pure consumer of the ADT.
 //!
-//! Exact output is not expected to byte-match IDA's `pseudocode()` -- IDA has its own
+//! Exact output is not expected to byte-match IDA's `pseudocode()`, since IDA has its own
 //! declaration block, cast style, and spacing. The invariants worth holding are the
 //! structural ones, which the unit tests below pin against synthetic trees.
 
@@ -210,7 +210,7 @@ impl Printer<'_> {
         self.statement(case.body);
     }
 
-    /// Render `id`, parenthesizing it when its own precedence is below `min_prec` -- the
+    /// Render `id`, parenthesizing it when its own precedence is below `min_prec`: the
     /// minimum the surrounding operator position requires.
     fn expression(&mut self, id: ExpressionId, min_prec: u8) {
         let paren = self.prec(id) < min_prec;
@@ -556,7 +556,7 @@ mod tests {
         assert!(out.contains("this->Base"), "got: {out}");
     }
 
-    /// `{ return a + b; }` -- the canonical small tree, rendered exactly.
+    /// `{ return a + b; }`: the canonical small tree, rendered exactly.
     #[test]
     fn renders_return_of_binary() {
         let mut b = CtreeBuilder::new();

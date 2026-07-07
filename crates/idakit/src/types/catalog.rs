@@ -129,8 +129,8 @@ impl TypeCatalog {
     /// Pairs this catalog's types against `other`'s by name and classifies each: identical (equal
     /// key), drifted (a structural [`TypeDiff`]), or unique to one side.
     ///
-    /// Both catalogs should be built under the same [`CanonicalOptions`]: an ABI catalog and a
-    /// logical one are not comparable, which a debug build asserts.
+    /// Both catalogs should be built under the same [`CanonicalOptions`], since an ABI catalog and
+    /// a logical one aren't comparable (which a debug build asserts).
     #[must_use]
     pub fn diff(&self, other: &TypeCatalog) -> CatalogDiff {
         debug_assert_eq!(
@@ -208,8 +208,8 @@ impl CatalogDiff {
         self.identical.len() + self.drifted.len()
     }
 
-    /// Whether the catalogs agree completely: every shared type identical, and neither side has a
-    /// type the other lacks.
+    /// Whether the catalogs agree completely, with every shared type identical and neither side
+    /// holding a type the other lacks.
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {

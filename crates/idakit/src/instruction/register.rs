@@ -1,8 +1,8 @@
-//! Register references in a decoded operand.
+//! [`Register`]: a register reference in a decoded operand.
 //!
 //! A [`Register`] carries the processor-local register number, its class, the byte width the
 //! operand selects, and the name IDA resolved for that `(number, width)` at decode time.
-//! The name is baked in so a [`Register`] stays meaningful off the kernel thread -- resolving
+//! The name is baked in so a [`Register`] stays meaningful off the kernel thread. Resolving
 //! it later would need a kernel call, which an owned `Send` value must never do.
 //!
 //! [`RegisterClass`] is idakit's own grouping (not a raw SDK enum), so its discriminants are
@@ -19,9 +19,9 @@ use strum::VariantArray;
 
 /// The register file a [`Register`] belongs to.
 ///
-/// A closed set: the x86 decoder maps every register it can emit into one of these, so the
-/// facade never produces a value outside this range (a register in no modelled class is a
-/// [`DecodeError`](super::DecodeError), not a stray discriminant). Exhaustive on purpose --
+/// A closed set, since the x86 decoder maps every register it can emit into one of these, so
+/// the facade never produces a value outside this range (a register in no modelled class is a
+/// [`DecodeError`](super::DecodeError), not a stray discriminant). Exhaustive on purpose, since
 /// adding a class is a deliberate, breaking widening, pinned to the facade by an alignment test.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
@@ -78,13 +78,14 @@ impl RegisterClass {
         })
     }
 
-    /// The class implied by a register name's spelling. A class-prefixed name is its
-    /// [`name_prefix`](Self::name_prefix) followed by an index (`xmm0`, `cr2`, `st7`), so a
-    /// name maps to the unique class whose prefix it carries ahead of a digit; `None` for GPR,
-    /// segment, and ip names, which have no class prefix.
+    /// The class implied by a register name's spelling.
+    ///
+    /// A class-prefixed name is its [`name_prefix`](Self::name_prefix) followed by an index
+    /// (`xmm0`, `cr2`, `st7`), so a name maps to the unique class whose prefix it carries ahead
+    /// of a digit. `None` for GPR, segment, and ip names, which have no class prefix.
     ///
     /// This *infers* class from spelling. The authoritative class is [`Register::class`],
-    /// assigned structurally at decode -- use this for parsing or as an independent cross-check,
+    /// assigned structurally at decode. Use this for parsing or as an independent cross-check,
     /// never as a decode substitute.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
