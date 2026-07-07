@@ -12,7 +12,7 @@
 use std::fmt::Write;
 
 use super::node::{Case, ExpressionId, ExpressionKind, LocalId, StatementId, StatementKind};
-use super::ops::{BinOp, UnOp};
+use super::ops::{BinaryOp, UnaryOp};
 use super::tree::Ctree;
 use crate::types::{TypeId, TypeShape};
 
@@ -228,7 +228,7 @@ impl Printer<'_> {
         match tree.kind(id) {
             ExpressionKind::Binary { op, x, y } => {
                 let (op, x, y) = (*op, *x, *y);
-                if op == BinOp::Comma {
+                if op == BinaryOp::Comma {
                     self.expression(x, P_COMMA);
                     self.out.push_str(", ");
                     self.expression(y, P_COMMA + 1);
@@ -248,7 +248,7 @@ impl Printer<'_> {
             ExpressionKind::Unary { op, x } => {
                 let (op, x) = (*op, *x);
                 match op {
-                    UnOp::PostInc | UnOp::PostDec => {
+                    UnaryOp::PostInc | UnaryOp::PostDec => {
                         self.expression(x, P_POSTFIX);
                         self.out.push_str(op.symbol());
                     }
@@ -352,7 +352,7 @@ impl Printer<'_> {
             ExpressionKind::Assign { .. } => P_ASSIGN,
             ExpressionKind::Ternary { .. } => P_TERNARY,
             ExpressionKind::Unary { op, .. } => match op {
-                UnOp::PostInc | UnOp::PostDec => P_POSTFIX,
+                UnaryOp::PostInc | UnaryOp::PostDec => P_POSTFIX,
                 _ => P_UNARY,
             },
             ExpressionKind::Call { .. }
@@ -455,32 +455,32 @@ impl Printer<'_> {
     }
 }
 
-fn bin_prec(op: BinOp) -> u8 {
+fn bin_prec(op: BinaryOp) -> u8 {
     match op {
-        BinOp::Comma => P_COMMA,
-        BinOp::LogOr => P_LOGOR,
-        BinOp::LogAnd => P_LOGAND,
-        BinOp::BitOr => P_BITOR,
-        BinOp::BitXor => P_BITXOR,
-        BinOp::BitAnd => P_BITAND,
-        BinOp::Eq | BinOp::Ne => P_EQ,
-        BinOp::Sge
-        | BinOp::Uge
-        | BinOp::Sle
-        | BinOp::Ule
-        | BinOp::Sgt
-        | BinOp::Ugt
-        | BinOp::Slt
-        | BinOp::Ult => P_REL,
-        BinOp::Sshr | BinOp::Ushr | BinOp::Shl => P_SHIFT,
-        BinOp::Add | BinOp::Sub | BinOp::Fadd | BinOp::Fsub => P_ADD,
-        BinOp::Mul
-        | BinOp::Sdiv
-        | BinOp::Udiv
-        | BinOp::Smod
-        | BinOp::Umod
-        | BinOp::Fmul
-        | BinOp::Fdiv => P_MUL,
+        BinaryOp::Comma => P_COMMA,
+        BinaryOp::LogOr => P_LOGOR,
+        BinaryOp::LogAnd => P_LOGAND,
+        BinaryOp::BitOr => P_BITOR,
+        BinaryOp::BitXor => P_BITXOR,
+        BinaryOp::BitAnd => P_BITAND,
+        BinaryOp::Eq | BinaryOp::Ne => P_EQ,
+        BinaryOp::Sge
+        | BinaryOp::Uge
+        | BinaryOp::Sle
+        | BinaryOp::Ule
+        | BinaryOp::Sgt
+        | BinaryOp::Ugt
+        | BinaryOp::Slt
+        | BinaryOp::Ult => P_REL,
+        BinaryOp::Sshr | BinaryOp::Ushr | BinaryOp::Shl => P_SHIFT,
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Fadd | BinaryOp::Fsub => P_ADD,
+        BinaryOp::Mul
+        | BinaryOp::Sdiv
+        | BinaryOp::Udiv
+        | BinaryOp::Smod
+        | BinaryOp::Umod
+        | BinaryOp::Fmul
+        | BinaryOp::Fdiv => P_MUL,
     }
 }
 
@@ -488,9 +488,9 @@ fn bin_prec(op: BinOp) -> u8 {
 mod tests {
     use super::*;
     use crate::address::Address;
-    use crate::ctree::node::{Local, LocalLocation};
-    use crate::ctree::ops::AssignOp;
-    use crate::ctree::tree::CtreeBuilder;
+    use crate::decompiler::ctree::node::{Local, LocalLocation};
+    use crate::decompiler::ctree::ops::AssignmentOp;
+    use crate::decompiler::ctree::tree::CtreeBuilder;
     use crate::types::{TypeMember, TypeShape, TypeValue};
     use assert2::assert;
     use rstest::rstest;
@@ -565,22 +565,22 @@ mod tests {
         let bb = b.push_lvar(lvar("b", int));
         let va = b.var(int, a);
         let vb = b.var(int, bb);
-        let add = b.binary(int, BinOp::Add, va, vb);
+        let add = b.binary(int, BinaryOp::Add, va, vb);
         let ret = b.ret(Some(add));
         let block = b.block(vec![ret]);
         let tree = b.finish(block);
         assert!(tree.to_pseudocode() == "{\n  return a + b;\n}\n");
     }
 
-    /// The printer spells each binary operator via [`BinOp::symbol`]; render `a OP b` and
+    /// The printer spells each binary operator via [`BinaryOp::symbol`]; render `a OP b` and
     /// confirm the glyph lands. Guards the render->ops delegation across the table.
     #[rstest]
-    #[case(BinOp::Add, "a + b")]
-    #[case(BinOp::BitAnd, "a & b")]
-    #[case(BinOp::Shl, "a << b")]
-    #[case(BinOp::LogOr, "a || b")]
-    #[case(BinOp::Eq, "a == b")]
-    fn binary_operator_renders_with_its_symbol(#[case] op: BinOp, #[case] expect: &str) {
+    #[case(BinaryOp::Add, "a + b")]
+    #[case(BinaryOp::BitAnd, "a & b")]
+    #[case(BinaryOp::Shl, "a << b")]
+    #[case(BinaryOp::LogOr, "a || b")]
+    #[case(BinaryOp::Eq, "a == b")]
+    fn binary_operator_renders_with_its_symbol(#[case] op: BinaryOp, #[case] expect: &str) {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
@@ -606,8 +606,8 @@ mod tests {
         let va = b.var(int, a);
         let vb = b.var(int, c);
         let vc = b.var(int, d);
-        let add = b.binary(int, BinOp::Add, vb, vc);
-        let mul = b.binary(int, BinOp::Mul, va, add);
+        let add = b.binary(int, BinaryOp::Add, vb, vc);
+        let mul = b.binary(int, BinaryOp::Mul, va, add);
         let ret = b.ret(Some(mul));
         let block = b.block(vec![ret]);
         let tree = b.finish(block);
@@ -629,8 +629,8 @@ mod tests {
         let va = b.var(int, a);
         let vb = b.var(int, c);
         let vc = b.var(int, d);
-        let inner = b.binary(int, BinOp::Sub, va, vb);
-        let outer = b.binary(int, BinOp::Sub, inner, vc);
+        let inner = b.binary(int, BinaryOp::Sub, va, vb);
+        let outer = b.binary(int, BinaryOp::Sub, inner, vc);
         let ret = b.ret(Some(outer));
         let block = b.block(vec![ret]);
         let tree = b.finish(block);
@@ -666,10 +666,10 @@ mod tests {
         let int = int32(&mut b);
         let a = b.push_lvar(lvar("a", int));
         let va = b.var(int, a);
-        let neg = b.unary(int, UnOp::Neg, va);
+        let neg = b.unary(int, UnaryOp::Neg, va);
         let r = b.push_lvar(lvar("r", int));
         let asg = b.var(int, r);
-        let assign = b.assign(int, AssignOp::Assign, asg, neg);
+        let assign = b.assign(int, AssignmentOp::Assign, asg, neg);
         let st = b.expression_statement(assign);
         let block = b.block(vec![st]);
         let tree = b.finish(block);

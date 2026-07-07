@@ -12,7 +12,7 @@
 //! calls from real decompiler output, as a worked example.
 
 use super::node::{ExpressionId, ExpressionKind, LocalId};
-use super::ops::{BinOp, UnOp};
+use super::ops::{BinaryOp, UnaryOp};
 use super::tree::Ctree;
 use crate::address::Address;
 
@@ -32,7 +32,11 @@ pub struct GlobalRef {
 pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
     loop {
         match tree.kind(e) {
-            ExpressionKind::Cast { x } | ExpressionKind::Unary { op: UnOp::Ref, x } => e = *x,
+            ExpressionKind::Cast { x }
+            | ExpressionKind::Unary {
+                op: UnaryOp::Ref,
+                x,
+            } => e = *x,
             _ => return e,
         }
     }
@@ -49,8 +53,9 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 /// up in stripped binaries, so threading it is what makes these matchers useful there.
 ///
 /// ```
-/// use idakit::ctree::query::base_var;
-/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeShape, TypeValue};
+/// use idakit::decompiler::ctree::query::base_var;
+/// use idakit::decompiler::ctree::{CtreeBuilder, Local, LocalLocation};
+/// use idakit::types::{TypeShape, TypeValue};
 ///
 /// let mut b = CtreeBuilder::new();
 /// let ty = b.intern_type(TypeValue {
@@ -95,7 +100,7 @@ pub fn base_var(tree: &Ctree, e: ExpressionId) -> Option<(LocalId, i64)> {
         // `char*` index of 16 both advance 16 bytes. The `pointee_size` guard means plain
         // integer addition (no pointer type) is not mistaken for navigation.
         ExpressionKind::Binary {
-            op: BinOp::Add,
+            op: BinaryOp::Add,
             x,
             y,
         } => {
@@ -130,21 +135,21 @@ pub fn global_target(tree: &Ctree, e: ExpressionId) -> Option<GlobalRef> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ctree::AssignOp;
-    use crate::ctree::node::{Local, LocalLocation};
-    use crate::ctree::tree::CtreeBuilder;
+    use crate::decompiler::ctree::AssignmentOp;
+    use crate::decompiler::ctree::node::{Local, LocalLocation};
+    use crate::decompiler::ctree::tree::CtreeBuilder;
     use crate::types::{TypeShape, TypeValue};
     use assert2::assert;
     use rstest::rstest;
 
-    fn ty(b: &mut CtreeBuilder) -> crate::ctree::TypeId {
+    fn ty(b: &mut CtreeBuilder) -> crate::types::TypeId {
         b.intern_type(TypeValue {
             shape: TypeShape::Unknown,
             size: None,
         })
     }
 
-    fn this_lvar_def(name: &str, t: crate::ctree::TypeId) -> Local {
+    fn this_lvar_def(name: &str, t: crate::types::TypeId) -> Local {
         Local {
             name: name.into(),
             ty: t,
@@ -176,16 +181,16 @@ mod tests {
         let mr0 = b.member_ref(t, mp0, 0);
         let o1 = b.obj(t, Address::new_const(0x1000), Some("vtbl_primary"));
         let c1 = b.cast(t, o1);
-        let a1 = b.assign(t, AssignOp::Assign, mr0, c1);
+        let a1 = b.assign(t, AssignmentOp::Assign, mr0, c1);
 
         // subobject install: this->Other._vptr = (..)&vtbl_sub  (offset 16)
         let v1 = b.var(t, this);
         let mp16 = b.member_ptr(t, v1, 16);
         let mr0b = b.member_ref(t, mp16, 0);
         let o2 = b.obj(t, Address::new_const(0x2000), Some("vtbl_sub"));
-        let r2 = b.unary(t, UnOp::Ref, o2);
+        let r2 = b.unary(t, UnaryOp::Ref, o2);
         let c2 = b.cast(t, r2);
-        let a2 = b.assign(t, AssignOp::Assign, mr0b, c2);
+        let a2 = b.assign(t, AssignmentOp::Assign, mr0b, c2);
 
         // base ctor call: BaseCtor(this)  (offset 0)
         let v2 = b.var(t, this);
@@ -195,7 +200,7 @@ mod tests {
         // subobject ctor call: OtherCtor(&this->Other)  (offset 16)
         let v3 = b.var(t, this);
         let mp16b = b.member_ptr(t, v3, 16);
-        let r4 = b.unary(t, UnOp::Ref, mp16b);
+        let r4 = b.unary(t, UnaryOp::Ref, mp16b);
         let oc2 = b.obj(t, Address::new_const(0x4000), Some("OtherCtor"));
         let call2 = b.call_expression(t, oc2, vec![r4]);
 
@@ -203,7 +208,7 @@ mod tests {
         let v4 = b.var(t, this);
         let mp28 = b.member_ptr(t, v4, 28);
         let num = b.num(t, 4);
-        let a3 = b.assign(t, AssignOp::Assign, mp28, num);
+        let a3 = b.assign(t, AssignmentOp::Assign, mp28, num);
 
         let statements: Vec<_> = [a1, a2, call1, call2, a3]
             .into_iter()
@@ -277,7 +282,7 @@ mod tests {
         let v = b.var(ptr, this);
         let cast = b.cast(ptr, v);
         let num = b.num(elem, index);
-        let add = b.binary(ptr, BinOp::Add, cast, num);
+        let add = b.binary(ptr, BinaryOp::Add, cast, num);
         // The install/arg shapes wrap the arithmetic in a `*(...)` or `(T)(...)`; resolving
         // through that wrapper is the whole point.
         let deref = b.deref(elem, add, u32::from(elem_bytes));
@@ -301,7 +306,7 @@ mod tests {
         let this = b.push_lvar(this_lvar_def("this", int));
         let v = b.var(int, this);
         let num = b.num(int, 4);
-        let add = b.binary(int, BinOp::Add, v, num);
+        let add = b.binary(int, BinaryOp::Add, v, num);
         let st = b.expression_statement(add);
         let block = b.block(vec![st]);
         let tree = b.finish(block);

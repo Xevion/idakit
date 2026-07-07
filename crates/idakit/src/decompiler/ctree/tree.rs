@@ -6,7 +6,7 @@ use super::node::{
     ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef, StatementId,
     StatementKind, StatementNode,
 };
-use super::ops::{AssignOp, BinOp, UnOp};
+use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use crate::address::Address;
 use crate::arena::Arena;
 use crate::types::{TypeBuilder, TypeId, TypeTable, TypeValue};
@@ -39,8 +39,9 @@ fn for_each_child(
 /// known shape:
 ///
 /// ```
-/// use idakit::address::Address;
-/// use idakit::ctree::{CtreeBuilder, Local, LocalLocation, TypeShape, TypeValue};
+/// use idakit::Address;
+/// use idakit::decompiler::ctree::{CtreeBuilder, Local, LocalLocation};
+/// use idakit::types::{TypeShape, TypeValue};
 ///
 /// let mut b = CtreeBuilder::new();
 /// let ty = b.intern_type(TypeValue {
@@ -175,7 +176,7 @@ impl Ctree {
     /// Every assignment in the tree as `(node, op, lhs, rhs)`.
     pub fn assigns(
         &self,
-    ) -> impl Iterator<Item = (ExpressionId, AssignOp, ExpressionId, ExpressionId)> {
+    ) -> impl Iterator<Item = (ExpressionId, AssignmentOp, ExpressionId, ExpressionId)> {
         self.expressions()
             .filter_map(|(id, node)| node.kind.as_assign().map(|(op, x, y)| (id, op, x, y)))
     }
@@ -405,7 +406,7 @@ impl CtreeBuilder {
     }
 
     /// `OP x`.
-    pub fn unary(&mut self, ty: TypeId, op: UnOp, x: ExpressionId) -> ExpressionId {
+    pub fn unary(&mut self, ty: TypeId, op: UnaryOp, x: ExpressionId) -> ExpressionId {
         self.expression(ty, ExpressionKind::Unary { op, x }).call()
     }
 
@@ -413,7 +414,7 @@ impl CtreeBuilder {
     pub fn binary(
         &mut self,
         ty: TypeId,
-        op: BinOp,
+        op: BinaryOp,
         x: ExpressionId,
         y: ExpressionId,
     ) -> ExpressionId {
@@ -425,7 +426,7 @@ impl CtreeBuilder {
     pub fn assign(
         &mut self,
         ty: TypeId,
-        op: AssignOp,
+        op: AssignmentOp,
         x: ExpressionId,
         y: ExpressionId,
     ) -> ExpressionId {
@@ -583,8 +584,8 @@ impl Default for CtreeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ctree::node::{Local, LocalId, LocalLocation};
-    use crate::ctree::ops::{AssignOp, BinOp};
+    use crate::decompiler::ctree::node::{Local, LocalId, LocalLocation};
+    use crate::decompiler::ctree::ops::{AssignmentOp, BinaryOp};
     use crate::types::TypeShape;
     use assert2::assert;
 
@@ -624,7 +625,7 @@ mod tests {
         let int = b.intern_type(int32());
         let va = b.var(int, LocalId(0));
         let vb = b.var(int, LocalId(1));
-        let add = b.binary(int, BinOp::Add, va, vb);
+        let add = b.binary(int, BinaryOp::Add, va, vb);
         let ret = b.ret(Some(add));
         let block = b.block(vec![ret]);
         let tree = b.finish(block);
@@ -694,14 +695,14 @@ mod tests {
         let a = b.var(int, LocalId(1));
         let f = b.obj(int, Address::new_const(0x40), Some("f"));
         let call = b.call_expression(int, f, vec![a]);
-        let asg = b.assign(int, AssignOp::Assign, x, call);
+        let asg = b.assign(int, AssignmentOp::Assign, x, call);
         let st = b.expression_statement(asg);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
 
         let calls: Vec<_> = tree.calls().collect();
         assert!(calls == vec![(call, f, [a].as_slice())]);
-        assert!(tree.assigns().collect::<Vec<_>>() == vec![(asg, AssignOp::Assign, x, call)]);
+        assert!(tree.assigns().collect::<Vec<_>>() == vec![(asg, AssignmentOp::Assign, x, call)]);
         // Both `Var` references surface, in allocation order.
         assert!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>() == vec![LocalId(0), LocalId(1)]);
     }

@@ -6,8 +6,8 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::ctree::Ctree;
-use crate::decompile::DecompiledFunction;
+use crate::decompiler::DecompiledFunction;
+use crate::decompiler::ctree::Ctree;
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
 use crate::flowchart::{FlowChart, flowchart_flags};

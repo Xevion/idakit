@@ -9,7 +9,7 @@ use std::fmt;
 
 use snafu::Snafu;
 
-use crate::ctree::ExtractError;
+use crate::decompiler::ctree::ExtractError;
 use crate::instruction::DecodeError;
 
 /// IDA's `error_t` code, with the documented generic values named.

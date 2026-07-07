@@ -10,13 +10,11 @@ pub mod query;
 mod render;
 mod tree;
 
-pub use crate::arena::{Arena, Idx};
-pub use crate::types::{EnumMember, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
 pub use extract::ExtractError;
 pub(crate) use extract::walk;
 pub use node::{
     Case, ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, LocalLocation,
     LocationPiece, NodeRef, StatementId, StatementKind, StatementNode,
 };
-pub use ops::{AssignOp, BinOp, UnOp};
+pub use ops::{AssignmentOp, BinaryOp, UnaryOp};
 pub use tree::{Ctree, CtreeBuilder, Descendants};

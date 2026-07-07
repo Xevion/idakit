@@ -9,7 +9,8 @@
 
 use idakit_sys as sys;
 
-use super::{CanonicalOptions, CanonicalType, Type, walk_type};
+use super::diff::{CanonicalOptions, CanonicalType};
+use super::{Type, walk_type};
 use crate::Database;
 use crate::error::{Error, Result};
 use crate::ffi::read_string;

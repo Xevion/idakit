@@ -5,7 +5,7 @@
 //! member/parameter it references are real handles into [`types`](Type::types), so a caller
 //! inspects a struct's fields or a prototype's parameters by shape, not by parsing text.
 //! Materialized on the kernel thread and handed back owned, so it analyzes anywhere: the type
-//! analogue of the decompiler's [`Ctree`](crate::ctree::Ctree).
+//! analogue of the decompiler's [`Ctree`](crate::decompiler::ctree::Ctree).
 
 use std::cell::OnceCell;
 use std::ffi::{c_int, c_void};
@@ -14,12 +14,12 @@ use std::hash::{Hash, Hasher};
 
 use idakit_sys as sys;
 
+use super::diff::TypeKey;
 use super::{
-    TypeBuilder, TypeId, TypeKey, TypeMember, TypeShape, TypeSink, TypeTable, TypeValue, tid,
-    type_vtbl,
+    TypeBuilder, TypeId, TypeMember, TypeShape, TypeSink, TypeTable, TypeValue, tid, type_vtbl,
 };
 use crate::Database;
-use crate::ctree::ExtractError;
+use crate::decompiler::ctree::ExtractError;
 use crate::error::{Error, Result};
 use crate::ffi::with_cstr;
 
@@ -142,7 +142,7 @@ impl Hash for Type {
 }
 
 impl fmt::Display for Type {
-    /// The canonical one-line form (see [`CanonicalType`](crate::types::CanonicalType)).
+    /// The canonical one-line form (see [`CanonicalType`](crate::types::diff::CanonicalType)).
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.canonical())

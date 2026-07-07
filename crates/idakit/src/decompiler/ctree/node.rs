@@ -3,10 +3,10 @@
 //! Mirrors IDA's `cot_*` / `cit_*` split. Child links are arena handles
 //! ([`ExpressionId`]/[`StatementId`]), not boxes, so the tree is flat, `Send`, and navigable in
 //! both directions (each [`ExpressionNode`]/[`StatementNode`] also stores its `parent`).
-//! Operators are grouped (see [`BinOp`]/[`UnOp`]/[`AssignOp`]); leaves carry their
+//! Operators are grouped (see [`BinaryOp`]/[`UnaryOp`]/[`AssignmentOp`]); leaves carry their
 //! resolved value.
 
-use super::ops::{AssignOp, BinOp, UnOp};
+use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use crate::address::Address;
 use crate::arena::Idx;
 use crate::types::TypeId;
@@ -163,7 +163,7 @@ pub struct LocationPiece {
 pub struct Local {
     /// The variable's name, as the decompiler named it.
     pub name: String,
-    /// The variable's type, into the tree's [`TypeTable`](super::TypeTable).
+    /// The variable's type, into the tree's [`TypeTable`](crate::types::TypeTable).
     pub ty: TypeId,
     /// A function parameter.
     pub is_arg: bool,
@@ -187,7 +187,7 @@ pub struct Local {
 pub struct ExpressionNode {
     /// The backing instruction's address, or `None` for a synthetic node.
     pub address: Option<Address>,
-    /// The expression's resolved type, into the tree's [`TypeTable`](super::TypeTable).
+    /// The expression's resolved type, into the tree's [`TypeTable`](crate::types::TypeTable).
     pub ty: TypeId,
     /// The parent node, or `None` for the root.
     pub parent: Option<NodeRef>,
@@ -217,7 +217,7 @@ pub enum ExpressionKind {
     /// `x OP y`
     Binary {
         /// The binary operator.
-        op: BinOp,
+        op: BinaryOp,
         /// The left operand.
         x: ExpressionId,
         /// The right operand.
@@ -226,7 +226,7 @@ pub enum ExpressionKind {
     /// `x OP= y`
     Assign {
         /// The compound-assignment operator.
-        op: AssignOp,
+        op: AssignmentOp,
         /// The assignment target.
         x: ExpressionId,
         /// The assigned value.
@@ -235,7 +235,7 @@ pub enum ExpressionKind {
     /// `OP x` (or `x OP` for post-inc/dec)
     Unary {
         /// The unary operator.
-        op: UnOp,
+        op: UnaryOp,
         /// The operand.
         x: ExpressionId,
     },
@@ -267,7 +267,7 @@ pub enum ExpressionKind {
         /// The aggregate expression.
         obj: ExpressionId,
         /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
-        /// `cot_memref.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
+        /// `cot_memref.m`). Contrast [`TypeMember::bit_offset`](crate::types::TypeMember), in bits.
         byte_offset: u32,
     },
     /// `obj->field`, the member at `byte_offset`
@@ -275,7 +275,7 @@ pub enum ExpressionKind {
         /// The pointer-to-aggregate expression.
         obj: ExpressionId,
         /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
-        /// `cot_memptr.m`). Contrast [`TypeMember::bit_offset`](super::TypeMember), in bits.
+        /// `cot_memptr.m`). Contrast [`TypeMember::bit_offset`](crate::types::TypeMember), in bits.
         byte_offset: u32,
     },
     /// `(T)x`: the target type is carried on the node (added with the type arena).
@@ -347,11 +347,11 @@ macro_rules! expression_accessors {
 
 expression_accessors! {
     /// `x OP y`: the operator and both operands.
-    as_binary: Binary { op, x, y } => (BinOp, ExpressionId, ExpressionId) = (*op, *x, *y);
+    as_binary: Binary { op, x, y } => (BinaryOp, ExpressionId, ExpressionId) = (*op, *x, *y);
     /// `x OP= y`: the compound-assignment operator and both sides.
-    as_assign: Assign { op, x, y } => (AssignOp, ExpressionId, ExpressionId) = (*op, *x, *y);
+    as_assign: Assign { op, x, y } => (AssignmentOp, ExpressionId, ExpressionId) = (*op, *x, *y);
     /// `OP x`: the unary operator and its operand.
-    as_unary: Unary { op, x } => (UnOp, ExpressionId) = (*op, *x);
+    as_unary: Unary { op, x } => (UnaryOp, ExpressionId) = (*op, *x);
     /// A ternary's condition and both branches, in order.
     as_ternary: Ternary { cond, then_, else_ } => (ExpressionId, ExpressionId, ExpressionId) = (*cond, *then_, *else_);
     /// `callee(args...)`: the callee and its argument slice.
@@ -576,29 +576,29 @@ mod tests {
 
         assert!(
             ExpressionKind::Binary {
-                op: BinOp::Add,
+                op: BinaryOp::Add,
                 x: a,
                 y: b
             }
             .as_binary()
-                == Some((BinOp::Add, a, b))
+                == Some((BinaryOp::Add, a, b))
         );
         assert!(
             ExpressionKind::Assign {
-                op: AssignOp::Assign,
+                op: AssignmentOp::Assign,
                 x: a,
                 y: b
             }
             .as_assign()
-                == Some((AssignOp::Assign, a, b))
+                == Some((AssignmentOp::Assign, a, b))
         );
         assert!(
             ExpressionKind::Unary {
-                op: UnOp::Neg,
+                op: UnaryOp::Neg,
                 x: a
             }
             .as_unary()
-                == Some((UnOp::Neg, a))
+                == Some((UnaryOp::Neg, a))
         );
         assert!(
             ExpressionKind::Ternary {

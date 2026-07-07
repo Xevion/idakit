@@ -183,7 +183,7 @@ pub fn cfg(idb: &Database) -> String {
 /// Decompiling the first functions succeeds where Hex-Rays can, and the extracted ctree's node
 /// counts agree with the independent visitor counts.
 pub fn decompile(idb: &Database) -> String {
-    use idakit::ctree::{NodeRef, StatementKind};
+    use idakit::decompiler::ctree::{NodeRef, StatementKind};
     let mut decompiled = 0usize;
     let mut deep_checked = false;
     for f in idb.functions().take(50) {
@@ -289,7 +289,7 @@ pub fn types(idb: &Database) -> String {
 /// or stack slot, never nested, mirroring `argpart_t`. Databases Hex-Rays can't decompile (e.g.
 /// the 68k arcade ROM, no decompiler) yield no locals and pass vacuously, like [`decompile`].
 pub fn argloc(idb: &Database) -> String {
-    use idakit::ctree::LocalLocation;
+    use idakit::decompiler::ctree::LocalLocation;
 
     // Register / RegisterPair / Stack / RegisterRelative / Static / Scattered / Custom / Unallocated
     let mut n = [0usize; 8];

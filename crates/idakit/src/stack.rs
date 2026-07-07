@@ -6,7 +6,7 @@
 //! displays), and its [`kind`](StackSlot::kind) distinguishes a real stack variable from IDA's
 //! reserved return-address and saved-register slots. Materialized on the kernel thread and handed
 //! back owned, so it analyzes anywhere. This is the disassembly-level counterpart to the
-//! decompiler's lvars ([`Ctree::lvars`](crate::ctree::Ctree::lvars)), and needs no decompilation.
+//! decompiler's lvars ([`Ctree::lvars`](crate::decompiler::ctree::Ctree::lvars)), and needs no decompilation.
 //!
 //! The [`StackSlot`]/[`StackSlotKind`] split is a deliberate divergence from idalib's flat UDT
 //! members: `offset`/`size` are universal, but a name and type only mean anything for a real
@@ -20,7 +20,7 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::ctree::ExtractError;
+use crate::decompiler::ctree::ExtractError;
 use crate::error::{Error, Result};
 use crate::ffi::lossy;
 use crate::types::{TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue, reborrow, tid, type_vtbl};

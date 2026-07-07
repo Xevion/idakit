@@ -22,7 +22,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use idakit::ctree::{Ctree, ExpressionId, LocalId, NodeRef};
+use idakit::decompiler::ctree::{Ctree, ExpressionId, LocalId, NodeRef};
 use idakit::prelude::*;
 
 /// Calls whose return value introduces taint (matched as a substring of the name).

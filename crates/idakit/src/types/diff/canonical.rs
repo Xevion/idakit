@@ -1,7 +1,7 @@
 //! [`CanonicalType`]: a table-free structural form of a type, the basis for cross-database
 //! type identity.
 //!
-//! A [`TypeValue`](super::TypeValue) references its children by [`TypeId`], an arena index that
+//! A [`TypeValue`](crate::types::TypeValue) references its children by [`TypeId`], an arena index that
 //! only means something within its own [`TypeTable`]. So the derived `PartialEq` answers "same type
 //! *in this database*" and nothing more. The type-diff workflow asks a harder question: is this
 //! type the same as one from *another* database? That needs a representation carrying no table.
@@ -24,7 +24,7 @@ use std::hash::Hash;
 
 use siphasher::sip128::{Hasher128, SipHasher13};
 
-use super::{Type, TypeId, TypeShape, TypeTable};
+use crate::types::{Type, TypeId, TypeShape, TypeTable};
 
 /// The tag namespace of a tagged aggregate: what gives a named
 /// [`struct`](AggregateKind::Struct), [`union`](AggregateKind::Union), or
@@ -455,7 +455,7 @@ fn aggregate(
     id: TypeId,
     kind: AggregateKind,
     name: Option<&str>,
-    members: &[super::TypeMember],
+    members: &[crate::types::TypeMember],
     size: Option<u64>,
     opts: CanonicalOptions,
     stack: &mut Vec<TypeId>,

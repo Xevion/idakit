@@ -8,7 +8,7 @@
 //! arguments and call its safe methods (which the tests drive directly).
 //!
 //! All identity and meaning live here, not in the facade: an operator's `ctype` maps to
-//! [`BinOp`]/[`AssignOp`]/[`UnOp`] (their discriminants *are* the ctype values) or one of
+//! [`BinaryOp`]/[`AssignmentOp`]/[`UnaryOp`] (their discriminants *are* the ctype values) or one of
 //! the structural [`ct`] constants; named aggregate types are interned by name with a
 //! placeholder so recursion resolves; structural types dedup through the type table.
 
@@ -21,7 +21,7 @@ use super::node::{
     Case, ExpressionId, ExpressionKind, Local, LocalId, LocalLocation, LocationPiece, StatementId,
     StatementKind,
 };
-use super::ops::{AssignOp, BinOp, UnOp};
+use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use super::tree::{Ctree, CtreeBuilder};
 use crate::address::Address;
 use crate::arena::Idx;
@@ -227,21 +227,21 @@ impl CallbackBuilder {
             return ExpressionKind::Internal;
         }
         let op16 = u16::try_from(ctype).ok();
-        if let Some(op) = op16.and_then(|v| AssignOp::try_from(v).ok()) {
+        if let Some(op) = op16.and_then(|v| AssignmentOp::try_from(v).ok()) {
             return ExpressionKind::Assign {
                 op,
                 x: eid(x),
                 y: eid(y),
             };
         }
-        if let Some(op) = op16.and_then(|v| BinOp::try_from(v).ok()) {
+        if let Some(op) = op16.and_then(|v| BinaryOp::try_from(v).ok()) {
             return ExpressionKind::Binary {
                 op,
                 x: eid(x),
                 y: eid(y),
             };
         }
-        if let Some(op) = op16.and_then(|v| UnOp::try_from(v).ok()) {
+        if let Some(op) = op16.and_then(|v| UnaryOp::try_from(v).ok()) {
             return ExpressionKind::Unary { op, x: eid(x) };
         }
         match ctype {
@@ -719,7 +719,10 @@ mod tests {
         let kinds: Vec<&ExpressionKind> = tree.expressions().map(|(_, e)| &e.kind).collect();
         assert!(matches!(
             kinds[2],
-            ExpressionKind::Binary { op: BinOp::Add, .. }
+            ExpressionKind::Binary {
+                op: BinaryOp::Add,
+                ..
+            }
         ));
     }
 
@@ -747,17 +750,23 @@ mod tests {
         assert!(matches!(
             kinds[eid(asg).index()],
             ExpressionKind::Assign {
-                op: AssignOp::AddAssign,
+                op: AssignmentOp::AddAssign,
                 ..
             }
         ));
         assert!(matches!(
             kinds[eid(bin).index()],
-            ExpressionKind::Binary { op: BinOp::Sub, .. }
+            ExpressionKind::Binary {
+                op: BinaryOp::Sub,
+                ..
+            }
         ));
         assert!(matches!(
             kinds[eid(un).index()],
-            ExpressionKind::Unary { op: UnOp::Neg, .. }
+            ExpressionKind::Unary {
+                op: UnaryOp::Neg,
+                ..
+            }
         ));
     }
 

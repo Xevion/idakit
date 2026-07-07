@@ -1,5 +1,5 @@
 //! `TypeTable`: an interned arena of resolved types carried by an owned snapshot off the
-//! kernel thread (the decompiler [`Ctree`](crate::ctree::Ctree), a function's
+//! kernel thread (the decompiler [`Ctree`](crate::decompiler::ctree::Ctree), a function's
 //! [`StackFrame`](crate::stack::StackFrame), or a standalone [`Type`]).
 //!
 //! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
@@ -14,18 +14,12 @@ use std::collections::HashMap;
 use crate::arena::{Arena, Idx};
 
 mod builder;
-mod canonical;
-mod catalog;
+pub mod diff;
 mod named;
 mod resolved;
 mod sink;
 
 pub(crate) use builder::TypeBuilder;
-pub use canonical::{
-    AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, Change, ChangeKind, TypeDiff,
-    TypeIdentity, TypeKey, canonicalize,
-};
-pub use catalog::{CatalogDiff, TypeCatalog};
 pub use named::{NamedType, NamedTypes};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;

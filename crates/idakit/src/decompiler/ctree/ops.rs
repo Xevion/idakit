@@ -1,6 +1,6 @@
 //! Operator kinds for expression nodes, grouped from `ctype_t`.
 //!
-//! Following `syn`'s `BinOp`/`UnOp` split, the ctree carries the operator as data on
+//! Following `syn`'s `BinaryOp`/`UnaryOp` split, the ctree carries the operator as data on
 //! a few structural node variants (`Binary`/`Unary`/`Assign`) rather than exploding
 //! the ~50 arithmetic/logic ops into separate node kinds.
 //!
@@ -21,7 +21,7 @@ use strum::VariantArray;
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
-pub enum BinOp {
+pub enum BinaryOp {
     /// `x, y`
     Comma = 1,
     /// `x || y`
@@ -84,12 +84,12 @@ pub enum BinOp {
     Fdiv = 45,
 }
 
-/// A compound-assignment operator: `x OP= y`. Plain `=` is [`AssignOp::Assign`].
+/// A compound-assignment operator: `x OP= y`. Plain `=` is [`AssignmentOp::Assign`].
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
-pub enum AssignOp {
+pub enum AssignmentOp {
     /// `x = y`
     Assign = 2,
     /// `x |= y`
@@ -127,7 +127,7 @@ pub enum AssignOp {
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
-pub enum UnOp {
+pub enum UnaryOp {
     /// `-x` floating-point
     FNeg = 46,
     /// `-x`
@@ -148,68 +148,68 @@ pub enum UnOp {
     PreDec = 56,
 }
 
-impl BinOp {
+impl BinaryOp {
     /// The C source spelling of this operator (`+`, `<<`, `&&`, ...). Signed/unsigned and
     /// integer/float variants that print the same collapse here (`Sdiv`/`Udiv`/`Fdiv` ->
     /// `/`); the distinction lives in the variant, not the glyph.
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            BinOp::Comma => ",",
-            BinOp::LogOr => "||",
-            BinOp::LogAnd => "&&",
-            BinOp::BitOr => "|",
-            BinOp::BitXor => "^",
-            BinOp::BitAnd => "&",
-            BinOp::Eq => "==",
-            BinOp::Ne => "!=",
-            BinOp::Sge | BinOp::Uge => ">=",
-            BinOp::Sle | BinOp::Ule => "<=",
-            BinOp::Sgt | BinOp::Ugt => ">",
-            BinOp::Slt | BinOp::Ult => "<",
-            BinOp::Sshr | BinOp::Ushr => ">>",
-            BinOp::Shl => "<<",
-            BinOp::Add | BinOp::Fadd => "+",
-            BinOp::Sub | BinOp::Fsub => "-",
-            BinOp::Mul | BinOp::Fmul => "*",
-            BinOp::Sdiv | BinOp::Udiv | BinOp::Fdiv => "/",
-            BinOp::Smod | BinOp::Umod => "%",
+            BinaryOp::Comma => ",",
+            BinaryOp::LogOr => "||",
+            BinaryOp::LogAnd => "&&",
+            BinaryOp::BitOr => "|",
+            BinaryOp::BitXor => "^",
+            BinaryOp::BitAnd => "&",
+            BinaryOp::Eq => "==",
+            BinaryOp::Ne => "!=",
+            BinaryOp::Sge | BinaryOp::Uge => ">=",
+            BinaryOp::Sle | BinaryOp::Ule => "<=",
+            BinaryOp::Sgt | BinaryOp::Ugt => ">",
+            BinaryOp::Slt | BinaryOp::Ult => "<",
+            BinaryOp::Sshr | BinaryOp::Ushr => ">>",
+            BinaryOp::Shl => "<<",
+            BinaryOp::Add | BinaryOp::Fadd => "+",
+            BinaryOp::Sub | BinaryOp::Fsub => "-",
+            BinaryOp::Mul | BinaryOp::Fmul => "*",
+            BinaryOp::Sdiv | BinaryOp::Udiv | BinaryOp::Fdiv => "/",
+            BinaryOp::Smod | BinaryOp::Umod => "%",
         }
     }
 }
 
-impl AssignOp {
+impl AssignmentOp {
     /// The C source spelling of this assignment (`=`, `+=`, `>>=`, ...).
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            AssignOp::Assign => "=",
-            AssignOp::BitOrAssign => "|=",
-            AssignOp::BitXorAssign => "^=",
-            AssignOp::BitAndAssign => "&=",
-            AssignOp::AddAssign => "+=",
-            AssignOp::SubAssign => "-=",
-            AssignOp::MulAssign => "*=",
-            AssignOp::SshrAssign | AssignOp::UshrAssign => ">>=",
-            AssignOp::ShlAssign => "<<=",
-            AssignOp::SdivAssign | AssignOp::UdivAssign => "/=",
-            AssignOp::SmodAssign | AssignOp::UmodAssign => "%=",
+            AssignmentOp::Assign => "=",
+            AssignmentOp::BitOrAssign => "|=",
+            AssignmentOp::BitXorAssign => "^=",
+            AssignmentOp::BitAndAssign => "&=",
+            AssignmentOp::AddAssign => "+=",
+            AssignmentOp::SubAssign => "-=",
+            AssignmentOp::MulAssign => "*=",
+            AssignmentOp::SshrAssign | AssignmentOp::UshrAssign => ">>=",
+            AssignmentOp::ShlAssign => "<<=",
+            AssignmentOp::SdivAssign | AssignmentOp::UdivAssign => "/=",
+            AssignmentOp::SmodAssign | AssignmentOp::UmodAssign => "%=",
         }
     }
 }
 
-impl UnOp {
+impl UnaryOp {
     /// The C source spelling of this operator (`-`, `!`, `~`, `&`, `++`, `--`). Pre- and
     /// post-increment share a glyph; position is the caller's concern, not this method's.
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            UnOp::FNeg | UnOp::Neg => "-",
-            UnOp::LogNot => "!",
-            UnOp::BitNot => "~",
-            UnOp::Ref => "&",
-            UnOp::PreInc | UnOp::PostInc => "++",
-            UnOp::PreDec | UnOp::PostDec => "--",
+            UnaryOp::FNeg | UnaryOp::Neg => "-",
+            UnaryOp::LogNot => "!",
+            UnaryOp::BitNot => "~",
+            UnaryOp::Ref => "&",
+            UnaryOp::PreInc | UnaryOp::PostInc => "++",
+            UnaryOp::PreDec | UnaryOp::PostDec => "--",
         }
     }
 }
@@ -223,30 +223,30 @@ mod tests {
     /// Spot-check raw discriminants against `hexrays.hpp` (IDA 9.3) values: the oracle
     /// the `IntoPrimitive` derive is supposed to reproduce.
     #[rstest]
-    #[case(BinOp::Comma, 1)]
-    #[case(BinOp::Add, 35)]
-    #[case(BinOp::Sdiv, 38)]
-    #[case(BinOp::Fdiv, 45)]
-    fn binop_raw_matches_ctype(#[case] op: BinOp, #[case] raw: u16) {
+    #[case(BinaryOp::Comma, 1)]
+    #[case(BinaryOp::Add, 35)]
+    #[case(BinaryOp::Sdiv, 38)]
+    #[case(BinaryOp::Fdiv, 45)]
+    fn binop_raw_matches_ctype(#[case] op: BinaryOp, #[case] raw: u16) {
         assert!(u16::from(op) == raw);
         // `From`/`TryFrom` round-trip within the group.
-        assert!(BinOp::try_from(raw).ok() == Some(op));
+        assert!(BinaryOp::try_from(raw).ok() == Some(op));
     }
 
     #[rstest]
-    #[case(AssignOp::Assign, 2)]
-    #[case(AssignOp::UmodAssign, 15)]
-    fn assignop_raw_matches_ctype(#[case] op: AssignOp, #[case] raw: u16) {
+    #[case(AssignmentOp::Assign, 2)]
+    #[case(AssignmentOp::UmodAssign, 15)]
+    fn assignop_raw_matches_ctype(#[case] op: AssignmentOp, #[case] raw: u16) {
         assert!(u16::from(op) == raw);
-        assert!(AssignOp::try_from(raw).ok() == Some(op));
+        assert!(AssignmentOp::try_from(raw).ok() == Some(op));
     }
 
     #[rstest]
-    #[case(UnOp::Neg, 47)]
-    #[case(UnOp::PreDec, 56)]
-    fn unop_raw_matches_ctype(#[case] op: UnOp, #[case] raw: u16) {
+    #[case(UnaryOp::Neg, 47)]
+    #[case(UnaryOp::PreDec, 56)]
+    fn unop_raw_matches_ctype(#[case] op: UnaryOp, #[case] raw: u16) {
         assert!(u16::from(op) == raw);
-        assert!(UnOp::try_from(raw).ok() == Some(op));
+        assert!(UnaryOp::try_from(raw).ok() == Some(op));
     }
 
     /// `try_from` is group-exclusive: a discriminant from another `ctype_t` group (or a
@@ -256,45 +256,45 @@ mod tests {
     #[case::asg_is_not_binary(2)]
     #[case::empty_is_not_binary(0)]
     fn binop_rejects_non_binary(#[case] v: u16) {
-        assert!(BinOp::try_from(v).is_err());
+        assert!(BinaryOp::try_from(v).is_err());
     }
 
     #[test]
     fn try_from_rejects_cross_group_discriminants() {
         // 35 = cot_add (binary), not an assignment.
-        assert!(AssignOp::try_from(35).is_err());
+        assert!(AssignmentOp::try_from(35).is_err());
         // 48 = cot_cast, 51 = cot_ptr -- their own expression variants, not bare unaries.
-        assert!(UnOp::try_from(48).is_err());
-        assert!(UnOp::try_from(51).is_err());
+        assert!(UnaryOp::try_from(48).is_err());
+        assert!(UnaryOp::try_from(51).is_err());
     }
 
     /// A few canonical glyphs, and the signed/unsigned/float collapse.
     #[rstest]
-    #[case(BinOp::Add, "+")]
-    #[case(BinOp::Fadd, "+")]
-    #[case(BinOp::LogAnd, "&&")]
-    #[case(BinOp::Shl, "<<")]
-    #[case(BinOp::Sdiv, "/")]
-    #[case(BinOp::Udiv, "/")]
-    #[case(BinOp::Fdiv, "/")]
-    fn binop_symbol(#[case] op: BinOp, #[case] sym: &str) {
+    #[case(BinaryOp::Add, "+")]
+    #[case(BinaryOp::Fadd, "+")]
+    #[case(BinaryOp::LogAnd, "&&")]
+    #[case(BinaryOp::Shl, "<<")]
+    #[case(BinaryOp::Sdiv, "/")]
+    #[case(BinaryOp::Udiv, "/")]
+    #[case(BinaryOp::Fdiv, "/")]
+    fn binop_symbol(#[case] op: BinaryOp, #[case] sym: &str) {
         assert!(op.symbol() == sym);
     }
 
     #[rstest]
-    #[case(AssignOp::Assign, "=")]
-    #[case(AssignOp::SshrAssign, ">>=")]
-    #[case(AssignOp::UshrAssign, ">>=")]
-    fn assignop_symbol(#[case] op: AssignOp, #[case] sym: &str) {
+    #[case(AssignmentOp::Assign, "=")]
+    #[case(AssignmentOp::SshrAssign, ">>=")]
+    #[case(AssignmentOp::UshrAssign, ">>=")]
+    fn assignop_symbol(#[case] op: AssignmentOp, #[case] sym: &str) {
         assert!(op.symbol() == sym);
     }
 
     #[rstest]
-    #[case(UnOp::Neg, "-")]
-    #[case(UnOp::FNeg, "-")]
-    #[case(UnOp::PreInc, "++")]
-    #[case(UnOp::PostInc, "++")]
-    fn unop_symbol(#[case] op: UnOp, #[case] sym: &str) {
+    #[case(UnaryOp::Neg, "-")]
+    #[case(UnaryOp::FNeg, "-")]
+    #[case(UnaryOp::PreInc, "++")]
+    #[case(UnaryOp::PostInc, "++")]
+    fn unop_symbol(#[case] op: UnaryOp, #[case] sym: &str) {
         assert!(op.symbol() == sym);
     }
 
@@ -303,13 +303,13 @@ mod tests {
     /// rather than panicking on the `match`'s unreachable arm at runtime.
     #[test]
     fn every_variant_has_a_symbol() {
-        for op in BinOp::VARIANTS {
+        for op in BinaryOp::VARIANTS {
             assert!(!op.symbol().is_empty());
         }
-        for op in AssignOp::VARIANTS {
+        for op in AssignmentOp::VARIANTS {
             assert!(!op.symbol().is_empty());
         }
-        for op in UnOp::VARIANTS {
+        for op in UnaryOp::VARIANTS {
             assert!(!op.symbol().is_empty());
         }
     }

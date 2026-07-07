@@ -77,7 +77,7 @@ fn run(idb: &mut idakit::Database) {
             // Materialize the whole ctree and cross-check it against the
             // independent visitor counts: two separate traversals of the same
             // cfunc must agree, node-for-node.
-            use idakit::ctree::{ExpressionKind, NodeRef, StatementKind};
+            use idakit::decompiler::ctree::{ExpressionKind, NodeRef, StatementKind};
             let tree = cf.ctree().expect("ctree extraction");
             let root = tree.root();
             assert!(

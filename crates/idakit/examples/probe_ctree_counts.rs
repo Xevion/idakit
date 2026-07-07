@@ -6,8 +6,12 @@
 
 use idakit::prelude::*;
 
-fn dump(tree: &idakit::ctree::Ctree, node: idakit::ctree::NodeRef, depth: usize) {
-    use idakit::ctree::NodeRef;
+fn dump(
+    tree: &idakit::decompiler::ctree::Ctree,
+    node: idakit::decompiler::ctree::NodeRef,
+    depth: usize,
+) {
+    use idakit::decompiler::ctree::NodeRef;
     let pad = "  ".repeat(depth);
     let label = match node {
         NodeRef::Expression(id) => format!("{:?}", tree.kind(id)),
@@ -61,7 +65,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         first_dumped = true;
                         println!("--- idakit render ---\n{}", tree.to_pseudocode());
                         println!("--- structure ---");
-                        dump(&tree, idakit::ctree::NodeRef::Statement(tree.root()), 0);
+                        dump(
+                            &tree,
+                            idakit::decompiler::ctree::NodeRef::Statement(tree.root()),
+                            0,
+                        );
                     }
                 }
             }

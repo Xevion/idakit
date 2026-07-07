@@ -1,6 +1,10 @@
-//! [`DecompiledFunction`]: an owned decompiled function that disposes its handle on [`Drop`].
+//! Decompilation: C pseudocode and a walkable [`ctree`] AST for a function.
 //!
-//! Exposes pseudocode and ctree counts (the borrowed `ExpressionKind` AST is a later phase).
+//! [`Database::decompile`] runs Hex-Rays on the function at an address and returns a
+//! [`DecompiledFunction`], which exposes the pseudocode text and [`CtreeCounts`]. Its owned,
+//! `Send` [`Ctree`] is the structured form for analysis off the kernel thread.
+
+pub mod ctree;
 
 use std::ffi::c_void;
 use std::marker::PhantomData;
@@ -9,7 +13,7 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::ctree::{Ctree, ExtractError, walk};
+use crate::decompiler::ctree::{Ctree, ExtractError, walk};
 use crate::error::{Error, Result};
 use crate::ffi::read_string;
 

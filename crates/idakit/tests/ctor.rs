@@ -1,7 +1,7 @@
 //! Deterministic constructor-analysis check against real decompiler output.
 //!
 //! The C++ constructor matchers (`vtable_installs` / `this_arg_calls`) live here as
-//! test-local helpers composed from the public `idakit::ctree::query` primitives -- they
+//! test-local helpers composed from the public `idakit::decompiler::ctree::query` primitives -- they
 //! are specific to C++ reverse engineering, so they are not part of the crate's API. This
 //! test pins them to ground truth: it compiles `tests/fixtures/vtbl.cpp` with g++, lets
 //! IDA auto-analyze it headlessly, then asserts the multiple-inheritance constructor
@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use assert2::assert;
-use idakit::ctree::Ctree;
-use idakit::ctree::query::{base_var, global_target};
+use idakit::decompiler::ctree::Ctree;
+use idakit::decompiler::ctree::query::{base_var, global_target};
 use idakit::prelude::*;
 
 /// A store of a global's address into a `this`-relative slot -- a vtable install in a
@@ -49,7 +49,7 @@ fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
     };
     tree.assigns()
         .filter_map(|(_, op, x, y)| {
-            if op != AssignOp::Assign {
+            if op != AssignmentOp::Assign {
                 return None;
             }
             let (v, off) = base_var(tree, x)?;

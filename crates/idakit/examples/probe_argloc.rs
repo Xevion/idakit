@@ -6,7 +6,7 @@
 use idakit::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use idakit::ctree::LocalLocation as L;
+    use idakit::decompiler::ctree::LocalLocation as L;
     let mut args = std::env::args().skip(1);
     let bin = args
         .next()

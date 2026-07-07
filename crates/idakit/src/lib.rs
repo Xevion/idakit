@@ -46,7 +46,7 @@
 //! # Read/write separation
 //!
 //! [`Database`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` and
-//! return lightweight views ([`Function`](crate::function::Function), [`Segment`](crate::segment::Segment), ...); writes take `&mut Database`, so a read
+//! return lightweight views ([`Function`], [`Segment`], ...); writes take `&mut Database`, so a read
 //! view can't be held across a mutation.
 //!
 //! # Building
@@ -74,35 +74,64 @@ use std::marker::PhantomData;
 
 pub use idakit_sys as sys;
 
-pub mod address;
-pub mod arena;
-pub mod bitness;
-mod bytes;
-mod claim;
-#[doc(hidden)]
-pub mod corpus;
-pub mod ctree;
-mod data;
-pub mod decompile;
-#[doc(hidden)]
-pub mod doctest;
+// Larger subsystems keep a public module as their navigable home.
+pub mod decompiler;
 pub mod error;
-pub mod export;
-mod ffi;
-pub mod flowchart;
 pub mod function;
-pub mod import;
 pub mod instruction;
 pub mod kernel;
-pub mod meta;
-pub mod name;
-mod raw;
-pub mod search;
-pub mod segment;
-pub mod stack;
-pub mod strings;
 pub mod types;
-pub mod xref;
+
+#[doc(hidden)]
+pub mod corpus;
+#[doc(hidden)]
+pub mod doctest;
+
+// Small clusters stay private for source organization; each module's public types re-export
+// at the crate root below, which is their canonical documented home.
+mod address;
+mod arena;
+mod bitness;
+mod bytes;
+mod claim;
+mod data;
+mod export;
+mod ffi;
+mod flowchart;
+mod import;
+mod meta;
+mod name;
+mod raw;
+mod search;
+mod segment;
+mod stack;
+mod strings;
+mod xref;
+
+// Headline types inlined onto the front page from their pillar modules.
+#[doc(inline)]
+pub use crate::decompiler::ctree::Ctree;
+#[doc(inline)]
+pub use crate::function::Function;
+#[doc(inline)]
+pub use crate::kernel::Ida;
+#[doc(inline)]
+pub use crate::types::Type;
+
+// The database's vocabulary and the addressing primitives, canonically homed at the root.
+pub use crate::address::Address;
+pub use crate::arena::{Arena, Idx};
+pub use crate::bitness::Bitness;
+pub use crate::export::{Export, Exports};
+pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
+pub use crate::import::{Import, Imports};
+pub use crate::meta::DatabaseInfo;
+pub use crate::name::{Name, Names};
+pub use crate::search::{Matches, Pattern};
+pub use crate::segment::{Segment, SegmentClass, Segments};
+pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
+pub use crate::strings::{StringLiteral, Strings};
+pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
 
 /// Re-exports of the crate's primary types, for a single glob import
 /// (`use idakit::prelude::*;`).
@@ -110,8 +139,8 @@ pub mod prelude {
     pub use crate::Database;
     pub use crate::address::Address;
     pub use crate::bitness::Bitness;
-    pub use crate::ctree::{AssignOp, BinOp, UnOp};
-    pub use crate::decompile::{CtreeCounts, DecompiledFunction};
+    pub use crate::decompiler::ctree::{AssignmentOp, BinaryOp, Ctree, UnaryOp};
+    pub use crate::decompiler::{CtreeCounts, DecompiledFunction};
     pub use crate::error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
     pub use crate::export::{Export, Exports};
     pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
@@ -131,10 +160,13 @@ pub mod prelude {
     pub use crate::segment::{Segment, SegmentClass, Segments};
     pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
     pub use crate::strings::{StringLiteral, Strings};
-    pub use crate::types::{
+    pub use crate::types::diff::{
         AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, CatalogDiff, Change,
-        ChangeKind, EnumMember, NamedType, NamedTypes, Type, TypeCatalog, TypeDiff, TypeId,
-        TypeIdentity, TypeKey, TypeMember, TypeShape, TypeTable, TypeValue, canonicalize,
+        ChangeKind, TypeCatalog, TypeDiff, TypeIdentity, TypeKey, canonicalize,
+    };
+    pub use crate::types::{
+        EnumMember, NamedType, NamedTypes, Type, TypeId, TypeMember, TypeShape, TypeTable,
+        TypeValue,
     };
     pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
 }
@@ -145,8 +177,8 @@ use crate::kernel::KernelClaim;
 /// The open database.
 ///
 /// `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` (returning
-/// [`Function`](crate::function::Function)/[`Segment`](crate::segment::Segment) views);
-/// writes take `&mut Database`, so a read view can't be held across a write.
+/// [`Function`]/[`Segment`] views); writes take `&mut Database`, so a read view can't be held
+/// across a write.
 pub struct Database {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.
     hexrays_ready: Cell<bool>,
