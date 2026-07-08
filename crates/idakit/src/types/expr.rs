@@ -984,4 +984,120 @@ mod tests {
             "the stdcall byte should appear only in the cc-carrying recipe"
         );
     }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        /// A shallow leaf recipe: a signed/unsigned integer width, `bool`, `void`, or a named
+        /// reference by generated identifier. The pointer/array/qualifier inverses below hold for
+        /// any inner recipe, so a leaf generator is sufficient and avoids a recursive one.
+        fn leaf_type_expr() -> impl Strategy<Value = TypeExpr> {
+            prop_oneof![
+                Just(int8()),
+                Just(int16()),
+                Just(int32()),
+                Just(int64()),
+                Just(uint8()),
+                Just(uint16()),
+                Just(uint32()),
+                Just(uint64()),
+                Just(bool_()),
+                Just(void()),
+                "[A-Za-z_][A-Za-z0-9_]{0,15}".prop_map(named),
+            ]
+        }
+
+        /// A single identifier segment: `[A-Za-z_][A-Za-z0-9_]*`.
+        fn identifier() -> impl Strategy<Value = String> {
+            "[A-Za-z_][A-Za-z0-9_]{0,15}"
+        }
+
+        /// A `::`-qualified chain of identifier segments, e.g. `a::b::c`.
+        fn qualified_name() -> impl Strategy<Value = String> {
+            prop::collection::vec(identifier(), 1..4).prop_map(|segs| segs.join("::"))
+        }
+
+        /// A character `is_c_identifier` rejects, so appending it always disqualifies a name.
+        fn declarator_noise() -> impl Strategy<Value = char> {
+            prop_oneof![
+                Just(' '),
+                Just('*'),
+                Just('['),
+                Just(']'),
+                Just('.'),
+                Just('-')
+            ]
+        }
+
+        /// Independently mirrors `is_bare_type_name`'s rule (non-empty, not a builtin keyword,
+        /// every `::`-segment a C identifier), so a drift in the real classifier fails here
+        /// instead of hiding.
+        fn oracle_is_bare_type_name(s: &str) -> bool {
+            const KEYWORDS: &[&str] = &[
+                "void", "bool", "_Bool", "char", "short", "int", "long", "float", "double",
+                "signed", "unsigned", "wchar_t", "__int8", "__int16", "__int32", "__int64",
+                "__int128",
+            ];
+            fn is_identifier(seg: &str) -> bool {
+                let mut chars = seg.chars();
+                match chars.next() {
+                    Some(c) if c == '_' || c.is_ascii_alphabetic() => {}
+                    _ => return false,
+                }
+                chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+            }
+            !s.is_empty() && !KEYWORDS.contains(&s) && s.split("::").all(is_identifier)
+        }
+
+        proptest! {
+            /// `pointer` then `deref` returns the original recipe, for any inner recipe.
+            #[test]
+            fn deref_inverts_pointer(base in leaf_type_expr()) {
+                prop_assert_eq!(base.clone().pointer().deref(), base);
+            }
+
+            /// `array` then `deref` returns the original recipe, for any inner recipe and length.
+            #[test]
+            fn deref_inverts_array(base in leaf_type_expr(), len in any::<u64>()) {
+                prop_assert_eq!(base.clone().array(len).deref(), base);
+            }
+
+            /// A double `const_`/`volatile_` collapses to a single one (idempotent).
+            #[test]
+            fn qualifiers_are_idempotent(base in leaf_type_expr()) {
+                prop_assert_eq!(base.clone().const_().const_(), base.clone().const_());
+                prop_assert_eq!(base.clone().volatile_().volatile_(), base.volatile_());
+            }
+
+            /// A non-keyword identifier, plain or `::`-qualified, always classifies as bare.
+            #[test]
+            fn bare_identifier_classifies_true(
+                name in qualified_name().prop_filter(
+                    "exclude builtin keywords",
+                    |s| !is_builtin_type_keyword(s),
+                ),
+            ) {
+                prop_assert!(is_bare_type_name(&name));
+            }
+
+            /// `is_bare_type_name` agrees with an independent oracle on identifier-shaped input.
+            #[test]
+            fn is_bare_type_name_matches_oracle(name in qualified_name()) {
+                prop_assert_eq!(is_bare_type_name(&name), oracle_is_bare_type_name(&name));
+            }
+
+            /// Appending a declarator-signal character (whitespace, `*`, `[`, `]`, ...) always
+            /// disqualifies an otherwise-bare name.
+            #[test]
+            fn declarator_noise_classifies_false(
+                name in qualified_name(),
+                noise in declarator_noise(),
+            ) {
+                let noisy = format!("{name}{noise}");
+                prop_assert!(!is_bare_type_name(&noisy));
+            }
+        }
+    }
 }

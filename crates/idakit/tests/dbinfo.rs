@@ -61,7 +61,7 @@ fn run(idb: &mut Database) {
     println!("names: {round_tripped}/{listed} round-tripped name -> address");
 
     // A plainly unmangled string is not a mangled name. If the binary carries a mangled
-    // symbol, show that it demangles (informational -- some inputs store no mangled names).
+    // symbol, show that it demangles (informational: some inputs store no mangled names).
     assert!(
         idb.demangle("not a mangled name").is_none(),
         "a non-symbol demangled to something"

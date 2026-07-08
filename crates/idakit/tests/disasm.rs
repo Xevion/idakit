@@ -5,7 +5,7 @@
 //! toes. Runs against the corpus manifest's canonical fixture (see [`common::TestDb`]);
 //! skips when no corpus is configured. It decodes a
 //! slice of each function's instruction stream, asserts structural invariants, and
-//! cross-checks direct-branch targets against IDA's own reference graph -- two independent sources
+//! cross-checks direct-branch targets against IDA's own reference graph. Two independent sources
 //! that must agree. Read-only; never opens for write.
 
 use idakit::prelude::*;

@@ -287,7 +287,7 @@ impl TypeEdit<'_> {
             member.bit_offset.hash(&mut hasher);
             // Deleting a non-tail member leaves a same-offset gap of the same byte size, so offset
             // alone can't see it; the gap's shape (an array) differs from what it replaced. Hash
-            // the shape's discriminant only, not its fields -- child TypeIds are interning-order
+            // the shape's discriminant only, not its fields, since child TypeIds are interning-order
             // dependent and would make the fingerprint unstable across equivalent layouts.
             let tv = ty.get(member.ty);
             tv.size.hash(&mut hasher);
@@ -814,6 +814,7 @@ impl fmt::Display for TypeEditCode {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
@@ -828,12 +829,13 @@ mod tests {
     }
 
     /// The discriminants are pinned to the SDK's literal `TERR_*` values.
-    #[test]
-    fn type_edit_code_pins_terr_values() {
-        assert!(i32::from(TypeEditCode::Ok) == 0);
-        assert!(i32::from(TypeEditCode::DupName) == -21);
-        assert!(i32::from(TypeEditCode::Stock) == -32);
-        assert!(i32::from(TypeEditCode::NotFound) == -38);
+    #[rstest]
+    #[case(TypeEditCode::Ok, 0)]
+    #[case(TypeEditCode::DupName, -21)]
+    #[case(TypeEditCode::Stock, -32)]
+    #[case(TypeEditCode::NotFound, -38)]
+    fn type_edit_code_pins_terr_values(#[case] code: TypeEditCode, #[case] expected: i32) {
+        assert!(i32::from(code) == expected);
     }
 
     /// A code outside the modelled set is rejected, not absorbed.

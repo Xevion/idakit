@@ -37,7 +37,7 @@ fn run(idb: &mut Database) {
     assert!(idb.read_u64(unmapped).is_none());
     assert!(idb.read_pointer(unmapped).is_none());
 
-    // Exercise the pointer read at a mapped spot -- it must resolve or fail without panicking.
+    // Exercise the pointer read at a mapped spot; it must resolve or fail without panicking.
     let _ = idb.read_pointer(entry);
 
     // read_string re-reads a listed 1-byte string to the same text, via the auto-length path

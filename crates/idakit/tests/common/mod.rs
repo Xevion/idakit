@@ -16,8 +16,8 @@ use idakit::prelude::{Database, Ida};
 /// Open the shared test database (see [`TestDb::source`]) on the kernel thread, run `body`
 /// against it, and close it (`save = false`). Every dedicated single-DB test is this shape, so
 /// the acquire, kernel bring-up, open, and panic-resume live here once. Silently returns (skips)
-/// when no test database is available -- matching the corpus matrix's "no corpus, no cases"
-/// stance -- and a caught assertion panic re-raises with its real message, so failures keep their
+/// when no test database is available, matching the corpus matrix's "no corpus, no cases"
+/// stance, and a caught assertion panic re-raises with its real message, so failures keep their
 /// location.
 pub fn with_canonical_db(body: impl FnOnce(&mut Database) + Send + 'static) {
     let Some(db) = TestDb::acquire() else {
@@ -38,10 +38,10 @@ pub fn with_canonical_db(body: impl FnOnce(&mut Database) + Send + 'static) {
 /// A private, disposable copy of the test database, removed on drop.
 ///
 /// IDA takes an exclusive lock on a `.i64` while it is open, so every kernel test opens its
-/// *own* copy via [`TestDb::acquire`] rather than the shared [`source`](TestDb::source) file
-/// -- otherwise tests flake against a live GUI session and against each other. Hold the guard
+/// *own* copy via [`TestDb::acquire`] rather than the shared [`source`](TestDb::source) file;
+/// otherwise tests flake against a live GUI session and against each other. Hold the guard
 /// for as long as the database is open; dropping it deletes the copy. Pass it straight to
-/// [`Database::open`](idakit::Database::open) -- it is [`AsRef<str>`] -- or via [`path`](TestDb::path).
+/// [`Database::open`](idakit::Database::open), since it is [`AsRef<str>`], or via [`path`](TestDb::path).
 ///
 /// The conversion trait is `AsRef`, deliberately, not `From`/`Into`: a by-value `From<TestDb>`
 /// would move the guard out and drop it, deleting the copy the caller is about to open.
@@ -58,8 +58,8 @@ impl TestDb {
     }
 
     /// The shared canonical database path: an explicit `IDAKIT_TEST_DB` override (an absolute
-    /// `.i64`, rarely used), else the corpus manifest's [`canonical`](idakit::corpus::canonical) fixture
-    /// -- the one binary the dedicated tests open, identical on every platform so their
+    /// `.i64`, rarely used), else the corpus manifest's [`canonical`](idakit::corpus::canonical) fixture,
+    /// the one binary the dedicated tests open, identical on every platform so their
     /// assertions never depend on the host. `None` when no corpus is configured, which skips the
     /// dedicated tests. Read this directly only for lock-free byte access (advisory locks don't
     /// block plain reads), e.g. a truncated fixture; to *open* a database, take a copy with
@@ -74,7 +74,7 @@ impl TestDb {
     }
 
     /// A private copy of `src` in a scratch dir, removed on drop. Panics if the source is
-    /// present but the copy fails -- out of scratch space is a real error, not a skip.
+    /// present but the copy fails: out of scratch space is a real error, not a skip.
     pub fn copy_of(src: impl AsRef<Path>) -> Self {
         let src = src.as_ref();
         let file_name = src.file_name().expect("source db has a file name");
@@ -130,7 +130,7 @@ static NEXT: AtomicU32 = AtomicU32::new(0);
 /// Scratch roots in preference order. A RAM-backed dir avoids disk thrash when the platform
 /// offers one at a well-known path (Linux `/dev/shm`); every other OS falls through to the
 /// portable temp dir ([`std::env::temp_dir`] is `%TEMP%`/`$TMPDIR`), so nothing here is
-/// Linux-only by dependency -- `/dev/shm` is just an opportunistic fast path. Override both
+/// Linux-only by dependency; `/dev/shm` is just an opportunistic fast path. Override both
 /// with `IDAKIT_TEST_SCRATCH`.
 fn scratch_roots() -> Vec<PathBuf> {
     if let Ok(dir) = std::env::var("IDAKIT_TEST_SCRATCH")

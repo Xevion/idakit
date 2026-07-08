@@ -45,7 +45,7 @@ fn run(idb: &mut Database) {
     }
     println!("imports: {imports} total, {by_name} by name, {by_ordinal} by ordinal");
 
-    // A real program either exports or imports something -- otherwise the enumeration is broken,
+    // A real program either exports or imports something; otherwise the enumeration is broken,
     // not merely empty.
     assert!(
         exports > 0 || imports > 0,

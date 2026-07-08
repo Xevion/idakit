@@ -31,7 +31,7 @@ fn run(idb: &mut Database) {
     );
 }
 
-/// The first function (scanning a bounded prefix) whose CFG has two or more blocks -- enough
+/// The first function (scanning a bounded prefix) whose CFG has two or more blocks, enough
 /// to exercise edges. Single-block leaf functions are common, so a scan is needed.
 fn first_multiblock_cfg(idb: &Database) -> Option<FlowChart> {
     idb.functions().take(4000).find_map(|f| {
@@ -41,8 +41,8 @@ fn first_multiblock_cfg(idb: &Database) -> Option<FlowChart> {
 }
 
 /// Every block is a non-empty range; every internal edge endpoint is a valid handle; every
-/// exit points outside the graph; and -- since internal successors are the only block-to-block
-/// edges -- A -> B as a successor implies A is one of B's predecessors.
+/// exit points outside the graph; and, since internal successors are the only block-to-block
+/// edges, A -> B as a successor implies A is one of B's predecessors.
 fn structure_is_sound(cfg: &FlowChart) {
     for (id, b) in cfg.blocks() {
         assert!(b.end() > b.start(), "every block spans a non-empty range");

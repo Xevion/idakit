@@ -2,7 +2,7 @@
 //! sequence, and each kernel-dependent rejection trips its typed error.
 //!
 //! The grammar tokenizers are unit-tested (kernel-free) in `search.rs`; this covers the
-//! parts that need a live database -- the actual search, the `ida` parser, and the
+//! parts that need a live database: the actual search, the `ida` parser, and the
 //! `NoAnchor`/`MaskMismatch`/`Unparseable` paths. Skips when no test database is present.
 
 mod common;

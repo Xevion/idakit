@@ -4,6 +4,7 @@
 
 mod common;
 
+use assert2::assert;
 use idakit::prelude::*;
 
 #[test]
@@ -26,9 +27,14 @@ fn run(idb: &mut idakit::Database) {
     type_member_edit(idb);
     type_enum_member_edit(idb);
     type_member_ref(idb);
+    type_member_add_at_offset(idb);
+    type_member_offset_edit(idb);
+    type_function_edit_direct(idb, address);
+    type_named_arg_renders(idb, address);
+    type_build_failed(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit + member-ref"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
     );
 }
 
@@ -43,7 +49,7 @@ fn comment_round_trips(idb: &mut idakit::Database, address: Address) {
 
     assert!(loc.comment().as_deref() == Some("idakit regular"));
     assert!(loc.repeatable_comment().as_deref() == Some("idakit repeatable"));
-    // The two channels are independent -- reading one never returns the other.
+    // The two channels are independent, so reading one never returns the other.
     assert!(
         loc.comment() != loc.repeatable_comment(),
         "regular and repeatable channels should be distinct"
@@ -75,10 +81,7 @@ fn patch_round_trips(idb: &mut idakit::Database, address: Address) {
 fn patch_rejects_unmapped(idb: &mut idakit::Database) {
     let nowhere = Address::new_const(0xffff_ffff_f000);
     let r = idb.at_mut(nowhere).patch(&[0x90, 0x90]);
-    assert!(
-        matches!(r, Err(Error::WriteRejected { op: "patch", .. })),
-        "unmapped patch should be WriteRejected, got {r:?}"
-    );
+    assert!(let Err(Error::WriteRejected { op: "patch", .. }) = r);
 }
 
 /// Applying a well-formed prototype sets it; a bad name or declaration surfaces the typed error.
@@ -93,19 +96,15 @@ fn type_apply(idb: &mut idakit::Database, address: Address) {
         "a prototype should be set after apply"
     );
 
-    // A bare, nonexistent name routes to the by-name path -- a clean NoType.
+    // A bare, nonexistent name routes to the by-name path, a clean NoType.
     let r = idb.at_mut(address).set_type("idakit_no_such_type_zzz");
     assert!(
-        matches!(
-            r,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::NoType { .. }
-            })
-        ),
-        "unknown named type should be NoType, got {r:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoType { .. }
+        }) = r
     );
 
-    // A garbage declaration -- ParseFailed carrying IDA's reason (captured off the msg channel,
+    // A garbage declaration: ParseFailed carrying IDA's reason (captured off the msg channel,
     // or the fallback when IDA left none). Print it so a run shows whether the capture landed.
     match idb
         .at_mut(address)
@@ -146,8 +145,8 @@ fn type_define(idb: &mut idakit::Database) {
         "a prototype should be set after applying a named function type"
     );
 
-    // A declaration referencing the freshly defined struct must parse -- proving parse_decl
-    // resolves against the local til -- whether or not the kernel reshapes a code address to it.
+    // A declaration referencing the freshly defined struct must parse, proving parse_decl
+    // resolves against the local til, whether or not the kernel reshapes a code address to it.
     // Routed through the scoped-closure location cursor.
     let r = idb.with_location_mut(entry, |loc| {
         loc.set_type(idakit::types::expr::decl("idakit_pt *"))
@@ -162,14 +161,11 @@ fn type_define(idb: &mut idakit::Database) {
         "a decl referencing a defined local type must not fail parsing, got {r:?}"
     );
 
-    // A malformed declaration -- TypeDefineFailed.
+    // A malformed declaration: TypeDefineFailed.
     let r = idb
         .types_mut()
         .define("struct idakit_broken { this is not valid");
-    assert!(
-        matches!(r, Err(Error::TypeDefineFailed { .. })),
-        "malformed define should be TypeDefineFailed, got {r:?}"
-    );
+    assert!(let Err(Error::TypeDefineFailed { .. }) = r);
 }
 
 /// A built recipe, a scalar leaf or a pointer/array composite, lowers through the
@@ -198,19 +194,15 @@ fn type_build(idb: &mut idakit::Database, address: Address) {
     println!("type-build composite applied: {}", built.is_ok());
 
     // A composite over an unknown named type BUILDS fine (an unresolved named leaf is accepted
-    // into the tinfo), but the kernel refuses to APPLY it because the pointee is unresolved -- a
+    // into the tinfo), but the kernel refuses to APPLY it because the pointee is unresolved, a
     // deterministic ApplyRejected, regardless of the address.
     let r = idb
         .at_mut(address)
         .set_type(expr::named("idakit_no_such_built").pointer());
     assert!(
-        matches!(
-            r,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::ApplyRejected { .. }
-            })
-        ),
-        "a composite over an unknown named type should be ApplyRejected, got {r:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::ApplyRejected { .. }
+        }) = r
     );
 }
 
@@ -265,11 +257,7 @@ fn type_function_build(idb: &mut idakit::Database, entry: Address) {
         .prototype_type()
         .expect("walk the variadic prototype")
         .expect("a prototype is set after the variadic apply");
-    assert!(
-        matches!(proto.shape(), TypeShape::Function { varargs: true, .. }),
-        "the built prototype should be variadic, got {:?}",
-        proto.shape()
-    );
+    assert!(let TypeShape::Function { varargs: true, .. } = proto.shape());
 
     // A builder-supplied calling convention applies. Its rendering is arch-dependent, so no string
     // check, matching type_surgery's cc note.
@@ -321,18 +309,9 @@ fn type_surgery(idb: &mut idakit::Database, entry: Address) {
     let TypeShape::Function { ret, params, .. } = proto.shape() else {
         panic!("expected a function, got {:?}", proto.shape());
     };
-    assert!(
-        matches!(proto.get(*ret).shape, TypeShape::Ptr(_)),
-        "the return type should now be a pointer"
-    );
+    assert!(let TypeShape::Ptr(_) = &proto.get(*ret).shape);
     assert!(params.len() == 2, "still two params, got {}", params.len());
-    assert!(
-        matches!(
-            proto.get(params[0]).shape,
-            TypeShape::Int { signed: false, .. }
-        ),
-        "arg 0 should now be unsigned"
-    );
+    assert!(let TypeShape::Int { signed: false, .. } = &proto.get(params[0]).shape);
     // Param names are not in the structural walk; they render in the prototype text.
     let text = idb.function(entry).prototype().expect("prototype text");
     assert!(
@@ -346,17 +325,13 @@ fn type_surgery(idb: &mut idakit::Database, entry: Address) {
         .expect("a function at the entry")
         .set_arg_type(9, expr::int32());
     assert!(
-        matches!(
-            r,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::ArgIndexOutOfRange {
-                    index: 9,
-                    arity: 2,
-                    ..
-                }
-            })
-        ),
-        "an out-of-range arg index should be ArgIndexOutOfRange, got {r:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::ArgIndexOutOfRange {
+                index: 9,
+                arity: 2,
+                ..
+            }
+        }) = r
     );
 
     // prepend_this inserts a leading implicit this-pointer, shifting the params.
@@ -396,13 +371,9 @@ fn type_surgery(idb: &mut idakit::Database, entry: Address) {
         .expect("a function at the entry")
         .set_return_type(expr::int32());
     assert!(
-        matches!(
-            r,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::NoPrototype { .. }
-            })
-        ),
-        "editing a cleared prototype should be NoPrototype, got {r:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoPrototype { .. }
+        }) = r
     );
 }
 
@@ -489,16 +460,12 @@ fn type_member_edit(idb: &mut idakit::Database) {
         .member("beta")
         .rename("a");
     assert!(
-        matches!(
-            dup,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::Rejected {
-                    code: TypeEditCode::DupName,
-                    ..
-                }
-            })
-        ),
-        "renaming onto an existing name should be Rejected(DupName), got {dup:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::Rejected {
+                code: TypeEditCode::DupName,
+                ..
+            }
+        }) = dup
     );
 
     // A member that does not resolve is NoMember; an unknown type is NoType.
@@ -508,26 +475,18 @@ fn type_member_edit(idb: &mut idakit::Database) {
         .member("ghost")
         .set_type(expr::int32());
     assert!(
-        matches!(
-            ghost,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::NoMember { .. }
-            })
-        ),
-        "editing a missing member should be NoMember, got {ghost:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoMember { .. }
+        }) = ghost
     );
     let no_type = idb
         .types_mut()
         .edit("idakit_no_such_struct")
         .add_member("x", expr::int32());
     assert!(
-        matches!(
-            no_type,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::NoType { .. }
-            })
-        ),
-        "editing a missing type should be NoType, got {no_type:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoType { .. }
+        }) = no_type
     );
 
     // Name keying with a size change: retype a to a one-byte char and confirm its width. Checked
@@ -624,26 +583,18 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
         .constant("PROBE_GHOST")
         .set_value(9);
     assert!(
-        matches!(
-            ghost,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::NoMember { .. }
-            })
-        ),
-        "editing a missing constant should be NoMember, got {ghost:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoMember { .. }
+        }) = ghost
     );
     let no_type = idb
         .types_mut()
         .edit("idakit_no_such_enum")
         .add_constant("X", 1);
     assert!(
-        matches!(
-            no_type,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::NoType { .. }
-            })
-        ),
-        "editing a missing enum should be NoType, got {no_type:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoType { .. }
+        }) = no_type
     );
 
     // Renaming onto an existing constant name is a typed rejection.
@@ -653,13 +604,9 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
         .constant("PROBE_A")
         .rename("PROBE_BETA");
     assert!(
-        matches!(
-            dup,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::Rejected { .. }
-            })
-        ),
-        "renaming onto an existing constant name should be Rejected, got {dup:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::Rejected { .. }
+        }) = dup
     );
 }
 
@@ -689,6 +636,8 @@ fn type_member_ref(idb: &mut idakit::Database) {
         .edit("idakit_ref_probe")
         .member_ref(1)
         .expect("mint a member ref");
+    assert!(r.index() == 1);
+    assert!(r.type_name() == "idakit_ref_probe");
 
     // Renaming another member leaves offsets unchanged, so the ref stays valid; edit through it.
     idb.types_mut()
@@ -712,24 +661,20 @@ fn type_member_ref(idb: &mut idakit::Database) {
         .edit("idakit_ref_probe")
         .add_member("d", expr::int32())
         .expect("append d");
-    let stale = matches!(
-        idb.types_mut().edit("idakit_ref_probe").member_by_ref(&r),
-        Err(Error::TypeWrite {
+    let mut types = idb.types_mut();
+    let mut edit = types.edit("idakit_ref_probe");
+    assert!(
+        let Err(Error::TypeWrite {
             source: TypeWriteError::StaleMemberRef { .. }
-        })
+        }) = edit.member_by_ref(&r)
     );
-    assert!(stale, "an appended member should stale the ref");
 
     // Minting past the last member is a typed range error.
     let oob = idb.types_mut().edit("idakit_ref_probe").member_ref(99);
     assert!(
-        matches!(
-            oob,
-            Err(Error::TypeWrite {
-                source: TypeWriteError::MemberIndexOutOfRange { index: 99, .. }
-            })
-        ),
-        "an out-of-range index should be MemberIndexOutOfRange, got {oob:?}"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::MemberIndexOutOfRange { index: 99, .. }
+        }) = oob
     );
 
     // Deleting a non-tail member leaves a same-offset gap (IDA does not repack), so the fingerprint
@@ -747,14 +692,166 @@ fn type_member_ref(idb: &mut idakit::Database) {
         .member("q")
         .delete()
         .expect("delete the middle member");
-    let gap_stale = matches!(
-        idb.types_mut().edit("idakit_gap_ref").member_by_ref(&gref),
-        Err(Error::TypeWrite {
-            source: TypeWriteError::StaleMemberRef { .. }
-        })
-    );
+    let mut types = idb.types_mut();
+    let mut edit = types.edit("idakit_gap_ref");
     assert!(
-        gap_stale,
-        "a ref into a middle-deleted (gap-left) slot must go stale"
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::StaleMemberRef { .. }
+        }) = edit.member_by_ref(&gref)
+    );
+}
+
+/// `add_member_at` inserts a new member at an explicit bit offset, distinct from `member_at`
+/// (which only selects an existing one). A char followed by an int leaves an alignment gap in
+/// most tils; insert into that gap and confirm the new member lands there. Skips if this
+/// database's til packs the two fields with no gap to insert into.
+fn type_member_add_at_offset(idb: &mut idakit::Database) {
+    use idakit::types::expr;
+
+    idb.types_mut()
+        .define("struct idakit_insert_probe { char a; int c; };")
+        .expect("define a struct with alignment padding after a");
+
+    let gap_start = {
+        let probe = idb
+            .type_named("idakit_insert_probe")
+            .expect("resolve the type");
+        let members = probe.members().expect("a struct has members");
+        let a = members.iter().find(|m| m.name == "a").expect("member a");
+        let c = members.iter().find(|m| m.name == "c").expect("member c");
+        let after_a = a.bit_offset + 8;
+        if c.bit_offset <= after_a {
+            None
+        } else {
+            Some(after_a)
+        }
+    };
+    let Some(gap_start) = gap_start else {
+        println!("skipping add_member_at: this til leaves no alignment gap after a char");
+        return;
+    };
+
+    idb.types_mut()
+        .edit("idakit_insert_probe")
+        .add_member_at(gap_start, "b", expr::char_())
+        .expect("insert b into the alignment gap");
+
+    let probe = idb
+        .type_named("idakit_insert_probe")
+        .expect("resolve after insert");
+    let landed = probe
+        .members()
+        .expect("a struct has members")
+        .iter()
+        .any(|m| m.name == "b" && m.bit_offset == gap_start);
+    assert!(landed, "b should be inserted at bit offset {gap_start}");
+}
+
+/// Offset-keyed selection also retypes and deletes, not just renames (the rename case is
+/// already covered in `type_member_edit`).
+fn type_member_offset_edit(idb: &mut idakit::Database) {
+    use idakit::types::{TypeShape, expr};
+
+    idb.types_mut()
+        .define("struct idakit_offset_probe { int a; int b; int c; };")
+        .expect("define a struct to edit by offset");
+
+    // Retype the member at bit 32 (b) to unsigned, keyed by offset rather than name.
+    idb.types_mut()
+        .edit("idakit_offset_probe")
+        .member_at(32)
+        .set_type(expr::decl("unsigned int"))
+        .expect("retype the member at bit 32");
+    let probe = idb
+        .type_named("idakit_offset_probe")
+        .expect("resolve the type");
+    let b = probe
+        .members()
+        .expect("a struct has members")
+        .iter()
+        .find(|m| m.name == "b")
+        .expect("member b");
+    assert!(let TypeShape::Int { signed: false, .. } = &probe.get(b.ty).shape);
+
+    // Delete the member at bit 64 (c), keyed by offset rather than name.
+    idb.types_mut()
+        .edit("idakit_offset_probe")
+        .member_at(64)
+        .delete()
+        .expect("delete the member at bit 64");
+    let probe = idb
+        .type_named("idakit_offset_probe")
+        .expect("resolve after offset delete");
+    let names: Vec<String> = probe
+        .members()
+        .expect("a struct has members")
+        .iter()
+        .map(|m| m.name.clone())
+        .collect();
+    assert!(
+        !names.iter().any(|n| n == "c"),
+        "c should be gone after offset delete, got {names:?}"
+    );
+}
+
+/// `clear_type` and `rename` invoked directly on the function cursor from `function_mut`
+/// (previously only exercised through the location cursor's `at_mut`).
+fn type_function_edit_direct(idb: &mut idakit::Database, entry: Address) {
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_type("int idakit_direct_probe(int a)")
+        .expect("seed a prototype to clear");
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .clear_type()
+        .expect("clear_type via FunctionEdit");
+    assert!(
+        idb.function(entry).prototype().is_none(),
+        "the prototype should be gone after FunctionEdit::clear_type"
+    );
+
+    let original = idb.function(entry).name();
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .rename("idakit_direct_rename_probe")
+        .expect("rename via FunctionEdit");
+    assert!(idb.function(entry).name().as_str() == "idakit_direct_rename_probe");
+
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .rename(original.as_str())
+        .expect("restore the original name");
+    assert!(idb.function(entry).name().as_str() == original.as_str());
+}
+
+/// A builder-supplied parameter name renders in the applied prototype's text.
+fn type_named_arg_renders(idb: &mut idakit::Database, entry: Address) {
+    use idakit::types::expr;
+
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_type(expr::function(expr::int32()).named_arg("myparam", expr::int32()))
+        .expect("apply a prototype with a named arg");
+    let text = idb.function(entry).prototype().expect("prototype text");
+    assert!(
+        text.contains("myparam"),
+        "the builder-supplied param name should render: {text:?}"
+    );
+}
+
+/// A composite recipe whose embedded declaration fails to parse fails at build time
+/// (`BuildFailed`), distinct from a bare top-level `decl()`, which fails at parse time
+/// (`ParseFailed`, see `type_apply`): wrapping the same garbage text in `.pointer()` routes it
+/// through the recipe-build path instead of the direct-decl path.
+fn type_build_failed(idb: &mut idakit::Database, address: Address) {
+    use idakit::types::expr;
+
+    let r = idb
+        .at_mut(address)
+        .set_type(expr::decl("%%% not a type %%%").pointer());
+    assert!(
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::BuildFailed { .. }
+        }) = r
     );
 }

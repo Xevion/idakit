@@ -7,6 +7,7 @@
 
 mod common;
 
+use assert2::assert;
 use idakit::prelude::*;
 
 #[test]
@@ -80,10 +81,7 @@ fn run(idb: &mut idakit::Database) {
             use idakit::decompiler::ctree::{ExpressionKind, NodeRef, StatementKind};
             let tree = cf.ctree().expect("ctree extraction");
             let root = tree.root();
-            assert!(
-                matches!(tree.statement(root).kind, StatementKind::Block(_)),
-                "ctree root should be a block"
-            );
+            assert!(let StatementKind::Block(_) = &tree.statement(root).kind);
             assert_eq!(
                 tree.expressions().count(),
                 c.expressions as usize,

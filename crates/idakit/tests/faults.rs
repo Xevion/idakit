@@ -27,7 +27,7 @@ impl Scratch {
         Self(path)
     }
 
-    /// The first `len` bytes of `src` -- a header-truncated database. Reads only the prefix,
+    /// The first `len` bytes of `src`, a header-truncated database. Reads only the prefix,
     /// never the whole (potentially huge) source.
     fn truncated(name: &str, src: impl AsRef<Path>, len: usize) -> Self {
         let mut file = fs::File::open(src).expect("open source db");
@@ -89,7 +89,7 @@ fn directory_path_is_rejected() {
 
 /// A Java class newer than IDA's loader supports (major 69 = Java 25) is rejected through the
 /// `msg()` channel, which in headless routes to a no-op sink and never reaches stderr. The
-/// `KernelExit` diagnostic must still carry the loader's reason -- it was `None` while only the
+/// `KernelExit` diagnostic must still carry the loader's reason. It was `None` while only the
 /// stderr channel was captured.
 #[test]
 #[cfg_attr(
@@ -98,7 +98,7 @@ fn directory_path_is_rejected() {
 )]
 fn unsupported_java_class_reports_reason() {
     // Minimal class file: magic, minor=0, major=69, a one-entry constant pool, then zeroed
-    // section counts -- enough for IDA's Java loader to recognize the format and reject the version.
+    // section counts, enough for IDA's Java loader to recognize the format and reject the version.
     const TOO_NEW_CLASS: &[u8] = &[
         0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x45, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

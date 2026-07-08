@@ -1,6 +1,6 @@
 //! idalib does not hijack process signal handlers on idakit's path. RE shows the crash-handler
 //! installer (`sub_2296C60`: SEGV/ILL/FPE/BUS/ABRT/INT/TERM + altstack) is reached only through
-//! crash-cleanup temp-file registration, which none of idakit's operations trigger -- verified
+//! crash-cleanup temp-file registration, which none of idakit's operations trigger. Verified
 //! across init, open, analyze, and DB creation, batch on and off. This asserts that invariant:
 //! every tracked signal's handler is identical before idakit runs and after open+analyze, so a
 //! future idalib that starts stealing signals fails here instead of silently taking them.
@@ -32,7 +32,7 @@ const SIGS: &[(&str, c_int)] = &[
 fn probe() -> Vec<usize> {
     SIGS.iter()
         .map(|&(_, n)| {
-            // SAFETY: a null `act` makes this read-only -- sigaction fills `oldact` from the
+            // SAFETY: a null `act` makes this read-only; sigaction fills `oldact` from the
             // process-global disposition and writes nothing back. Zeroed sigaction is valid.
             let mut sa: libc::sigaction = unsafe { std::mem::zeroed() };
             let rc = unsafe { libc::sigaction(n, std::ptr::null(), &mut sa) };

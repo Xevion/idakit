@@ -884,6 +884,7 @@ impl Iterator for InstructionsIn<'_> {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
@@ -893,24 +894,29 @@ mod tests {
     const _: () = assert_send::<FunctionSnapshot>();
     const _: () = assert_send::<FunctionName>();
 
-    /// Every `CallingConvention` round-trips its byte, and each discriminant is pinned to the raw
-    /// `CM_CC_*` code (typeinf.hpp, IDA 9.3), so a drifted value fails here rather than silently
-    /// setting the wrong convention at the facade.
+    /// Every `CallingConvention` round-trips its byte, so a drifted value fails here rather than
+    /// silently setting the wrong convention at the facade.
     #[test]
-    fn calling_convention_round_trips_and_pins_cm_cc() {
+    fn calling_convention_round_trips() {
         for &cc in CallingConvention::VARIANTS {
             assert!(CallingConvention::try_from(u8::from(cc)).ok() == Some(cc));
         }
-        assert!(u8::from(CallingConvention::Unknown) == 0x10);
-        assert!(u8::from(CallingConvention::Cdecl) == 0x30);
-        assert!(u8::from(CallingConvention::Stdcall) == 0x50);
-        assert!(u8::from(CallingConvention::Pascal) == 0x60);
-        assert!(u8::from(CallingConvention::Fastcall) == 0x70);
-        assert!(u8::from(CallingConvention::Thiscall) == 0x80);
-        assert!(u8::from(CallingConvention::Swift) == 0x90);
-        assert!(u8::from(CallingConvention::Golang) == 0xB0);
         // A byte outside the curated set is rejected, not absorbed.
         assert!(CallingConvention::try_from(0x20u8).is_err());
+    }
+
+    /// Each discriminant is pinned to the raw `CM_CC_*` code (typeinf.hpp, IDA 9.3).
+    #[rstest]
+    #[case(CallingConvention::Unknown, 0x10)]
+    #[case(CallingConvention::Cdecl, 0x30)]
+    #[case(CallingConvention::Stdcall, 0x50)]
+    #[case(CallingConvention::Pascal, 0x60)]
+    #[case(CallingConvention::Fastcall, 0x70)]
+    #[case(CallingConvention::Thiscall, 0x80)]
+    #[case(CallingConvention::Swift, 0x90)]
+    #[case(CallingConvention::Golang, 0xB0)]
+    fn calling_convention_pins_cm_cc(#[case] cc: CallingConvention, #[case] raw: u8) {
+        assert!(u8::from(cc) == raw);
     }
 
     #[test]

@@ -1,10 +1,10 @@
 //! Corpus fan-out matrix: one runtime-generated test per database (fixtures from `idakit::corpus`,
 //! re-exported through `common`). Each
-//! opens one private copy and runs every [`common::checks`] invariant against it -- open dominates,
+//! opens one private copy and runs every [`common::checks`] invariant against it. Open dominates,
 //! so it's amortized across the check axis rather than paid per check.
 //!
 //! `harness = false` + `libtest-mimic` because the corpus is discovered at runtime, not
-//! compile-time. Under nextest each trial is its own process -- required, since the kernel is a
+//! compile-time. Under nextest each trial is its own process, required, since the kernel is a
 //! per-process singleton. No corpus, no cases.
 
 mod common;

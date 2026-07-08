@@ -2,12 +2,12 @@
 //! silent fallbacks, no panics, no misclassification.
 //!
 //! It walks every code head in every function's chunks, decodes it, and asserts the decode
-//! *succeeds* -- a register or value type the model cannot represent exactly is a loud error,
-//! never a `GeneralPurpose`/`Void` guess -- then cross-checks each register's resolved name against its
-//! assigned [`RegisterClass`] with the shared `RegisterCheck` oracle. This is the exhaustive,
-//! single-database counterpart to the budget-bounded `decode` check the corpus matrix fans out
-//! across every fixture; both hold the same invariant through the same oracle. Read-only; opens
-//! `save = false`. Skips when no test database is present.
+//! *succeeds*: a register or value type the model cannot represent exactly is a loud error,
+//! never a `GeneralPurpose`/`Void` guess. It then cross-checks each register's resolved name
+//! against its assigned [`RegisterClass`] with the shared `RegisterCheck` oracle. This is the
+//! exhaustive, single-database counterpart to the budget-bounded `decode` check the corpus matrix
+//! fans out across every fixture; both hold the same invariant through the same oracle. Read-only;
+//! opens `save = false`. Skips when no test database is present.
 
 mod common;
 

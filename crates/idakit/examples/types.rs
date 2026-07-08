@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ida.call(move |idb| -> Result<(), Error> {
             idb.open(&db).call()?;
 
-            // Prototypes are sparse in a stripped release binary -- scan every function, not a
+            // Prototypes are sparse in a stripped release binary, so scan every function, not a
             // prefix, so the reported ratio is honest and the sample isn't just entry-point stubs.
             let mut total = 0usize;
             let mut typed = 0usize;
@@ -232,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // The named-type pass: resolve every name the prototypes reference and classify what
-            // the database actually holds -- a full body to expand, or just a forward declaration.
+            // the database actually holds, a full body to expand, or just a forward declaration.
             println!("\n== referenced named types ==");
             if let Some(name) = &arg_type {
                 match idb.type_named(name) {

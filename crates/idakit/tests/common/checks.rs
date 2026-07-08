@@ -21,7 +21,7 @@ pub const CHECKS: &[(&str, Check)] = &[
 ];
 
 /// The database has functions and segments, the first function is named, and its entry bytes
-/// are readable -- the floor every real program clears.
+/// are readable, the floor every real program clears.
 pub fn structure(idb: &Database) -> String {
     let funcs = idb.functions().count();
     let segs = idb.segments().count();
@@ -192,7 +192,7 @@ pub fn decompile(idb: &Database) -> String {
         let Ok(tree) = cf.ctree() else { continue };
 
         // Extraction fidelity, per function: the materialized expression count must equal what a
-        // faithful walk should emit -- the SDK visitor's total minus the cot_empty placeholders it
+        // faithful walk should emit, the SDK visitor's total minus the cot_empty placeholders it
         // counts in optional operand slots (a `for(;;)` init/cond/step, a bare `return;`) that the
         // walker elides to `None`. A shortfall/surplus is a real dropped or invented node.
         let (visitor_total, expected) = cf.expr_extraction_expectation();
@@ -214,7 +214,7 @@ pub fn decompile(idb: &Database) -> String {
             "ctree root should be a block"
         );
         // Statements are never elided (cit_empty materializes as StatementKind::Empty), so their
-        // count matches the SDK visitor exactly -- unlike expressions, checked above.
+        // count matches the SDK visitor exactly, unlike expressions, checked above.
         assert!(
             tree.statements().count() == cf.counts().insns as usize,
             "extracted statement count disagrees with the visitor"
@@ -284,8 +284,8 @@ pub fn types(idb: &Database) -> String {
 
 /// Every decompiled local's [`LocalLocation`] is one the model structures, tallied by variant so
 /// the corpus matrix surfaces the per-architecture argloc spread. `Custom` (`ALOC_CUSTOM`) is a
-/// tripwire -- it means a processor module produced an argloc idakit doesn't model, which we want
-/// to see rather than silently absorb -- and every scattered fragment must itself be a register
+/// tripwire: it means a processor module produced an argloc idakit doesn't model, which we want
+/// to see rather than silently absorb. Every scattered fragment must itself be a register
 /// or stack slot, never nested, mirroring `argpart_t`. Databases Hex-Rays can't decompile (e.g.
 /// the 68k arcade ROM, no decompiler) yield no locals and pass vacuously, like [`decompile`].
 pub fn argloc(idb: &Database) -> String {
@@ -345,7 +345,7 @@ pub fn argloc(idb: &Database) -> String {
 /// Strict decode over a bounded prefix of real code: every code head decodes with no silent
 /// fallback, and every register operand's resolved name agrees with its [`RegisterClass`] in
 /// both directions. Unlike [`disasm`], a decode *rejection* is a failure here, not a silent
-/// stop -- this is the axis that actually exercises operand classification and register naming
+/// stop. This is the axis that actually exercises operand classification and register naming
 /// (`st`/`cr`/`dr`/`tr` and the SIMD widths) across the corpus. x86-only: our register model is
 /// x86 `RegNo`-based, so a non-x86 fixture opts out of this check in the manifest.
 pub fn decode(idb: &Database) -> String {
@@ -420,7 +420,7 @@ impl RegisterCheck for Register {
     }
 }
 
-// A non-function address is rejected -- kept out of the corpus battery (it needs a specific
+// A non-function address is rejected, kept out of the corpus battery (it needs a specific
 // address) but exercised by the dedicated cfg test.
 #[allow(dead_code)]
 pub fn non_function_rejected(idb: &Database) {

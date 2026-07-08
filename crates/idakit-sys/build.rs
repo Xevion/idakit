@@ -78,7 +78,7 @@ fn main() {
         build.flag("-isystem").flag(sdk_include_str);
     }
     build.define("__EA64__", None).define(PLATFORM_DEFINE, None);
-    // Fault-injection shim for the trap tests -- see the `test-shims` feature. Cargo sets this
+    // Fault-injection shim for the trap tests, see the `test-shims` feature. Cargo sets this
     // env when the feature is on; it gates `idakit_test_fatal` in the facade.
     if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
         build.define("IDAKIT_TEST_SHIMS", None);
@@ -109,8 +109,8 @@ fn main() {
     build.cargo_metadata(false);
     build.compile("idakit_facade");
 
-    // Whole-archive the facade so its load-time constructor -- the idalib exit-banner filter
-    // in runtime.cpp -- is present in every binary, even pure unit-test binaries that call no
+    // Whole-archive the facade so its load-time constructor, the idalib exit-banner filter
+    // in runtime.cpp, is present in every binary, even pure unit-test binaries that call no
     // facade function. Otherwise the linker never pulls that object and macOS idalib's goodbye
     // banner (registered at dylib load) leaks into stdout, breaking `nextest --list`. The
     // modifier maps per-linker (-force_load / --whole-archive / /WHOLEARCHIVE).
@@ -173,8 +173,8 @@ fn emit_compile_commands(sdk_include: &str) {
 }
 
 /// The IDA install holding the runtime (`RUNTIME_LIB`): `IDADIR`, else `idat64`/`idat` on
-/// `PATH`, else the known install locations. Any valid install will do -- its version is read
-/// at link time.
+/// `PATH`, else the known install locations. Any valid install will do, since its version is
+/// read at link time.
 fn resolve_idadir() -> PathBuf {
     if let Some(dir) = env::var_os("IDADIR") {
         return PathBuf::from(dir);
@@ -399,8 +399,8 @@ fn load_version_fn(idadir: &Path) -> GetLibraryVersion {
     }
 }
 
-/// The newest `vMAJOR.MINOR.*-release` tag -- match major.minor (IDA's build number isn't
-/// the SDK patch level) and take the highest patch.
+/// The newest `vMAJOR.MINOR.*-release` tag matching major.minor (IDA's build number isn't
+/// the SDK patch level), taking the highest patch.
 fn newest_release_tag(major: i32, minor: i32) -> String {
     let prefix = format!("v{major}.{minor}.");
     let out = Command::new("git")
