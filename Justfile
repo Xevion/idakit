@@ -33,18 +33,72 @@ fmt-rust-check:
 fmt-cpp-check:
     clang-format --dry-run --Werror {{ facade_sources }}
 
+# clang-tidy runs one TU at a time; xargs -P fans the facade files across cores so wall time
+# tracks the slowest file, not their sum. In CI, CTCACHE_DIR routes through clang-tidy-cache
+# (content-hash keyed on compile command + .clang-tidy + source) to skip an untouched facade;
+# local runs without it use plain clang-tidy.
 tidy:
     #!/usr/bin/env bash
     set -euo pipefail
     IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
+    cd crates/idakit-sys
     # clang-tidy replays compile_commands.json, which records only the flags cc passes -- not
     # the clang driver's implicit macOS -isysroot. Without it clang-tidy can't find the SDK's
     # system headers (stdlib.h), and the broken parse then misfires other checks, so supply it.
+    extra_args=()
     if [ "$(uname -s)" = Darwin ]; then
-      clang-tidy -p crates/idakit-sys --extra-arg=-isysroot --extra-arg="$(xcrun --show-sdk-path)" {{ facade_cpp }}
-    else
-      clang-tidy -p crates/idakit-sys {{ facade_cpp }}
+      extra_args=(--extra-arg=-isysroot --extra-arg="$(xcrun --show-sdk-path)")
     fi
+    tidy_cmd=(clang-tidy)
+    if [ -n "${CTCACHE_DIR:-}" ] && command -v clang-tidy-cache >/dev/null 2>&1; then
+      tidy_cmd=(clang-tidy-cache "$(command -v clang-tidy)")
+    fi
+    nproc_val="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+    printf '%s\n' facade/*.cpp | xargs -P "$nproc_val" -I{} "${tidy_cmd[@]}" -p . "${extra_args[@]}" {}
+
+# Advisory, not part of `check`: Clang's `-Weverything` minus pure-noise categories -- C++98
+# compat (the facade is C++17), buffer-hardening (it does deliberate raw-pointer work over the
+# SDK's C-style API and the ELF GOT-rewrite trap), and padding notices. What's left (old-style
+# casts, switch-enum, sign-conversion, ...) is real signal to triage by hand.
+pedantic:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
+    cd crates/idakit-sys
+    sdk_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-isystem")) + 1]' compile_commands.json)"
+    extra_args=(-isystem "$sdk_include")
+    if [ "$(uname -s)" = Darwin ]; then
+      extra_args+=(-isysroot "$(xcrun --show-sdk-path)")
+    fi
+    # `-Weverything` shifts across Clang releases; prefer a `clang++` matching clang-tidy's
+    # major over the ambient one, which may be older and reject (then warn about) these flags.
+    clang_major="$(clang-tidy --version | grep -oE 'version [0-9]+' | grep -oE '[0-9]+')"
+    clangxx="clang++"
+    command -v "clang++-$clang_major" >/dev/null 2>&1 && clangxx="clang++-$clang_major"
+    nproc_val="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+    printf '%s\n' facade/*.cpp | xargs -P "$nproc_val" -I{} \
+      "$clangxx" -std=c++17 -Ifacade "${extra_args[@]}" -D__EA64__ -D__LINUX__ \
+      -Weverything -Wno-c++98-compat -Wno-c++98-compat-local-type-template-args \
+      -Wno-unsafe-buffer-usage -Wno-unsafe-buffer-usage-in-libc-call -Wno-padded \
+      -fsyntax-only {}
+
+# ASan+UBSan (facade too) or ThreadSanitizer against the real kernel across the FFI boundary;
+# nightly-only (needs -Z build-std). `mode` is "address" or "thread"; UBSan rides only on the
+# C++ side (rustc has no `-Zsanitizer=undefined`, and its runtime is ASan xor TSan). Leak
+# detection is off -- IDA's kernel is a process-lifetime singleton, so LSan's exit findings all
+# sit in libida.so, not real leaks.
+sanitize mode="address":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{ mode }}" = thread ]; then
+      export IDAKIT_SANITIZE=thread
+      export RUSTFLAGS="-Zsanitizer=thread -Cdebuginfo=1"
+    else
+      export IDAKIT_SANITIZE=address,undefined
+      export RUSTFLAGS="-Zsanitizer=address -Cdebuginfo=1"
+      export ASAN_OPTIONS=detect_leaks=0
+    fi
+    cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu -p idakit --test roundtrip
 
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings

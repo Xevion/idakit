@@ -82,6 +82,25 @@ fn main() {
     if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
         build.define("IDAKIT_TEST_SHIMS", None);
     }
+    // Mirror the caller's `-Zsanitizer=<name>` onto the facade TUs so bugs inside facade/*.cpp
+    // are caught too, not just at the FFI boundary. Comma-separated like rustc's flag. `undefined`
+    // uses trap mode: rustc links no UBSan runtime, so the usual `__ubsan_handle_*` calls would
+    // dangle at link -- trap mode emits an inline trap instead, needing no runtime.
+    if let Ok(sanitizers) = env::var("IDAKIT_SANITIZE") {
+        let is_clang = build.get_compiler().is_like_clang();
+        for name in sanitizers.split(',') {
+            build.flag(format!("-fsanitize={name}"));
+            if name == "undefined" {
+                let trap_flag = if is_clang {
+                    "-fsanitize-trap=undefined"
+                } else {
+                    "-fsanitize-undefined-trap-on-error"
+                };
+                build.flag(trap_flag);
+            }
+        }
+        build.flag("-fno-omit-frame-pointer");
+    }
     for src in FACADE_SOURCES {
         build.file(src);
     }
@@ -129,6 +148,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");
     println!("cargo:rerun-if-env-changed=IDA_SDK_CACHE_DIR");
     println!("cargo:rerun-if-env-changed=DOCS_RS");
+    println!("cargo:rerun-if-env-changed=IDAKIT_SANITIZE");
 }
 
 /// Emit `compile_commands.json` for clang-tidy/clangd (opt-in via `just tidy`).

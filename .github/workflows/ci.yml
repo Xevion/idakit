@@ -68,10 +68,30 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Clippy
         run: just clippy
-      # compile_commands names a POSIX-style compiler; Windows builds with MSVC, so
-      # clang-tidy only runs on the other two OSes.
+      # clang-tidy-cache (matus-chochlik/ctcache) content-hashes tidy's inputs so an untouched
+      # facade skips the work; not on PyPI, so pinned from its commit. `just tidy` uses it only
+      # when CTCACHE_DIR is set and the binary is on PATH.
+      - name: Install clang-tidy-cache
+        if: runner.os != 'Windows'
+        run: |
+          uv tool install "git+https://github.com/matus-chochlik/ctcache.git@0c7fee26e09ae8a393ed7d56164102da118ab23a"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Cache clang-tidy results
+        if: runner.os != 'Windows'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ctcache
+          # actions/cache keys are immutable, so save under a unique per-run key and restore
+          # from the closest prior run for this platform.
+          key: ctcache-${{ matrix.platform }}-${{ github.run_id }}
+          restore-keys: ctcache-${{ matrix.platform }}-
+      # compile_commands names a POSIX-style compiler; Windows builds with MSVC, so clang-tidy
+      # (and its cache above) only run on the other two OSes.
       - name: Clang-tidy
         if: runner.os != 'Windows'
+        env:
+          CTCACHE_DIR: ${{ runner.temp }}/ctcache
+          CTCACHE_SAVE_OUTPUT: "1"
         run: just tidy
       - name: Accept IDA EULA
         run: cargo run -q -p idakit --example accept_eula
@@ -81,3 +101,81 @@ jobs:
         uses: ./.github/actions/fetch-corpus
       - name: Run tests
         run: just ci-test
+
+  # ASan+UBSan and ThreadSanitizer against the real kernel across the FFI boundary, via the
+  # roundtrip test. Nightly-only (needs `-Z build-std` for a sanitizer-instrumented std, which
+  # the pinned stable toolchain lacks) and Linux-x64-only (unverified elsewhere; Windows has no
+  # sanitizer-capable facade compiler here).
+  sanitize:
+    name: sanitize (${{ matrix.mode }})
+    if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [address, thread]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUST_BACKTRACE: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      AWS_REGION: auto
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    # TSan's one finding so far is a lock-order inversion inside libida.so's own locking
+    # (qmutex_lock, reached via guarded<> during Database::close) -- not idakit's code, not
+    # fixable in a closed kernel, and TSan can't fully reason about an uninstrumented library.
+    # Non-blocking until triaged; ASan+UBSan (the clean mode) still gates.
+    continue-on-error: ${{ matrix.mode == 'thread' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install toolchain
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - name: Install nightly
+        run: rustup toolchain install nightly --component rust-src --profile minimal
+      - name: Fetch IDA runtime
+        uses: ./.github/actions/fetch-runtime
+        with:
+          version: 9.3.260421sp2
+          platform: linux-x64
+          sdk-tag: v9.3.1-release
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Accept IDA EULA
+        run: cargo run -q -p idakit --example accept_eula
+      - name: Fetch test corpus
+        uses: ./.github/actions/fetch-corpus
+      - name: Run sanitizer
+        run: just sanitize ${{ matrix.mode }}
+
+  # Advisory, never gates: Clang's `-Weverything` minus known-noise categories (see `just
+  # pedantic`). `-Wold-style-cast` alone surfaces ~185 findings -- a separate refactor, not
+  # something a build-tooling change should force or hide.
+  pedantic:
+    name: pedantic warnings
+    if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      AWS_REGION: auto
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install toolchain
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - name: Fetch IDA runtime
+        uses: ./.github/actions/fetch-runtime
+        with:
+          version: 9.3.260421sp2
+          platform: linux-x64
+          sdk-tag: v9.3.1-release
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Pedantic warnings
+        run: just pedantic
