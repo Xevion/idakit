@@ -1,8 +1,6 @@
-# fmt and doc lints run on a stock runner: rustfmt needs no native deps, and `just doc` builds
-# under DOCS_RS, which short-circuits build.rs so rustdoc needs no IDA runtime. The build and
-# tests link native dependencies that build.rs resolves from IDADIR, so the `test` matrix
-# fetches a prebuilt bundle from S3 first. The S3_* secrets gate it: forks without them skip
-# the matrix and still get fmt + doc.
+# fmt/doc need no native deps and run on a stock runner. The check matrix builds against a
+# real IDA runtime fetched from S3, so it's gated on the S3_* secrets -- forks without them
+# skip it and still get fmt + doc.
 
 name: ci
 
@@ -11,10 +9,6 @@ on:
     branches: [master] # PR branches run via pull_request; avoids the double run
   pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -26,15 +20,19 @@ jobs:
     timeout-minutes: 10
     steps:
       # No toolchain action: rust-toolchain.toml pins the version + rustfmt for rustup.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-      - run: just fmt-check
-      # Doc-lint (broken intra-doc links, bad code blocks) under DOCS_RS, so no IDA runtime.
-      - run: just doc hermetic
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install toolchain
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - name: Check formatting
+        run: just fmt-check
+      # Broken intra-doc links / bad code blocks, under DOCS_RS so no IDA runtime is needed.
+      - name: Lint docs
+        run: just doc hermetic
 
-  test:
-    name: test (${{ matrix.platform }} @ ${{ matrix.version }})
-    # secrets can't be used in a job-level `if`; gate on a var (forks without it skip).
+  check:
+    name: check (${{ matrix.platform }} @ ${{ matrix.version }})
+    # secrets can't gate a job-level `if`; use a var instead (forks without it skip).
     if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
     strategy:
       fail-fast: false
@@ -56,22 +54,30 @@ jobs:
       S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-      - uses: ./.github/actions/fetch-runtime
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install toolchain
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - name: Fetch IDA runtime
+        uses: ./.github/actions/fetch-runtime
         with:
           version: ${{ matrix.version }}
           platform: ${{ matrix.platform }}
           sdk-tag: ${{ matrix.sdk-tag }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: just clippy
-      # clang-tidy runs against the facade's compile_commands, which name a POSIX-style
-      # compiler; on Windows the build uses MSVC, so lint the C++ on the other OSes instead.
-      - if: runner.os != 'Windows'
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Clippy
+        run: just clippy
+      # compile_commands names a POSIX-style compiler; Windows builds with MSVC, so
+      # clang-tidy only runs on the other two OSes.
+      - name: Clang-tidy
+        if: runner.os != 'Windows'
         run: just tidy
-      - run: cargo run -q -p idakit --example accept_eula
-      # Materialize the platform-independent corpus tier and export IDAKIT_CORPUS_MANIFEST, so
-      # the corpus matrix and the dedicated tests (which source their canonical database from it)
-      # run against the same fixtures on every platform.
-      - uses: ./.github/actions/fetch-corpus
-      - run: just ci-test
+      - name: Accept IDA EULA
+        run: cargo run -q -p idakit --example accept_eula
+      # Fixtures are host-independent, so every platform fetches the same corpus tier; the
+      # exported manifest drives both the corpus matrix and the dedicated tests below.
+      - name: Fetch test corpus
+        uses: ./.github/actions/fetch-corpus
+      - name: Run tests
+        run: just ci-test

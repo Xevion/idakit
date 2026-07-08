@@ -16,11 +16,12 @@ inputs:
 runs:
   using: composite
   steps:
-    # Credentials arrive as job-level env (AWS_*, S3_ENDPOINT, S3_BUCKET); composite run
-    # steps inherit it. The bundle is decompressed into a per-run temp dir and pointed at
-    # via IDADIR, which build.rs reads to compile and link. The runtime dir is added to the
-    # loader's search path, which is spelled differently on each OS.
-    - shell: bash
+    # Credentials arrive as job-level env (AWS_*, S3_ENDPOINT, S3_BUCKET). The bundle is
+    # decompressed into a per-run temp dir and pointed at via IDADIR, which build.rs reads to
+    # compile and link; the runtime dir is also added to the loader's search path (spelled
+    # differently per OS).
+    - name: Fetch runtime bundle
+      shell: bash
       run: |
         set -euo pipefail
         tmp="$RUNNER_TEMP"

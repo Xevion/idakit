@@ -4,19 +4,19 @@ description: Fetch the platform-independent CI-tier corpus fixtures from R2 (con
 runs:
   using: composite
   steps:
-    # Credentials arrive as job-level env (AWS_*, S3_ENDPOINT, S3_BUCKET), the same set
-    # fetch-runtime uses. Materializes the CI-tier corpus into a per-run temp dir and points
-    # IDAKIT_CORPUS_MANIFEST at its manifest; the tests' corpus discovery reads that to fan out
-    # the matrix and to source the dedicated tests' canonical database. The fixtures are host-
-    # independent (an analyzed .i64 opens the same on every OS), so every platform fetches the
-    # identical tier -- that sameness is the whole point.
-    - shell: bash
+    # Credentials arrive as job-level env (AWS_*, S3_ENDPOINT, S3_BUCKET), same as
+    # fetch-runtime. Fixtures are host-independent (an analyzed .i64 opens the same on every
+    # OS), so every platform fetches the identical tier; IDAKIT_CORPUS_MANIFEST feeds the
+    # corpus test matrix and the dedicated tests' canonical database.
+    - name: Fetch corpus
+      shell: bash
       run: |
         set -euo pipefail
         tmp="$RUNNER_TEMP"
         [ "${RUNNER_OS:-}" = Windows ] && tmp="$(cygpath -u "$RUNNER_TEMP")"
         dest="$tmp/corpus"
         mkdir -p "$dest"
+        export dest
 
         aws s3 cp "s3://$S3_BUCKET/corpus/manifest.toml" "$dest/manifest.toml" \
           --endpoint-url "$S3_ENDPOINT" --only-show-errors
@@ -26,6 +26,7 @@ runs:
           if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
           else shasum -a 256 "$1" | cut -d' ' -f1; fi
         }
+        export -f sha_of
 
         # The published manifest is machine-generated with a fixed shape (path then sha256 per
         # fixture), so a two-line awk extracts the pairs without a TOML parser.
@@ -34,14 +35,20 @@ runs:
           /^sha256 = / { s=$2; gsub(/"/,"",s); print p"\t"s }
         ' "$dest/manifest.toml" > "$dest/index.tsv"
 
-        while IFS=$'\t' read -r rel sha; do
+        fetch_one() {
+          local rel="$1" sha="$2" out got
           out="$dest/$rel"
           mkdir -p "$(dirname "$out")"
           aws s3 cp "s3://$S3_BUCKET/corpus/blobs/$sha" "$out" \
             --endpoint-url "$S3_ENDPOINT" --only-show-errors
           got="$(sha_of "$out")"
           [ "$got" = "$sha" ] || { echo "sha256 mismatch for $rel: $got != $sha" >&2; exit 1; }
-        done < "$dest/index.tsv"
+        }
+        export -f fetch_one
+
+        # Fixtures are independent, so fan the downloads out instead of fetching them serially.
+        # index.tsv has no embedded whitespace, so plain word-splitting into (rel, sha) pairs is safe.
+        xargs -P4 -n2 bash -c 'fetch_one "$0" "$1"' < "$dest/index.tsv"
 
         manifest="$dest/manifest.toml"
         [ "${RUNNER_OS:-}" = Windows ] && manifest="$(cygpath -w "$manifest")"
