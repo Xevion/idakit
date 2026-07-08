@@ -25,9 +25,10 @@ fn run(idb: &mut idakit::Database) {
     type_clear(idb, address);
     type_member_edit(idb);
     type_enum_member_edit(idb);
+    type_member_ref(idb);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit + member-ref"
     );
 }
 
@@ -626,5 +627,75 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
             })
         ),
         "renaming onto an existing constant name should be Rejected, got {dup:?}"
+    );
+}
+
+/// A durable MemberRef is a stable index handle guarded by a structural fingerprint: it survives a
+/// rename of another member, edits through it, but goes stale once the layout changes (an append).
+/// An out-of-range mint is a typed error.
+fn type_member_ref(idb: &mut idakit::Database) {
+    use idakit::types::{TypeEditError, expr};
+
+    fn names(idb: &idakit::Database, ty: &str) -> Vec<String> {
+        idb.type_named(ty)
+            .expect("resolve the type")
+            .members()
+            .expect("a struct has members")
+            .iter()
+            .map(|m| m.name.clone())
+            .collect()
+    }
+
+    idb.types_mut()
+        .define("struct idakit_ref_probe { int a; int b; int c; };")
+        .expect("define a struct for the ref");
+
+    // Mint a ref to the middle member (index 1 = b).
+    let r = idb
+        .types_mut()
+        .edit("idakit_ref_probe")
+        .member_ref(1)
+        .expect("mint a member ref");
+
+    // Renaming another member leaves offsets unchanged, so the ref stays valid; edit through it.
+    idb.types_mut()
+        .edit("idakit_ref_probe")
+        .member("a")
+        .rename("alpha")
+        .expect("rename a");
+    idb.types_mut()
+        .edit("idakit_ref_probe")
+        .member_by_ref(&r)
+        .expect("the ref survives an unrelated rename")
+        .rename("beta")
+        .expect("rename b through the ref");
+    assert!(
+        names(idb, "idakit_ref_probe") == ["alpha", "beta", "c"],
+        "the ref should have renamed the middle member"
+    );
+
+    // A structural edit (append) changes the fingerprint, staling the ref.
+    idb.types_mut()
+        .edit("idakit_ref_probe")
+        .add_member("d", expr::int32())
+        .expect("append d");
+    let stale = matches!(
+        idb.types_mut().edit("idakit_ref_probe").member_by_ref(&r),
+        Err(Error::TypeEdit {
+            source: TypeEditError::StaleMemberRef { .. }
+        })
+    );
+    assert!(stale, "an appended member should stale the ref");
+
+    // Minting past the last member is a typed range error.
+    let oob = idb.types_mut().edit("idakit_ref_probe").member_ref(99);
+    assert!(
+        matches!(
+            oob,
+            Err(Error::TypeEdit {
+                source: TypeEditError::MemberIndexOutOfRange { index: 99, .. }
+            })
+        ),
+        "an out-of-range index should be MemberIndexOutOfRange, got {oob:?}"
     );
 }

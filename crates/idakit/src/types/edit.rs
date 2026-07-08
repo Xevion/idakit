@@ -7,8 +7,10 @@
 //! Editing an attached typeref auto-propagates to every reference, so a struct fixed once reflows
 //! everywhere it is used.
 
+use std::collections::hash_map::DefaultHasher;
 use std::ffi::{CString, c_char, c_int};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ptr;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -199,6 +201,123 @@ impl TypeEdit<'_> {
             type_name,
             name: name.into(),
         }
+    }
+
+    /// Mint a durable [`MemberRef`] to the struct/union member at `index` (declaration order).
+    ///
+    /// Unlike [`member`](Self::member)/[`member_at`](Self::member_at), which re-resolve a key each
+    /// call, a [`MemberRef`] is a stable index handle that carries a structural fingerprint of the
+    /// type's layout. It survives renames of other members, but any layout change (adding, removing,
+    /// or resizing a member) invalidates it, so [`member_by_ref`](Self::member_by_ref) then returns
+    /// [`TypeEditError::StaleMemberRef`] instead of silently editing the wrong member. Chiefly for
+    /// members a name key cannot address (anonymous fields).
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("struct Pt { int x; int y; };")?;
+    /// let y = db.types_mut().edit("Pt").member_ref(1)?;
+    /// // Adding a member changes the layout, so the ref no longer resolves.
+    /// db.types_mut().edit("Pt").add_member("z", idakit::types::expr::int32())?;
+    /// assert!(db.types_mut().edit("Pt").member_by_ref(&y).is_err());
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`] if no struct/union with this name
+    /// exists, or [`TypeEditError::MemberIndexOutOfRange`] if `index` is past the last member.
+    pub fn member_ref(&self, index: usize) -> Result<MemberRef> {
+        let (count, generation, _) = self.read_layout(index)?;
+        if index >= count {
+            return Err(TypeEditError::MemberIndexOutOfRange {
+                type_name: self.name.clone(),
+                index,
+                count,
+            }
+            .into());
+        }
+        Ok(MemberRef {
+            type_name: self.name.clone(),
+            index,
+            generation,
+        })
+    }
+
+    /// Select the member a [`MemberRef`] points at, checking it against the current layout first.
+    ///
+    /// # Errors
+    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`] if the type no longer exists, or
+    /// [`TypeEditError::StaleMemberRef`] if the ref was minted against a different type or the
+    /// layout changed since (see [`member_ref`](Self::member_ref)).
+    pub fn member_by_ref(&mut self, member: &MemberRef) -> Result<MemberEdit<'_>> {
+        let name = self.name.clone();
+        let (count, generation, key) = self.read_layout(member.index)?;
+        let stale =
+            member.type_name != name || member.generation != generation || member.index >= count;
+        match key {
+            Some(key) if !stale => Ok(MemberEdit {
+                db: &mut *self.db,
+                type_name: name,
+                key,
+            }),
+            _ => Err(TypeEditError::StaleMemberRef { type_name: name }.into()),
+        }
+    }
+
+    /// Read the named type's struct/union layout: its member count, a structural fingerprint (the
+    /// count plus each member's bit offset, so a rename does not change it but any layout edit
+    /// does), and the selection key for `index` when in range.
+    fn read_layout(&self, index: usize) -> Result<(usize, u64, Option<MemberKey>)> {
+        let ty = self
+            .db
+            .type_named(&self.name)
+            .map_err(|_| TypeEditError::NoType {
+                name: self.name.clone(),
+            })?;
+        let members = ty.members().ok_or_else(|| TypeEditError::NoType {
+            name: self.name.clone(),
+        })?;
+        let mut hasher = DefaultHasher::new();
+        members.len().hash(&mut hasher);
+        for member in members {
+            member.bit_offset.hash(&mut hasher);
+        }
+        let key = members.get(index).map(|member| {
+            if member.name.is_empty() {
+                MemberKey::Offset(member.bit_offset)
+            } else {
+                MemberKey::Name(member.name.clone())
+            }
+        });
+        Ok((members.len(), hasher.finish(), key))
+    }
+}
+
+/// A durable handle to a struct/union member by index, from [`TypeEdit::member_ref`].
+///
+/// Carries a structural fingerprint of the type's layout at mint time; resolve it with
+/// [`TypeEdit::member_by_ref`], which returns [`TypeEditError::StaleMemberRef`] once the layout has
+/// changed. Holds no borrow, so it can outlive the cursor it came from.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MemberRef {
+    type_name: String,
+    index: usize,
+    generation: u64,
+}
+
+impl MemberRef {
+    /// The member's index (declaration order) at mint time.
+    #[inline]
+    #[must_use]
+    pub const fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The name of the type this ref was minted against.
+    #[inline]
+    #[must_use]
+    pub fn type_name(&self) -> &str {
+        &self.type_name
     }
 }
 
@@ -429,6 +548,29 @@ pub enum TypeEditError {
         type_name: String,
         /// The member selector, rendered (`named "hp"` or `at bit offset 64`).
         key: String,
+    },
+
+    /// A member index was past the last member when minting a [`MemberRef`].
+    #[snafu(display(
+        "member index {index} out of range ({count} member(s)) in type {type_name:?}"
+    ))]
+    MemberIndexOutOfRange {
+        /// The type the ref was minted against.
+        type_name: String,
+        /// The out-of-range index.
+        index: usize,
+        /// The type's actual member count.
+        count: usize,
+    },
+
+    /// A [`MemberRef`] no longer matches the type's layout (a structural edit since it was minted,
+    /// or a ref from a different type).
+    #[snafu(display(
+        "member reference into {type_name:?} is stale (the layout changed since it was minted)"
+    ))]
+    StaleMemberRef {
+        /// The type the ref was minted against.
+        type_name: String,
     },
 
     /// A replacement or new member type could not be built from its recipe.
