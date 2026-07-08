@@ -363,6 +363,10 @@ int idakit_clear_type(idakit_ea_t ea);
 #define IDAKIT_RECIPE_ARRAY 7    /* + u64 nelems; pop 1, push array-of */
 #define IDAKIT_RECIPE_CONST 8    /* pop 1, push const-qualified */
 #define IDAKIT_RECIPE_VOLATILE 9 /* pop 1, push volatile-qualified */
+#define IDAKIT_RECIPE_FUNCTION                                                                     \
+  10 /* + u32 nparams, u8 varargs, u16 cc, then nparams u32-len-prefixed names; pops nparams param \
+        types then the return type (return pushed first, params in order), push the function type. \
+      */
 
 /* Build the tinfo the recipe in (buf, len) encodes and apply it at ea (apply_tinfo, TINFO_DEFINITE
  * | flags). This is idakit's preferred lowering path: one crossing, no handle threading. Shares the

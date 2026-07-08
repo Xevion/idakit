@@ -303,6 +303,37 @@ extern "C" int idakit_apply_type_recipe(idakit_ea_t ea, const uint8_t *buf, size
           stack.back().set_volatile();
           break;
         }
+        case IDAKIT_RECIPE_FUNCTION: {
+          uint64_t nparams = r.uint_le(4);
+          uint8_t varargs = r.u8();
+          uint64_t cc = r.uint_le(2);
+          std::vector<std::string> names((size_t)nparams);
+          for (uint64_t i = 0; i < nparams && r.ok; i++)
+            r.str(names[(size_t)i]);
+          // The return type sits just below the params on the stack (return pushed first).
+          if (!r.ok || stack.size() < (size_t)nparams + 1)
+            return IDAKIT_TYPE_ERR_INPUT;
+          func_type_data_t ftd;
+          size_t base = stack.size() - (size_t)nparams;
+          ftd.rettype = stack[base - 1];
+          for (size_t i = 0; i < (size_t)nparams; i++) {
+            funcarg_t arg;
+            arg.type = stack[base + i];
+            arg.name = names[i].c_str();
+            ftd.push_back(arg);
+          }
+          stack.resize(base - 1);
+          // Varargs is IDA's ellipsis convention; an explicit cc otherwise, else the default.
+          if (varargs != 0)
+            ftd.set_cc(CM_CC_ELLIPSIS);
+          else if (cc != 0)
+            ftd.set_cc((callcnv_t)cc);
+          tinfo_t t;
+          if (!t.create_func(ftd))
+            return IDAKIT_TYPE_ERR_INPUT;
+          stack.push_back(t);
+          break;
+        }
         default:
           return IDAKIT_TYPE_ERR_INPUT;
         }

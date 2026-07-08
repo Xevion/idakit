@@ -20,10 +20,11 @@ fn run(idb: &mut idakit::Database) {
     type_apply(idb, address);
     type_define(idb);
     type_build(idb, address);
+    type_function_build(idb, address);
     type_clear(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + clear"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + clear"
     );
 }
 
@@ -188,6 +189,64 @@ fn type_build(idb: &mut idakit::Database, address: Address) {
     assert!(
         matches!(r, Err(Error::TypeApplyFailed { .. })),
         "a composite over an unknown named type should be TypeApplyFailed, got {r:?}"
+    );
+}
+
+/// The from-scratch function-prototype builder lowers through the recipe path: build
+/// `int f(int, unsigned int)` and a variadic twin, apply each as the entry's prototype, and read
+/// the stored prototype back structurally (arch-independent) to confirm its return, arity, and
+/// varargs flag.
+fn type_function_build(idb: &mut idakit::Database, entry: Address) {
+    use idakit::types::{TypeShape, expr};
+
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_type(
+            expr::function(expr::int32())
+                .arg(expr::int32())
+                .arg(expr::decl("unsigned int")),
+        )
+        .expect("apply a built prototype");
+    let proto = idb
+        .function(entry)
+        .prototype_type()
+        .expect("walk the built prototype")
+        .expect("a prototype is set after the built apply");
+    let TypeShape::Function {
+        ret,
+        params,
+        varargs,
+    } = proto.shape()
+    else {
+        panic!(
+            "the built prototype should be a function, got {:?}",
+            proto.shape()
+        );
+    };
+    assert!(!*varargs, "the fixed prototype is not variadic");
+    assert!(params.len() == 2, "two parameters, got {}", params.len());
+    assert!(
+        proto.get(*ret).shape
+            == TypeShape::Int {
+                bytes: 4,
+                signed: true,
+            },
+        "the return type should be a signed 32-bit int"
+    );
+
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_type(expr::function(expr::void()).arg(expr::int32()).variadic())
+        .expect("apply a variadic prototype");
+    let proto = idb
+        .function(entry)
+        .prototype_type()
+        .expect("walk the variadic prototype")
+        .expect("a prototype is set after the variadic apply");
+    assert!(
+        matches!(proto.shape(), TypeShape::Function { varargs: true, .. }),
+        "the built prototype should be variadic, got {:?}",
+        proto.shape()
     );
 }
 

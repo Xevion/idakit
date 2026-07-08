@@ -3,10 +3,11 @@
 //! A `TypeExpr` is the *constructor intent* for a type: what to apply, built off the kernel thread
 //! and infallibly, with every parse or resolution deferred to the one apply call. It is a small
 //! recursive algebra: scalar leaves ([`int32`], [`void`], and so on), a named-type reference
-//! ([`named`]), a raw C declaration ([`decl`]), and the transforms that wrap an inner recipe
-//! ([`pointer`](TypeExpr::pointer), [`array`](TypeExpr::array), [`const_`](TypeExpr::const_)). The
-//! shape follows one rule: a free function is a root, a method is a transform. Passing a bare `&str`
-//! classifies it: a name that could exist routes by-name, a keyword or a declarator is parsed.
+//! ([`named`]), a raw C declaration ([`decl`]), a function prototype ([`function`]), and the
+//! transforms that wrap an inner recipe ([`pointer`](TypeExpr::pointer),
+//! [`array`](TypeExpr::array), [`const_`](TypeExpr::const_)). The shape follows one rule: a free
+//! function is a root, a method is a transform. Passing a bare `&str` classifies it: a name that
+//! could exist routes by-name, a keyword or a declarator is parsed.
 //!
 //! ```
 //! use idakit::types::expr;
@@ -76,6 +77,24 @@ pub enum TypeExpr {
     Const(Box<TypeExpr>),
     /// The inner recipe qualified `volatile`.
     Volatile(Box<TypeExpr>),
+    /// A function prototype: a return type, ordered parameters, and a varargs flag.
+    Function {
+        /// The return type.
+        ret: Box<TypeExpr>,
+        /// The parameters, in order.
+        params: Vec<Param>,
+        /// Whether the prototype ends in `...`.
+        varargs: bool,
+    },
+}
+
+/// One parameter of a [`function`] recipe: an optional name and its type.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub struct Param {
+    /// The parameter name, or `None` for an unnamed slot.
+    pub name: Option<String>,
+    /// The parameter type.
+    pub ty: TypeExpr,
 }
 
 /// A reference to the existing named type `name`, resolved at apply time.
@@ -96,6 +115,91 @@ pub fn named(name: impl Into<String>) -> TypeExpr {
 #[must_use]
 pub fn decl(text: impl Into<String>) -> TypeExpr {
     TypeExpr::Decl(text.into())
+}
+
+/// Begins a function-prototype recipe with return type `ret`.
+///
+/// The root of the from-scratch prototype builder: chain [`arg`](FunctionExpr::arg) /
+/// [`named_arg`](FunctionExpr::named_arg) / [`variadic`](FunctionExpr::variadic), then
+/// [`build`](FunctionExpr::build) (or pass the builder straight to an [`Into<TypeExpr>`] sink like
+/// [`set_type`](crate::LocationMut::set_type), which accepts it directly).
+///
+/// ```
+/// use idakit::types::expr;
+///
+/// // int f(int, unsigned int, ...)
+/// let f = expr::function(expr::int32())
+///     .arg(expr::int32())
+///     .named_arg("flags", expr::uint32())
+///     .variadic()
+///     .build();
+/// assert!(f.is_function());
+/// ```
+#[must_use]
+pub fn function(ret: impl Into<TypeExpr>) -> FunctionExpr {
+    FunctionExpr {
+        ret: Box::new(ret.into()),
+        params: Vec::new(),
+        varargs: false,
+    }
+}
+
+/// A fluent builder for a [`TypeExpr::Function`], from [`function`].
+///
+/// Accumulates parameters left to right, then lowers to a [`TypeExpr`] via
+/// [`build`](Self::build) or the [`From`] conversion. Every method takes `self` by value, so a
+/// prototype reads as one chain.
+#[derive(Clone, Debug)]
+pub struct FunctionExpr {
+    ret: Box<TypeExpr>,
+    params: Vec<Param>,
+    varargs: bool,
+}
+
+impl FunctionExpr {
+    /// Appends an unnamed parameter of type `ty`.
+    #[must_use]
+    pub fn arg(mut self, ty: impl Into<TypeExpr>) -> Self {
+        self.params.push(Param {
+            name: None,
+            ty: ty.into(),
+        });
+        self
+    }
+
+    /// Appends a parameter named `name` of type `ty`.
+    #[must_use]
+    pub fn named_arg(mut self, name: impl Into<String>, ty: impl Into<TypeExpr>) -> Self {
+        self.params.push(Param {
+            name: Some(name.into()),
+            ty: ty.into(),
+        });
+        self
+    }
+
+    /// Marks the prototype variadic, so it ends in `...`.
+    #[must_use]
+    pub fn variadic(mut self) -> Self {
+        self.varargs = true;
+        self
+    }
+
+    /// Finishes the builder into a [`TypeExpr::Function`].
+    #[must_use]
+    pub fn build(self) -> TypeExpr {
+        TypeExpr::Function {
+            ret: self.ret,
+            params: self.params,
+            varargs: self.varargs,
+        }
+    }
+}
+
+impl From<FunctionExpr> for TypeExpr {
+    #[inline]
+    fn from(builder: FunctionExpr) -> Self {
+        builder.build()
+    }
 }
 
 /// The `void` leaf.
@@ -365,6 +469,27 @@ impl TypeExpr {
         )
     }
 
+    /// Whether this is a [`function`] prototype.
+    #[inline]
+    #[must_use]
+    pub fn is_function(&self) -> bool {
+        matches!(self, Self::Function { .. })
+    }
+
+    /// The return type, parameters, and varargs flag, or `None` if this is not a function.
+    #[inline]
+    #[must_use]
+    pub fn as_function(&self) -> Option<(&TypeExpr, &[Param], bool)> {
+        match self {
+            Self::Function {
+                ret,
+                params,
+                varargs,
+            } => Some((ret, params, *varargs)),
+            _ => None,
+        }
+    }
+
     /// Serializes this recipe into the facade's postfix bytecode.
     ///
     /// Children are emitted before their parent, so the facade rebuilds the type with one stack: a
@@ -408,18 +533,44 @@ impl TypeExpr {
                 inner.encode(buf);
                 buf.push(sys::IDAKIT_RECIPE_VOLATILE);
             }
+            Self::Function {
+                ret,
+                params,
+                varargs,
+            } => {
+                // Return pushed first, then each parameter type, so the facade pops the params off
+                // the top and finds the return just below them.
+                ret.encode(buf);
+                for p in params {
+                    p.ty.encode(buf);
+                }
+                buf.push(sys::IDAKIT_RECIPE_FUNCTION);
+                let count = u32::try_from(params.len()).unwrap_or(u32::MAX);
+                buf.extend_from_slice(&count.to_le_bytes());
+                buf.push(u8::from(*varargs));
+                buf.extend_from_slice(&0u16.to_le_bytes()); // calling convention, unset until surgery
+                for p in params.iter().take(count as usize) {
+                    encode_len_prefixed(buf, p.name.as_deref().unwrap_or(""));
+                }
+            }
         }
     }
 }
 
-/// Emits a length-prefixed string opcode: the op byte, a little-endian `u32` byte length, then the
-/// bytes. A name or declaration long enough to overflow `u32` is not a real type.
-fn encode_str(buf: &mut Vec<u8>, op: u8, s: &str) {
+/// Emits a little-endian `u32` byte length then that many bytes, the length prefix a name or
+/// declaration string carries in the recipe wire format.
+fn encode_len_prefixed(buf: &mut Vec<u8>, s: &str) {
     let bytes = s.as_bytes();
     let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
-    buf.push(op);
     buf.extend_from_slice(&len.to_le_bytes());
     buf.extend_from_slice(&bytes[..len as usize]);
+}
+
+/// Emits a length-prefixed string opcode: the op byte, then the length-prefixed bytes. A name or
+/// declaration long enough to overflow `u32` is not a real type.
+fn encode_str(buf: &mut Vec<u8>, op: u8, s: &str) {
+    buf.push(op);
+    encode_len_prefixed(buf, s);
 }
 
 /// Classifies a `&str` by shape, routing a name that could exist to [`named`] and everything else
@@ -469,6 +620,26 @@ impl fmt::Display for TypeExpr {
             Self::Array { elem, len } => write!(f, "{elem}[{len}]"),
             Self::Const(inner) => write!(f, "const {inner}"),
             Self::Volatile(inner) => write!(f, "volatile {inner}"),
+            Self::Function {
+                ret,
+                params,
+                varargs,
+            } => {
+                write!(f, "{ret} (")?;
+                for (i, p) in params.iter().enumerate() {
+                    if i != 0 {
+                        f.write_str(", ")?;
+                    }
+                    match &p.name {
+                        Some(name) => write!(f, "{} {name}", p.ty)?,
+                        None => write!(f, "{}", p.ty)?,
+                    }
+                }
+                if *varargs {
+                    f.write_str(if params.is_empty() { "..." } else { ", ..." })?;
+                }
+                f.write_str(")")
+            }
         }
     }
 }
@@ -691,6 +862,13 @@ mod tests {
     #[case(named("Foo").volatile_(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 9])]
     #[case(named("Foo").const_().pointer(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 8, 6])]
     #[case(named("Foo").pointer().const_(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 6, 8])]
+    // A function pushes its return then each param, then FUNCTION (10) with a u32 count, a u8
+    // varargs flag, a u16 cc (0 here), then one u32-length-prefixed name per param.
+    #[case(function(void()).build(), vec![0, 10, 0, 0, 0, 0, 0, 0, 0])]
+    #[case(function(int32()).arg(int32()).build(),
+        vec![2, 4, 1, 2, 4, 1, 10, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])]
+    #[case(function(int32()).named_arg("a", uint8()).variadic().build(),
+        vec![2, 4, 1, 2, 1, 0, 10, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, b'a'])]
     fn serializes_to_postfix_bytecode(#[case] recipe: TypeExpr, #[case] expected: Vec<u8>) {
         assert!(recipe.serialize() == expected);
     }
@@ -712,7 +890,52 @@ mod tests {
     #[case(int32().array(8), "int32[8]")]
     #[case(named("Foo").const_(), "const Foo")]
     #[case(named("Foo").volatile_(), "volatile Foo")]
+    #[case(function(void()).build(), "void ()")]
+    #[case(function(int32()).variadic().build(), "int32 (...)")]
+    #[case(function(named("Foo").pointer()).arg(int32()).build(), "Foo * (int32)")]
+    #[case(
+        function(int32()).arg(int32()).named_arg("flags", uint32()).variadic().build(),
+        "int32 (int32, uint32 flags, ...)"
+    )]
     fn display_renders_readable_c(#[case] recipe: TypeExpr, #[case] expected: &str) {
         assert!(format!("{recipe}") == expected);
+    }
+
+    #[test]
+    fn function_builder_accumulates_params_and_flags() {
+        let f = function(int32())
+            .arg(int32())
+            .named_arg("flags", uint32())
+            .variadic()
+            .build();
+        let (ret, params, varargs) = f.as_function().expect("a function");
+        assert!(ret == &int32());
+        assert!(varargs);
+        assert!(params.len() == 2);
+        assert!(
+            params[0]
+                == Param {
+                    name: None,
+                    ty: int32()
+                }
+        );
+        assert!(
+            params[1]
+                == Param {
+                    name: Some("flags".into()),
+                    ty: uint32(),
+                }
+        );
+        // A void-returning, paramless prototype is the degenerate case.
+        let g = function(void()).build();
+        assert!(g.as_function() == Some((&void(), &[][..], false)));
+        assert!(g.is_function() && !int32().is_function());
+    }
+
+    #[test]
+    fn function_builder_into_typeexpr_needs_no_build() {
+        // The builder is `Into<TypeExpr>`, so an `impl Into<TypeExpr>` sink takes it directly.
+        let via_into: TypeExpr = function(void()).arg(int32()).into();
+        assert!(via_into == function(void()).arg(int32()).build());
     }
 }

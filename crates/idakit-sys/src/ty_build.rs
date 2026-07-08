@@ -127,3 +127,7 @@ pub const IDAKIT_RECIPE_ARRAY: u8 = 7;
 pub const IDAKIT_RECIPE_CONST: u8 = 8;
 /// Recipe opcode: pop one type, push its `volatile`-qualified form.
 pub const IDAKIT_RECIPE_VOLATILE: u8 = 9;
+/// Recipe opcode: build a function type. Followed by a `u32` parameter count, a `u8` varargs flag,
+/// a `u16` calling convention (0 = default), then that many `u32`-length-prefixed parameter names;
+/// pops the parameter types then the return type (return pushed first) and pushes the function.
+pub const IDAKIT_RECIPE_FUNCTION: u8 = 10;

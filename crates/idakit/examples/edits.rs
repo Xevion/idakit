@@ -183,6 +183,19 @@ fn building_types(idb: &mut Database, ea: Address) {
         idb.at_mut(ea)
             .set_type(expr::named("no_such_zzz").pointer()),
     );
+
+    // A whole function prototype composes off the kernel too: a return root, then params.
+    let proto = expr::function(expr::int32())
+        .arg(expr::int32())
+        .named_arg("flags", expr::uint32())
+        .variadic()
+        .build();
+    println!("  function(int32).arg(int32).named_arg(\"flags\", uint32).variadic -> {proto}");
+    report(
+        "function_mut(entry).set_type(built prototype)",
+        idb.function_mut(ea)
+            .map_or(Ok(()), |mut f| f.set_type(proto)),
+    );
 }
 
 /// The `&str` classifier and the type-error taxonomy. The not-found and parse-failure paths fail
