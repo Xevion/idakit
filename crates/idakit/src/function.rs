@@ -511,7 +511,17 @@ fn sig_result(
 /// convention (varargs is a [`function`](crate::types::expr::function) builder flag), and the
 /// spoiled-registers marker.
 #[derive(
-    Clone, Copy, PartialEq, Eq, Hash, Debug, TryFromPrimitive, IntoPrimitive, VariantArray,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    TryFromPrimitive,
+    IntoPrimitive,
+    VariantArray,
 )]
 #[repr(u8)]
 #[doc(alias("cm_t", "CM_CC_MASK"))]

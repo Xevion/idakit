@@ -33,6 +33,8 @@ use std::fmt;
 
 use idakit_sys as sys;
 
+use crate::function::CallingConvention;
+
 /// An owned, `Send`, table-free recipe for a type to apply.
 ///
 /// The write-side analog of a resolved [`Type`](crate::types::Type): un-lifetimed, it names *what
@@ -85,6 +87,8 @@ pub enum TypeExpr {
         params: Vec<Param>,
         /// Whether the prototype ends in `...`.
         varargs: bool,
+        /// Calling convention, or `None` for the target's default.
+        cc: Option<CallingConvention>,
     },
 }
 
@@ -141,6 +145,7 @@ pub fn function(ret: impl Into<TypeExpr>) -> FunctionExpr {
         ret: Box::new(ret.into()),
         params: Vec::new(),
         varargs: false,
+        cc: None,
     }
 }
 
@@ -154,6 +159,7 @@ pub struct FunctionExpr {
     ret: Box<TypeExpr>,
     params: Vec<Param>,
     varargs: bool,
+    cc: Option<CallingConvention>,
 }
 
 impl FunctionExpr {
@@ -184,6 +190,17 @@ impl FunctionExpr {
         self
     }
 
+    /// Sets the calling convention on the built prototype.
+    ///
+    /// Unset by default, so the kernel keeps the target's default convention. A convention the
+    /// target rejects (e.g. an x86 convention on a non-x86 target) surfaces at apply time as
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected).
+    #[must_use]
+    pub fn calling_convention(mut self, cc: CallingConvention) -> Self {
+        self.cc = Some(cc);
+        self
+    }
+
     /// Finishes the builder into a [`TypeExpr::Function`].
     #[must_use]
     pub fn build(self) -> TypeExpr {
@@ -191,6 +208,7 @@ impl FunctionExpr {
             ret: self.ret,
             params: self.params,
             varargs: self.varargs,
+            cc: self.cc,
         }
     }
 }
@@ -485,6 +503,7 @@ impl TypeExpr {
                 ret,
                 params,
                 varargs,
+                ..
             } => Some((ret, params, *varargs)),
             _ => None,
         }
@@ -537,6 +556,7 @@ impl TypeExpr {
                 ret,
                 params,
                 varargs,
+                cc,
             } => {
                 // Return pushed first, then each parameter type, so the facade pops the params off
                 // the top and finds the return just below them.
@@ -548,7 +568,9 @@ impl TypeExpr {
                 let count = u32::try_from(params.len()).unwrap_or(u32::MAX);
                 buf.extend_from_slice(&count.to_le_bytes());
                 buf.push(u8::from(*varargs));
-                buf.extend_from_slice(&0u16.to_le_bytes()); // calling convention, unset until surgery
+                // 0 tells the facade to leave the target's default convention.
+                let cc_raw = cc.map_or(0u16, |c| u16::from(u8::from(c)));
+                buf.extend_from_slice(&cc_raw.to_le_bytes());
                 for p in params.iter().take(count as usize) {
                     encode_len_prefixed(buf, p.name.as_deref().unwrap_or(""));
                 }
@@ -624,6 +646,7 @@ impl fmt::Display for TypeExpr {
                 ret,
                 params,
                 varargs,
+                ..
             } => {
                 write!(f, "{ret} (")?;
                 for (i, p) in params.iter().enumerate() {
@@ -937,5 +960,28 @@ mod tests {
         // The builder is `Into<TypeExpr>`, so an `impl Into<TypeExpr>` sink takes it directly.
         let via_into: TypeExpr = function(void()).arg(int32()).into();
         assert!(via_into == function(void()).arg(int32()).build());
+    }
+
+    #[test]
+    fn calling_convention_reaches_the_recipe() {
+        // The only difference between the two builders is the cc, so their serialized recipes must
+        // differ; an unset cc encodes as 0, a set one as its CM_CC_* byte.
+        let default = function(int32()).arg(int32()).build().serialize();
+        let stdcall = function(int32())
+            .arg(int32())
+            .calling_convention(CallingConvention::Stdcall)
+            .build()
+            .serialize();
+        assert!(
+            default != stdcall,
+            "a set cc must change the encoded recipe"
+        );
+        // The stdcall byte appears only in the cc-carrying recipe; the default's fixed fields never
+        // produce it (this recipe has no param names to collide with it).
+        assert!(
+            stdcall.contains(&u8::from(CallingConvention::Stdcall))
+                && !default.contains(&u8::from(CallingConvention::Stdcall)),
+            "the stdcall byte should appear only in the cc-carrying recipe"
+        );
     }
 }

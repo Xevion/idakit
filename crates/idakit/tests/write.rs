@@ -270,6 +270,21 @@ fn type_function_build(idb: &mut idakit::Database, entry: Address) {
         "the built prototype should be variadic, got {:?}",
         proto.shape()
     );
+
+    // A builder-supplied calling convention applies. Its rendering is arch-dependent, so no string
+    // check, matching type_surgery's cc note.
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_type(
+            expr::function(expr::int32())
+                .arg(expr::int32())
+                .calling_convention(CallingConvention::Cdecl),
+        )
+        .expect("apply a prototype with a calling convention");
+    assert!(
+        idb.function(entry).prototype().is_some(),
+        "a prototype should be set after applying a cc-carrying builder"
+    );
 }
 
 /// Prototype surgery edits one field at a time: seed a known prototype, swap the return type,
