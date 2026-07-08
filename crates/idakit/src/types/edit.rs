@@ -206,10 +206,14 @@ impl TypeEdit<'_> {
     ///
     /// Unlike [`member`](Self::member)/[`member_at`](Self::member_at), which re-resolve a key each
     /// call, a [`MemberRef`] is a stable index handle that carries a structural fingerprint of the
-    /// type's layout. It survives renames of other members, but any layout change (adding, removing,
-    /// or resizing a member) invalidates it, so [`member_by_ref`](Self::member_by_ref) then returns
-    /// [`TypeWriteError::StaleMemberRef`] instead of silently editing the wrong member. Chiefly for
-    /// members a name key cannot address (anonymous fields).
+    /// type's layout: each member's bit offset plus its type's size and shape kind. It survives a
+    /// rename of any member, but adding, removing, resizing, or retyping a member invalidates it, so
+    /// [`member_by_ref`](Self::member_by_ref) then returns [`TypeWriteError::StaleMemberRef`] instead
+    /// of silently editing the wrong member. Chiefly for members a name key cannot address (anonymous
+    /// fields).
+    ///
+    /// A member deleted and replaced by a gap of the same shape kind and size (e.g. a same-width
+    /// array member) may not be detected as stale.
     ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
@@ -264,8 +268,9 @@ impl TypeEdit<'_> {
     }
 
     /// Read the named type's struct/union layout: its member count, a structural fingerprint (the
-    /// count plus each member's bit offset, so a rename does not change it but any layout edit
-    /// does), and the selection key for `index` when in range.
+    /// count plus each member's bit offset, size, and shape kind, so a rename does not change it
+    /// but adding, removing, resizing, or retyping a member does), and the selection key for
+    /// `index` when in range.
     fn read_layout(&self, index: usize) -> Result<(usize, u64, Option<MemberKey>)> {
         let ty = self
             .db
@@ -280,6 +285,13 @@ impl TypeEdit<'_> {
         members.len().hash(&mut hasher);
         for member in members {
             member.bit_offset.hash(&mut hasher);
+            // Deleting a non-tail member leaves a same-offset gap of the same byte size, so offset
+            // alone can't see it; the gap's shape (an array) differs from what it replaced. Hash
+            // the shape's discriminant only, not its fields -- child TypeIds are interning-order
+            // dependent and would make the fingerprint unstable across equivalent layouts.
+            let tv = ty.get(member.ty);
+            tv.size.hash(&mut hasher);
+            std::mem::discriminant(&tv.shape).hash(&mut hasher);
         }
         let key = members.get(index).map(|member| {
             if member.name.is_empty() {
@@ -294,9 +306,10 @@ impl TypeEdit<'_> {
 
 /// A durable handle to a struct/union member by index, from [`TypeEdit::member_ref`].
 ///
-/// Carries a structural fingerprint of the type's layout at mint time; resolve it with
-/// [`TypeEdit::member_by_ref`], which returns [`TypeWriteError::StaleMemberRef`] once the layout has
-/// changed. Holds no borrow, so it can outlive the cursor it came from.
+/// Carries a structural fingerprint of the type's layout at mint time (each member's bit offset,
+/// size, and shape kind); resolve it with [`TypeEdit::member_by_ref`], which returns
+/// [`TypeWriteError::StaleMemberRef`] once the layout has changed. Holds no borrow, so it can
+/// outlive the cursor it came from.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MemberRef {
     type_name: String,
@@ -362,10 +375,10 @@ impl MemberEdit<'_> {
 
     /// Delete this member from its aggregate.
     ///
-    /// Deleting a non-tail member leaves an unnamed `TAFLD_GAP` padding member in its place
-    /// rather than shifting later members up, so the aggregate keeps its size and later members
-    /// keep their offsets; a subsequent member walk shows an empty-named entry where the deleted
-    /// member was. Deleting the tail member shrinks the aggregate normally.
+    /// Deleting a non-tail member leaves a `TAFLD_GAP` padding member in its place (IDA names it
+    /// `gapN` and types it as a byte array) rather than shifting later members up, so the aggregate
+    /// keeps its size and later members keep their offsets. Deleting the tail member shrinks the
+    /// aggregate normally.
     ///
     /// # Errors
     /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`];

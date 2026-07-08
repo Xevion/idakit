@@ -716,4 +716,30 @@ fn type_member_ref(idb: &mut idakit::Database) {
         ),
         "an out-of-range index should be MemberIndexOutOfRange, got {oob:?}"
     );
+
+    // Deleting a non-tail member leaves a same-offset gap (IDA does not repack), so the fingerprint
+    // must catch the retype and stale a ref into the deleted slot.
+    idb.types_mut()
+        .define("struct idakit_gap_ref { int p; int q; int r; };")
+        .expect("define a struct for the gap case");
+    let gref = idb
+        .types_mut()
+        .edit("idakit_gap_ref")
+        .member_ref(1)
+        .expect("mint a ref to q");
+    idb.types_mut()
+        .edit("idakit_gap_ref")
+        .member("q")
+        .delete()
+        .expect("delete the middle member");
+    let gap_stale = matches!(
+        idb.types_mut().edit("idakit_gap_ref").member_by_ref(&gref),
+        Err(Error::TypeWrite {
+            source: TypeWriteError::StaleMemberRef { .. }
+        })
+    );
+    assert!(
+        gap_stale,
+        "a ref into a middle-deleted (gap-left) slot must go stale"
+    );
 }
