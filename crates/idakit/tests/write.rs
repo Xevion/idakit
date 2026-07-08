@@ -93,23 +93,30 @@ fn type_apply(idb: &mut idakit::Database, address: Address) {
         "a prototype should be set after apply"
     );
 
-    // A bare, nonexistent name routes to the by-name path -- a clean TypeNotFound.
+    // A bare, nonexistent name routes to the by-name path -- a clean NoType.
     let r = idb.at_mut(address).set_type("idakit_no_such_type_zzz");
     assert!(
-        matches!(r, Err(Error::TypeNotFound { .. })),
-        "unknown named type should be TypeNotFound, got {r:?}"
+        matches!(
+            r,
+            Err(Error::TypeWrite {
+                source: TypeWriteError::NoType { .. }
+            })
+        ),
+        "unknown named type should be NoType, got {r:?}"
     );
 
-    // A garbage declaration -- TypeParseFailed carrying IDA's reason (captured off the msg channel,
+    // A garbage declaration -- ParseFailed carrying IDA's reason (captured off the msg channel,
     // or the fallback when IDA left none). Print it so a run shows whether the capture landed.
     match idb
         .at_mut(address)
         .set_type(idakit::types::expr::decl("%%% not a type %%%"))
     {
-        Err(Error::TypeParseFailed { reason, .. }) => {
+        Err(Error::TypeWrite {
+            source: TypeWriteError::ParseFailed { reason, .. },
+        }) => {
             println!("type-apply parse-error reason: {reason:?}");
         }
-        other => panic!("garbage decl should be TypeParseFailed, got {other:?}"),
+        other => panic!("garbage decl should be ParseFailed, got {other:?}"),
     }
 }
 
@@ -146,7 +153,12 @@ fn type_define(idb: &mut idakit::Database) {
         loc.set_type(idakit::types::expr::decl("idakit_pt *"))
     });
     assert!(
-        !matches!(r, Err(Error::TypeParseFailed { .. })),
+        !matches!(
+            r,
+            Err(Error::TypeWrite {
+                source: TypeWriteError::ParseFailed { .. }
+            })
+        ),
         "a decl referencing a defined local type must not fail parsing, got {r:?}"
     );
 
@@ -185,14 +197,20 @@ fn type_build(idb: &mut idakit::Database, address: Address) {
     );
     println!("type-build composite applied: {}", built.is_ok());
 
-    // A composite over an unknown named type fails at build time as a typed TypeApplyFailed, not a
-    // panic or a silent success. Deterministic regardless of the address.
+    // A composite over an unknown named type BUILDS fine (an unresolved named leaf is accepted
+    // into the tinfo), but the kernel refuses to APPLY it because the pointee is unresolved -- a
+    // deterministic ApplyRejected, regardless of the address.
     let r = idb
         .at_mut(address)
         .set_type(expr::named("idakit_no_such_built").pointer());
     assert!(
-        matches!(r, Err(Error::TypeApplyFailed { .. })),
-        "a composite over an unknown named type should be TypeApplyFailed, got {r:?}"
+        matches!(
+            r,
+            Err(Error::TypeWrite {
+                source: TypeWriteError::ApplyRejected { .. }
+            })
+        ),
+        "a composite over an unknown named type should be ApplyRejected, got {r:?}"
     );
 }
 
@@ -257,7 +275,7 @@ fn type_function_build(idb: &mut idakit::Database, entry: Address) {
 /// Prototype surgery edits one field at a time: seed a known prototype, swap the return type,
 /// retype and rename a parameter, prepend an implicit `this`, and set a calling convention,
 /// confirming each through a structural or textual read; the out-of-range and no-prototype paths
-/// surface the typed `SignatureError`.
+/// surface the typed `TypeWriteError`.
 fn type_surgery(idb: &mut idakit::Database, entry: Address) {
     use idakit::types::{TypeShape, expr};
 
@@ -307,7 +325,7 @@ fn type_surgery(idb: &mut idakit::Database, entry: Address) {
         "the renamed arg should render: {text:?}"
     );
 
-    // An out-of-range index is a typed SignatureError, without mutating.
+    // An out-of-range index is a typed TypeWriteError, without mutating.
     let r = idb
         .function_mut(entry)
         .expect("a function at the entry")
@@ -315,8 +333,8 @@ fn type_surgery(idb: &mut idakit::Database, entry: Address) {
     assert!(
         matches!(
             r,
-            Err(Error::Signature {
-                source: SignatureError::ArgIndexOutOfRange {
+            Err(Error::TypeWrite {
+                source: TypeWriteError::ArgIndexOutOfRange {
                     index: 9,
                     arity: 2,
                     ..
@@ -365,8 +383,8 @@ fn type_surgery(idb: &mut idakit::Database, entry: Address) {
     assert!(
         matches!(
             r,
-            Err(Error::Signature {
-                source: SignatureError::NoPrototype { .. }
+            Err(Error::TypeWrite {
+                source: TypeWriteError::NoPrototype { .. }
             })
         ),
         "editing a cleared prototype should be NoPrototype, got {r:?}"
@@ -400,7 +418,7 @@ fn type_clear(idb: &mut idakit::Database, entry: Address) {
 /// retype another by name, then delete one. Each edit reads back structurally through `type_named`,
 /// and the typed failures (duplicate name, missing member, missing type) surface without mutating.
 fn type_member_edit(idb: &mut idakit::Database) {
-    use idakit::types::{TypeEditCode, TypeEditError, expr};
+    use idakit::types::{TypeEditCode, TypeWriteError, expr};
 
     fn member_names(idb: &idakit::Database, ty: &str) -> Vec<String> {
         let t = idb.type_named(ty).expect("resolve the type");
@@ -458,8 +476,8 @@ fn type_member_edit(idb: &mut idakit::Database) {
     assert!(
         matches!(
             dup,
-            Err(Error::TypeEdit {
-                source: TypeEditError::Rejected {
+            Err(Error::TypeWrite {
+                source: TypeWriteError::Rejected {
                     code: TypeEditCode::DupName,
                     ..
                 }
@@ -477,8 +495,8 @@ fn type_member_edit(idb: &mut idakit::Database) {
     assert!(
         matches!(
             ghost,
-            Err(Error::TypeEdit {
-                source: TypeEditError::NoMember { .. }
+            Err(Error::TypeWrite {
+                source: TypeWriteError::NoMember { .. }
             })
         ),
         "editing a missing member should be NoMember, got {ghost:?}"
@@ -490,8 +508,8 @@ fn type_member_edit(idb: &mut idakit::Database) {
     assert!(
         matches!(
             no_type,
-            Err(Error::TypeEdit {
-                source: TypeEditError::NoType { .. }
+            Err(Error::TypeWrite {
+                source: TypeWriteError::NoType { .. }
             })
         ),
         "editing a missing type should be NoType, got {no_type:?}"
@@ -523,7 +541,7 @@ fn type_member_edit(idb: &mut idakit::Database) {
 /// delete one, each read back through `type_named`, and the typed failures (missing constant,
 /// missing type, duplicate name) surface without mutating.
 fn type_enum_member_edit(idb: &mut idakit::Database) {
-    use idakit::types::{TypeEditError, TypeShape};
+    use idakit::types::{TypeShape, TypeWriteError};
 
     fn constants(idb: &idakit::Database, ty: &str) -> Vec<(String, u64)> {
         let t = idb.type_named(ty).expect("resolve the enum");
@@ -593,8 +611,8 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
     assert!(
         matches!(
             ghost,
-            Err(Error::TypeEdit {
-                source: TypeEditError::NoMember { .. }
+            Err(Error::TypeWrite {
+                source: TypeWriteError::NoMember { .. }
             })
         ),
         "editing a missing constant should be NoMember, got {ghost:?}"
@@ -606,8 +624,8 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
     assert!(
         matches!(
             no_type,
-            Err(Error::TypeEdit {
-                source: TypeEditError::NoType { .. }
+            Err(Error::TypeWrite {
+                source: TypeWriteError::NoType { .. }
             })
         ),
         "editing a missing enum should be NoType, got {no_type:?}"
@@ -622,8 +640,8 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
     assert!(
         matches!(
             dup,
-            Err(Error::TypeEdit {
-                source: TypeEditError::Rejected { .. }
+            Err(Error::TypeWrite {
+                source: TypeWriteError::Rejected { .. }
             })
         ),
         "renaming onto an existing constant name should be Rejected, got {dup:?}"
@@ -634,7 +652,7 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
 /// rename of another member, edits through it, but goes stale once the layout changes (an append).
 /// An out-of-range mint is a typed error.
 fn type_member_ref(idb: &mut idakit::Database) {
-    use idakit::types::{TypeEditError, expr};
+    use idakit::types::{TypeWriteError, expr};
 
     fn names(idb: &idakit::Database, ty: &str) -> Vec<String> {
         idb.type_named(ty)
@@ -681,8 +699,8 @@ fn type_member_ref(idb: &mut idakit::Database) {
         .expect("append d");
     let stale = matches!(
         idb.types_mut().edit("idakit_ref_probe").member_by_ref(&r),
-        Err(Error::TypeEdit {
-            source: TypeEditError::StaleMemberRef { .. }
+        Err(Error::TypeWrite {
+            source: TypeWriteError::StaleMemberRef { .. }
         })
     );
     assert!(stale, "an appended member should stale the ref");
@@ -692,8 +710,8 @@ fn type_member_ref(idb: &mut idakit::Database) {
     assert!(
         matches!(
             oob,
-            Err(Error::TypeEdit {
-                source: TypeEditError::MemberIndexOutOfRange { index: 99, .. }
+            Err(Error::TypeWrite {
+                source: TypeWriteError::MemberIndexOutOfRange { index: 99, .. }
             })
         ),
         "an out-of-range index should be MemberIndexOutOfRange, got {oob:?}"

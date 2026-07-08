@@ -27,7 +27,7 @@ mod sink;
 
 pub(crate) use builder::TypeBuilder;
 pub use edit::{
-    ConstantEdit, MemberEdit, MemberRef, TypeEdit, TypeEditCode, TypeEditError, TypesMut,
+    ConstantEdit, MemberEdit, MemberRef, TypeEdit, TypeEditCode, TypeWriteError, TypesMut,
 };
 pub use expr::TypeExpr;
 pub use named::{NamedType, NamedTypes};

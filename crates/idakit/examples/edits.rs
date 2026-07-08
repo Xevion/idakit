@@ -4,8 +4,8 @@
 //! A tour of the write idioms: the read-capable cursor (read-modify-write with no re-borrow), the
 //! `&str` classifier (name vs declaration), the `Option`/`Result` shapes of the acquirers, the
 //! `TypeExpr` builder (scalar leaves, pointers, arrays, qualifiers composed off the kernel),
-//! struct-member surgery (`edit(..).member(..)`), and the type errors (`TypeNotFound`,
-//! `TypeParseFailed`, `TypeApplyFailed`, `TypeDefineFailed`, and the member-edit `TypeEditError`).
+//! struct-member surgery (`edit(..).member(..)`), and the type errors (`TypeDefineFailed` and the
+//! unified type-write `TypeWriteError`).
 //! Nothing is persisted: the database closes with `save = false`, and the name and bytes it touches
 //! are restored first.
 //!
@@ -121,7 +121,7 @@ fn function_types(idb: &mut Database, ea: Address) -> Result<(), Error> {
 }
 
 /// Signature surgery: read-modify-write one field at a time (return, an arg's type, an arg's name,
-/// an implicit `this`, the calling convention), each a typed [`Error::Signature`] on failure.
+/// an implicit `this`, the calling convention), each a typed [`Error::TypeWrite`] on failure.
 fn signature_surgery(idb: &mut Database, ea: Address) -> Result<(), Error> {
     println!("\n== function_mut: signature surgery ==");
 
@@ -142,9 +142,9 @@ fn signature_surgery(idb: &mut Database, ea: Address) -> Result<(), Error> {
 
     // An out-of-range argument index is a typed error, not a panic.
     if let Some(mut f) = idb.function_mut(ea)
-        && let Err(Error::Signature { source }) = f.set_arg_type(99, expr::int32())
+        && let Err(Error::TypeWrite { source }) = f.set_arg_type(99, expr::int32())
     {
-        println!("  set_arg_type(99, ..) -> Signature: {source}");
+        println!("  set_arg_type(99, ..) -> TypeWrite: {source}");
     }
     Ok(())
 }
@@ -217,8 +217,8 @@ fn editing_members(idb: &mut Database) -> Result<(), Error> {
         .member("c")
         .rename("a")
     {
-        Err(Error::TypeEdit {
-            source: TypeEditError::Rejected { code, .. },
+        Err(Error::TypeWrite {
+            source: TypeWriteError::Rejected { code, .. },
         }) => println!("  duplicate rename -> Rejected({code})"),
         other => println!("  duplicate rename -> unexpected {other:?}"),
     }
@@ -275,7 +275,8 @@ fn building_types(idb: &mut Database, ea: Address) {
         idb.at_mut(ea).set_type(ptr_to_named),
     );
 
-    // A composite over an unknown named type fails while building the tinfo, a TypeApplyFailed.
+    // A composite over an unknown named type builds fine, but the kernel refuses to apply it
+    // (unresolved pointee), an ApplyRejected.
     report(
         "set_type(named(\"no_such\").pointer())",
         idb.at_mut(ea)
@@ -341,14 +342,20 @@ fn classifier_and_errors(idb: &mut Database, ea: Address) {
 fn report(call: &str, r: Result<(), Error>) {
     match r {
         Ok(()) => println!("  {call} -> Ok"),
-        Err(Error::TypeNotFound { name }) => {
-            println!("  {call} -> TypeNotFound {{ name: {name:?} }}");
+        Err(Error::TypeWrite {
+            source: TypeWriteError::NoType { name },
+        }) => {
+            println!("  {call} -> NoType {{ name: {name:?} }}");
         }
-        Err(Error::TypeParseFailed { reason, .. }) => {
-            println!("  {call} -> TypeParseFailed: {reason}")
+        Err(Error::TypeWrite {
+            source: TypeWriteError::ParseFailed { reason, .. },
+        }) => {
+            println!("  {call} -> ParseFailed: {reason}")
         }
-        Err(Error::TypeApplyFailed { reason, .. }) => {
-            println!("  {call} -> TypeApplyFailed: {reason}")
+        Err(Error::TypeWrite {
+            source: TypeWriteError::ApplyRejected { reason, .. },
+        }) => {
+            println!("  {call} -> ApplyRejected: {reason}")
         }
         Err(e) => println!("  {call} -> {e}"),
     }

@@ -16,7 +16,7 @@ use crate::Database;
 use crate::address::Address;
 use crate::error::{Error, Result};
 use crate::ffi::{reason_or, with_cstr};
-use crate::types::TypeExpr;
+use crate::types::{TypeExpr, TypeWriteError};
 use crate::xref::Xrefs;
 
 /// Emits the scalar read accessors shared by [`Location`] and [`LocationMut`].
@@ -159,21 +159,25 @@ impl Database {
     /// Applies `ty` at `address`, the shared router behind [`LocationMut::set_type`] and
     /// [`FunctionEdit::set_type`](crate::function::FunctionEdit::set_type).
     ///
-    /// A named reference takes the by-name path (clean [`Error::TypeNotFound`]); a declaration is
-    /// parsed, so a bad one is [`Error::TypeParseFailed`] with IDA's own reason. A scalar leaf or a
-    /// built composite lowers through the recipe interpreter, reporting [`Error::TypeApplyFailed`]
-    /// if the kernel cannot build or apply it.
+    /// A named reference takes the by-name path (clean [`TypeWriteError::NoType`]); a declaration
+    /// is parsed, so a bad one is [`TypeWriteError::ParseFailed`] with IDA's own reason. A scalar
+    /// leaf or a built composite lowers through the recipe interpreter, reporting
+    /// [`TypeWriteError::BuildFailed`]/[`TypeWriteError::ApplyRejected`] if the kernel cannot
+    /// build or apply it.
     pub(crate) fn apply_type_at(&mut self, address: Address, ty: &TypeExpr) -> Result<()> {
         match ty {
             TypeExpr::Named(name) => {
                 let code = with_cstr(name, "name", |p| self.apply_named_type(address, p))?;
                 match code {
                     sys::IDAKIT_TYPE_OK => Ok(()),
-                    sys::IDAKIT_TYPE_ERR_INPUT => Err(Error::TypeNotFound { name: name.clone() }),
-                    _ => Err(Error::TypeApplyFailed {
+                    sys::IDAKIT_TYPE_ERR_INPUT => {
+                        Err(TypeWriteError::NoType { name: name.clone() }.into())
+                    }
+                    _ => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: format!("the kernel rejected named type {name:?}"),
-                    }),
+                    }
+                    .into()),
                 }
             }
             TypeExpr::Decl(decl) => {
@@ -181,14 +185,16 @@ impl Database {
                     with_cstr(decl, "decl", |p| self.apply_type_decl(address, p, 0))?;
                 match code {
                     sys::IDAKIT_TYPE_OK => Ok(()),
-                    sys::IDAKIT_TYPE_ERR_INPUT => Err(Error::TypeParseFailed {
+                    sys::IDAKIT_TYPE_ERR_INPUT => Err(TypeWriteError::ParseFailed {
                         decl: decl.clone(),
                         reason: reason_or(reason, "the declaration is not valid"),
-                    }),
-                    _ => Err(Error::TypeApplyFailed {
+                    }
+                    .into()),
+                    _ => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: reason_or(reason, "the kernel could not apply the parsed type"),
-                    }),
+                    }
+                    .into()),
                 }
             }
             // A scalar leaf or a pointer/array/qualifier composite lowers through the recipe
@@ -197,8 +203,7 @@ impl Database {
                 let (code, reason) = self.apply_type_recipe(address, &other.serialize(), 0);
                 match code {
                     sys::IDAKIT_TYPE_OK => Ok(()),
-                    sys::IDAKIT_TYPE_ERR_INPUT => Err(Error::TypeApplyFailed {
-                        address: address.get(),
+                    sys::IDAKIT_TYPE_ERR_INPUT => Err(TypeWriteError::BuildFailed {
                         reason: reason_or(
                             reason,
                             &format!(
@@ -206,14 +211,16 @@ impl Database {
                                  declaration within it)"
                             ),
                         ),
-                    }),
-                    _ => Err(Error::TypeApplyFailed {
+                    }
+                    .into()),
+                    _ => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: reason_or(
                             reason,
                             &format!("the kernel could not apply the built type `{other}`"),
                         ),
-                    }),
+                    }
+                    .into()),
                 }
             }
         }
@@ -333,9 +340,9 @@ impl LocationMut<'_> {
     /// one path.
     ///
     /// # Errors
-    /// [`Error::TypeNotFound`] for an unknown named type, [`Error::TypeParseFailed`] for an
-    /// unparseable declaration, [`Error::TypeApplyFailed`] if the kernel rejects reshaping the item
-    /// to the type, or [`Error::InteriorNul`] if the input contains a NUL byte.
+    /// [`TypeWriteError::NoType`] for an unknown named type, [`TypeWriteError::ParseFailed`] for
+    /// an unparseable declaration, [`TypeWriteError::ApplyRejected`] if the kernel rejects
+    /// reshaping the item to the type, or [`Error::InteriorNul`] if the input contains a NUL byte.
     #[doc(alias("apply_tinfo", "apply_cdecl", "apply_named_type"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
         self.db.apply_type_at(self.address, &ty.into())

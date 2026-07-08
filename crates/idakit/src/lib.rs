@@ -208,7 +208,7 @@ pub mod prelude {
     pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
     pub use crate::function::{
         CallingConvention, Function, FunctionChunk, FunctionChunks, FunctionEdit, FunctionName,
-        FunctionSnapshot, Functions, Instructions, InstructionsIn, SignatureError,
+        FunctionSnapshot, Functions, Instructions, InstructionsIn,
     };
     pub use crate::import::{Import, Imports};
     pub use crate::instruction::{
@@ -230,8 +230,8 @@ pub mod prelude {
     pub use crate::types::expr;
     pub use crate::types::{
         ConstantEdit, EnumMember, MemberEdit, MemberRef, NamedType, NamedTypes, Type, TypeEdit,
-        TypeEditCode, TypeEditError, TypeExpr, TypeId, TypeMember, TypeShape, TypeTable, TypeValue,
-        TypesMut,
+        TypeEditCode, TypeExpr, TypeId, TypeMember, TypeShape, TypeTable, TypeValue,
+        TypeWriteError, TypesMut,
     };
     pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
 }

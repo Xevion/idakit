@@ -81,7 +81,7 @@ impl TypesMut<'_> {
 
     /// Open the existing named type `name` for member surgery.
     ///
-    /// Infallible to acquire: a missing type surfaces as [`TypeEditError::NoType`] from the first
+    /// Infallible to acquire: a missing type surfaces as [`TypeWriteError::NoType`] from the first
     /// edit, so `edit(...).member(...).set_type(...)` chains without an intermediate check. Each
     /// verb is a self-contained load, mutate, and auto-save against the live type.
     #[inline]
@@ -109,10 +109,9 @@ impl TypeEdit<'_> {
     /// Append a member named `name` of type `ty` after the current last member.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`] if the type does not exist,
-    /// [`TypeEditError::BuildFailed`] if `ty` cannot be built, or [`TypeEditError::Rejected`] if
-    /// the kernel rejects the member (e.g. a duplicate name); or [`Error::InteriorNul`] for a NUL
-    /// byte in a name.
+    /// [`TypeWriteError::NoType`] if the type does not exist, [`TypeWriteError::BuildFailed`] if
+    /// `ty` cannot be built, or [`TypeWriteError::Rejected`] if the kernel rejects the member
+    /// (e.g. a duplicate name); or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("add_udm"))]
     pub fn add_member(&mut self, name: impl AsRef<str>, ty: impl Into<TypeExpr>) -> Result<()> {
         self.add_member_impl(name.as_ref(), ty.into(), sys::IDAKIT_MEMBER_APPEND)
@@ -124,7 +123,7 @@ impl TypeEdit<'_> {
     /// kernel keeps members offset-sorted, so an offset that would collide is rejected.
     ///
     /// # Errors
-    /// As [`add_member`](Self::add_member); [`TypeEditError::Rejected`] additionally covers an
+    /// As [`add_member`](Self::add_member); [`TypeWriteError::Rejected`] additionally covers an
     /// offset the kernel will not place (e.g. an overlap).
     #[doc(alias("add_udm"))]
     pub fn add_member_at(
@@ -176,9 +175,9 @@ impl TypeEdit<'_> {
     /// Add an enum constant named `name` with `value` to this enum.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`] if the enum does not exist, or
-    /// [`TypeEditError::Rejected`] if the kernel rejects the constant (e.g. a duplicate name); or
-    /// [`Error::InteriorNul`] for a NUL byte in a name.
+    /// [`TypeWriteError::NoType`] if the enum does not exist, or [`TypeWriteError::Rejected`] if
+    /// the kernel rejects the constant (e.g. a duplicate name); or [`Error::InteriorNul`] for a
+    /// NUL byte in a name.
     #[doc(alias("add_edm"))]
     pub fn add_constant(&mut self, name: impl AsRef<str>, value: u64) -> Result<()> {
         let type_name = self.name.clone();
@@ -209,7 +208,7 @@ impl TypeEdit<'_> {
     /// call, a [`MemberRef`] is a stable index handle that carries a structural fingerprint of the
     /// type's layout. It survives renames of other members, but any layout change (adding, removing,
     /// or resizing a member) invalidates it, so [`member_by_ref`](Self::member_by_ref) then returns
-    /// [`TypeEditError::StaleMemberRef`] instead of silently editing the wrong member. Chiefly for
+    /// [`TypeWriteError::StaleMemberRef`] instead of silently editing the wrong member. Chiefly for
     /// members a name key cannot address (anonymous fields).
     ///
     /// ```
@@ -224,12 +223,12 @@ impl TypeEdit<'_> {
     /// ```
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`] if no struct/union with this name
-    /// exists, or [`TypeEditError::MemberIndexOutOfRange`] if `index` is past the last member.
+    /// [`TypeWriteError::NoType`] if no struct/union with this name exists, or
+    /// [`TypeWriteError::MemberIndexOutOfRange`] if `index` is past the last member.
     pub fn member_ref(&self, index: usize) -> Result<MemberRef> {
         let (count, generation, _) = self.read_layout(index)?;
         if index >= count {
-            return Err(TypeEditError::MemberIndexOutOfRange {
+            return Err(TypeWriteError::MemberIndexOutOfRange {
                 type_name: self.name.clone(),
                 index,
                 count,
@@ -246,8 +245,8 @@ impl TypeEdit<'_> {
     /// Select the member a [`MemberRef`] points at, checking it against the current layout first.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`] if the type no longer exists, or
-    /// [`TypeEditError::StaleMemberRef`] if the ref was minted against a different type or the
+    /// [`TypeWriteError::NoType`] if the type no longer exists, or
+    /// [`TypeWriteError::StaleMemberRef`] if the ref was minted against a different type or the
     /// layout changed since (see [`member_ref`](Self::member_ref)).
     pub fn member_by_ref(&mut self, member: &MemberRef) -> Result<MemberEdit<'_>> {
         let name = self.name.clone();
@@ -260,7 +259,7 @@ impl TypeEdit<'_> {
                 type_name: name,
                 key,
             }),
-            _ => Err(TypeEditError::StaleMemberRef { type_name: name }.into()),
+            _ => Err(TypeWriteError::StaleMemberRef { type_name: name }.into()),
         }
     }
 
@@ -271,10 +270,10 @@ impl TypeEdit<'_> {
         let ty = self
             .db
             .type_named(&self.name)
-            .map_err(|_| TypeEditError::NoType {
+            .map_err(|_| TypeWriteError::NoType {
                 name: self.name.clone(),
             })?;
-        let members = ty.members().ok_or_else(|| TypeEditError::NoType {
+        let members = ty.members().ok_or_else(|| TypeWriteError::NoType {
             name: self.name.clone(),
         })?;
         let mut hasher = DefaultHasher::new();
@@ -296,7 +295,7 @@ impl TypeEdit<'_> {
 /// A durable handle to a struct/union member by index, from [`TypeEdit::member_ref`].
 ///
 /// Carries a structural fingerprint of the type's layout at mint time; resolve it with
-/// [`TypeEdit::member_by_ref`], which returns [`TypeEditError::StaleMemberRef`] once the layout has
+/// [`TypeEdit::member_by_ref`], which returns [`TypeWriteError::StaleMemberRef`] once the layout has
 /// changed. Holds no borrow, so it can outlive the cursor it came from.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MemberRef {
@@ -324,7 +323,7 @@ impl MemberRef {
 /// A write cursor over one struct/union member, from [`TypeEdit::member`]/[`TypeEdit::member_at`].
 ///
 /// Keyed by member name or bit offset, resolved fresh on each edit against the live type (a member
-/// that no longer resolves surfaces as [`TypeEditError::NoMember`]).
+/// that no longer resolves surfaces as [`TypeWriteError::NoMember`]).
 pub struct MemberEdit<'db> {
     db: &'db mut Database,
     type_name: String,
@@ -335,9 +334,9 @@ impl MemberEdit<'_> {
     /// Replace this member's type.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`],
-    /// [`TypeEditError::BuildFailed`] if `ty` cannot be built, or [`TypeEditError::Rejected`] if
-    /// the kernel rejects the type; or [`Error::InteriorNul`] for a NUL byte in a name.
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], [`TypeWriteError::BuildFailed`]
+    /// if `ty` cannot be built, or [`TypeWriteError::Rejected`] if the kernel rejects the type; or
+    /// [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("set_udm_type"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ty.into().serialize();
@@ -349,9 +348,8 @@ impl MemberEdit<'_> {
     /// Rename this member. The new name must be unique within the aggregate.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
-    /// [`TypeEditError::Rejected`] (e.g. [`TypeEditCode::DupName`]); or [`Error::InteriorNul`] for
-    /// a NUL byte in a name.
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`]
+    /// (e.g. [`TypeEditCode::DupName`]); or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("rename_udm"))]
     pub fn rename(&mut self, new_name: impl AsRef<str>) -> Result<()> {
         let nn = CString::new(new_name.as_ref()).map_err(|_| Error::InteriorNul {
@@ -370,8 +368,8 @@ impl MemberEdit<'_> {
     /// member was. Deleting the tail member shrinks the aggregate normally.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
-    /// [`TypeEditError::Rejected`]; or [`Error::InteriorNul`] for a NUL byte in a name.
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`];
+    /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("del_udm"))]
     pub fn delete(&mut self) -> Result<()> {
         let (code, reason) = self.dispatch(|db, tp, mp, bit| db.udt_del_member(tp, mp, bit))?;
@@ -405,7 +403,7 @@ impl MemberEdit<'_> {
 /// A write cursor over one enum constant, from [`TypeEdit::constant`].
 ///
 /// Keyed by name, resolved fresh on each edit against the live enum (a constant that no longer
-/// resolves surfaces as [`TypeEditError::NoMember`]).
+/// resolves surfaces as [`TypeWriteError::NoMember`]).
 pub struct ConstantEdit<'db> {
     db: &'db mut Database,
     type_name: String,
@@ -416,8 +414,8 @@ impl ConstantEdit<'_> {
     /// Set this constant's value.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
-    /// [`TypeEditError::Rejected`]; or [`Error::InteriorNul`] for a NUL byte in a name.
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`];
+    /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("edit_edm"))]
     pub fn set_value(&mut self, value: u64) -> Result<()> {
         let (code, reason) = self.dispatch(|db, tp, np| db.enum_set_member_value(tp, np, value))?;
@@ -427,9 +425,9 @@ impl ConstantEdit<'_> {
     /// Rename this constant. The new name must be unique.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
-    /// [`TypeEditError::Rejected`] (e.g. [`TypeEditCode::DupName`] or [`TypeEditCode::AlienName`]);
-    /// or [`Error::InteriorNul`] for a NUL byte in a name.
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`]
+    /// (e.g. [`TypeEditCode::DupName`] or [`TypeEditCode::AlienName`]); or [`Error::InteriorNul`]
+    /// for a NUL byte in a name.
     #[doc(alias("rename_edm"))]
     pub fn rename(&mut self, new_name: impl AsRef<str>) -> Result<()> {
         let nn = CString::new(new_name.as_ref()).map_err(|_| Error::InteriorNul {
@@ -443,8 +441,8 @@ impl ConstantEdit<'_> {
     /// Delete this constant from its enum.
     ///
     /// # Errors
-    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
-    /// [`TypeEditError::Rejected`]; or [`Error::InteriorNul`] for a NUL byte in a name.
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`];
+    /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("del_edm"))]
     pub fn delete(&mut self) -> Result<()> {
         let (code, reason) = self.dispatch(|db, tp, np| db.enum_del_member(tp, np))?;
@@ -492,7 +490,7 @@ impl fmt::Display for MemberKey {
 }
 
 /// Maps a member-edit return code and any captured reason to a crate [`Result`]. `key` is the
-/// member selector for a [`TypeEditError::NoMember`] (absent when adding a new member).
+/// member selector for a [`TypeWriteError::NoMember`] (absent when adding a new member).
 fn edit_result(
     code: c_int,
     reason: String,
@@ -501,16 +499,16 @@ fn edit_result(
 ) -> Result<()> {
     match code {
         0 => Ok(()),
-        sys::IDAKIT_TEDIT_NO_TYPE => Err(TypeEditError::NoType {
+        sys::IDAKIT_TEDIT_NO_TYPE => Err(TypeWriteError::NoType {
             name: type_name.to_owned(),
         }
         .into()),
-        sys::IDAKIT_TEDIT_NO_MEMBER => Err(TypeEditError::NoMember {
+        sys::IDAKIT_TEDIT_NO_MEMBER => Err(TypeWriteError::NoMember {
             type_name: type_name.to_owned(),
             key: key.map(MemberKey::to_string).unwrap_or_default(),
         }
         .into()),
-        sys::IDAKIT_TEDIT_BUILD => Err(TypeEditError::BuildFailed {
+        sys::IDAKIT_TEDIT_BUILD => Err(TypeWriteError::BuildFailed {
             reason: reason_or(
                 reason,
                 "an unknown named type or invalid declaration within it",
@@ -518,12 +516,12 @@ fn edit_result(
         }
         .into()),
         n => match TypeEditCode::try_from(n) {
-            Ok(code) => Err(TypeEditError::Rejected {
+            Ok(code) => Err(TypeWriteError::Rejected {
                 type_name: type_name.to_owned(),
                 code,
             }
             .into()),
-            Err(_) => Err(TypeEditError::UnknownCode {
+            Err(_) => Err(TypeWriteError::UnknownCode {
                 type_name: type_name.to_owned(),
                 code: n,
             }
@@ -532,13 +530,20 @@ fn edit_result(
     }
 }
 
-/// Why a type-library member edit failed, from the [`TypeEdit`]/[`MemberEdit`] verbs.
+/// The single error for the whole type-write surface: applying a type at an address
+/// ([`LocationMut::set_type`](crate::LocationMut::set_type),
+/// [`FunctionEdit::set_type`](crate::function::FunctionEdit::set_type)), function-prototype
+/// surgery ([`FunctionEdit`](crate::function::FunctionEdit)'s field-at-a-time verbs), and til
+/// member/constant edits ([`TypeEdit`]/[`MemberEdit`]/[`ConstantEdit`]).
 ///
-/// Carried by [`Error::TypeEdit`], which `?` flattens into the crate [`Result`]. A kernel rejection
-/// carries the structured [`TypeEditCode`] so a caller can match the cause.
+/// Carried by [`Error::TypeWrite`], which `?` flattens into the crate [`Result`]. Only til
+/// member/constant edits carry a structured [`TypeEditCode`] ([`Rejected`](Self::Rejected)):
+/// whole-item apply and prototype surgery route through kernel ops (`apply_tinfo`, `create_func`)
+/// that return only a bool, so their rejections carry a reason string
+/// ([`ApplyRejected`](Self::ApplyRejected)) instead.
 #[derive(Debug, Snafu, PartialEq, Eq)]
 #[snafu(visibility(pub(crate)))]
-pub enum TypeEditError {
+pub enum TypeWriteError {
     /// No type with the given name exists in the local type library.
     #[snafu(display("no type named {name:?} in the local type library"))]
     NoType {
@@ -568,6 +573,19 @@ pub enum TypeEditError {
         count: usize,
     },
 
+    /// A parameter index was past the last parameter in a function-prototype surgery edit.
+    #[snafu(display(
+        "parameter index {index} out of range ({arity} parameter(s)) at {address:#x}"
+    ))]
+    ArgIndexOutOfRange {
+        /// The function entry.
+        address: u64,
+        /// The out-of-range index.
+        index: usize,
+        /// The prototype's actual parameter count.
+        arity: usize,
+    },
+
     /// A [`MemberRef`] no longer matches the type's layout (a structural edit since it was minted,
     /// or a ref from a different type).
     #[snafu(display(
@@ -578,20 +596,48 @@ pub enum TypeEditError {
         type_name: String,
     },
 
-    /// A replacement or new member type could not be built from its recipe.
-    #[snafu(display("could not build the member type: {reason}"))]
-    BuildFailed {
-        /// Why the member type could not be built.
+    /// The address carries no function prototype to edit.
+    #[snafu(display("no function prototype to edit at {address:#x}"))]
+    NoPrototype {
+        /// The function entry with no editable prototype.
+        address: u64,
+    },
+
+    /// A type declaration could not be parsed. `reason` is IDA's own parser message, captured off
+    /// the message channel.
+    #[snafu(display("could not parse type declaration {decl:?}: {reason}"))]
+    ParseFailed {
+        /// The declaration text that failed to parse.
+        decl: String,
+        /// IDA's parser message.
         reason: String,
     },
 
-    /// The kernel rejected the edit; carries the structured [`TypeEditCode`].
+    /// A replacement or new type could not be built from its recipe.
+    #[snafu(display("could not build the type: {reason}"))]
+    BuildFailed {
+        /// Why the type could not be built.
+        reason: String,
+    },
+
+    /// A til member/constant edit was rejected; carries the structured [`TypeEditCode`].
     #[snafu(display("editing {type_name:?} was rejected: {code}"))]
     Rejected {
         /// The type being edited.
         type_name: String,
         /// The kernel's `tinfo_code_t`, mirrored.
         code: TypeEditCode,
+    },
+
+    /// A whole-item type apply or a function-prototype surgery edit was rejected. `reason` is
+    /// IDA's own diagnostics when the kernel left any, since the underlying bool-returning op
+    /// (`apply_tinfo`, `create_func`) carries no structured code.
+    #[snafu(display("could not apply type at {address:#x}: {reason}"))]
+    ApplyRejected {
+        /// The address the apply or surgery targeted.
+        address: u64,
+        /// Why the apply was rejected.
+        reason: String,
     },
 
     /// The kernel returned a `tinfo_code_t` outside the modelled set (version drift). A loud guard
@@ -607,9 +653,9 @@ pub enum TypeEditError {
 
 /// A structured type-edit result code, mirroring IDA's `tinfo_code_t` (`typeinf.hpp`, IDA 9.3).
 ///
-/// Returned inside [`TypeEditError::Rejected`] so a caller matches the exact cause of a rejected
-/// member edit. The complete closed SDK set: a code outside it is version drift, surfaced as
-/// [`TypeEditError::UnknownCode`] rather than folded in here.
+/// Returned inside [`TypeWriteError::Rejected`] so a caller matches the exact cause of a rejected
+/// til member/constant edit. The complete closed SDK set: a code outside it is version drift,
+/// surfaced as [`TypeWriteError::UnknownCode`] rather than folded in here.
 #[derive(
     Clone, Copy, PartialEq, Eq, Hash, Debug, TryFromPrimitive, IntoPrimitive, VariantArray,
 )]
@@ -784,7 +830,7 @@ mod tests {
         assert!(TypeEditCode::try_from(1).is_err());
     }
 
-    /// The member selector renders both keyings for a [`TypeEditError::NoMember`].
+    /// The member selector renders both keyings for a [`TypeWriteError::NoMember`].
     #[test]
     fn member_key_renders() {
         assert!(MemberKey::Name("hp".to_owned()).to_string() == "named \"hp\"");

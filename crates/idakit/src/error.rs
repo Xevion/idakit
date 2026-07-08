@@ -10,9 +10,8 @@ use std::fmt;
 use snafu::Snafu;
 
 use crate::decompiler::ctree::ExtractError;
-use crate::function::SignatureError;
 use crate::instruction::DecodeError;
-use crate::types::TypeEditError;
+use crate::types::TypeWriteError;
 
 /// IDA's error code, with the documented generic values named.
 ///
@@ -207,31 +206,14 @@ pub enum Error {
         code: i32,
     },
 
-    /// No type with the requested name exists in the database.
+    /// No type with the requested name exists in the database. Raised by the type-read lookups
+    /// ([`Database::type_named`](crate::Database::type_named),
+    /// [`NamedType::resolve`](crate::types::NamedType::resolve)); the type-write surface reports an
+    /// absent type as [`TypeWriteError::NoType`] instead.
     #[snafu(display("no type named {name:?} in the database"))]
     TypeNotFound {
         /// The type name that was not found.
         name: String,
-    },
-
-    /// A C type declaration could not be parsed. `reason` is IDA's own parser message, captured
-    /// off the message channel.
-    #[snafu(display("could not parse type declaration {decl:?}: {reason}"))]
-    TypeParseFailed {
-        /// The declaration text that failed to parse.
-        decl: String,
-        /// IDA's parser message.
-        reason: String,
-    },
-
-    /// A parsed or resolved type could not be applied at the address, because the kernel rejected
-    /// reshaping the item to the type.
-    #[snafu(display("could not apply type at {address:#x}: {reason}"))]
-    TypeApplyFailed {
-        /// Address the type apply targeted.
-        address: u64,
-        /// Why the apply was rejected.
-        reason: String,
     },
 
     /// One or more type declarations could not be added to the database's type library. `reason`
@@ -289,22 +271,13 @@ pub enum Error {
         reason: Option<String>,
     },
 
-    /// A function-prototype surgery edit failed; carries the typed [`SignatureError`]. `?` flattens
-    /// a [`SignatureError`] into this via [`From`] (`context(false)`), so a surgery call routes
-    /// through the crate [`Result`] like every other write.
+    /// A type-write operation failed; carries the typed [`TypeWriteError`]. `?` flattens it into
+    /// the crate [`Result`] via [`From`] (`context(false)`), so every type-write routes through
+    /// one [`Result`].
     #[snafu(display("{source}"), context(false))]
-    Signature {
-        /// The underlying signature-edit error.
-        source: SignatureError,
-    },
-
-    /// A type-library member edit failed; carries the typed [`TypeEditError`]. `?` flattens a
-    /// [`TypeEditError`] into this via [`From`] (`context(false)`), so a member edit routes through
-    /// the crate [`Result`] like every other write.
-    #[snafu(display("{source}"), context(false))]
-    TypeEdit {
-        /// The underlying member-edit error.
-        source: TypeEditError,
+    TypeWrite {
+        /// The underlying type-write error.
+        source: TypeWriteError,
     },
 
     /// A string argument contained an interior NUL byte.
@@ -496,14 +469,6 @@ mod tests {
     #[case::kernel(
         Error::Kernel { reason: "the kernel thread is gone".to_owned() },
         "kernel call did not return: the kernel thread is gone",
-    )]
-    #[case::type_parse_failed(
-        Error::TypeParseFailed { decl: "int[".to_owned(), reason: "syntax error".to_owned() },
-        "could not parse type declaration \"int[\": syntax error",
-    )]
-    #[case::type_apply_failed(
-        Error::TypeApplyFailed { address: 0x40_1000, reason: "cannot reshape item".to_owned() },
-        "could not apply type at 0x401000: cannot reshape item",
     )]
     #[case::type_define_failed(
         Error::TypeDefineFailed { decl: "struct {".to_owned(), reason: "expected '}'".to_owned() },

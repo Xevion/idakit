@@ -7,14 +7,14 @@
 //! [`set_arg_type`](FunctionEdit::set_arg_type), [`rename_arg`](FunctionEdit::rename_arg),
 //! [`set_calling_convention`](FunctionEdit::set_calling_convention),
 //! [`prepend_this`](FunctionEdit::prepend_this)). A surgery verb reads the existing prototype,
-//! mutates one field, and re-applies; a failure is a typed [`SignatureError`].
+//! mutates one field, and re-applies; a failure is a typed
+//! [`TypeWriteError`].
 
 use std::ffi::c_int;
 use std::ops::Range;
 
 use idakit_sys as sys;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use snafu::Snafu;
 use strum::VariantArray;
 
 use crate::Database;
@@ -26,7 +26,7 @@ use crate::ffi::{read_string, reason_or, with_cstr};
 use crate::flowchart::{FlowChart, flowchart_flags};
 use crate::instruction::Instruction;
 use crate::stack::StackFrame;
-use crate::types::{Type, TypeExpr, walk_type};
+use crate::types::{Type, TypeExpr, TypeWriteError, walk_type};
 use crate::xref::Xrefs;
 
 impl Database {
@@ -359,9 +359,9 @@ impl FunctionEdit<'_> {
     /// override it.
     ///
     /// # Errors
-    /// [`Error::TypeParseFailed`] for an unparseable declaration, [`Error::TypeNotFound`] for an
-    /// unknown named type, [`Error::TypeApplyFailed`] if the kernel rejects the type, or
-    /// [`Error::InteriorNul`] if the input contains a NUL byte.
+    /// [`TypeWriteError::ParseFailed`] for an unparseable declaration, [`TypeWriteError::NoType`]
+    /// for an unknown named type, [`TypeWriteError::ApplyRejected`] if the kernel rejects the
+    /// type, or [`Error::InteriorNul`] if the input contains a NUL byte.
     #[doc(alias("apply_tinfo"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
         self.db.apply_type_at(self.entry, &ty.into())
@@ -384,9 +384,9 @@ impl FunctionEdit<'_> {
     /// swaps the return, and re-applies.
     ///
     /// # Errors
-    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
-    /// prototype, [`SignatureError::BuildFailed`] if `ret` cannot be built, or
-    /// [`SignatureError::ApplyFailed`] if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
+    /// [`TypeWriteError::BuildFailed`] if `ret` cannot be built, or
+    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_return_type(&mut self, ret: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ret.into().serialize();
@@ -397,10 +397,10 @@ impl FunctionEdit<'_> {
     /// Replace the type of parameter `index` (zero-based), keeping its name.
     ///
     /// # Errors
-    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
-    /// prototype, [`SignatureError::ArgIndexOutOfRange`] if `index` is past the last parameter,
-    /// [`SignatureError::BuildFailed`] if `ty` cannot be built, or [`SignatureError::ApplyFailed`]
-    /// if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
+    /// [`TypeWriteError::ArgIndexOutOfRange`] if `index` is past the last parameter,
+    /// [`TypeWriteError::BuildFailed`] if `ty` cannot be built, or
+    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_arg_type(&mut self, index: usize, ty: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ty.into().serialize();
@@ -411,9 +411,9 @@ impl FunctionEdit<'_> {
     /// Rename parameter `index` (zero-based), keeping its type.
     ///
     /// # Errors
-    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
-    /// prototype, [`SignatureError::ArgIndexOutOfRange`] if `index` is past the last parameter, or
-    /// [`SignatureError::ApplyFailed`] if the kernel rejects the rebuilt signature; or
+    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
+    /// [`TypeWriteError::ArgIndexOutOfRange`] if `index` is past the last parameter, or
+    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature; or
     /// [`Error::InteriorNul`] if `name` contains a NUL byte.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn rename_arg(&mut self, index: usize, name: impl AsRef<str>) -> Result<()> {
@@ -426,9 +426,9 @@ impl FunctionEdit<'_> {
     /// Set this function's calling convention.
     ///
     /// # Errors
-    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
-    /// prototype, or [`SignatureError::ApplyFailed`] if the kernel rejects the convention (e.g. an
-    /// x86 convention on a non-x86 target).
+    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype, or
+    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the convention (e.g. an x86
+    /// convention on a non-x86 target).
     #[doc(alias("set_cc"))]
     pub fn set_calling_convention(&mut self, cc: CallingConvention) -> Result<()> {
         let (code, reason) = self.db.func_set_cc(self.entry, c_int::from(u8::from(cc)));
@@ -443,9 +443,9 @@ impl FunctionEdit<'_> {
     /// wants it.
     ///
     /// # Errors
-    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
-    /// prototype, [`SignatureError::BuildFailed`] if `this` cannot be built, or
-    /// [`SignatureError::ApplyFailed`] if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
+    /// [`TypeWriteError::BuildFailed`] if `this` cannot be built, or
+    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn prepend_this(&mut self, this: impl Into<TypeExpr>) -> Result<()> {
         let recipe = this.into().serialize();
@@ -456,7 +456,9 @@ impl FunctionEdit<'_> {
 
 /// Maps a surgery return code, the current arity, and any captured reason to a crate [`Result`],
 /// the shared tail of the [`FunctionEdit`] surgery verbs. `arg` is `Some((index, arity))` for the
-/// index-taking verbs, so an out-of-range code names both.
+/// index-taking verbs, so an out-of-range code names both. The `IDAKIT_SIG_*` set is closed; an
+/// unexpected code names itself in the message rather than silently landing on a generic reason,
+/// so a facade drift shows up immediately instead of only in the reason text.
 fn sig_result(
     code: c_int,
     address: Address,
@@ -465,75 +467,40 @@ fn sig_result(
 ) -> Result<()> {
     match code {
         sys::IDAKIT_SIG_OK => Ok(()),
-        sys::IDAKIT_SIG_NO_PROTOTYPE => Err(SignatureError::NoPrototype {
+        sys::IDAKIT_SIG_NO_PROTOTYPE => Err(TypeWriteError::NoPrototype {
             address: address.get(),
         }
         .into()),
         sys::IDAKIT_SIG_ARG_RANGE => {
             let (index, arity) = arg.unwrap_or_default();
-            Err(SignatureError::ArgIndexOutOfRange {
+            Err(TypeWriteError::ArgIndexOutOfRange {
                 address: address.get(),
                 index,
                 arity,
             }
             .into())
         }
-        sys::IDAKIT_SIG_BUILD => Err(SignatureError::BuildFailed {
+        sys::IDAKIT_SIG_BUILD => Err(TypeWriteError::BuildFailed {
             reason: reason_or(
                 reason,
                 "an unknown named type or invalid declaration within it",
             ),
         }
         .into()),
-        _ => Err(SignatureError::ApplyFailed {
+        sys::IDAKIT_SIG_APPLY => Err(TypeWriteError::ApplyRejected {
             address: address.get(),
             reason: reason_or(reason, "the kernel rejected the edited signature"),
         }
         .into()),
+        n => Err(TypeWriteError::ApplyRejected {
+            address: address.get(),
+            reason: reason_or(
+                reason,
+                &format!("the kernel rejected the edited signature (unexpected facade code {n})"),
+            ),
+        }
+        .into()),
     }
-}
-
-/// Why a function-prototype surgery edit failed, from the [`FunctionEdit`] surgery verbs.
-///
-/// Carried by [`Error::Signature`], which `?` flattens into the crate [`Result`].
-#[derive(Debug, Snafu, PartialEq, Eq)]
-#[snafu(visibility(pub(crate)))]
-pub enum SignatureError {
-    /// The address carries no function prototype to edit.
-    #[snafu(display("no function prototype to edit at {address:#x}"))]
-    NoPrototype {
-        /// The function entry with no editable prototype.
-        address: u64,
-    },
-
-    /// A parameter index was past the last parameter.
-    #[snafu(display(
-        "parameter index {index} out of range ({arity} parameter(s)) at {address:#x}"
-    ))]
-    ArgIndexOutOfRange {
-        /// The function entry.
-        address: u64,
-        /// The out-of-range index.
-        index: usize,
-        /// The prototype's actual parameter count.
-        arity: usize,
-    },
-
-    /// A replacement type could not be built from its recipe.
-    #[snafu(display("could not build the replacement type: {reason}"))]
-    BuildFailed {
-        /// Why the replacement type could not be built.
-        reason: String,
-    },
-
-    /// The kernel rejected the rebuilt signature (`create_func` or `apply_tinfo`).
-    #[snafu(display("could not apply the edited signature at {address:#x}: {reason}"))]
-    ApplyFailed {
-        /// The function entry.
-        address: u64,
-        /// Why the rebuilt signature was rejected.
-        reason: String,
-    },
 }
 
 /// A function's calling convention: the plain register/stack conventions surgery can set.

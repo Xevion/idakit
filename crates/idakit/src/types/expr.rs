@@ -101,7 +101,7 @@ pub struct Param {
 ///
 /// The explicit by-name root: unlike `TypeExpr::from("Foo")`, it forces the name path even for a
 /// spelling a declaration parser would also accept, so an absent type reports
-/// [`TypeNotFound`](crate::error::Error::TypeNotFound) rather than a parse error.
+/// [`TypeWriteError::NoType`](crate::types::TypeWriteError::NoType) rather than a parse error.
 #[must_use]
 pub fn named(name: impl Into<String>) -> TypeExpr {
     TypeExpr::Named(name.into())
