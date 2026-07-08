@@ -438,6 +438,19 @@ int idakit_udt_rename_member(const char *type_name, const char *member_name, uin
 int idakit_udt_del_member(const char *type_name, const char *member_name, uint64_t member_bit,
                           char *errbuf, size_t cap);
 
+/* Enum-member edits, mirroring the struct/union verbs for enum constants. A constant is selected
+ * by name (values may repeat within a bitmask enum, names are unique), so there is no offset key or
+ * recipe build. Same return convention as the idakit_udt_* shims (0 / positive IDAKIT_TEDIT_* /
+ * negative tinfo_code_t). */
+int idakit_enum_add_member(const char *type_name, const char *member_name, uint64_t value,
+                           char *errbuf, size_t cap);
+int idakit_enum_set_member_value(const char *type_name, const char *member_name, uint64_t value,
+                                 char *errbuf, size_t cap);
+int idakit_enum_rename_member(const char *type_name, const char *member_name, const char *new_name,
+                              char *errbuf, size_t cap);
+int idakit_enum_del_member(const char *type_name, const char *member_name, char *errbuf,
+                           size_t cap);
+
 /* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
  * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the
  * byte range of the whole value this fragment covers. */

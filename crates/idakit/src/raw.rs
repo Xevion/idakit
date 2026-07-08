@@ -583,6 +583,95 @@ impl Database {
         (code, unsafe { cstr(err.as_ptr().cast()) })
     }
 
+    /// Adds an enum constant `member_name` = `value` to the named enum `type_name`; returns the
+    /// code and any reason.
+    pub(crate) fn enum_add_member(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+        value: u64,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_enum_add_member(
+                type_name,
+                member_name,
+                value,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Sets the value of enum constant `member_name` in the named enum `type_name`; returns the
+    /// code and any reason.
+    pub(crate) fn enum_set_member_value(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+        value: u64,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_enum_set_member_value(
+                type_name,
+                member_name,
+                value,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Renames enum constant `member_name` in the named enum `type_name` to `new_name`; returns the
+    /// code and any reason.
+    pub(crate) fn enum_rename_member(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+        new_name: *const c_char,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_enum_rename_member(
+                type_name,
+                member_name,
+                new_name,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Deletes enum constant `member_name` from the named enum `type_name`; returns the code and
+    /// any reason.
+    pub(crate) fn enum_del_member(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_enum_del_member(type_name, member_name, err.as_mut_ptr().cast(), err.len())
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
     /// Parses `input` into the local type library; returns the error count and any diagnostics
     /// copied out of the facade buffer.
     pub(crate) fn define_type(&mut self, input: *const c_char) -> (c_int, String) {

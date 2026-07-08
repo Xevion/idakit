@@ -189,6 +189,42 @@ unsafe extern "C" {
         errbuf: *mut c_char,
         cap: usize,
     ) -> c_int;
+
+    /// Add an enum constant named `member_name` with `value` to the named enum `type_name`. Same
+    /// `IDAKIT_TEDIT_*` codes as the `idakit_udt_*` shims.
+    pub fn idakit_enum_add_member(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        value: u64,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Set the value of the enum constant `member_name` in the named enum `type_name`.
+    pub fn idakit_enum_set_member_value(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        value: u64,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Rename the enum constant `member_name` in the named enum `type_name` to `new_name`.
+    pub fn idakit_enum_rename_member(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        new_name: *const c_char,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Delete the enum constant `member_name` from the named enum `type_name`.
+    pub fn idakit_enum_del_member(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
 }
 
 /// A prototype-surgery edit succeeded ([`idakit_func_set_rettype`] and its siblings).

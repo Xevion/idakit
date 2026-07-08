@@ -3,8 +3,9 @@
 //! [`TypesMut`], from [`Database::types_mut`], is the write half of the type subsystem. It exposes
 //! [`define`](TypesMut::define), which parses C declarations into the local type library, and
 //! [`edit`](TypesMut::edit), which opens a named type for member surgery through [`TypeEdit`] and
-//! its [`MemberEdit`] sub-cursor. Editing an attached typeref auto-propagates to every reference,
-//! so a struct fixed once reflows everywhere it is used.
+//! its [`MemberEdit`] (struct/union fields) and [`ConstantEdit`] (enum constants) sub-cursors.
+//! Editing an attached typeref auto-propagates to every reference, so a struct fixed once reflows
+//! everywhere it is used.
 
 use std::ffi::{CString, c_char, c_int};
 use std::fmt;
@@ -93,9 +94,10 @@ impl TypesMut<'_> {
 
 /// A write cursor over one named type, from [`TypesMut::edit`].
 ///
-/// Adds members to a struct or union and hands out a [`MemberEdit`] sub-cursor keyed by member
-/// name or bit offset. Every edit is a fresh load of the named type, one mutation, and an auto-save
-/// back to the local til, so nothing is held across calls.
+/// Adds struct/union members and hands out a [`MemberEdit`] sub-cursor keyed by member name or bit
+/// offset; adds enum constants and hands out a [`ConstantEdit`] sub-cursor keyed by name. Every
+/// edit is a fresh load of the named type, one mutation, and an auto-save back to the local til, so
+/// nothing is held across calls.
 pub struct TypeEdit<'db> {
     db: &'db mut Database,
     name: String,
@@ -166,6 +168,36 @@ impl TypeEdit<'_> {
             db: &mut *self.db,
             type_name,
             key: MemberKey::Offset(bit_offset),
+        }
+    }
+
+    /// Add an enum constant named `name` with `value` to this enum.
+    ///
+    /// # Errors
+    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`] if the enum does not exist, or
+    /// [`TypeEditError::Rejected`] if the kernel rejects the constant (e.g. a duplicate name); or
+    /// [`Error::InteriorNul`] for a NUL byte in a name.
+    #[doc(alias("add_edm"))]
+    pub fn add_constant(&mut self, name: impl AsRef<str>, value: u64) -> Result<()> {
+        let type_name = self.name.clone();
+        let db = &mut *self.db;
+        let (code, reason) = with_cstr(&type_name, "type name", |tp| {
+            with_cstr(name.as_ref(), "constant name", |np| {
+                db.enum_add_member(tp, np, value)
+            })
+        })??;
+        edit_result(code, reason, &type_name, None)
+    }
+
+    /// Select the enum constant named `name` for editing.
+    #[inline]
+    #[must_use]
+    pub fn constant(&mut self, name: impl Into<String>) -> ConstantEdit<'_> {
+        let type_name = self.name.clone();
+        ConstantEdit {
+            db: &mut *self.db,
+            type_name,
+            name: name.into(),
         }
     }
 }
@@ -243,6 +275,79 @@ impl MemberEdit<'_> {
         };
         let member_p = member_c.as_ref().map_or(ptr::null(), |c| c.as_ptr());
         Ok(f(&mut *self.db, tn.as_ptr(), member_p, bit))
+    }
+}
+
+/// A write cursor over one enum constant, from [`TypeEdit::constant`].
+///
+/// Keyed by name, resolved fresh on each edit against the live enum (a constant that no longer
+/// resolves surfaces as [`TypeEditError::NoMember`]).
+pub struct ConstantEdit<'db> {
+    db: &'db mut Database,
+    type_name: String,
+    name: String,
+}
+
+impl ConstantEdit<'_> {
+    /// Set this constant's value.
+    ///
+    /// # Errors
+    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
+    /// [`TypeEditError::Rejected`]; or [`Error::InteriorNul`] for a NUL byte in a name.
+    #[doc(alias("edit_edm"))]
+    pub fn set_value(&mut self, value: u64) -> Result<()> {
+        let (code, reason) = self.dispatch(|db, tp, np| db.enum_set_member_value(tp, np, value))?;
+        self.result(code, reason)
+    }
+
+    /// Rename this constant. The new name must be unique.
+    ///
+    /// # Errors
+    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
+    /// [`TypeEditError::Rejected`] (e.g. [`TypeEditCode::DupName`] or [`TypeEditCode::AlienName`]);
+    /// or [`Error::InteriorNul`] for a NUL byte in a name.
+    #[doc(alias("rename_edm"))]
+    pub fn rename(&mut self, new_name: impl AsRef<str>) -> Result<()> {
+        let nn = CString::new(new_name.as_ref()).map_err(|_| Error::InteriorNul {
+            arg: "new constant name",
+        })?;
+        let (code, reason) =
+            self.dispatch(|db, tp, np| db.enum_rename_member(tp, np, nn.as_ptr()))?;
+        self.result(code, reason)
+    }
+
+    /// Delete this constant from its enum.
+    ///
+    /// # Errors
+    /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
+    /// [`TypeEditError::Rejected`]; or [`Error::InteriorNul`] for a NUL byte in a name.
+    #[doc(alias("del_edm"))]
+    pub fn delete(&mut self) -> Result<()> {
+        let (code, reason) = self.dispatch(|db, tp, np| db.enum_del_member(tp, np))?;
+        self.result(code, reason)
+    }
+
+    /// Resolve the type-name and constant-name C pointers, then run `f`. The C strings outlive the
+    /// synchronous `f`.
+    fn dispatch(
+        &mut self,
+        f: impl FnOnce(&mut Database, *const c_char, *const c_char) -> (c_int, String),
+    ) -> Result<(c_int, String)> {
+        let tn = CString::new(self.type_name.as_str())
+            .map_err(|_| Error::InteriorNul { arg: "type name" })?;
+        let np = CString::new(self.name.as_str()).map_err(|_| Error::InteriorNul {
+            arg: "constant name",
+        })?;
+        Ok(f(&mut *self.db, tn.as_ptr(), np.as_ptr()))
+    }
+
+    fn result(&self, code: c_int, reason: String) -> Result<()> {
+        edit_result(
+            code,
+            reason,
+            &self.type_name,
+            Some(&MemberKey::Name(self.name.clone())),
+        )
     }
 }
 

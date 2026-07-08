@@ -790,3 +790,107 @@ extern "C" int idakit_udt_del_member(const char *type_name, const char *member_n
     std::abort();
   }
 }
+
+namespace {
+// Link `tif` to the named enum in the local til for editing (any named type resolves; a non-enum
+// verb below returns a tinfo_code the caller surfaces). False if no such type.
+bool load_named_enum(const char *type_name, tinfo_t &tif) {
+  return tif.get_named_type(get_idati(), type_name) && !tif.empty();
+}
+
+// Resolve an enum constant index by name; -1 if not found. Constants are keyed by name (values may
+// repeat within a bitmask enum, names are unique).
+ssize_t resolve_edm(const tinfo_t &tif, const char *name) {
+  edm_t edm;
+  return tif.get_edm(&edm, name);
+}
+} // namespace
+
+// Enum-member edits: mirror the UDT verbs for enum constants. Same return convention as the UDT
+// shims (0 / positive IDAKIT_TEDIT_* / negative tinfo_code_t); constants carry a name and value, so
+// there is no recipe build. Non-bitmask enums ignore the group bmask (DEFMASK64).
+
+extern "C" int idakit_enum_add_member(const char *type_name, const char *member_name,
+                                      uint64_t value, char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_enum(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      return (int)tif.add_edm(member_name, value);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_enum_set_member_value(const char *type_name, const char *member_name,
+                                            uint64_t value, char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_enum(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      ssize_t idx = resolve_edm(tif, member_name);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      return (int)tif.edit_edm((size_t)idx, value);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_enum_rename_member(const char *type_name, const char *member_name,
+                                         const char *new_name, char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_enum(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      ssize_t idx = resolve_edm(tif, member_name);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      return (int)tif.rename_edm((size_t)idx, new_name);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_enum_del_member(const char *type_name, const char *member_name, char *errbuf,
+                                      size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_enum(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      ssize_t idx = resolve_edm(tif, member_name);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      return (int)tif.del_edm((size_t)idx);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}

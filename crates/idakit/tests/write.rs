@@ -24,9 +24,10 @@ fn run(idb: &mut idakit::Database) {
     type_surgery(idb, address);
     type_clear(idb, address);
     type_member_edit(idb);
+    type_enum_member_edit(idb);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit"
     );
 }
 
@@ -514,5 +515,116 @@ fn type_member_edit(idb: &mut idakit::Database) {
     assert!(
         probe.get(a.ty).size == Some(1),
         "member a should now be a one-byte char"
+    );
+}
+
+/// Enum-constant surgery on a freshly defined enum: add a constant, change a value, rename one,
+/// delete one, each read back through `type_named`, and the typed failures (missing constant,
+/// missing type, duplicate name) surface without mutating.
+fn type_enum_member_edit(idb: &mut idakit::Database) {
+    use idakit::types::{TypeEditError, TypeShape};
+
+    fn constants(idb: &idakit::Database, ty: &str) -> Vec<(String, u64)> {
+        let t = idb.type_named(ty).expect("resolve the enum");
+        match t.shape() {
+            TypeShape::Enum { members, .. } => {
+                members.iter().map(|m| (m.name.clone(), m.value)).collect()
+            }
+            other => panic!("expected an enum, got {other:?}"),
+        }
+    }
+
+    idb.types_mut()
+        .define("enum idakit_enum_probe { PROBE_A = 1, PROBE_B = 2 };")
+        .expect("define an enum to edit");
+
+    idb.types_mut()
+        .edit("idakit_enum_probe")
+        .add_constant("PROBE_C", 3)
+        .expect("add a constant");
+    assert!(
+        constants(idb, "idakit_enum_probe").contains(&("PROBE_C".to_owned(), 3)),
+        "PROBE_C = 3 should be added"
+    );
+
+    idb.types_mut()
+        .edit("idakit_enum_probe")
+        .constant("PROBE_A")
+        .set_value(10)
+        .expect("change a constant value");
+    assert!(
+        constants(idb, "idakit_enum_probe").contains(&("PROBE_A".to_owned(), 10)),
+        "PROBE_A should now be 10"
+    );
+
+    idb.types_mut()
+        .edit("idakit_enum_probe")
+        .constant("PROBE_B")
+        .rename("PROBE_BETA")
+        .expect("rename a constant");
+    let names: Vec<String> = constants(idb, "idakit_enum_probe")
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert!(
+        names.iter().any(|n| n == "PROBE_BETA") && !names.iter().any(|n| n == "PROBE_B"),
+        "PROBE_B should be renamed to PROBE_BETA, got {names:?}"
+    );
+
+    idb.types_mut()
+        .edit("idakit_enum_probe")
+        .constant("PROBE_C")
+        .delete()
+        .expect("delete a constant");
+    assert!(
+        !constants(idb, "idakit_enum_probe")
+            .iter()
+            .any(|(n, _)| n == "PROBE_C"),
+        "PROBE_C should be gone"
+    );
+
+    // A constant that does not resolve is NoMember; an unknown enum is NoType.
+    let ghost = idb
+        .types_mut()
+        .edit("idakit_enum_probe")
+        .constant("PROBE_GHOST")
+        .set_value(9);
+    assert!(
+        matches!(
+            ghost,
+            Err(Error::TypeEdit {
+                source: TypeEditError::NoMember { .. }
+            })
+        ),
+        "editing a missing constant should be NoMember, got {ghost:?}"
+    );
+    let no_type = idb
+        .types_mut()
+        .edit("idakit_no_such_enum")
+        .add_constant("X", 1);
+    assert!(
+        matches!(
+            no_type,
+            Err(Error::TypeEdit {
+                source: TypeEditError::NoType { .. }
+            })
+        ),
+        "editing a missing enum should be NoType, got {no_type:?}"
+    );
+
+    // Renaming onto an existing constant name is a typed rejection.
+    let dup = idb
+        .types_mut()
+        .edit("idakit_enum_probe")
+        .constant("PROBE_A")
+        .rename("PROBE_BETA");
+    assert!(
+        matches!(
+            dup,
+            Err(Error::TypeEdit {
+                source: TypeEditError::Rejected { .. }
+            })
+        ),
+        "renaming onto an existing constant name should be Rejected, got {dup:?}"
     );
 }

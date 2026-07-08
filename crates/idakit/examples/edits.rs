@@ -177,9 +177,10 @@ fn defining_types(idb: &mut Database) -> Result<(), Error> {
     Ok(())
 }
 
-/// Member surgery on a defined struct: append a member, retype and rename existing ones through the
-/// `member(..)` sub-cursor, and show the structured rejection when a rename collides. Each edit
-/// auto-saves to the local til; nothing persists past `save = false`.
+/// Member surgery on defined types: append/retype/rename struct fields through the `member(..)`
+/// sub-cursor (with the structured rejection when a rename collides), then add and revalue enum
+/// constants through `constant(..)`. Each edit auto-saves to the local til; nothing persists past
+/// `save = false`.
 fn editing_members(idb: &mut Database) -> Result<(), Error> {
     use idakit::types::expr;
 
@@ -221,6 +222,24 @@ fn editing_members(idb: &mut Database) -> Result<(), Error> {
         }) => println!("  duplicate rename -> Rejected({code})"),
         other => println!("  duplicate rename -> unexpected {other:?}"),
     }
+
+    // Enum constants use the same cursor: add, revalue, rename.
+    idb.types_mut()
+        .define("enum edit_enum_demo { DEMO_A = 1, DEMO_B = 2 };")?;
+    idb.types_mut()
+        .edit("edit_enum_demo")
+        .add_constant("DEMO_C", 3)?;
+    idb.types_mut()
+        .edit("edit_enum_demo")
+        .constant("DEMO_A")
+        .set_value(10)?;
+    let constants: Vec<(String, u64)> = match idb.type_named("edit_enum_demo")?.shape() {
+        idakit::types::TypeShape::Enum { members, .. } => {
+            members.iter().map(|m| (m.name.clone(), m.value)).collect()
+        }
+        _ => Vec::new(),
+    };
+    println!("  after add + revalue, constants: {constants:?}");
     Ok(())
 }
 
