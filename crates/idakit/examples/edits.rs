@@ -1,5 +1,5 @@
-//! Write-side cursors end to end: rename, comment, patch, and type-apply through `at_mut`,
-//! `function_mut`, and `types_mut`.
+//! Write-side cursors end to end: rename, comment, patch, type-apply, and signature surgery through
+//! `at_mut`, `function_mut`, and `types_mut`.
 //!
 //! A tour of the write idioms: the read-capable cursor (read-modify-write with no re-borrow), the
 //! `&str` classifier (name vs declaration), the `Option`/`Result` shapes of the acquirers, the
@@ -29,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             name_and_comment(idb, entry)?;
             function_types(idb, entry)?;
+            signature_surgery(idb, entry)?;
             defining_types(idb)?;
             building_types(idb, entry);
             classifier_and_errors(idb, entry);
@@ -114,6 +115,35 @@ fn function_types(idb: &mut Database, ea: Address) -> Result<(), Error> {
         "  prototype after clear: {:?}",
         idb.function(ea).prototype()
     );
+    Ok(())
+}
+
+/// Signature surgery: read-modify-write one field at a time (return, an arg's type, an arg's name,
+/// an implicit `this`, the calling convention), each a typed [`Error::Signature`] on failure.
+fn signature_surgery(idb: &mut Database, ea: Address) -> Result<(), Error> {
+    println!("\n== function_mut: signature surgery ==");
+
+    if let Some(mut f) = idb.function_mut(ea) {
+        f.set_type("int surgery_probe(int a, int b)")?;
+    }
+    println!("  seeded:        {:?}", idb.function(ea).prototype());
+
+    // Each verb reads the current prototype, changes one field, and re-applies.
+    if let Some(mut f) = idb.function_mut(ea) {
+        f.set_return_type(expr::char_().pointer())?; // int -> char *
+        f.set_arg_type(0, expr::decl("unsigned int"))?; // arg 0 -> unsigned int
+        f.rename_arg(1, "count")?; // arg 1 -> count
+        f.prepend_this(expr::void().pointer())?; // insert void *this
+        f.set_calling_convention(CallingConvention::Cdecl)?;
+    }
+    println!("  after surgery: {:?}", idb.function(ea).prototype());
+
+    // An out-of-range argument index is a typed error, not a panic.
+    if let Some(mut f) = idb.function_mut(ea)
+        && let Err(Error::Signature { source }) = f.set_arg_type(99, expr::int32())
+    {
+        println!("  set_arg_type(99, ..) -> Signature: {source}");
+    }
     Ok(())
 }
 

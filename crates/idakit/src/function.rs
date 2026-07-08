@@ -1,16 +1,28 @@
 //! Enumerates a database's functions, reads them through the [`Function`] view, and edits them
 //! through the [`FunctionEdit`] cursor.
+//!
+//! [`FunctionEdit`] carries the whole-prototype writes ([`set_type`](FunctionEdit::set_type),
+//! [`clear_type`](FunctionEdit::clear_type)) and the field-at-a-time surgery verbs
+//! ([`set_return_type`](FunctionEdit::set_return_type),
+//! [`set_arg_type`](FunctionEdit::set_arg_type), [`rename_arg`](FunctionEdit::rename_arg),
+//! [`set_calling_convention`](FunctionEdit::set_calling_convention),
+//! [`prepend_this`](FunctionEdit::prepend_this)). A surgery verb reads the existing prototype,
+//! mutates one field, and re-applies; a failure is a typed [`SignatureError`].
 
+use std::ffi::c_int;
 use std::ops::Range;
 
 use idakit_sys as sys;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use snafu::Snafu;
+use strum::VariantArray;
 
 use crate::Database;
 use crate::address::Address;
 use crate::decompiler::DecompiledFunction;
 use crate::decompiler::ctree::Ctree;
 use crate::error::{Error, Result};
-use crate::ffi::read_string;
+use crate::ffi::{read_string, reason_or, with_cstr};
 use crate::flowchart::{FlowChart, flowchart_flags};
 use crate::instruction::Instruction;
 use crate::stack::StackFrame;
@@ -365,6 +377,194 @@ impl FunctionEdit<'_> {
     pub fn clear_type(&mut self) -> Result<()> {
         self.db.at_mut(self.entry).clear_type()
     }
+
+    /// Replace this function's return type, keeping its parameters and calling convention.
+    ///
+    /// The surgery counterpart to respelling the whole prototype: it reads the current signature,
+    /// swaps the return, and re-applies.
+    ///
+    /// # Errors
+    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
+    /// prototype, [`SignatureError::BuildFailed`] if `ret` cannot be built, or
+    /// [`SignatureError::ApplyFailed`] if the kernel rejects the rebuilt signature.
+    #[doc(alias("get_func_details", "create_func"))]
+    pub fn set_return_type(&mut self, ret: impl Into<TypeExpr>) -> Result<()> {
+        let recipe = ret.into().serialize();
+        let (code, reason) = self.db.func_set_rettype(self.entry, &recipe);
+        sig_result(code, self.entry, None, reason)
+    }
+
+    /// Replace the type of parameter `index` (zero-based), keeping its name.
+    ///
+    /// # Errors
+    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
+    /// prototype, [`SignatureError::ArgIndexOutOfRange`] if `index` is past the last parameter,
+    /// [`SignatureError::BuildFailed`] if `ty` cannot be built, or [`SignatureError::ApplyFailed`]
+    /// if the kernel rejects the rebuilt signature.
+    #[doc(alias("get_func_details", "create_func"))]
+    pub fn set_arg_type(&mut self, index: usize, ty: impl Into<TypeExpr>) -> Result<()> {
+        let recipe = ty.into().serialize();
+        let (code, arity, reason) = self.db.func_set_argtype(self.entry, index, &recipe);
+        sig_result(code, self.entry, Some((index, arity)), reason)
+    }
+
+    /// Rename parameter `index` (zero-based), keeping its type.
+    ///
+    /// # Errors
+    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
+    /// prototype, [`SignatureError::ArgIndexOutOfRange`] if `index` is past the last parameter, or
+    /// [`SignatureError::ApplyFailed`] if the kernel rejects the rebuilt signature; or
+    /// [`Error::InteriorNul`] if `name` contains a NUL byte.
+    #[doc(alias("get_func_details", "create_func"))]
+    pub fn rename_arg(&mut self, index: usize, name: impl AsRef<str>) -> Result<()> {
+        let (code, arity, reason) = with_cstr(name.as_ref(), "name", |p| {
+            self.db.func_rename_arg(self.entry, index, p)
+        })?;
+        sig_result(code, self.entry, Some((index, arity)), reason)
+    }
+
+    /// Set this function's calling convention.
+    ///
+    /// # Errors
+    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
+    /// prototype, or [`SignatureError::ApplyFailed`] if the kernel rejects the convention (e.g. an
+    /// x86 convention on a non-x86 target).
+    #[doc(alias("set_cc"))]
+    pub fn set_calling_convention(&mut self, cc: CallingConvention) -> Result<()> {
+        let (code, reason) = self.db.func_set_cc(self.entry, c_int::from(u8::from(cc)));
+        sig_result(code, self.entry, None, reason)
+    }
+
+    /// Insert an implicit `this` pointer as the first parameter, shifting the rest.
+    ///
+    /// The idiom for turning a free function into a method: pass the owning type as a pointer
+    /// (`expr::named("widget_t").pointer()`). Pair with
+    /// [`set_calling_convention`](Self::set_calling_convention) for `__thiscall` where the target
+    /// wants it.
+    ///
+    /// # Errors
+    /// [`Error::Signature`] wrapping [`SignatureError::NoPrototype`] if the entry has no editable
+    /// prototype, [`SignatureError::BuildFailed`] if `this` cannot be built, or
+    /// [`SignatureError::ApplyFailed`] if the kernel rejects the rebuilt signature.
+    #[doc(alias("get_func_details", "create_func"))]
+    pub fn prepend_this(&mut self, this: impl Into<TypeExpr>) -> Result<()> {
+        let recipe = this.into().serialize();
+        let (code, reason) = self.db.func_prepend_this(self.entry, &recipe);
+        sig_result(code, self.entry, None, reason)
+    }
+}
+
+/// Maps a surgery return code, the current arity, and any captured reason to a crate [`Result`],
+/// the shared tail of the [`FunctionEdit`] surgery verbs. `arg` is `Some((index, arity))` for the
+/// index-taking verbs, so an out-of-range code names both.
+fn sig_result(
+    code: c_int,
+    address: Address,
+    arg: Option<(usize, usize)>,
+    reason: String,
+) -> Result<()> {
+    match code {
+        sys::IDAKIT_SIG_OK => Ok(()),
+        sys::IDAKIT_SIG_NO_PROTOTYPE => Err(SignatureError::NoPrototype {
+            address: address.get(),
+        }
+        .into()),
+        sys::IDAKIT_SIG_ARG_RANGE => {
+            let (index, arity) = arg.unwrap_or_default();
+            Err(SignatureError::ArgIndexOutOfRange {
+                address: address.get(),
+                index,
+                arity,
+            }
+            .into())
+        }
+        sys::IDAKIT_SIG_BUILD => Err(SignatureError::BuildFailed {
+            reason: reason_or(
+                reason,
+                "an unknown named type or invalid declaration within it",
+            ),
+        }
+        .into()),
+        _ => Err(SignatureError::ApplyFailed {
+            address: address.get(),
+            reason: reason_or(reason, "the kernel rejected the edited signature"),
+        }
+        .into()),
+    }
+}
+
+/// Why a function-prototype surgery edit failed, from the [`FunctionEdit`] surgery verbs.
+///
+/// Carried by [`Error::Signature`], which `?` flattens into the crate [`Result`].
+#[derive(Debug, Snafu, PartialEq, Eq)]
+#[snafu(visibility(pub(crate)))]
+pub enum SignatureError {
+    /// The address carries no function prototype to edit.
+    #[snafu(display("no function prototype to edit at {address:#x}"))]
+    NoPrototype {
+        /// The function entry with no editable prototype.
+        address: u64,
+    },
+
+    /// A parameter index was past the last parameter.
+    #[snafu(display(
+        "parameter index {index} out of range ({arity} parameter(s)) at {address:#x}"
+    ))]
+    ArgIndexOutOfRange {
+        /// The function entry.
+        address: u64,
+        /// The out-of-range index.
+        index: usize,
+        /// The prototype's actual parameter count.
+        arity: usize,
+    },
+
+    /// A replacement type could not be built from its recipe.
+    #[snafu(display("could not build the replacement type: {reason}"))]
+    BuildFailed {
+        /// Why the replacement type could not be built.
+        reason: String,
+    },
+
+    /// The kernel rejected the rebuilt signature (`create_func` or `apply_tinfo`).
+    #[snafu(display("could not apply the edited signature at {address:#x}: {reason}"))]
+    ApplyFailed {
+        /// The function entry.
+        address: u64,
+        /// Why the rebuilt signature was rejected.
+        reason: String,
+    },
+}
+
+/// A function's calling convention: the plain register/stack conventions surgery can set.
+///
+/// A curated closed set mirroring the settable `CM_CC_*` conventions from `typeinf.hpp`
+/// (IDA 9.3), idakit's own semantic layer over IDA's open convention byte. It omits the
+/// usercall/special and custom conventions (which carry explicit argument locations), the ellipsis
+/// convention (varargs is a [`function`](crate::types::expr::function) builder flag), and the
+/// spoiled-registers marker.
+#[derive(
+    Clone, Copy, PartialEq, Eq, Hash, Debug, TryFromPrimitive, IntoPrimitive, VariantArray,
+)]
+#[repr(u8)]
+#[doc(alias("cm_t", "CM_CC_MASK"))]
+pub enum CallingConvention {
+    /// Unknown or unspecified (`CM_CC_UNKNOWN`).
+    Unknown = 0x10,
+    /// `__cdecl`: caller-cleaned stack (`CM_CC_CDECL`).
+    Cdecl = 0x30,
+    /// `__stdcall`: callee-cleaned stack (`CM_CC_STDCALL`).
+    Stdcall = 0x50,
+    /// `__pascal`: callee-cleaned, reversed argument order (`CM_CC_PASCAL`).
+    Pascal = 0x60,
+    /// `__fastcall`: leading arguments in registers (`CM_CC_FASTCALL`).
+    Fastcall = 0x70,
+    /// `__thiscall`: the `this` pointer in a register (`CM_CC_THISCALL`).
+    Thiscall = 0x80,
+    /// Swift: arguments and results in registers (`CM_CC_SWIFT`).
+    Swift = 0x90,
+    /// Go: arguments and results in registers or on the stack by version (`CM_CC_GOLANG`).
+    Golang = 0xB0,
 }
 
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
@@ -715,6 +915,26 @@ mod tests {
     // Both owned so they can cross the kernel-thread boundary, unlike the borrowed Function view.
     const _: () = assert_send::<FunctionSnapshot>();
     const _: () = assert_send::<FunctionName>();
+
+    /// Every `CallingConvention` round-trips its byte, and each discriminant is pinned to the raw
+    /// `CM_CC_*` code (typeinf.hpp, IDA 9.3), so a drifted value fails here rather than silently
+    /// setting the wrong convention at the facade.
+    #[test]
+    fn calling_convention_round_trips_and_pins_cm_cc() {
+        for &cc in CallingConvention::VARIANTS {
+            assert!(CallingConvention::try_from(u8::from(cc)).ok() == Some(cc));
+        }
+        assert!(u8::from(CallingConvention::Unknown) == 0x10);
+        assert!(u8::from(CallingConvention::Cdecl) == 0x30);
+        assert!(u8::from(CallingConvention::Stdcall) == 0x50);
+        assert!(u8::from(CallingConvention::Pascal) == 0x60);
+        assert!(u8::from(CallingConvention::Fastcall) == 0x70);
+        assert!(u8::from(CallingConvention::Thiscall) == 0x80);
+        assert!(u8::from(CallingConvention::Swift) == 0x90);
+        assert!(u8::from(CallingConvention::Golang) == 0xB0);
+        // A byte outside the curated set is rejected, not absorbed.
+        assert!(CallingConvention::try_from(0x20u8).is_err());
+    }
 
     #[test]
     fn from_flags_classifies_by_the_two_name_bits() {

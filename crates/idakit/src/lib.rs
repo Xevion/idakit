@@ -207,8 +207,8 @@ pub mod prelude {
     pub use crate::export::{Export, Exports};
     pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
     pub use crate::function::{
-        Function, FunctionChunk, FunctionChunks, FunctionEdit, FunctionName, FunctionSnapshot,
-        Functions, Instructions, InstructionsIn,
+        CallingConvention, Function, FunctionChunk, FunctionChunks, FunctionEdit, FunctionName,
+        FunctionSnapshot, Functions, Instructions, InstructionsIn, SignatureError,
     };
     pub use crate::import::{Import, Imports};
     pub use crate::instruction::{

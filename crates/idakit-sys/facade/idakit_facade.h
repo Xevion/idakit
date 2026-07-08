@@ -399,6 +399,25 @@ int idakit_tinfo_apply(idakit_ea_t ea, const void *handle, int flags, char *errb
 /* Dispose a handle from any idakit_tinfo_* builder. Null is tolerated. */
 void idakit_tinfo_free(void *handle);
 
+/* Prototype surgery: read the function type at ea, mutate one field, then rebuild (create_func) and
+ * re-apply. Each is a full read-modify-write under one fatal-trap guard; replacement types arrive
+ * as a recipe buffer (the same postfix bytecode as idakit_apply_type_recipe). The idx-taking shims
+ * write the current parameter count to *arity (for an out-of-range diagnostic). */
+#define IDAKIT_SIG_OK 0
+#define IDAKIT_SIG_NO_PROTOTYPE 1 /* ea has no function type to edit */
+#define IDAKIT_SIG_ARG_RANGE 2    /* arg index >= parameter count */
+#define IDAKIT_SIG_BUILD 3        /* a replacement-type recipe did not build */
+#define IDAKIT_SIG_APPLY 4        /* create_func or apply_tinfo rejected the rebuilt signature */
+int idakit_func_set_rettype(idakit_ea_t ea, const uint8_t *recipe, size_t len, char *errbuf,
+                            size_t cap);
+int idakit_func_set_argtype(idakit_ea_t ea, size_t idx, const uint8_t *recipe, size_t len,
+                            size_t *arity, char *errbuf, size_t cap);
+int idakit_func_rename_arg(idakit_ea_t ea, size_t idx, const char *name, size_t *arity,
+                           char *errbuf, size_t cap);
+int idakit_func_set_cc(idakit_ea_t ea, int cc, char *errbuf, size_t cap);
+int idakit_func_prepend_this(idakit_ea_t ea, const uint8_t *recipe, size_t len, char *errbuf,
+                             size_t cap);
+
 /* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
  * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the
  * byte range of the whole value this fragment covers. */

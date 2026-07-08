@@ -10,6 +10,7 @@ use std::fmt;
 use snafu::Snafu;
 
 use crate::decompiler::ctree::ExtractError;
+use crate::function::SignatureError;
 use crate::instruction::DecodeError;
 
 /// IDA's error code, with the documented generic values named.
@@ -285,6 +286,15 @@ pub enum Error {
         qerrno: Qerrno,
         /// Human-readable reason, when the kernel left one.
         reason: Option<String>,
+    },
+
+    /// A function-prototype surgery edit failed; carries the typed [`SignatureError`]. `?` flattens
+    /// a [`SignatureError`] into this via [`From`] (`context(false)`), so a surgery call routes
+    /// through the crate [`Result`] like every other write.
+    #[snafu(display("{source}"), context(false))]
+    Signature {
+        /// The underlying signature-edit error.
+        source: SignatureError,
     },
 
     /// A string argument contained an interior NUL byte.

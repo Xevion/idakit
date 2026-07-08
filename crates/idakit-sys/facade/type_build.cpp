@@ -199,11 +199,171 @@ extern "C" int idakit_define_type(const char *input, char *errbuf, size_t cap) {
   }
 }
 
-// Build the tinfo the postfix recipe in (buf, len) encodes and apply it at ea. A tinfo stack drives
-// the walk: leaf opcodes push a type, transform opcodes pop one and push the wrapped result, and a
-// well-formed recipe leaves exactly one type to apply. Any malformed buffer, unresolved named leaf,
-// or unparseable embedded decl is _ERR_INPUT; apply_tinfo rejection is _ERR_APPLY. The whole
-// build+apply runs under one fatal-trap guard, with a decl/apply diagnostic captured into errbuf.
+namespace {
+// Run the postfix recipe in (buf, len) over a tinfo stack, leaving the single resulting type in
+// `out`: a leaf op pushes a type, a transform pops one and pushes the wrapped result, and a
+// well-formed recipe leaves exactly one. IDAKIT_TYPE_OK with `out` set, else IDAKIT_TYPE_ERR_INPUT
+// (malformed buffer, unresolved named leaf, or unparseable embedded decl). The shared lowering
+// behind idakit_apply_type_recipe and the signature-surgery shims; callers wrap it in guarded<>
+// (parse_decl/get_named_type/create_func may emit or trap).
+int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
+  recipe_reader r{buf, len};
+  std::vector<tinfo_t> stack;
+  while (r.has_more()) {
+    uint8_t op = r.u8();
+    switch (op) {
+    case IDAKIT_RECIPE_VOID: {
+      tinfo_t t;
+      if (!t.create_simple_type(BTF_VOID))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_BOOL: {
+      tinfo_t t;
+      if (!t.create_simple_type(BT_BOOL))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_INT: {
+      uint8_t bytes = r.u8();
+      uint8_t is_signed = r.u8();
+      tinfo_t t;
+      if (!r.ok || !build_int(t, bytes, is_signed != 0))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_FLOAT: {
+      uint8_t bytes = r.u8();
+      tinfo_t t;
+      if (!r.ok || !build_float(t, bytes))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_NAMED: {
+      std::string name;
+      if (!r.str(name))
+        return IDAKIT_TYPE_ERR_INPUT;
+      tinfo_t t;
+      if (!build_named(t, name.c_str()))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_DECL: {
+      std::string decl;
+      if (!r.str(decl))
+        return IDAKIT_TYPE_ERR_INPUT;
+      tinfo_t t;
+      qstring pname;
+      if (!parse_decl(&t, &pname, get_idati(), decl.c_str(), PT_SEMICOLON))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_PTR: {
+      if (stack.empty())
+        return IDAKIT_TYPE_ERR_INPUT;
+      tinfo_t inner = stack.back();
+      stack.pop_back();
+      tinfo_t t;
+      if (!t.create_ptr(inner))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_ARRAY: {
+      uint64_t nelems = r.uint_le(8);
+      if (!r.ok || nelems > 0xffffffffULL || stack.empty())
+        return IDAKIT_TYPE_ERR_INPUT;
+      tinfo_t inner = stack.back();
+      stack.pop_back();
+      tinfo_t t;
+      if (!t.create_array(inner, (uint32)nelems))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    case IDAKIT_RECIPE_CONST: {
+      if (stack.empty())
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.back().set_const();
+      break;
+    }
+    case IDAKIT_RECIPE_VOLATILE: {
+      if (stack.empty())
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.back().set_volatile();
+      break;
+    }
+    case IDAKIT_RECIPE_FUNCTION: {
+      uint64_t nparams = r.uint_le(4);
+      uint8_t varargs = r.u8();
+      uint64_t cc = r.uint_le(2);
+      std::vector<std::string> names((size_t)nparams);
+      for (uint64_t i = 0; i < nparams && r.ok; i++)
+        r.str(names[(size_t)i]);
+      // The return type sits just below the params on the stack (return pushed first).
+      if (!r.ok || stack.size() < (size_t)nparams + 1)
+        return IDAKIT_TYPE_ERR_INPUT;
+      func_type_data_t ftd;
+      size_t base = stack.size() - (size_t)nparams;
+      ftd.rettype = stack[base - 1];
+      for (size_t i = 0; i < (size_t)nparams; i++) {
+        funcarg_t arg;
+        arg.type = stack[base + i];
+        arg.name = names[i].c_str();
+        ftd.push_back(arg);
+      }
+      stack.resize(base - 1);
+      // Varargs is IDA's ellipsis convention; an explicit cc otherwise, else the default.
+      if (varargs != 0)
+        ftd.set_cc(CM_CC_ELLIPSIS);
+      else if (cc != 0)
+        ftd.set_cc((callcnv_t)cc);
+      tinfo_t t;
+      if (!t.create_func(ftd))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
+    default:
+      return IDAKIT_TYPE_ERR_INPUT;
+    }
+  }
+  if (!r.ok || stack.size() != 1)
+    return IDAKIT_TYPE_ERR_INPUT;
+  out = stack[0];
+  return IDAKIT_TYPE_OK;
+}
+
+// Read ea's function type into (tif, ftd); false if ea carries no function type to edit. Reads
+// without recomputing arg locations (GTD_NO_ARGLOCS); rebuild_and_apply forces a recompute.
+bool read_func_details(ea_t ea, tinfo_t &tif, func_type_data_t &ftd) {
+  return get_tinfo(&tif, ea) && !tif.empty() && tif.get_func_details(&ftd, GTD_NO_ARGLOCS);
+}
+
+// Rebuild the function type from mutated details and re-apply it at ea. Clears any explicit arg
+// locations the edit invalidated so create_func recomputes them. IDAKIT_SIG_APPLY if create_func or
+// apply_tinfo rejects the result.
+int rebuild_and_apply(ea_t ea, func_type_data_t &ftd) {
+  ftd.flags &= ~(FTI_ARGLOCS | FTI_EXPLOCS);
+  tinfo_t nt;
+  if (!nt.create_func(ftd))
+    return IDAKIT_SIG_APPLY;
+  if (!apply_tinfo(ea, nt, TINFO_DEFINITE))
+    return IDAKIT_SIG_APPLY;
+  return IDAKIT_SIG_OK;
+}
+} // namespace
+
+// Build the tinfo the postfix recipe in (buf, len) encodes and apply it at ea (apply_tinfo,
+// TINFO_DEFINITE | flags). ERR_INPUT is a malformed buffer, an unresolved named leaf, or an
+// unparseable embedded decl; apply_tinfo rejection is _ERR_APPLY. Build+apply run under one
+// fatal-trap guard, with any decl/apply diagnostic captured into errbuf.
 extern "C" int idakit_apply_type_recipe(idakit_ea_t ea, const uint8_t *buf, size_t len, int flags,
                                         char *errbuf, size_t cap) {
   try {
@@ -211,136 +371,11 @@ extern "C" int idakit_apply_type_recipe(idakit_ea_t ea, const uint8_t *buf, size
     if (errbuf != nullptr && cap != 0)
       errbuf[0] = 0;
     int code = guarded<int>(IDAKIT_TYPE_ERR_APPLY, true, [&]() -> int {
-      recipe_reader r{buf, len};
-      std::vector<tinfo_t> stack;
-      while (r.has_more()) {
-        uint8_t op = r.u8();
-        switch (op) {
-        case IDAKIT_RECIPE_VOID: {
-          tinfo_t t;
-          if (!t.create_simple_type(BTF_VOID))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_BOOL: {
-          tinfo_t t;
-          if (!t.create_simple_type(BT_BOOL))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_INT: {
-          uint8_t bytes = r.u8();
-          uint8_t is_signed = r.u8();
-          tinfo_t t;
-          if (!r.ok || !build_int(t, bytes, is_signed != 0))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_FLOAT: {
-          uint8_t bytes = r.u8();
-          tinfo_t t;
-          if (!r.ok || !build_float(t, bytes))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_NAMED: {
-          std::string name;
-          if (!r.str(name))
-            return IDAKIT_TYPE_ERR_INPUT;
-          tinfo_t t;
-          if (!build_named(t, name.c_str()))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_DECL: {
-          std::string decl;
-          if (!r.str(decl))
-            return IDAKIT_TYPE_ERR_INPUT;
-          tinfo_t t;
-          qstring pname;
-          if (!parse_decl(&t, &pname, get_idati(), decl.c_str(), PT_SEMICOLON))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_PTR: {
-          if (stack.empty())
-            return IDAKIT_TYPE_ERR_INPUT;
-          tinfo_t inner = stack.back();
-          stack.pop_back();
-          tinfo_t t;
-          if (!t.create_ptr(inner))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_ARRAY: {
-          uint64_t nelems = r.uint_le(8);
-          if (!r.ok || nelems > 0xffffffffULL || stack.empty())
-            return IDAKIT_TYPE_ERR_INPUT;
-          tinfo_t inner = stack.back();
-          stack.pop_back();
-          tinfo_t t;
-          if (!t.create_array(inner, (uint32)nelems))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        case IDAKIT_RECIPE_CONST: {
-          if (stack.empty())
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.back().set_const();
-          break;
-        }
-        case IDAKIT_RECIPE_VOLATILE: {
-          if (stack.empty())
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.back().set_volatile();
-          break;
-        }
-        case IDAKIT_RECIPE_FUNCTION: {
-          uint64_t nparams = r.uint_le(4);
-          uint8_t varargs = r.u8();
-          uint64_t cc = r.uint_le(2);
-          std::vector<std::string> names((size_t)nparams);
-          for (uint64_t i = 0; i < nparams && r.ok; i++)
-            r.str(names[(size_t)i]);
-          // The return type sits just below the params on the stack (return pushed first).
-          if (!r.ok || stack.size() < (size_t)nparams + 1)
-            return IDAKIT_TYPE_ERR_INPUT;
-          func_type_data_t ftd;
-          size_t base = stack.size() - (size_t)nparams;
-          ftd.rettype = stack[base - 1];
-          for (size_t i = 0; i < (size_t)nparams; i++) {
-            funcarg_t arg;
-            arg.type = stack[base + i];
-            arg.name = names[i].c_str();
-            ftd.push_back(arg);
-          }
-          stack.resize(base - 1);
-          // Varargs is IDA's ellipsis convention; an explicit cc otherwise, else the default.
-          if (varargs != 0)
-            ftd.set_cc(CM_CC_ELLIPSIS);
-          else if (cc != 0)
-            ftd.set_cc((callcnv_t)cc);
-          tinfo_t t;
-          if (!t.create_func(ftd))
-            return IDAKIT_TYPE_ERR_INPUT;
-          stack.push_back(t);
-          break;
-        }
-        default:
-          return IDAKIT_TYPE_ERR_INPUT;
-        }
-      }
-      if (!r.ok || stack.size() != 1)
-        return IDAKIT_TYPE_ERR_INPUT;
-      if (!apply_tinfo((ea_t)ea, stack[0], (uint32)flags | TINFO_DEFINITE))
+      tinfo_t t;
+      int rc = build_recipe(buf, len, t);
+      if (rc != IDAKIT_TYPE_OK)
+        return rc;
+      if (!apply_tinfo((ea_t)ea, t, (uint32)flags | TINFO_DEFINITE))
         return IDAKIT_TYPE_ERR_APPLY;
       return IDAKIT_TYPE_OK;
     });
@@ -488,6 +523,140 @@ extern "C" int idakit_tinfo_apply(idakit_ea_t ea, const void *handle, int flags,
 extern "C" void idakit_tinfo_free(void *handle) {
   try {
     delete as_tif(handle);
+  } catch (...) {
+    std::abort();
+  }
+}
+
+// Prototype surgery: each shim reads ea's function type, mutates one field, and rebuilds+re-applies
+// (create_func -> apply_tinfo) under one fatal-trap guard. SIG_NO_PROTOTYPE if ea has no function
+// type; SIG_ARG_RANGE if an index is past the last parameter (the current count is written to
+// `arity`); SIG_BUILD if a replacement-type recipe does not build; SIG_APPLY if the kernel rejects
+// the rebuilt signature. Any parse/apply diagnostic is captured into errbuf.
+
+extern "C" int idakit_func_set_rettype(idakit_ea_t ea, const uint8_t *recipe, size_t len,
+                                       char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+      tinfo_t tif;
+      func_type_data_t ftd;
+      if (!read_func_details((ea_t)ea, tif, ftd))
+        return IDAKIT_SIG_NO_PROTOTYPE;
+      tinfo_t rt;
+      if (build_recipe(recipe, len, rt) != IDAKIT_TYPE_OK)
+        return IDAKIT_SIG_BUILD;
+      ftd.rettype = rt;
+      return rebuild_and_apply((ea_t)ea, ftd);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_func_set_argtype(idakit_ea_t ea, size_t idx, const uint8_t *recipe,
+                                       size_t len, size_t *arity, char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    if (arity != nullptr)
+      *arity = 0;
+    int code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+      tinfo_t tif;
+      func_type_data_t ftd;
+      if (!read_func_details((ea_t)ea, tif, ftd))
+        return IDAKIT_SIG_NO_PROTOTYPE;
+      if (arity != nullptr)
+        *arity = ftd.size();
+      if (idx >= ftd.size())
+        return IDAKIT_SIG_ARG_RANGE;
+      tinfo_t at;
+      if (build_recipe(recipe, len, at) != IDAKIT_TYPE_OK)
+        return IDAKIT_SIG_BUILD;
+      ftd[idx].type = at;
+      return rebuild_and_apply((ea_t)ea, ftd);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_func_rename_arg(idakit_ea_t ea, size_t idx, const char *name, size_t *arity,
+                                      char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    if (arity != nullptr)
+      *arity = 0;
+    int code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+      tinfo_t tif;
+      func_type_data_t ftd;
+      if (!read_func_details((ea_t)ea, tif, ftd))
+        return IDAKIT_SIG_NO_PROTOTYPE;
+      if (arity != nullptr)
+        *arity = ftd.size();
+      if (idx >= ftd.size())
+        return IDAKIT_SIG_ARG_RANGE;
+      ftd[idx].name = name;
+      return rebuild_and_apply((ea_t)ea, ftd);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_func_set_cc(idakit_ea_t ea, int cc, char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+      tinfo_t tif;
+      func_type_data_t ftd;
+      if (!read_func_details((ea_t)ea, tif, ftd))
+        return IDAKIT_SIG_NO_PROTOTYPE;
+      ftd.set_cc((callcnv_t)cc);
+      return rebuild_and_apply((ea_t)ea, ftd);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_func_prepend_this(idakit_ea_t ea, const uint8_t *recipe, size_t len,
+                                        char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+      tinfo_t tif;
+      func_type_data_t ftd;
+      if (!read_func_details((ea_t)ea, tif, ftd))
+        return IDAKIT_SIG_NO_PROTOTYPE;
+      tinfo_t pt;
+      if (build_recipe(recipe, len, pt) != IDAKIT_TYPE_OK)
+        return IDAKIT_SIG_BUILD;
+      funcarg_t self_arg;
+      self_arg.type = pt;
+      self_arg.name = "this";
+      ftd.insert(ftd.begin(), self_arg);
+      return rebuild_and_apply((ea_t)ea, ftd);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
   } catch (...) {
     std::abort();
   }

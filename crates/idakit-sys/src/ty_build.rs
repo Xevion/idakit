@@ -96,7 +96,65 @@ unsafe extern "C" {
 
     /// Dispose a handle from any `idakit_tinfo_*` builder. Null is tolerated.
     pub fn idakit_tinfo_free(handle: *mut c_void);
+
+    /// Replace the return type of the function type at `ea` with the recipe in `(recipe, len)`,
+    /// then rebuild and re-apply. See the `IDAKIT_SIG_*` codes; diagnostics land in `errbuf`.
+    pub fn idakit_func_set_rettype(
+        ea: Address,
+        recipe: *const u8,
+        len: usize,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Replace parameter `idx`'s type with the recipe in `(recipe, len)`, then rebuild and re-apply.
+    /// Writes the current parameter count to `*arity`; [`IDAKIT_SIG_ARG_RANGE`] if `idx` is past it.
+    pub fn idakit_func_set_argtype(
+        ea: Address,
+        idx: usize,
+        recipe: *const u8,
+        len: usize,
+        arity: *mut usize,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Rename parameter `idx` to `name`, then rebuild and re-apply. Writes the current parameter
+    /// count to `*arity`; [`IDAKIT_SIG_ARG_RANGE`] if `idx` is past it.
+    pub fn idakit_func_rename_arg(
+        ea: Address,
+        idx: usize,
+        name: *const c_char,
+        arity: *mut usize,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Set the calling convention of the function type at `ea` to the raw `CM_CC_*` code `cc`, then
+    /// rebuild and re-apply.
+    pub fn idakit_func_set_cc(ea: Address, cc: c_int, errbuf: *mut c_char, cap: usize) -> c_int;
+
+    /// Insert an implicit `this` parameter of the recipe type in `(recipe, len)` at index 0, then
+    /// rebuild and re-apply.
+    pub fn idakit_func_prepend_this(
+        ea: Address,
+        recipe: *const u8,
+        len: usize,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
 }
+
+/// A prototype-surgery edit succeeded ([`idakit_func_set_rettype`] and its siblings).
+pub const IDAKIT_SIG_OK: c_int = 0;
+/// The address carries no function type to edit.
+pub const IDAKIT_SIG_NO_PROTOTYPE: c_int = 1;
+/// A parameter index was past the last parameter.
+pub const IDAKIT_SIG_ARG_RANGE: c_int = 2;
+/// A replacement-type recipe did not build.
+pub const IDAKIT_SIG_BUILD: c_int = 3;
+/// `create_func` or `apply_tinfo` rejected the rebuilt signature.
+pub const IDAKIT_SIG_APPLY: c_int = 4;
 
 /// Result of a successful type apply ([`idakit_apply_type_decl`]/[`idakit_apply_named_type`]/
 /// [`idakit_apply_type_recipe`]/[`idakit_tinfo_apply`]).

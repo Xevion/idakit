@@ -21,10 +21,11 @@ fn run(idb: &mut idakit::Database) {
     type_define(idb);
     type_build(idb, address);
     type_function_build(idb, address);
+    type_surgery(idb, address);
     type_clear(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + clear"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear"
     );
 }
 
@@ -247,6 +248,125 @@ fn type_function_build(idb: &mut idakit::Database, entry: Address) {
         matches!(proto.shape(), TypeShape::Function { varargs: true, .. }),
         "the built prototype should be variadic, got {:?}",
         proto.shape()
+    );
+}
+
+/// Prototype surgery edits one field at a time: seed a known prototype, swap the return type,
+/// retype and rename a parameter, prepend an implicit `this`, and set a calling convention,
+/// confirming each through a structural or textual read; the out-of-range and no-prototype paths
+/// surface the typed `SignatureError`.
+fn type_surgery(idb: &mut idakit::Database, entry: Address) {
+    use idakit::types::{TypeShape, expr};
+
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_type("int idakit_surgery_probe(int a, int b)")
+        .expect("seed a prototype to edit");
+
+    // Swap the return (int -> char *), retype arg 0 (-> unsigned int), rename arg 1.
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_return_type(expr::char_().pointer())
+        .expect("set the return type");
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_arg_type(0, expr::decl("unsigned int"))
+        .expect("retype arg 0");
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .rename_arg(1, "idakit_count")
+        .expect("rename arg 1");
+
+    let proto = idb
+        .function(entry)
+        .prototype_type()
+        .expect("walk the edited prototype")
+        .expect("a prototype is set");
+    let TypeShape::Function { ret, params, .. } = proto.shape() else {
+        panic!("expected a function, got {:?}", proto.shape());
+    };
+    assert!(
+        matches!(proto.get(*ret).shape, TypeShape::Ptr(_)),
+        "the return type should now be a pointer"
+    );
+    assert!(params.len() == 2, "still two params, got {}", params.len());
+    assert!(
+        matches!(
+            proto.get(params[0]).shape,
+            TypeShape::Int { signed: false, .. }
+        ),
+        "arg 0 should now be unsigned"
+    );
+    // Param names are not in the structural walk; they render in the prototype text.
+    let text = idb.function(entry).prototype().expect("prototype text");
+    assert!(
+        text.contains("idakit_count"),
+        "the renamed arg should render: {text:?}"
+    );
+
+    // An out-of-range index is a typed SignatureError, without mutating.
+    let r = idb
+        .function_mut(entry)
+        .expect("a function at the entry")
+        .set_arg_type(9, expr::int32());
+    assert!(
+        matches!(
+            r,
+            Err(Error::Signature {
+                source: SignatureError::ArgIndexOutOfRange {
+                    index: 9,
+                    arity: 2,
+                    ..
+                }
+            })
+        ),
+        "an out-of-range arg index should be ArgIndexOutOfRange, got {r:?}"
+    );
+
+    // prepend_this inserts a leading implicit this-pointer, shifting the params.
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .prepend_this(expr::void().pointer())
+        .expect("prepend a this-pointer");
+    let proto = idb
+        .function(entry)
+        .prototype_type()
+        .expect("walk after prepend_this")
+        .expect("a prototype is set");
+    let TypeShape::Function { params, .. } = proto.shape() else {
+        panic!("expected a function, got {:?}", proto.shape());
+    };
+    assert!(
+        params.len() == 3,
+        "the this-pointer should be prepended, got {}",
+        params.len()
+    );
+    let text = idb.function(entry).prototype().expect("prototype text");
+    assert!(
+        text.contains("this"),
+        "the this arg should render: {text:?}"
+    );
+
+    // Setting a convention is accepted; its rendering is arch-dependent, so no string check.
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_calling_convention(CallingConvention::Cdecl)
+        .expect("set the calling convention");
+
+    // A function whose type was cleared has no prototype to edit.
+    idb.at_mut(entry).clear_type().expect("clear the prototype");
+    let r = idb
+        .function_mut(entry)
+        .expect("a function at the entry")
+        .set_return_type(expr::int32());
+    assert!(
+        matches!(
+            r,
+            Err(Error::Signature {
+                source: SignatureError::NoPrototype { .. }
+            })
+        ),
+        "editing a cleared prototype should be NoPrototype, got {r:?}"
     );
 }
 

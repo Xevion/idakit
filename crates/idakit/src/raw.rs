@@ -378,6 +378,107 @@ impl Database {
         (code, reason)
     }
 
+    /// Replaces the return type of the function at `address` with the recipe `buf`; the reason is
+    /// copied out of the facade buffer on a build or apply failure.
+    pub(crate) fn func_set_rettype(&mut self, address: Address, buf: &[u8]) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: `buf` is readable of `buf.len()`; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_func_set_rettype(
+                address.get(),
+                buf.as_ptr(),
+                buf.len(),
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Replaces parameter `idx`'s type at `address` with the recipe `buf`, returning the code, the
+    /// current parameter count (for an out-of-range diagnostic), and any reason.
+    pub(crate) fn func_set_argtype(
+        &mut self,
+        address: Address,
+        idx: usize,
+        buf: &[u8],
+    ) -> (c_int, usize, String) {
+        let mut err = [0u8; 1024];
+        let mut arity = 0usize;
+        // SAFETY: `buf` is readable of `buf.len()`; `arity`/`err` are writable out-params the facade
+        // fills, `err` NUL-terminated within.
+        let code = unsafe {
+            sys::idakit_func_set_argtype(
+                address.get(),
+                idx,
+                buf.as_ptr(),
+                buf.len(),
+                &mut arity,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, arity, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Renames parameter `idx` at `address`, returning the code, the current parameter count, and
+    /// any reason.
+    pub(crate) fn func_rename_arg(
+        &mut self,
+        address: Address,
+        idx: usize,
+        name: *const c_char,
+    ) -> (c_int, usize, String) {
+        let mut err = [0u8; 1024];
+        let mut arity = 0usize;
+        // SAFETY: `name` is a valid C string; `arity`/`err` are writable out-params the facade
+        // fills, `err` NUL-terminated within.
+        let code = unsafe {
+            sys::idakit_func_rename_arg(
+                address.get(),
+                idx,
+                name,
+                &mut arity,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, arity, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Sets the calling convention (a raw `CM_CC_*` code) of the function at `address`.
+    pub(crate) fn func_set_cc(&mut self, address: Address, cc: c_int) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: `err` is a writable buffer the facade NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_func_set_cc(address.get(), cc, err.as_mut_ptr().cast(), err.len())
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Inserts a leading implicit `this` parameter of recipe type `buf` at `address`.
+    pub(crate) fn func_prepend_this(&mut self, address: Address, buf: &[u8]) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: `buf` is readable of `buf.len()`; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_func_prepend_this(
+                address.get(),
+                buf.as_ptr(),
+                buf.len(),
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
     /// Parses `input` into the local type library; returns the error count and any diagnostics
     /// copied out of the facade buffer.
     pub(crate) fn define_type(&mut self, input: *const c_char) -> (c_int, String) {
