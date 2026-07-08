@@ -1,62 +1,82 @@
-//! [`OperandDataType`]: the value type of an operand, mirroring IDA's `op_dtype_t`.
+//! Mirrors IDA's operand-value-type byte as the closed [`OperandDataType`] enum.
 //!
-//! Discriminants are the raw `dt_*` values from `ua.hpp`, so the `IntoPrimitive`/
-//! `TryFromPrimitive` derives are the single source of truth for the SDK mapping. This mirror
-//! is pinned to one IDA minor (9.3), where the `dt_*` set is fixed, so the enum is exhaustive
-//! and an alignment test ties it to the facade. A later SDK that grows the set (as 9.x grew
-//! `dt_half`) is a deliberate, breaking widening. An out-of-domain value decodes to
+//! Discriminants are the raw values IDA reports for each type, so the `IntoPrimitive`/
+//! `TryFromPrimitive` derives are the single source of truth for the mapping. This mirror
+//! is pinned to one IDA version, where that set is fixed, so the enum is exhaustive and an
+//! alignment test ties it to the facade. A later version that grows the set is a
+//! deliberate, breaking widening. An out-of-domain value decodes to
 //! [`DecodeError::UnsupportedDataType`](super::DecodeError), never a silent fallback.
 //!
-//! `data_type` is the *value* type, distinct from the addressing-mode size, since `dt_float`
-//! and `dt_dword` are both four bytes but differ here. This is exactly why the operand keeps
-//! the data_type rather than only a byte count.
+//! `data_type` is the *value* type, distinct from the addressing-mode size, since a float
+//! and a dword are both four bytes but differ here. This is exactly why the operand keeps
+//! `data_type` rather than only a byte count.
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
 
-/// The value type of an operand (IDA `op_dtype_t`).
+/// The value type of an operand.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u8)]
+#[doc(alias("op_dtype_t"))]
 pub enum OperandDataType {
     /// 8-bit integer.
+    #[doc(alias("dt_byte"))]
     Byte = 0,
     /// 16-bit integer.
+    #[doc(alias("dt_word"))]
     Word = 1,
     /// 32-bit integer.
+    #[doc(alias("dt_dword"))]
     Dword = 2,
     /// 4-byte floating point.
+    #[doc(alias("dt_float"))]
     Float = 3,
     /// 8-byte floating point.
+    #[doc(alias("dt_double"))]
     Double = 4,
-    /// Variable-size floating point (`ph.tbyte_size`).
+    /// Variable-size floating point (its width depends on the processor).
+    #[doc(alias("dt_tbyte"))]
     Tbyte = 5,
     /// Packed real (mc68040).
+    #[doc(alias("dt_packreal"))]
     PackReal = 6,
     /// 64-bit integer.
+    #[doc(alias("dt_qword"))]
     Qword = 7,
     /// 128-bit integer.
+    #[doc(alias("dt_byte16"))]
     Byte16 = 8,
     /// Pointer to code.
+    #[doc(alias("dt_code"))]
     Code = 9,
     /// No value type.
+    #[doc(alias("dt_void"))]
     Void = 10,
     /// 48-bit.
+    #[doc(alias("dt_fword"))]
     Fword = 11,
     /// Bit field (mc680x0).
+    #[doc(alias("dt_bitfild"))]
     BitField = 12,
     /// Pointer to an ASCIIZ string.
+    #[doc(alias("dt_string"))]
     String = 13,
     /// Pointer to a Unicode string.
+    #[doc(alias("dt_unicode"))]
     Unicode = 14,
     /// Long double, which may differ from [`Tbyte`](Self::Tbyte).
+    #[doc(alias("dt_ldbl"))]
     Ldbl = 15,
     /// 256-bit integer.
+    #[doc(alias("dt_byte32"))]
     Byte32 = 16,
     /// 512-bit integer.
+    #[doc(alias("dt_byte64"))]
     Byte64 = 17,
     /// 2-byte floating point.
+    #[doc(alias("dt_half"))]
     Half = 18,
 }
 
@@ -112,9 +132,9 @@ mod tests {
         }
     }
 
-    // Pin the mirror to this SDK's `op_dtype_t` values: the facade reports each `dt_*` in this
+    // Pin the mirror to the facade's reported values: the facade reports each type in this
     // enum's discriminant order, so a header change (or a mistyped discriminant) mismatches.
-    // Pure constant source -- no kernel, so it runs as a unit test.
+    // Pure constant source, no kernel, so it runs as a unit test.
     #[test]
     fn dtype_ids_align_with_the_facade() {
         assert!(OperandDataType::VARIANTS.len() == sys::IDAKIT_OP_DTYPE_COUNT);

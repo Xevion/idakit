@@ -1,6 +1,6 @@
-//! [`Arena<T>`]: a minimal append-only index arena, modeled on rust-analyzer's `la_arena`.
+//! A minimal append-only index arena ([`Arena<T>`]), modeled on rust-analyzer's `la_arena`.
 //!
-//! [`Idx<T>`] is a 32-bit handle into an [`Arena<T>`]: `Copy`, lifetime-free, and typed by
+//! [`Idx<T>`] is a 32-bit handle into an [`Arena<T>`]:`Copy`, lifetime-free, and typed by
 //! `T` so an `Idx<ExpressionData>` cannot be used where an `Idx<TypeValue>` is expected. The
 //! arena only appends, so a handle stays valid for the arena's life. Being lifetime-free and
 //! (for `T: Send`) `Send` is what lets a materialized graph, the decompiler ctree or a

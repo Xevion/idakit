@@ -1,5 +1,5 @@
-//! [`Type`]: an owned, `Send` snapshot of one resolved type (a named type or a function
-//! prototype), walked out of the kernel into an interned [`TypeTable`].
+//! Walks a database's named types and function prototypes into [`Type`], an owned, `Send`
+//! snapshot backed by an interned [`TypeTable`].
 //!
 //! The structured counterpart to a rendered declaration string. The root [`TypeId`] and every
 //! member/parameter it references are real handles into [`types`](Type::types), so a caller
@@ -30,6 +30,7 @@ impl Database {
     /// # Errors
     /// [`Error::TypeNotFound`] if no such type exists, or [`Error::Extract`] if the walked table is
     /// malformed.
+    #[doc(alias("get_named_type"))]
     pub fn type_named(&self, name: &str) -> Result<Type> {
         let walked = with_cstr(name, "name", |p| {
             // SAFETY: `p` is a valid C string for the call; the kernel is claimed for `&self`.
@@ -49,11 +50,12 @@ impl Database {
 /// An owned, `Send` snapshot of one resolved type.
 ///
 /// A [`root`](Self::root) [`TypeId`] into an interned [`TypeTable`] holding it and every type it
-/// references. Build with [`Database::type_named`] or
+/// references. Read from the database through [`Database::type_named`] or
 /// [`Function::prototype_type`](crate::function::Function::prototype_type), then walk it via
 /// [`shape`](Self::shape)/[`members`](Self::members) and resolve child handles with
 /// [`get`](Self::get). Detached from the kernel, so it inspects on any thread.
 #[derive(Debug)]
+#[doc(alias("tinfo_t"))]
 pub struct Type {
     types: TypeTable,
     root: TypeId,

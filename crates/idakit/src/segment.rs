@@ -1,4 +1,4 @@
-//! [`Segment`]: a borrowed view of one segment, keyed by kernel index.
+//! Enumerates a database's segments and reads them through the [`Segment`] view.
 
 use idakit_sys as sys;
 
@@ -11,13 +11,15 @@ impl Database {
     /// Iterate every segment in the database, in kernel order.
     #[inline]
     #[must_use]
+    #[doc(alias("get_segm_qty"))]
     pub fn segments(&self) -> Segments<'_> {
         Segments::new(self)
     }
 }
 
-/// A borrowed view of one segment, valid while the database stays open.
+/// A borrowed view of one segment, keyed by kernel index.
 #[derive(Clone, Copy)]
+#[doc(alias("segment_t"))]
 pub struct Segment<'db> {
     index: i32,
     db: &'db Database,
@@ -38,6 +40,7 @@ impl<'db> Segment<'db> {
 
     /// The segment's name (e.g. `.text`), or `None` if unavailable.
     #[must_use]
+    #[doc(alias("get_visible_segm_name"))]
     pub fn name(&self) -> Option<String> {
         read_string(|buf, cap| self.db.seg_name(self.index, buf, cap))
     }
@@ -45,6 +48,7 @@ impl<'db> Segment<'db> {
     /// First address of the segment.
     #[inline]
     #[must_use]
+    #[doc(alias("start_ea"))]
     pub fn start(&self) -> Option<Address> {
         Address::try_new(self.db.seg_start(self.index))
     }
@@ -52,6 +56,7 @@ impl<'db> Segment<'db> {
     /// One-past-the-last address of the segment.
     #[inline]
     #[must_use]
+    #[doc(alias("end_ea"))]
     pub fn end(&self) -> Option<Address> {
         Address::try_new(self.db.seg_end(self.index))
     }
@@ -69,6 +74,7 @@ impl<'db> Segment<'db> {
     /// [`class`](Self::class) classifies this into a [`SegmentClass`]; use this accessor when
     /// the raw text itself (rather than its meaning) is what's wanted.
     #[must_use]
+    #[doc(alias("get_segm_class"))]
     pub fn class_name(&self) -> Option<String> {
         read_string(|buf, cap| self.db.seg_class(self.index, buf, cap))
     }
@@ -82,27 +88,31 @@ impl<'db> Segment<'db> {
 
     /// The segment's addressing width, or `None` if the segment reports an unrecognized one.
     #[must_use]
+    #[doc(alias("abits"))]
     pub fn bitness(&self) -> Option<Bitness> {
         Bitness::try_from_bits(self.db.seg_bitness(self.index).max(0) as u8)
     }
 
-    /// Whether the segment is readable (`SEGPERM_READ`).
+    /// Whether the segment is readable.
     ///
     /// All three permission predicates read `false` when the input format recorded no
     /// permission bits.
     #[must_use]
+    #[doc(alias("SEGPERM_READ"))]
     pub fn is_readable(&self) -> bool {
         self.db.seg_perm(self.index) & sys::SEGPERM_READ != 0
     }
 
-    /// Whether the segment is writable (`SEGPERM_WRITE`).
+    /// Whether the segment is writable.
     #[must_use]
+    #[doc(alias("SEGPERM_WRITE"))]
     pub fn is_writable(&self) -> bool {
         self.db.seg_perm(self.index) & sys::SEGPERM_WRITE != 0
     }
 
-    /// Whether the segment is executable (`SEGPERM_EXEC`).
+    /// Whether the segment is executable.
     #[must_use]
+    #[doc(alias("SEGPERM_EXEC"))]
     pub fn is_executable(&self) -> bool {
         self.db.seg_perm(self.index) & sys::SEGPERM_EXEC != 0
     }
@@ -143,7 +153,9 @@ impl PartialOrd for Segment<'_> {
     }
 }
 
-/// Lazy iterator over every segment in the database, in kernel order.
+/// A lazy iterator over every segment in the database, in kernel order, from
+/// [`Database::segments`].
+#[doc(alias("getnseg"))]
 pub struct Segments<'db> {
     db: &'db Database,
     next: i32,
@@ -186,10 +198,11 @@ impl ExactSizeIterator for Segments<'_> {}
 /// A segment's classification, from its [`class_name`](Segment::class_name) string.
 ///
 /// IDA documents the segment class as arbitrary text (max 8 characters): a handful of
-/// predefined names map to `SEG_*` segment types, but a loader or user can set anything.
+/// predefined names map to known segment kinds, but a loader or user can set anything.
 /// [`Other`](Self::Other) carries any class string outside that predefined set (e.g. `UNK`,
 /// or a loader-specific name).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[doc(alias("get_segm_class"))]
 pub enum SegmentClass {
     /// `CODE`: executable code.
     Code,

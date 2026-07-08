@@ -1,8 +1,8 @@
-//! Decompilation: C pseudocode and a walkable [`ctree`] AST for a function.
+//! Decompiles a function to C pseudocode and a walkable [`Ctree`] syntax tree.
 //!
 //! [`Database::decompile`] runs Hex-Rays on the function at an address and returns a
-//! [`DecompiledFunction`], which exposes the pseudocode text and [`CtreeCounts`]. Its owned,
-//! `Send` [`Ctree`] is the structured form for analysis off the kernel thread.
+//! [`DecompiledFunction`] carrying the pseudocode text and [`CtreeCounts`]. Its [`Ctree`] is an
+//! owned, `Send` syntax tree for structured analysis off the kernel thread.
 
 pub mod ctree;
 
@@ -35,6 +35,7 @@ impl Database {
     /// [`Error::HexRaysInit`] if the decompiler could not be initialized, [`Error::Decompile`]
     /// if Hex-Rays rejected the function, or [`Error::KernelExit`] if decompilation trapped a
     /// fatal exit.
+    #[doc(alias("decompile_func"))]
     pub fn decompile(&self, address: Address) -> Result<DecompiledFunction<'_>> {
         if !self.hexrays_ready.get() {
             let rc = self.hexrays_init();
@@ -46,7 +47,7 @@ impl Database {
         let (handle, reason) = self.decompile_at(address);
         if handle.is_null() {
             // A trapped fatal exit() during decompilation is a dead kernel, not an ordinary
-            // decompile miss -- surface it as such.
+            // decompile miss, so surface it as such.
             if self.was_trapped() {
                 return Err(self.kernel_exit_error());
             }
@@ -59,8 +60,9 @@ impl Database {
     }
 }
 
-/// Statement / expression / call-site counts of a decompiled function's ctree.
+/// Statement, expression, and call-site counts of a decompiled function's syntax tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[doc(alias("ctree_visitor_t"))]
 pub struct CtreeCounts {
     /// Number of statement nodes (`StatementKind`).
     pub insns: i32,
@@ -70,12 +72,13 @@ pub struct CtreeCounts {
     pub calls: i32,
 }
 
-/// An owned decompiled function.
+/// A decompiled function that frees its Hex-Rays result on [`Drop`].
 ///
-/// Disposes its kernel handle on drop. `handle` is the safety invariant for every call below:
+/// `handle` is the safety invariant for every call below:
 /// non-null (checked at construction), from `idakit_decompile`, disposed exactly once on
 /// [`Drop`]. The raw pointer makes `DecompiledFunction` `!Send`, so it lives only on the kernel
 /// thread.
+#[doc(alias("cfuncptr_t", "cfunc_t"))]
 pub struct DecompiledFunction<'db> {
     handle: *mut c_void,
     _db: PhantomData<&'db Database>,
@@ -97,6 +100,7 @@ impl<'db> DecompiledFunction<'db> {
 
     /// The rendered pseudocode, tags stripped.
     #[must_use]
+    #[doc(alias("get_pseudocode"))]
     pub fn pseudocode(&self) -> Option<String> {
         // SAFETY: live handle (see type docs).
         read_string(|buf, cap| unsafe { sys::idakit_cfunc_pseudocode(self.handle, buf, cap) })
@@ -120,8 +124,8 @@ impl<'db> DecompiledFunction<'db> {
     /// Diagnostic anchor for extraction fidelity: `(visitor_total, expected)` where
     /// `visitor_total` is every expression the SDK's own ctree visitor sees, and `expected` is
     /// how many the extraction walker should materialize, namely `visitor_total` minus the
-    /// `cot_empty` placeholders sitting in *optional* operand slots (a `for(;;)` init/cond/step,
-    /// a bare `return;`) that the walker faithfully elides to `None`.
+    /// empty-expression placeholders sitting in *optional* operand slots (a `for(;;)`
+    /// init/cond/step, a bare `return;`) that the walker faithfully elides to `None`.
     ///
     /// A faithful [`ctree`](Self::ctree) has exactly `expected` expression nodes; a shortfall or
     /// surplus is a real drop or invention.

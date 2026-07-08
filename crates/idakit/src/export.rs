@@ -1,4 +1,4 @@
-//! [`Export`]: a borrowed view of one export (entry point), keyed by kernel index.
+//! Enumerates a database's exports and reads them through the [`Export`] view.
 
 use crate::Database;
 use crate::address::Address;
@@ -8,16 +8,18 @@ impl Database {
     /// Iterate every export (entry point) in the database, in kernel order.
     #[inline]
     #[must_use]
+    #[doc(alias("get_entry_qty"))]
     pub fn exports(&self) -> Exports<'_> {
         Exports::new(self)
     }
 }
 
-/// A borrowed view of one export (entry point), valid while the database stays open.
+/// A borrowed view of one export (entry point), keyed by kernel index.
 ///
 /// A pure re-export has no local [`address`](Self::address) and resolves through a
 /// [`forwarder`](Self::forwarder) instead.
 #[derive(Clone, Copy)]
+#[doc(alias("get_entry"))]
 pub struct Export<'db> {
     index: usize,
     db: &'db Database,
@@ -39,6 +41,7 @@ impl<'db> Export<'db> {
     /// The export's address, or `None` for a pure forwarder that resolves elsewhere.
     #[inline]
     #[must_use]
+    #[doc(alias("get_entry"))]
     pub fn address(&self) -> Option<Address> {
         Address::try_new(self.db.export_ea(self.index))
     }
@@ -46,18 +49,21 @@ impl<'db> Export<'db> {
     /// The export's ordinal, or, for a name-only entry with no ordinal, its entry index.
     #[inline]
     #[must_use]
+    #[doc(alias("get_entry_ordinal"))]
     pub fn ordinal(&self) -> u64 {
         self.db.export_ordinal(self.index)
     }
 
     /// The export's name, or `None` if it is unnamed.
     #[must_use]
+    #[doc(alias("get_entry_name"))]
     pub fn name(&self) -> Option<String> {
         read_string(|buf, cap| self.db.export_name(self.index, buf, cap))
     }
 
     /// The forward target (e.g. `"OTHERLIB.func"`), or `None` when the export is defined here.
     #[must_use]
+    #[doc(alias("get_entry_forwarder"))]
     pub fn forwarder(&self) -> Option<String> {
         read_string(|buf, cap| self.db.export_forwarder(self.index, buf, cap))
     }
@@ -87,7 +93,8 @@ impl std::hash::Hash for Export<'_> {
     }
 }
 
-/// Lazy iterator over every export in the database, in kernel order.
+/// A lazy iterator over every export in the database, in kernel order, from
+/// [`Database::exports`].
 pub struct Exports<'db> {
     db: &'db Database,
     next: usize,

@@ -1,6 +1,10 @@
-//! `TypeTable`: an interned arena of resolved types carried by an owned snapshot off the
-//! kernel thread (the decompiler [`Ctree`](crate::decompiler::ctree::Ctree), a function's
-//! [`StackFrame`](crate::stack::StackFrame), or a standalone [`Type`]).
+//! Reads a database's types into [`TypeTable`], the interned arena every resolved [`Type`]
+//! shares.
+//!
+//! A resolved type is an owned, `Send` [`Type`] snapshot off the kernel thread, carried by the
+//! decompiler [`Ctree`](crate::decompiler::ctree::Ctree), a function's
+//! [`StackFrame`](crate::stack::StackFrame), or standalone. Every type it references lives in one
+//! [`TypeTable`].
 //!
 //! A type is referenced by a [`TypeId`] into the table. Types are interned, so identical
 //! types share one handle, and recursion (a struct pointing at itself) is a [`TypeId`]
@@ -25,10 +29,10 @@ pub use resolved::Type;
 pub(crate) use resolved::walk_type;
 pub(crate) use sink::{TypeSink, raw, reborrow, tid, type_vtbl};
 
-/// Handle to a [`TypeValue`] in a [`TypeTable`].
+/// A typed handle into a [`TypeTable`].
 pub type TypeId = Idx<TypeValue>;
 
-/// A resolved type: its shape plus byte size when known.
+/// A resolved type, pairing its shape with a byte size when known.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeValue {
     /// The type's shape.
@@ -39,6 +43,7 @@ pub struct TypeValue {
 
 /// One field of a struct or union.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[doc(alias("udm_t"))]
 pub struct TypeMember {
     /// The field's name; empty if IDA gave none.
     pub name: String,
@@ -52,6 +57,7 @@ pub struct TypeMember {
 
 /// One member of an enum.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[doc(alias("edm_t"))]
 pub struct EnumMember {
     /// The constant's name.
     pub name: String,
@@ -84,8 +90,10 @@ pub enum TypeShape {
         bytes: u8,
     },
     /// `T *`
+    #[doc(alias("is_ptr", "get_pointed_object"))]
     Ptr(TypeId),
     /// `T[len]`
+    #[doc(alias("is_array", "get_array_element"))]
     Array {
         /// The element type.
         elem: TypeId,
@@ -93,6 +101,7 @@ pub enum TypeShape {
         len: u64,
     },
     /// a struct, with members in declaration order
+    #[doc(alias("is_udt", "get_udt_details"))]
     Struct {
         /// The tag name, or `None` if anonymous.
         name: Option<String>,
@@ -100,6 +109,7 @@ pub enum TypeShape {
         members: Vec<TypeMember>,
     },
     /// a union
+    #[doc(alias("is_udt"))]
     Union {
         /// The tag name, or `None` if anonymous.
         name: Option<String>,
@@ -107,6 +117,7 @@ pub enum TypeShape {
         members: Vec<TypeMember>,
     },
     /// an enum and its underlying integer type
+    #[doc(alias("is_enum", "get_enum_details"))]
     Enum {
         /// The tag name, or `None` if anonymous.
         name: Option<String>,
@@ -116,6 +127,7 @@ pub enum TypeShape {
         members: Vec<EnumMember>,
     },
     /// a function prototype
+    #[doc(alias("is_func", "get_func_details"))]
     Function {
         /// Return type.
         ret: TypeId,
@@ -125,6 +137,7 @@ pub enum TypeShape {
         varargs: bool,
     },
     /// a typedef to another type
+    #[doc(alias("is_typedef"))]
     Typedef {
         /// The alias name.
         name: String,
@@ -174,9 +187,10 @@ impl TypeShape {
     }
 }
 
-/// An interned arena of [`TypeValue`]: structurally identical types collapse to one
+/// An interned arena of [`TypeValue`] that collapses structurally identical types to one
 /// [`TypeId`].
 #[derive(Debug)]
+#[doc(alias("tinfo_t"))]
 pub struct TypeTable {
     arena: Arena<TypeValue>,
     dedup: HashMap<TypeValue, TypeId>,
@@ -286,7 +300,7 @@ mod tests {
 
     #[test]
     fn recursive_struct_uses_a_placeholder_back_reference() {
-        // struct node { struct node *next; } -- reserve the struct's handle first, so the
+        // struct node { struct node *next; }: reserve the struct's handle first, so the
         // member pointer can target it before the body is filled. The table stays finite.
         let mut table = TypeTable::new();
         let node = table.alloc_placeholder();

@@ -1,5 +1,5 @@
-//! [`TypeCatalog`]: an owned, `Send` snapshot of a database's named types, and [`CatalogDiff`],
-//! the name-paired comparison of two catalogs.
+//! Snapshots a database's named types into [`TypeCatalog`] and name-pairs two catalogs into a
+//! [`CatalogDiff`].
 //!
 //! [`Database::type_catalog`] resolves every named type into a table-free [`CanonicalType`] and
 //! keys them by name, caching each type's [`TypeKey`] so the pairwise identity test a diff runs is
@@ -63,7 +63,7 @@ struct Entry {
     key: TypeKey,
 }
 
-/// An owned, `Send` snapshot of a database's named types.
+/// An owned, `Send` snapshot of a database's named types, from [`Database::type_catalog`].
 ///
 /// Each type is reduced to a table-free [`CanonicalType`] and keyed by name, built under one
 /// [`CanonicalOptions`] lens. Survives the database that produced it, so two catalogs compare in
@@ -162,8 +162,8 @@ impl TypeCatalog {
     }
 }
 
-/// The result of [`TypeCatalog::diff`]: the two catalogs' types partitioned by name into those
-/// that agree, those that drifted, and those unique to each side. Every list is name-sorted.
+/// The name-paired partition of two catalogs' types into those that agree, those that drifted,
+/// and those unique to each side. Produced by [`TypeCatalog::diff`]; every list is name-sorted.
 #[derive(Clone, Debug, Default)]
 pub struct CatalogDiff {
     identical: Vec<String>,

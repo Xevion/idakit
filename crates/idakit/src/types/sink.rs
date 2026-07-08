@@ -1,8 +1,9 @@
-//! Driving the facade's [`TypeVtbl`] into a [`TypeBuilder`], shared by every consumer that
-//! walks IDA types: the ctree walk and the bare-tinfo walks (frame, and later members and
-//! prototypes). A consumer supplies its `ctx` type's [`TypeBuilder`] via [`TypeSink`]; the
-//! generic `extern "C"` shims below decode the FFI arguments and push into it, so each consumer
-//! reuses one set of callbacks instead of duplicating ten shims.
+//! Drives the facade's [`TypeVtbl`] into any [`TypeSink`], shared by every consumer that walks
+//! IDA types: the ctree walk and the bare type walks (frame, and later members and prototypes).
+//!
+//! A consumer supplies its `ctx` type's [`TypeBuilder`] via [`TypeSink`]; the generic
+//! `extern "C"` shims below decode the FFI arguments and push into it, so each consumer reuses
+//! one set of callbacks instead of duplicating ten shims.
 
 use std::ffi::{c_char, c_void};
 

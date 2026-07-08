@@ -1,4 +1,4 @@
-//! [`Bitness`]: the addressing width of an image or segment.
+//! The addressing width of an image or segment: 16-, 32-, or 64-bit.
 
 use crate::Database;
 
@@ -9,6 +9,7 @@ impl Database {
     /// [`info`](Database::info) snapshot.
     #[inline]
     #[must_use]
+    #[doc(alias("inf_get_app_bitness"))]
     pub fn bitness(&self) -> Option<Bitness> {
         Bitness::try_from_bits(self.bitness_bits().max(0) as u8)
     }
@@ -20,6 +21,7 @@ impl Database {
 /// (including the `0` the facade returns for an absent segment) becomes `None` at the
 /// conversion boundary rather than a silent default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[doc(alias("inf_get_app_bitness"))]
 pub enum Bitness {
     /// 16-bit addressing.
     Bits16,

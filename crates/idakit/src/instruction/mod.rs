@@ -1,4 +1,4 @@
-//! [`Instruction`]: a decoded machine instruction, owned and `Send`.
+//! Decodes machine instructions into an owned [`Instruction`] and its semantic operands.
 //!
 //! [`Database::decode`](crate::Database::decode) turns the bytes at an [`Address`] into an owned [`Instruction`],
 //! with mnemonic, operands, and control-flow facts all resolved on the kernel thread and
@@ -43,6 +43,7 @@ impl Database {
     /// [`DecodeError::NotCode`] if no instruction decodes at `address`, or
     /// [`DecodeError::UnsupportedProcessor`] if the database's processor has no decoder (only
     /// x86/x64 are modelled).
+    #[doc(alias("decode_insn"))]
     pub fn decode(&self, address: Address) -> Result<Instruction, DecodeError> {
         // SAFETY: `InstructionRaw` is an all-integer POD, so an all-zero bit pattern is a valid
         // value; the facade overwrites it before it reports success.
@@ -113,16 +114,16 @@ pub enum DecodeError {
         regnum: u8,
     },
 
-    /// An operand's value type was outside this IDA minor's `op_dtype_t` domain, since only
-    /// 9.3's `dt_*` set is modelled, so a newer SDK's value is a deliberate break, not a
-    /// silent `Void`. See [`OperandDataType`].
+    /// An operand's value type fell outside the modeled [`OperandDataType`] domain, since
+    /// only this IDA version's set of value types is modeled, so a newer version's value is
+    /// a deliberate break, not a silent `Void`.
     #[snafu(display("unmodeled data type {dtype} at operand {op}, {address:#x}"))]
     UnsupportedDataType {
         /// Address of the instruction.
         address: u64,
         /// The operand slot carrying the value type.
         op: u8,
-        /// The raw `op_dtype_t` byte outside the modelled domain.
+        /// The raw value-type byte outside the modeled domain.
         dtype: u8,
     },
 
@@ -153,7 +154,7 @@ pub enum Isa {
     X64,
 }
 
-/// One decoded instruction: owned, `Send`, and self-describing.
+/// An owned, `Send` snapshot of a decoded instruction, from [`Database::decode`].
 ///
 /// Keyed by its [`Address`]; fall-through is `address + len` and branch destinations are plain
 /// [`Address`]s, so an instruction stream needs no interning, just an address-ordered
@@ -161,6 +162,7 @@ pub enum Isa {
 /// control-flow classification) is already here; nothing on an [`Instruction`] calls back into
 /// the kernel.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[doc(alias("insn_t"))]
 pub struct Instruction {
     /// Address of the instruction.
     pub address: Address,
@@ -201,6 +203,7 @@ impl Instruction {
 
 /// One operand of an [`Instruction`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[doc(alias("op_t"))]
 pub struct Operand {
     /// The operand's original slot index (0-based). Void slots are dropped from
     /// [`ops`](Instruction::ops), so a slot's position in that vector need not equal this; anything
@@ -221,6 +224,7 @@ pub struct Operand {
 /// these. A future operand *category* is a deliberate, breaking widening; an unknown raw
 /// byte is a [`DecodeError`], never a new variant callers must pre-guard.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[doc(alias("op_t"))]
 pub enum OperandKind {
     /// A register, of any class (folds every register operand type).
     Register(Register),
@@ -243,7 +247,7 @@ pub enum OperandKind {
     },
 }
 
-/// A structured memory operand: `segment:[base + index*scale + disp]`.
+/// A structured memory operand of the form `segment:[base + index*scale + disp]`.
 ///
 /// Decoded from IDA's own REX-aware addressing accessors, so the register components are
 /// real, not parsed out of rendered text. Which fields are populated encodes the
@@ -337,8 +341,6 @@ mod tests {
         }
     }
 
-    // `registers()` yields register operands first, then each memory operand's base, index, and
-    // segment in that order; immediates and branch targets contribute nothing.
     #[test]
     fn registers_walks_operand_and_memory_components_in_order() {
         let insn = Instruction {

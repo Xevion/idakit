@@ -1,4 +1,4 @@
-//! Cross-database type comparison: reduce a type to a table-free [`CanonicalType`] and diff it.
+//! Reduces a type to a table-free [`CanonicalType`] for cross-database comparison and diffing.
 //!
 //! A [`Type`](crate::types::Type)'s identity is only meaningful within its own database. To ask
 //! whether a type matches one from *another* database, [`canonicalize`] walks it into a

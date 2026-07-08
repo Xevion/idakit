@@ -1,4 +1,4 @@
-//! [`StringLiteral`]: one string from IDA's string list, iterated by [`Strings`].
+//! Enumerates IDA's string list through the [`StringLiteral`] view and [`Strings`].
 //!
 //! The natural singular name `String` collides with [`std::string::String`], so the view is
 //! [`StringLiteral`] while the iterator and the [`Database::strings`] method keep the ergonomic
@@ -16,18 +16,20 @@ impl Database {
     /// This (re)builds IDA's string list first, an O(database) scan, then walks it. Collect the
     /// result once if you iterate repeatedly, rather than calling this again.
     #[must_use]
+    #[doc(alias("build_strlist"))]
     pub fn strings(&self) -> Strings<'_> {
         self.strlist_build();
         Strings::new(self)
     }
 }
 
-/// A string literal IDA located: its [`address`](Self::address), octet [`len`](Self::len), and
-/// decoded [`text`](Self::text).
+/// A borrowed view of one string IDA located, keyed by address.
 ///
-/// A borrowed view valid while the database stays open, with the raw STRTYPE fields read once
-/// at iteration; the text is decoded on demand.
+/// Carries the [`address`](Self::address), octet [`len`](Self::len), and decoded
+/// [`text`](Self::text). The raw type fields are read once at iteration; the text is decoded
+/// on demand.
 #[derive(Clone, Copy)]
+#[doc(alias("string_info_t"))]
 pub struct StringLiteral<'db> {
     address: Address,
     length: usize,
@@ -86,6 +88,7 @@ impl<'db> StringLiteral<'db> {
     ///
     /// Undecodable units become the Unicode replacement character (U+FFFD) rather than failing.
     #[must_use]
+    #[doc(alias("get_strlit_contents"))]
     pub fn text(&self) -> Option<String> {
         read_string(|buf, cap| {
             self.db
@@ -118,24 +121,24 @@ impl std::hash::Hash for StringLiteral<'_> {
     }
 }
 
-/// Bytes per character encoded in a STRTYPE code (`STRWIDTH`): 1, 2, or 4.
+/// Bytes per character encoded in the raw string-type code: 1, 2, or 4.
 ///
 /// Only the low byte carries width/layout; the high byte's encoding index is irrelevant here.
 fn char_width_of(raw_type: i32) -> u8 {
     1u8 << ((raw_type & sys::STRWIDTH_MASK) as u8)
 }
 
-/// Whether a STRTYPE layout is Pascal (length-prefixed) rather than terminated: `STRLYT`
-/// values 1..=3 (`PASCAL1`/`PASCAL2`/`PASCAL4`).
+/// Whether a string's layout is Pascal (length-prefixed) rather than terminated.
 fn is_pascal_of(raw_type: i32) -> bool {
     let layout = (raw_type & sys::STRLYT_MASK) >> sys::STRLYT_SHIFT;
     (1..=3).contains(&layout)
 }
 
-/// Lazy iterator over IDA's string list, in list order.
+/// A lazy iterator over IDA's string list, in list order, from [`Database::strings`].
 ///
-/// Borrows `&Database`, so it can't outlive the database or coexist with a write. `size_hint`'s
-/// lower bound is `0`: a list entry with no readable address is skipped.
+/// Borrows `&Database`, so it can't coexist with a write. `size_hint`'s lower bound is `0`: a
+/// list entry with no readable address is skipped.
+#[doc(alias("get_strlist_qty", "get_strlist_item"))]
 pub struct Strings<'db> {
     db: &'db Database,
     next: usize,
@@ -195,7 +198,7 @@ mod tests {
 
     use super::*;
 
-    // Raw STRTYPE codes (nalt.hpp): STRWIDTH in bits 0-1, STRLYT in bits 2+.
+    // Raw string-type codes: width in bits 0-1, layout in bits 2+.
     const STRTYPE_C: i32 = 0x00; // 1-byte, terminated
     const STRTYPE_C_16: i32 = 0x01; // 2-byte, terminated
     const STRTYPE_C_32: i32 = 0x02; // 4-byte, terminated
@@ -203,7 +206,7 @@ mod tests {
     const STRTYPE_PASCAL_16: i32 = 0x05; // 2-byte, 1-byte length prefix
     const STRTYPE_LEN2: i32 = 0x08; // 1-byte, 2-byte length prefix
 
-    /// Width comes from the STRWIDTH bits, and a nonzero encoding index (high byte) does not
+    /// Width comes from the low bits, and a nonzero encoding index (high byte) does not
     /// disturb it.
     #[rstest]
     #[case(STRTYPE_C, 1)]

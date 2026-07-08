@@ -1,4 +1,5 @@
-//! `TypeBuilder`: the streaming construction side of a [`TypeTable`].
+//! Streams the facade's type callbacks into [`TypeBuilder`], accumulating an interned
+//! [`TypeTable`].
 //!
 //! Receives the facade's type callbacks (scalar/ptr/array/func/named-ref/anon/fill-*) and
 //! builds an interned [`TypeTable`], resolving recursion through a by-name placeholder: a
@@ -6,7 +7,7 @@
 //! arrives ([`fill_struct`](Self::fill_struct)), so a member can point back at it. It is
 //! error-type-agnostic: it records raw failure signals ([`too_wide`](Self::too_wide),
 //! [`unfilled`](Self::unfilled)) for the caller to map to its own error, so both the ctree
-//! walk and (later) a bare `tinfo_t` walk can drive the same builder.
+//! walk and (later) a bare standalone type walk can drive the same builder.
 
 use std::collections::HashMap;
 

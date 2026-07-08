@@ -1,4 +1,4 @@
-//! [`Ida`]: the kernel-thread host and marshalling handle.
+//! Hosts IDA's kernel thread and marshals closures onto it.
 //!
 //! Brings IDA's single-threaded, thread-affine kernel up, either on the current thread
 //! ([`Ida::here`]) or on a dedicated `"idakit-kernel"` thread ([`Ida::run`]), and gates it
@@ -18,7 +18,7 @@ use crate::error::{CallError, InitError, Result, panic_payload_str};
 
 /// At most one [`Database`] may be live: the kernel is a process global.
 static KERNEL_LIVE: AtomicBool = AtomicBool::new(false);
-/// `init_library` runs once ever; later claims only re-steal `g_main`.
+/// Library initialization runs once ever; later claims only re-run [`claim::steal_main`].
 static KERNEL_INITED: AtomicBool = AtomicBool::new(false);
 
 /// Exclusive hold on the kernel; dropping frees it for the next claim.
@@ -50,7 +50,7 @@ pub struct Ida {
 
 /// Default kernel-thread stack size: the OS main thread's 8 MiB, idalib's native habitat.
 ///
-/// `init_library` alone overflows below ~3 MiB; spawned stacks don't autogrow.
+/// Library initialization alone overflows below ~3 MiB; spawned stacks don't autogrow.
 const KERNEL_STACK_DEFAULT: usize = 8 << 20;
 
 impl Ida {
@@ -75,7 +75,8 @@ impl Ida {
     /// # Errors
     /// [`InitError::AlreadyRunning`] if a kernel is already live in the process,
     /// [`InitError::Claim`] if the kernel thread could not be claimed, or
-    /// [`InitError::InitLibrary`] if `init_library` returned nonzero.
+    /// [`InitError::InitLibrary`] if the underlying library failed to initialize.
+    #[doc(alias("init_library"))]
     pub fn here() -> Result<Database, InitError> {
         IdaConfig::builder().here()
     }
@@ -90,8 +91,9 @@ impl Ida {
     /// # Errors
     /// [`InitError::AlreadyRunning`] if a kernel is already live in the process,
     /// [`InitError::Claim`] if the kernel thread could not be claimed, or
-    /// [`InitError::InitLibrary`] if `init_library` returned nonzero. Never for a panic in
-    /// `app`.
+    /// [`InitError::InitLibrary`] if the underlying library failed to initialize. Never for a
+    /// panic in `app`.
+    #[doc(alias("init_library"))]
     pub fn run<R, F>(app: F) -> Result<R, InitError>
     where
         F: FnOnce(Ida) -> R,
@@ -219,7 +221,7 @@ impl IdaConfig {
         let result = app(Ida { tx });
         // `app` has returned, so its handle and any clones it joined are dropped and
         // the pump has exited; join to reap the kernel thread. The pump guards every
-        // job, so a panic here is an unexpected kernel-setup failure -- surface it
+        // job, so a panic here is an unexpected kernel-setup failure; surface it
         // rather than let it vanish, but don't poison the app's own result.
         if let Err(payload) = kernel.join() {
             let reason = panic_payload_str(&*payload).unwrap_or("<non-string panic payload>");
@@ -267,8 +269,8 @@ impl<S: State> IdaConfigBuilder<S> {
     }
 }
 
-/// Steals `g_main` for the calling thread, initializes the library once, then applies the
-/// per-bring-up policy (`batch`).
+/// Reclaims the kernel main thread for the caller via [`claim::steal_main`], initializes the
+/// library once, then applies the per-bring-up policy (`batch`).
 ///
 /// The steal is correct on any thread (OS-main or spawned).
 fn bring_up_kernel(cfg: &IdaConfig) -> Result<(), InitError> {

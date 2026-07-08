@@ -1,5 +1,5 @@
-//! [`NamedType`]: a borrowed cursor over one local named type, plus [`NamedTypes`], the lazy
-//! enumeration behind [`Database::named_types`].
+//! Enumerates and resolves a database's local named types through [`NamedType`] and
+//! [`NamedTypes`].
 //!
 //! The database's local type library is addressed by ordinal; [`NamedTypes`] walks the live
 //! ordinals, skipping the anonymous ones (structural types with no tag) so a caller sees only the
@@ -18,7 +18,7 @@ use crate::ffi::read_string;
 impl Database {
     /// Enumerates the database's local named types, in ordinal order.
     ///
-    /// Each item is a cheap [`NamedType`] cursor: reading its [`name`](NamedType::name) is a
+    /// Each item is a cheap [`NamedType`] view: reading its [`name`](NamedType::name) is a
     /// metadata lookup, while [`resolve`](NamedType::resolve) walks it into an owned [`Type`].
     /// Anonymous types (structural, with no tag) are skipped.
     ///
@@ -31,6 +31,7 @@ impl Database {
     /// ```
     #[inline]
     #[must_use]
+    #[doc(alias("get_ordinal_limit"))]
     pub fn named_types(&self) -> NamedTypes<'_> {
         NamedTypes::new(self)
     }
@@ -40,6 +41,7 @@ impl Database {
 ///
 /// Cheap to hold and copy; [`resolve`](Self::resolve) performs the structural walk.
 #[derive(Clone, Copy)]
+#[doc(alias("get_numbered_type"))]
 pub struct NamedType<'db> {
     db: &'db Database,
     ordinal: u32,
@@ -60,6 +62,7 @@ impl<'db> NamedType<'db> {
 
     /// The type's name: a metadata read, no structural walk.
     #[must_use]
+    #[doc(alias("get_numbered_type_name"))]
     pub fn name(&self) -> String {
         read_string(|buf, cap| self.db.type_name_at(self.ordinal, buf, cap)).unwrap_or_default()
     }
@@ -71,6 +74,7 @@ impl<'db> NamedType<'db> {
     /// # Errors
     /// [`Error::TypeNotFound`] if a live ordinal refuses to walk (near-unreachable), or
     /// [`Error::Extract`] if the walked table is malformed.
+    #[doc(alias("get_numbered_type"))]
     pub fn resolve(&self) -> Result<Type> {
         // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
         match walk_type(|v, ctx, root| unsafe {
@@ -105,7 +109,8 @@ impl<'db> NamedType<'db> {
     }
 }
 
-/// Lazy enumeration of a database's local named types. See [`Database::named_types`].
+/// A lazy iterator over a database's local named types, from [`Database::named_types`].
+#[doc(alias("get_ordinal_limit"))]
 pub struct NamedTypes<'db> {
     db: &'db Database,
     next: u32,
@@ -114,8 +119,8 @@ pub struct NamedTypes<'db> {
 
 impl<'db> NamedTypes<'db> {
     fn new(db: &'db Database) -> Self {
-        // Ordinals run 1..limit; u32::MAX means "ordinals disabled" (never for local types) -- fold
-        // it to an empty range rather than iterating four billion phantom slots.
+        // Ordinals run 1..limit; u32::MAX means "ordinals disabled" (never for local types), so
+        // fold it to an empty range rather than iterating four billion phantom slots.
         let limit = match db.type_ordinal_limit() {
             u32::MAX => 0,
             n => n,

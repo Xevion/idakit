@@ -1,4 +1,4 @@
-//! [`Error`]: the crate's error type for operational calls.
+//! Error types for idiomatic `idakit` calls.
 //!
 //! The kernel boundary has its own error types: [`CallError`] (a job panicked or the kernel
 //! is gone) and [`InitError`] (kernel setup failed). This mirrors how `std`/tokio model a
@@ -12,10 +12,11 @@ use snafu::Snafu;
 use crate::decompiler::ctree::ExtractError;
 use crate::instruction::DecodeError;
 
-/// IDA's `error_t` code, with the documented generic values named.
+/// IDA's error code, with the documented generic values named.
 ///
 /// Carried by the operational errors below. The raw integer is available via [`Qerrno::code`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[doc(alias("error_t"))]
 pub enum Qerrno {
     /// `eOk`: no error.
     Ok,
@@ -32,7 +33,7 @@ pub enum Qerrno {
 }
 
 impl Qerrno {
-    /// Classify a raw `error_t`.
+    /// Classify a raw error code.
     #[must_use]
     pub const fn from_code(code: i32) -> Self {
         match code {
@@ -45,7 +46,7 @@ impl Qerrno {
         }
     }
 
-    /// The raw `error_t` integer.
+    /// The raw error code integer.
     #[must_use]
     pub const fn code(self) -> i32 {
         match self {
@@ -156,21 +157,20 @@ impl fmt::Display for PatternRejection {
 #[derive(Debug, Snafu, PartialEq, Eq)]
 #[snafu(visibility(pub(crate)))]
 pub enum Error {
-    /// The database file could not be opened. `reason` is IDA's own error text via
-    /// `get_qerrno` (e.g. `"Resource temporarily unavailable"` when another process holds
-    /// the database open).
+    /// The database file could not be opened. `reason` is IDA's own error text (e.g.
+    /// `"Resource temporarily unavailable"` when another process holds the database open).
     #[snafu(display("failed to open database {path:?}: {reason}"))]
     Open {
         /// The database path that failed to open.
         path: String,
-        /// IDA's `error_t` for the failure.
+        /// IDA's error code for the failure.
         qerrno: Qerrno,
-        /// Human-readable failure reason, from `get_qerrno`/`qstrerror`.
+        /// Human-readable failure reason, from IDA's own error text.
         reason: String,
     },
 
-    /// `reason` comes from Hex-Rays' `hexrays_failure_t` (the real decompile-error
-    /// channel; the kernel's `qerrno` is not set on this path).
+    /// `reason` comes from Hex-Rays' own failure channel, not the kernel's error code
+    /// (which is not set on this path).
     #[snafu(display("decompilation failed at {address:#x}: {reason}"))]
     Decompile {
         /// Address that failed to decompile.
@@ -220,15 +220,15 @@ pub enum Error {
         address: u64,
     },
 
-    /// A basic block reported an `fc_block_type_t` outside the modelled set, whether from a
-    /// newer IDA SDK that added a block terminator, or a corrupt flow chart. Empirically
-    /// unreachable on 9.3. A loud version-drift guard rather than a silently absorbed
+    /// A basic block reported a block kind outside the modelled set, whether from a newer
+    /// IDA version that added a block terminator, or a corrupt flow chart. Empirically
+    /// unreachable today. A loud version-drift guard rather than a silently absorbed
     /// catch-all value.
     #[snafu(display("unmodeled block kind {raw} in the flow chart at {block:#x}"))]
     UnknownBlockKind {
         /// Start address of the block whose kind did not map.
         block: u64,
-        /// The raw `fc_block_type_t` byte outside the modelled set.
+        /// The raw block-kind byte outside the modelled set.
         raw: u8,
     },
 
@@ -243,7 +243,7 @@ pub enum Error {
     },
 
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is
-    /// present only when the kernel left a usable `error_t` (best-effort, since not
+    /// present only when the kernel left a usable error code (best-effort, since not
     /// every rejection path sets one).
     #[snafu(display("{op} failed at {address:#x}{}", ReasonTail(reason)))]
     WriteRejected {
@@ -251,7 +251,7 @@ pub enum Error {
         op: &'static str,
         /// Address the write targeted.
         address: u64,
-        /// IDA's `error_t`, when one was set.
+        /// IDA's error code, when one was set.
         qerrno: Qerrno,
         /// Human-readable reason, when the kernel left one.
         reason: Option<String>,

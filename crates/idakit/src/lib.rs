@@ -1,4 +1,4 @@
-//! Idiomatic Rust bindings for IDA Pro's `idalib` (9.x).
+//! Idiomatic Rust bindings for the IDA Pro 9.3 kernel.
 //!
 //! # The kernel thread
 //!
@@ -202,7 +202,10 @@ impl Database {
     /// # Errors
     /// [`Error::Open`] if the database can't be opened, or [`Error::KernelExit`] if IDA
     /// terminates the process mid-operation (e.g. an unaccepted license).
-    #[builder]
+    #[builder(builder_type(doc {
+        /// Builder for [`Database::open`]. Set `run_auto`, then finish with `.call()`.
+    }))]
+    #[doc(alias("open_database"))]
     pub fn open(
         &mut self,
         #[builder(start_fn)] path: impl AsRef<str>,
@@ -255,6 +258,7 @@ impl Database {
     }
 
     /// Close the current database, optionally saving analysis back to the `.i64`.
+    #[doc(alias("close_database"))]
     pub fn close(&mut self, save: bool) {
         self.close_database(save);
     }

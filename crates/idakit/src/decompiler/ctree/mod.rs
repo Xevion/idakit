@@ -1,7 +1,7 @@
-//! The decompiler ctree as an owned, `Send`, interned ADT.
+//! Walks a decompiled function's syntax tree ([`Ctree`]) off the kernel thread.
 //!
-//! A decompiled function is materialized on the kernel thread into owned arenas of
-//! nodes and types, then handed back as a `Send` value any worker thread can analyze.
+//! A decompiled function is materialized on the kernel thread into owned, interned arenas of
+//! nodes and types, then handed back as a `Send` [`Ctree`] any worker thread can analyze.
 
 mod extract;
 mod node;

@@ -1,5 +1,5 @@
-//! [`CanonicalType`]: a table-free structural form of a type, the basis for cross-database
-//! type identity.
+//! Reduces a type to [`CanonicalType`], a table-free structural form, and diffs two canonical
+//! types into a [`TypeDiff`].
 //!
 //! A [`TypeValue`](crate::types::TypeValue) references its children by [`TypeId`], an arena index that
 //! only means something within its own [`TypeTable`]. So the derived `PartialEq` answers "same type
@@ -26,9 +26,8 @@ use siphasher::sip128::{Hasher128, SipHasher13};
 
 use crate::types::{Type, TypeId, TypeShape, TypeTable};
 
-/// The tag namespace of a tagged aggregate: what gives a named
-/// [`struct`](AggregateKind::Struct), [`union`](AggregateKind::Union), or
-/// [`enum`](AggregateKind::Enum) its nominal identity.
+/// The tag namespace of a tagged aggregate, giving a named [`struct`](AggregateKind::Struct),
+/// [`union`](AggregateKind::Union), or [`enum`](AggregateKind::Enum) its nominal identity.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum AggregateKind {
     /// A `struct`.
@@ -176,8 +175,8 @@ impl fmt::Display for TypeKey {
     }
 }
 
-/// The nominal identity of a type: the name that pairs it with a type from another database before
-/// their bodies are compared.
+/// The nominal identity of a type, the name that pairs it with a type from another database
+/// before their bodies are compared.
 ///
 /// `None` for an anonymous or purely structural type, which has no cross-database name to pair on.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -478,8 +477,8 @@ fn aggregate(
         })
         .collect();
     stack.pop();
-    // A union's members all sit at offset 0, so their order is not layout -- sort by name so a
-    // reordered union is one canonical value. A struct's order *is* its layout; leave it.
+    // A union's members all sit at offset 0, so their order carries no meaning; sort by name so a
+    // reordered union is one canonical value. A struct's order *is* its layout, so leave it.
     if kind == AggregateKind::Union {
         members.sort_by(|a, b| a.name.cmp(&b.name));
     }
@@ -708,8 +707,8 @@ impl CanonicalType {
     }
 }
 
-/// A structural difference between two [`CanonicalType`]s: an ordered list of [`Change`]s, empty
-/// when the two are identical.
+/// An ordered list of [`Change`]s describing the structural difference between two
+/// [`CanonicalType`]s, empty when the two are identical.
 ///
 /// Produced by [`CanonicalType::diff`] / [`Type::diff`].
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -976,8 +975,8 @@ impl CanonicalType {
                     a.diff_into(join(&path, &format!("arg{i}")), b, out);
                 }
             }
-            // Everything else -- a scalar, a different aggregate kind or tag, a reshaped wrapper, a
-            // mismatched pair -- is one whole-node retype. Listed exhaustively so a new variant must
+            // Everything else (a scalar, a different aggregate kind or tag, a reshaped wrapper, a
+            // mismatched pair) is one whole-node retype. Listed exhaustively so a new variant must
             // be handled.
             (
                 CanonicalType::Void
@@ -1035,7 +1034,7 @@ impl CanonicalMember {
                 },
             });
         }
-        // A move is reported only when nothing was inserted or removed to explain it -- otherwise it
+        // A move is reported only when nothing was inserted or removed to explain it; otherwise it
         // is the derivable cascade of that insertion, not an independent change.
         if report_move
             && let (Some(from), Some(to)) = (self.bit_offset, other.bit_offset)
@@ -1067,7 +1066,7 @@ fn diff_members(path: &str, lm: &[CanonicalMember], rm: &[CanonicalMember], out:
             pairs.push((li, ri, false));
         }
     }
-    // Pass 2: unpaired members that share one unambiguous bit offset -- a rename in place.
+    // Pass 2: unpaired members sharing one unambiguous bit offset, read as a rename in place.
     for li in 0..lm.len() {
         if l_used[li] {
             continue;
@@ -1385,8 +1384,7 @@ mod tests {
     #[test]
     fn identical_types_in_separate_tables_share_every_projection() {
         // The whole point: two independent tables (two databases) produce equal canonical forms,
-        // keys, and strings for the same type -- something the table-local `TypeId` equality
-        // cannot do.
+        // keys, and strings for the same type, which the table-local `TypeId` equality cannot do.
         let mut a = TypeTable::new();
         let root_a = point(&mut a);
         let ca = canonicalize(&a, root_a, CanonicalOptions::strict());
@@ -1437,7 +1435,7 @@ mod tests {
 
     #[test]
     fn a_named_aggregate_is_spelled_at_root_and_cut_when_referenced() {
-        // struct node { node *next; } -- the recursive pointer cuts to a nominal reference, so the
+        // struct node { node *next; }: the recursive pointer cuts to a nominal reference, so the
         // walk terminates without a back-edge.
         let mut table = TypeTable::new();
         let node = table.alloc_placeholder();
@@ -1714,7 +1712,7 @@ mod tests {
         assert!(s.contains("Change type"));
         assert!(s.contains("i32 → i64"));
         assert!(s.contains("Add"));
-        // Metrics: y retyped, z added, root resized -- and added+removed+changed plus the size
+        // Metrics: y retyped, z added, root resized, and added+removed+changed plus the size
         // change partition len().
         assert!(d.len() == 3);
         assert!(d.added() == 1);
@@ -1798,7 +1796,7 @@ mod tests {
     #[test]
     fn an_enum_reordered_is_the_same_type() {
         // The LogMark regression: the same constants in a different order must be one canonical
-        // value, one key, and an empty diff -- not a "drifted" phantom.
+        // value, one key, and an empty diff, not a "drifted" phantom.
         let mut a = TypeTable::new();
         let ea = enum_of(&mut a, "E", &[("A", 1), ("B", 2), ("C", 3)]);
         let ca = canonicalize(&a, ea, CanonicalOptions::strict());

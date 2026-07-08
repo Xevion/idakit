@@ -1,4 +1,4 @@
-//! [`DatabaseInfo`]: an owned snapshot of database-wide metadata.
+//! Snapshots database-wide metadata into an owned, `Send` [`DatabaseInfo`].
 
 use std::ops::Range;
 
@@ -13,16 +13,21 @@ use crate::ffi::read_string;
 /// on the [`Database`] and can be inspected on any thread. Reading it is a handful of kernel
 /// calls, so grab it once rather than per field.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[doc(alias("idainfo"))]
 pub struct DatabaseInfo {
     /// Application addressing width, or `None` if the database reports an unrecognized one.
     pub bitness: Option<Bitness>,
     /// Preferred load address (image base), when the format records one.
+    #[doc(alias("get_imagebase"))]
     pub image_base: Option<Address>,
     /// Processor module id (e.g. `metapc`).
+    #[doc(alias("inf_get_procname"))]
     pub processor: Option<String>,
     /// Human-readable input file format (e.g. `Portable executable for 80386 (PE)`).
+    #[doc(alias("get_file_type_name"))]
     pub file_type: Option<String>,
     /// Full path of the analyzed input file.
+    #[doc(alias("get_input_file_path"))]
     pub input_path: Option<String>,
     /// Base file name of the input.
     pub root_filename: Option<String>,
@@ -33,6 +38,7 @@ impl Database {
     /// range for a whole-image [`search`](Self::search); `None` for a database with no
     /// mapped content.
     #[must_use]
+    #[doc(alias("inf_get_min_ea", "inf_get_max_ea"))]
     pub fn address_range(&self) -> Option<Range<Address>> {
         let min = Address::try_new(self.min_ea())?;
         let max = Address::try_new(self.max_ea())?;

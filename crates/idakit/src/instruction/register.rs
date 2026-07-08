@@ -1,4 +1,4 @@
-//! [`Register`]: a register reference in a decoded operand.
+//! Resolves and classifies the register a decoded operand refers to, as [`Register`].
 //!
 //! A [`Register`] carries the processor-local register number, its class, the byte width the
 //! operand selects, and the name IDA resolved for that `(number, width)` at decode time.
@@ -7,10 +7,10 @@
 //!
 //! [`RegisterClass`] is idakit's own grouping (not a raw SDK enum), so its discriminants are
 //! arbitrary and stable only within idakit. The x86 decoder assigns it two ways: the vector
-//! and integer classes (GPR/segment/MMX/XMM/YMM/ZMM/mask/BND/IP) arrive as plain `o_reg`
+//! and integer classes (GPR/segment/MMX/XMM/YMM/ZMM/mask/BND/IP) arrive as ordinary register
 //! operands and are classified by the register *number*'s range (IDA hands out e.g. `xmm0`
 //! and `ymm0` as ordinary register operands, not distinct operand types), while `st`/control/
-//! debug/test arrive as their own `o_idpspec*` operand types. Either way the class is a small
+//! debug/test arrive as their own distinct operand types. Either way the class is a small
 //! closed set, which lets the semantic [`OperandKind`](super::OperandKind) stay closed while
 //! still representing every register x86 can encode.
 
@@ -158,9 +158,9 @@ mod tests {
         assert!(RegisterClass::from_name("st").is_none());
     }
 
-    // The facade fills its RegClass codes by position in this enum's declaration order, so a
-    // drift between a C++ `RC_*` #define and its Rust variant surfaces as a mismatch here.
-    // `idakit_reg_class_ids` is a pure constant source -- no kernel, so it runs as a unit test.
+    // The facade fills its class codes by position in this enum's declaration order, so a
+    // drift between the C++ side and this enum's variants surfaces as a mismatch here.
+    // `idakit_reg_class_ids` is a pure constant source, no kernel, so it runs as a unit test.
     #[test]
     fn reg_class_ids_align_with_the_facade() {
         let expected = [
@@ -202,6 +202,7 @@ mod tests {
 /// operand's width (register `0` at width 4 is `eax`, at width 8 is `rax`), copied out at
 /// decode so it travels with the value.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[doc(alias("op_t::reg"))]
 pub struct Register {
     /// Processor-local register number.
     pub num: u16,

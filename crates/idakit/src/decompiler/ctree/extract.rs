@@ -28,14 +28,14 @@ use crate::arena::Idx;
 use crate::ffi::{lossy, slice};
 use crate::types::{TypeBuilder, TypeSink, raw, tid, type_vtbl};
 
-/// Structural `ctype_t` values the generic operator callback dispatches by name
+/// Structural operator-tag values the generic operator callback dispatches by name
 /// (operators proper go through the `TryFrom<u16>` derives).
 mod ct {
     pub const EMPTY: u32 = 0;
     pub const TERN: u32 = 16;
     pub const CAST: u32 = 48;
     pub const IDX: u32 = 58;
-    /// `cot_insn`: a statement in expression position. Never present in a finalized tree;
+    /// A statement appearing in expression position. Never present in a finalized tree;
     /// collapsed to [`ExpressionKind::Internal`](super::ExpressionKind::Internal) rather than erroring.
     pub const INSN: u32 = 66;
     pub const SIZEOF: u32 = 67;
@@ -601,7 +601,8 @@ unsafe extern "C" fn cb_lvar(
 ) {
     // SAFETY: `loc` is a valid, non-null pointer for the duration of this call (facade invariant).
     let loc = unsafe { &*loc };
-    // ALOC_DIST (2): read the scattered fragments; each is a scalar (register/stack) argloc.
+    // atype == 2 marks a scattered location (split across pieces); read the fragments, each
+    // a scalar (register or stack) location.
     let pieces = if loc.atype == 2 && !loc.pieces.is_null() {
         // SAFETY: `pieces` points at `npieces` valid `LocPiece`, live for this call.
         let raw = unsafe { slice(&loc.pieces, loc.npieces as usize) };
@@ -690,7 +691,7 @@ mod tests {
     use super::*;
     use crate::types::{TypeMember, TypeShape};
 
-    /// `cot_*` discriminants used by the operator tests (from hexrays.hpp).
+    /// Raw operator-tag discriminants used by the operator tests.
     const COT_ASGADD: u32 = 6;
     const COT_ADD: u32 = 35;
     const COT_SUB: u32 = 36;
@@ -828,7 +829,7 @@ mod tests {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
 
-        // for (; cond; ) body;  -- only the condition present.
+        // for (; cond; ) body; only the condition present.
         let cond = cb.var(0, 0, it);
         let body = cb.break_(0);
         let for_s = cb.for_(0, IDAKIT_NONE, cond, IDAKIT_NONE, body);

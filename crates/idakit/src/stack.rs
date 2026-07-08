@@ -1,4 +1,4 @@
-//! [`StackFrame`]: an owned, `Send` snapshot of a function's stack frame.
+//! An owned, `Send` snapshot of a function's stack frame ([`StackFrame`]).
 //!
 //! IDA models a function frame as a UDT, so idakit reads it much like a struct, but with stack
 //! semantics the generic [`Type`](crate::types::Type) walk lacks: each [`StackSlot`] carries its
@@ -25,8 +25,8 @@ use crate::error::{Error, Result};
 use crate::ffi::lossy;
 use crate::types::{TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue, reborrow, tid, type_vtbl};
 
-/// What a [`StackSlot`] is: a real stack variable (carrying its name and type), or one of the two
-/// slots IDA reserves in every frame.
+/// A [`StackSlot`] is either a real stack variable, carrying its name and type, or one of the
+/// two slots IDA reserves in every frame.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StackSlotKind {
     /// A stack variable: a local (negative [`offset`](StackSlot::offset)) or a stack-passed
@@ -40,8 +40,10 @@ pub enum StackSlotKind {
         ty: Option<TypeId>,
     },
     /// IDA's reserved return-address slot.
+    #[doc(alias("is_retaddr"))]
     ReturnAddress,
     /// IDA's reserved saved-registers slot (callee-saved registers spilled on entry).
+    #[doc(alias("is_savregs"))]
     SavedRegisters,
 }
 
@@ -61,9 +63,10 @@ impl StackSlotKind {
     }
 }
 
-/// One slot in a function's stack frame: its frame-pointer-relative offset and byte size, plus a
+/// One slot in a function's stack frame, its frame-pointer-relative offset and byte size, plus a
 /// [`kind`](Self::kind) that is either a real variable (with name/type) or a reserved slot.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[doc(alias("udm_t"))]
 pub struct StackSlot {
     offset: i64,
     size: u64,
@@ -134,6 +137,7 @@ impl StackSlot {
 /// read its [`size`](Self::size) and [`slots`](Self::slots). Detached from the kernel, so it
 /// inspects on any thread.
 #[derive(Debug)]
+#[doc(alias("get_func_frame"))]
 pub struct StackFrame {
     size: u64,
     types: TypeTable,
@@ -144,6 +148,7 @@ impl StackFrame {
     /// The frame's total size in bytes: locals + saved registers + return address + purged args.
     #[inline]
     #[must_use]
+    #[doc(alias("get_frame_size"))]
     pub const fn size(&self) -> u64 {
         self.size
     }

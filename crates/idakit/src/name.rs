@@ -1,5 +1,5 @@
-//! Name lookup and enumeration: [`Database::name`], [`Database::address_of`], [`Database::demangle`], and the
-//! [`Names`] iterator over the database's name list.
+//! Looks up and enumerates a database's names through [`Database::name`],
+//! [`Database::address_of`], [`Database::demangle`], and the [`Names`] iterator.
 
 use crate::Database;
 use crate::address::Address;
@@ -14,6 +14,7 @@ impl Database {
     /// [`Function::name`](crate::function::Function::name), which is specific to a function
     /// entry.
     #[must_use]
+    #[doc(alias("get_ea_name"))]
     pub fn name(&self, address: Address) -> Option<String> {
         read_string(|buf, cap| self.get_ea_name(address, buf, cap))
     }
@@ -23,6 +24,7 @@ impl Database {
     /// A name with an interior NUL can name nothing, so it too yields `None`. The inverse of
     /// [`name`](Self::name).
     #[must_use]
+    #[doc(alias("get_name_ea"))]
     pub fn address_of(&self, name: impl AsRef<str>) -> Option<Address> {
         with_cstr(name.as_ref(), "name", |p| {
             Address::try_new(self.get_name_ea(p))
@@ -37,6 +39,7 @@ impl Database {
     /// Names read from the database are already display form. This is for turning a raw linker
     /// symbol back into source-level text.
     #[must_use]
+    #[doc(alias("demangle_name"))]
     pub fn demangle(&self, name: impl AsRef<str>) -> Option<String> {
         with_cstr(name.as_ref(), "name", |p| {
             read_string(|buf, cap| self.demangle_name(p, buf, cap))
@@ -47,6 +50,7 @@ impl Database {
 
     /// Lazily iterate every named address in the database, in the kernel's name-list order.
     #[must_use]
+    #[doc(alias("get_nlist_size", "get_nlist_ea", "get_nlist_name"))]
     pub fn names(&self) -> Names<'_> {
         Names::new(self)
     }
@@ -55,6 +59,7 @@ impl Database {
     ///
     /// # Errors
     /// [`Error::WriteRejected`] if the kernel rejects the rename.
+    #[doc(alias("set_name"))]
     pub fn rename(&mut self, address: Address, name: &str) -> Result<()> {
         let ok = with_cstr(name, "name", |p| self.set_name(address, p))?;
         if ok {
@@ -80,8 +85,9 @@ pub struct Name {
     pub name: String,
 }
 
-/// Lazy iterator over every named address, in the kernel's name-list order, from
+/// A lazy iterator over every named address, in the kernel's name-list order, from
 /// [`Database::names`].
+#[doc(alias("get_nlist_size"))]
 pub struct Names<'db> {
     db: &'db Database,
     next: usize,

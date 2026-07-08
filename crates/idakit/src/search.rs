@@ -1,5 +1,5 @@
-//! [`Pattern`]: a compiled binary search pattern, and [`Matches`], the lazy iterator over
-//! its occurrences. A `Pattern` owns a kernel handle freed on [`Drop`]; being `!Send`, it
+//! A compiled binary search pattern ([`Pattern`]) and the lazy iterator over its occurrences
+//! ([`Matches`]). A `Pattern` owns a kernel handle freed on [`Drop`]; being `!Send`, it
 //! (like [`DecompiledFunction`](crate::decompiler::DecompiledFunction)) stays on the kernel thread.
 //!
 //! Four constructors name their grammar so intent is explicit at the call site:
@@ -25,6 +25,7 @@ impl Database {
     /// Search the whole image ([`address_range`](Self::address_range)) for `pattern`,
     /// lazily yielding each match address in ascending order.
     #[must_use]
+    #[doc(alias("bin_search"))]
     pub fn search<'p, 'db>(&self, pattern: &'p Pattern<'db>) -> Matches<'p, 'db> {
         match self.address_range() {
             Some(range) => self.search_in(range, pattern),
@@ -37,6 +38,7 @@ impl Database {
     ///
     /// Each hit advances the scan one byte past it, so overlapping occurrences are all reported.
     #[must_use]
+    #[doc(alias("bin_search"))]
     pub fn search_in<'p, 'db>(
         &self,
         range: Range<Address>,
@@ -50,17 +52,17 @@ impl Database {
     }
 }
 
-/// A compiled binary search pattern that frees its kernel handle on drop.
+/// A compiled binary search pattern that frees its kernel handle on [`Drop`].
 ///
 /// `handle` is the safety invariant for the searches below: non-null (checked at
 /// construction), from a facade `idakit_binpat_*` builder, freed exactly once on [`Drop`].
-/// The raw pointer makes `Pattern` `!Send`, so it lives only on the kernel thread, and it
-/// borrows the [`Database`] it was built against, so that database stays open while the
-/// pattern exists.
+/// The raw pointer makes `Pattern` `!Send`, so it lives only on the kernel thread. It borrows
+/// `&Database`, so it can't coexist with a write.
+#[doc(alias("compiled_binpat_t"))]
 pub struct Pattern<'db> {
     handle: *mut c_void,
-    /// `BIN_SEARCH_*` flags applied per search: `BITMASK` for the byte/mask forms (so mask
-    /// nibbles work), `CASE`-or-nothing for [`ida`](Pattern::ida).
+    /// Per-search match flags: bitmask matching for the byte/mask forms (so mask nibbles
+    /// work), or plain case-sensitivity for [`ida`](Pattern::ida).
     flags: c_int,
     _db: PhantomData<&'db Database>,
 }
@@ -185,6 +187,7 @@ impl<'db> Pattern<'db> {
     /// [`Error::PatternRejected`] with [`PatternRejection::Unparseable`] when IDA rejects it
     /// outright, or [`PatternRejection::NoAnchor`] when it compiles to only wildcards.
     #[builder]
+    #[doc(alias("parse_binpat_str"))]
     pub fn ida(
         #[builder(start_fn)] db: &'db Database,
         #[builder(start_fn)] pattern: impl AsRef<str>,
@@ -197,8 +200,8 @@ impl<'db> Pattern<'db> {
         } else {
             0
         };
-        // parse_binpat_str needs an address for byte-width context; the image floor is valid,
-        // and every processor idakit targets is a flat 8-bit byte anyway.
+        // IDA's pattern compiler needs an address for byte-width context; the image floor is
+        // valid, and every processor idakit targets is a flat 8-bit byte anyway.
         let ctx = db.min_ea();
         let mut err = [0u8; 256];
         // SAFETY: `err` is a writable buffer of `err.len()`; the facade NUL-terminates within
@@ -320,10 +323,11 @@ fn render(bytes: &[u8]) -> String {
         .join(" ")
 }
 
-/// Lazy iterator over a [`Pattern`]'s matches; see [`Database::search`]/[`Database::search_in`].
+/// A lazy iterator over a [`Pattern`]'s matches, from [`Database::search`]/[`Database::search_in`].
 ///
 /// `'p` borrows the [`Pattern`] (keeping its handle alive); `'db` is the database that
 /// pattern belongs to, kept open for the walk.
+#[doc(alias("bin_search"))]
 pub struct Matches<'p, 'db> {
     pat: &'p Pattern<'db>,
     /// Next address to search from; `None` once the range is exhausted.

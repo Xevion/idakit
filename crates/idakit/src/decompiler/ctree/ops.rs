@@ -1,26 +1,26 @@
-//! Operator kinds for expression nodes, grouped from `ctype_t`.
+//! Operator kinds for expression nodes, grouped from the decompiler's raw operator tags.
 //!
 //! Following `syn`'s `BinaryOp`/`UnaryOp` split, the ctree carries the operator as data on
 //! a few structural node variants (`Binary`/`Unary`/`Assign`) rather than exploding
 //! the ~50 arithmetic/logic ops into separate node kinds.
 //!
-//! Discriminants are the raw `ctype_t` values from `hexrays.hpp` (IDA 9.3), so the
-//! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the SDK
+//! Discriminants are the raw operator-tag values IDA's decompiler assigns, so the
+//! `IntoPrimitive`/`TryFromPrimitive` derives are the single source of truth for the
 //! mapping, where `u16::from(op)` is a free cast and `Op::try_from(raw)` lowers to a jump
 //! table. An operator outside the set rejects rather than folding into a catch-all; a new
-//! `ctype_t` in a later IDA is a deliberate, breaking widening, since idakit pins to one
-//! minor. Signed /
-//! unsigned / float variants are kept distinct because in decompiled code the operator is what
-//! reveals operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
+//! tag in a later IDA version is a deliberate, breaking widening, since idakit pins to one
+//! minor. Signed/unsigned/float variants are kept distinct because in decompiled code the
+//! operator is what reveals operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
 
-/// A binary value operator: `x OP y`.
+/// A binary value operator, `x OP y`.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
+#[doc(alias("ctype_t"))]
 pub enum BinaryOp {
     /// `x, y`
     Comma = 1,
@@ -84,11 +84,12 @@ pub enum BinaryOp {
     Fdiv = 45,
 }
 
-/// A compound-assignment operator: `x OP= y`. Plain `=` is [`AssignmentOp::Assign`].
+/// A compound-assignment operator, `x OP= y`. Plain `=` is [`AssignmentOp::Assign`].
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
+#[doc(alias("ctype_t"))]
 pub enum AssignmentOp {
     /// `x = y`
     Assign = 2,
@@ -120,13 +121,14 @@ pub enum AssignmentOp {
     UmodAssign = 15,
 }
 
-/// A unary operator: `OP x` (or `x OP` for post-inc/dec). `(type)x`, `*x`, and
+/// A unary operator, `OP x` (or `x OP` for post-inc/dec). `(type)x`, `*x`, and
 /// `&x`-as-member are modeled as their own expression variants because they carry a
 /// type, an access size, or a member offset; the operators here carry nothing extra.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
 #[repr(u16)]
+#[doc(alias("ctype_t"))]
 pub enum UnaryOp {
     /// `-x` floating-point
     FNeg = 46,
@@ -220,7 +222,7 @@ mod tests {
     use assert2::assert;
     use rstest::rstest;
 
-    /// Spot-check raw discriminants against `hexrays.hpp` (IDA 9.3) values: the oracle
+    /// Spot-check raw discriminants against the decompiler's `ctype_t` values: the oracle
     /// the `IntoPrimitive` derive is supposed to reproduce.
     #[rstest]
     #[case(BinaryOp::Comma, 1)]
@@ -252,7 +254,7 @@ mod tests {
     /// `try_from` is group-exclusive: a discriminant from another `ctype_t` group (or a
     /// non-operator) is rejected, never silently coerced.
     #[rstest]
-    // 2 = cot_asg (assignment), not a plain binary operator; 0 = cot_empty.
+    // 2 is the assignment tag, not a plain binary operator; 0 is the empty-expression tag.
     #[case::asg_is_not_binary(2)]
     #[case::empty_is_not_binary(0)]
     fn binop_rejects_non_binary(#[case] v: u16) {
@@ -261,9 +263,10 @@ mod tests {
 
     #[test]
     fn try_from_rejects_cross_group_discriminants() {
-        // 35 = cot_add (binary), not an assignment.
+        // 35 is the add tag (binary), not an assignment.
         assert!(AssignmentOp::try_from(35).is_err());
-        // 48 = cot_cast, 51 = cot_ptr -- their own expression variants, not bare unaries.
+        // 48 and 51 are the cast and pointer-deref tags, their own expression variants, not
+        // bare unaries.
         assert!(UnaryOp::try_from(48).is_err());
         assert!(UnaryOp::try_from(51).is_err());
     }

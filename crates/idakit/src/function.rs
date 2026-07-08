@@ -1,4 +1,4 @@
-//! [`Function`]: a borrowed view of one function, keyed by its entry [`Address`].
+//! Enumerates a database's functions and reads them through the [`Function`] view.
 
 use std::ops::Range;
 
@@ -23,6 +23,7 @@ impl Database {
     /// [`functions`](Self::functions) to enumerate real ones.
     #[inline]
     #[must_use]
+    #[doc(alias("get_func"))]
     pub fn function(&self, address: Address) -> Function<'_> {
         Function::new(address, self)
     }
@@ -30,13 +31,15 @@ impl Database {
     /// Iterates every function in the database, in kernel order.
     #[inline]
     #[must_use]
+    #[doc(alias("get_func_qty"))]
     pub fn functions(&self) -> Functions<'_> {
         Functions::new(self)
     }
 }
 
-/// A borrowed view of one function, valid while the database stays open.
+/// A borrowed view of one function, keyed by entry address.
 #[derive(Clone, Copy)]
+#[doc(alias("func_t"))]
 pub struct Function<'db> {
     address: Address,
     db: &'db Database,
@@ -57,9 +60,10 @@ impl<'db> Function<'db> {
 
     /// The function's name and how IDA assigned it.
     ///
-    /// See [`FunctionName`]. A function entry always has a name (an address-derived placeholder
-    /// at worst), so this is not optional.
+    /// [`FunctionName`] carries the provenance too. A function entry always has a name (an
+    /// address-derived placeholder at worst), so this is not optional.
     #[must_use]
+    #[doc(alias("get_func_name"))]
     pub fn name(&self) -> FunctionName {
         let text =
             read_string(|buf, cap| self.db.func_name(self.address, buf, cap)).unwrap_or_default();
@@ -68,6 +72,7 @@ impl<'db> Function<'db> {
 
     /// The one-line C prototype, or `None` if the kernel has no type info.
     #[must_use]
+    #[doc(alias("print_type"))]
     pub fn prototype(&self) -> Option<String> {
         read_string(|buf, cap| self.db.func_type(self.address, buf, cap))
     }
@@ -80,6 +85,7 @@ impl<'db> Function<'db> {
     ///
     /// # Errors
     /// [`Error::Extract`] if the walked type is malformed.
+    #[doc(alias("get_tinfo"))]
     pub fn prototype_type(&self) -> Result<Option<Type>> {
         // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
         walk_type(|v, ctx, root| unsafe {
@@ -113,6 +119,7 @@ impl<'db> Function<'db> {
     ///
     /// `None` only if the entry is no longer a function.
     #[must_use]
+    #[doc(alias("end_ea"))]
     pub fn end(&self) -> Option<Address> {
         Address::try_new(self.db.func_end(self.address))
     }
@@ -126,21 +133,23 @@ impl<'db> Function<'db> {
         self.end().map_or(0, |end| self.address.distance_to(end))
     }
 
-    /// Whether IDA flags this as a library function (`FUNC_LIB`).
+    /// Whether IDA flags this as a library function.
     #[must_use]
+    #[doc(alias("FUNC_LIB"))]
     pub fn is_lib(&self) -> bool {
         self.db.func_flags(self.address) & sys::FUNC_LIB != 0
     }
 
-    /// Whether this is a thunk, a trampoline that jumps straight to another function
-    /// (`FUNC_THUNK`).
+    /// Whether this is a thunk, a trampoline that jumps straight to another function.
     #[must_use]
+    #[doc(alias("FUNC_THUNK"))]
     pub fn is_thunk(&self) -> bool {
         self.db.func_flags(self.address) & sys::FUNC_THUNK != 0
     }
 
-    /// Whether this function does not return (`FUNC_NORET`), e.g. `exit`, `abort`.
+    /// Whether this function does not return, e.g. `exit`, `abort`.
     #[must_use]
+    #[doc(alias("FUNC_NORET"))]
     pub fn is_noreturn(&self) -> bool {
         self.db.func_flags(self.address) & sys::FUNC_NORET != 0
     }
@@ -163,6 +172,7 @@ impl<'db> Function<'db> {
     /// [`Error::HexRaysInit`] if the decompiler could not be initialized, [`Error::Decompile`]
     /// if Hex-Rays rejected this function, or [`Error::KernelExit`] if decompilation trapped a
     /// fatal exit.
+    #[doc(alias("decompile_func"))]
     pub fn decompile(&self) -> Result<DecompiledFunction<'db>> {
         self.db.decompile(self.address)
     }
@@ -189,6 +199,7 @@ impl<'db> Function<'db> {
     ///
     /// # Errors
     /// [`Error::Extract`] if a stack variable's type could not be structured.
+    #[doc(alias("get_func_frame"))]
     pub fn frame(&self) -> Result<Option<StackFrame>> {
         self.db.frame(self.address)
     }
@@ -214,6 +225,7 @@ impl<'db> Function<'db> {
     ///
     /// # Errors
     /// [`Error::NoFunction`] if the entry address no longer resolves to a function.
+    #[doc(alias("qflow_chart_t"))]
     pub fn flowchart(&self) -> Result<FlowChart> {
         self.db.flowchart(self.address)
     }
@@ -228,6 +240,7 @@ impl<'db> Function<'db> {
     /// # Errors
     /// [`Error::NoFunction`] if the entry address no longer resolves to a function.
     #[builder]
+    #[doc(alias("qflow_chart_t"))]
     pub fn flowchart_with(
         &self,
         #[builder(default = false)] call_ends: bool,
@@ -260,14 +273,14 @@ pub struct FunctionSnapshot {
 /// provenance. Every function entry has a name, since IDA names even an unnamed one with at
 /// least an address-derived placeholder, so `name()` yields this directly, never an `Option`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[doc(alias("FF_NAME", "FF_LABL"))]
 pub enum FunctionName {
-    /// An explicit name: user-assigned, or an imported/mangled symbol (`FF_NAME`).
+    /// An explicit name: user-assigned, or an imported/mangled symbol.
     User(String),
     /// A name IDA generated from analysis (a recognized stub, library match, or thunk), e.g.
-    /// `nullsub_0` or `j_malloc` (`FF_NAME | FF_LABL`).
+    /// `nullsub_0` or `j_malloc`.
     Auto(String),
-    /// An address-derived placeholder for an otherwise-unnamed function, e.g. `sub_401000`
-    /// (`FF_LABL`).
+    /// An address-derived placeholder for an otherwise-unnamed function, e.g. `sub_401000`.
     Dummy(String),
 }
 
@@ -378,7 +391,9 @@ impl PartialOrd for Function<'_> {
     }
 }
 
-/// Lazy iterator over every function in the database, in kernel order.
+/// A lazy iterator over every function in the database, in kernel order, from
+/// [`Database::functions`].
+#[doc(alias("getn_func"))]
 pub struct Functions<'db> {
     db: &'db Database,
     next: usize,
@@ -422,6 +437,7 @@ impl<'db> Iterator for Functions<'db> {
 /// A function is one chunk when contiguous, or several when the compiler scattered its body
 /// into tail chunks placed elsewhere. Yielded by [`Function::chunks`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[doc(alias("func_tail_iterator_t"))]
 pub struct FunctionChunk {
     /// First address of the chunk.
     pub start: Address,
@@ -429,8 +445,9 @@ pub struct FunctionChunk {
     pub end: Address,
 }
 
-/// Lazy iterator over a function's chunks, entry chunk first then tail chunks in address
+/// A lazy iterator over a function's chunks, entry chunk first then tail chunks in address
 /// order, from [`Function::chunks`].
+#[doc(alias("func_tail_iterator_t"))]
 pub struct FunctionChunks<'db> {
     db: &'db Database,
     address: Address,
@@ -475,7 +492,8 @@ impl Iterator for FunctionChunks<'_> {
     }
 }
 
-/// Lazy iterator over a function's instructions, across all its chunks.
+/// A lazy iterator over a function's instructions, across all its chunks, from
+/// [`Function::instructions`].
 ///
 /// Code-gated, decoding only addresses the kernel classifies as code ([`Database::is_code`])
 /// and stepping over data items (jump tables, embedded constants) and the alignment tail.
@@ -545,8 +563,8 @@ impl Database {
     }
 }
 
-/// Lazy iterator over the instructions in a fixed `[start, end)` range, code-gated like
-/// [`Instructions`]. From [`Database::instructions_in`].
+/// A lazy iterator over the instructions in a fixed `[start, end)` range, code-gated like
+/// [`Instructions`], from [`Database::instructions_in`].
 pub struct InstructionsIn<'db> {
     db: &'db Database,
     cursor: Address,
@@ -630,15 +648,15 @@ mod tests {
     #[test]
     fn from_flags_matches_ida_predicates() {
         // Our FF_NAME/FF_LABL derivation must agree with IDA's own has_*_name predicates for
-        // every combination of the two name bits, regardless of surrounding flag bits -- so a
+        // every combination of the two name bits, regardless of surrounding flag bits, so a
         // future SDK that redefines the bits, or a typo in our constants, fails here.
         for extra in [0u64, 0x1234_5678, u64::MAX] {
             let extra = extra & !(sys::FF_NAME | sys::FF_LABL);
             for &bits in &[0, sys::FF_NAME, sys::FF_LABL, sys::FF_NAME | sys::FF_LABL] {
                 let flags = extra | bits;
                 let ours = FunctionName::from_flags(flags, String::new());
-                // SAFETY: has_*_name are pure bit tests over `flags` -- no kernel state, no
-                // open database required.
+                // SAFETY: has_*_name are pure bit tests over `flags`, requiring no kernel state
+                // and no open database.
                 let (user, auto, dummy) = unsafe {
                     (
                         sys::idakit_has_user_name(flags) != 0,

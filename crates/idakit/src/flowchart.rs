@@ -1,7 +1,7 @@
-//! [`FlowChart`]: an owned, `Send` control-flow graph of one function.
+//! An owned, `Send` control-flow graph of one function ([`FlowChart`]).
 //!
-//! IDA builds a function's whole flow chart eagerly (`qflow_chart_t`), so a CFG is a snapshot
-//! from the start, unlike the lazy [`Function`](crate::function::Function)/
+//! IDA builds a function's whole flow chart eagerly, so a CFG is a snapshot from the start,
+//! unlike the lazy [`Function`](crate::function::Function)/
 //! [`Segment`](crate::segment::Segment) views that re-query per accessor. It is materialized on
 //! the kernel thread and handed back as an owned [`FlowChart`] any worker can traverse: an
 //! append-only arena of [`BasicBlock`]s keyed by [`BasicBlockId`], with successor/predecessor
@@ -27,49 +27,55 @@ use crate::address::Address;
 use crate::arena::{Arena, Idx};
 use crate::error::{Error, Result};
 
-/// A handle into a [`FlowChart`]'s block arena. Edges are lists of these; block 0 is the entry.
+/// A typed handle into [`FlowChart`]'s block arena. Edges are lists of these; block 0 is the entry.
+#[doc(alias("qbasic_block_t"))]
 pub type BasicBlockId = Idx<BasicBlock>;
 
-/// How a basic block ends (`fc_block_type_t` from `gdl.hpp`, IDA 9.3): the kind of
-/// control-flow transfer that terminates it.
+/// The kind of control-flow transfer that ends a basic block.
 ///
-/// Only the six in-function terminators appear, since the SDK's external kinds (`fcb_extern`,
-/// `fcb_enoret`) name zero-length stubs for out-of-function targets, which idakit lifts to
-/// [`ExternalExit`]s rather than blocks, so a real [`BasicBlock`] is never one of them.
+/// Only the six in-function terminators appear, since IDA's external kinds name zero-length
+/// stubs for out-of-function targets, which idakit lifts to [`ExternalExit`]s rather than
+/// blocks, so a real [`BasicBlock`] is never one of them.
 ///
-/// A closed set. `TryFrom<u8>` rejects any `fc_block_type_t` outside it (a newer SDK's value
-/// surfaces as [`Error::UnknownBlockKind`] at CFG build, a
-/// deliberate version-drift break) rather than absorbing it into a catch-all every downstream
-/// `match` would then have to carry.
+/// A closed set. `TryFrom<u8>` rejects any byte outside it (a newer SDK's value surfaces as
+/// [`Error::UnknownBlockKind`] at CFG build, a deliberate version-drift break) rather than
+/// absorbing it into a catch-all every downstream `match` would then have to carry.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, TryFromPrimitive, IntoPrimitive, VariantArray,
 )]
 #[repr(u8)]
+#[doc(alias("fc_block_type_t"))]
 pub enum BasicBlockKind {
-    /// `fcb_normal`: falls through or branches within the function.
+    /// Falls through or branches within the function.
+    #[doc(alias("fcb_normal"))]
     Normal = 0,
-    /// `fcb_indjump`: ends with an indirect jump (a switch dispatch, a jump table).
+    /// Ends with an indirect jump (a switch dispatch, a jump table).
+    #[doc(alias("fcb_indjump"))]
     IndirectJump = 1,
-    /// `fcb_ret`: returns from the function.
+    /// Returns from the function.
+    #[doc(alias("fcb_ret"))]
     Return = 2,
-    /// `fcb_cndret`: conditionally returns.
+    /// Conditionally returns.
+    #[doc(alias("fcb_cndret"))]
     CondReturn = 3,
-    /// `fcb_noret`: does not return; ends in a no-return call (`exit`, `abort`).
+    /// Does not return; ends in a no-return call (`exit`, `abort`).
+    #[doc(alias("fcb_noret"))]
     NoReturn = 4,
-    /// `fcb_error`: control runs past the function's end (a decoding/analysis error).
+    /// Control runs past the function's end (a decoding/analysis error).
+    #[doc(alias("fcb_error"))]
     Error = 7,
 }
 
 impl BasicBlockKind {
-    /// Whether the block returns from the function (`fcb_ret`/`fcb_cndret`).
+    /// Whether the block returns from the function.
     #[inline]
     #[must_use]
     pub fn is_return(self) -> bool {
         matches!(self, Self::Return | Self::CondReturn)
     }
 
-    /// Whether the block ends in a no-return call (`exit`, `abort`) with no fall-through
-    /// (`fcb_noret`). A tail call to a no-return target is an [`ExternalExit`] with
+    /// Whether the block ends in a no-return call (`exit`, `abort`) with no fall-through.
+    /// A tail call to a no-return target is an [`ExternalExit`] with
     /// [`noreturn`](ExternalExit::noreturn) set, not this.
     #[inline]
     #[must_use]
@@ -78,24 +84,25 @@ impl BasicBlockKind {
     }
 }
 
-/// A control-flow edge that leaves the function: a tail-jump or tail-call from a [`BasicBlock`]
+/// A control-flow edge that leaves the function, a tail-jump or tail-call from a [`BasicBlock`]
 /// to `target`, an address in no block of this graph. IDA carries these as zero-length stub
 /// blocks; idakit lifts them to edges (see the module docs). Read them with
 /// [`BasicBlock::exits`]; internal edges are [`BasicBlock::successors`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[doc(alias("fcb_enoret", "fcb_extern"))]
 pub struct ExternalExit {
     /// The out-of-function address this block transfers to.
     pub target: Address,
-    /// Whether IDA knows the target never returns, a tail call to `exit`/`abort`
-    /// (`fcb_enoret`).
+    /// Whether IDA knows the target never returns, a tail call to `exit`/`abort`.
     pub noreturn: bool,
 }
 
-/// One basic block: a straight-line run of code with a single entry and single exit.
+/// One basic block, a straight-line run of code with a single entry and single exit.
 ///
 /// [`kind`](Self::kind) names how it ends. Yielded by [`FlowChart::blocks`]. The range is
 /// always non-empty, since external stubs are [`ExternalExit`]s, not blocks.
 #[derive(Clone, Debug)]
+#[doc(alias("qbasic_block_t"))]
 pub struct BasicBlock {
     range: Range<Address>,
     kind: BasicBlockKind,
@@ -126,7 +133,7 @@ impl BasicBlock {
         self.range.end
     }
 
-    /// How the block ends. See [`BasicBlockKind`].
+    /// How the block ends, as a [`BasicBlockKind`].
     #[inline]
     #[must_use]
     pub fn kind(&self) -> BasicBlockKind {
@@ -159,11 +166,13 @@ impl BasicBlock {
     }
 }
 
-/// An owned, `Send` control-flow graph of one function. Materialize with
-/// [`Function::flowchart`](crate::function::Function::flowchart)/[`Database::flowchart`], then traverse
-/// the [`BasicBlock`] arena by [`BasicBlockId`]. Detached from the kernel, so it analyzes on any
+/// An owned, `Send` control-flow graph of one function, from [`Database::flowchart`].
+///
+/// Also buildable via [`Function::flowchart`](crate::function::Function::flowchart). Traverse the
+/// [`BasicBlock`] arena by [`BasicBlockId`]; detached from the kernel, so it analyzes on any
 /// thread.
 #[derive(Debug)]
+#[doc(alias("qflow_chart_t"))]
 pub struct FlowChart {
     blocks: Arena<BasicBlock>,
     entry: BasicBlockId,
@@ -228,6 +237,7 @@ impl Database {
     ///
     /// # Errors
     /// [`Error::NoFunction`] when no function covers `address`.
+    #[doc(alias("qflow_chart_t"))]
     pub fn flowchart(&self, address: Address) -> Result<FlowChart> {
         self.build_flowchart(address, 0)
     }
@@ -278,8 +288,8 @@ pub(crate) fn flowchart_flags(call_ends: bool, externals: bool, predecessors: bo
     flags
 }
 
-/// `fcb_enoret` from `gdl.hpp`: an external stub whose target never returns. Externals are
-/// lifted to [`ExternalExit`]s, so this raw value survives only as the `noreturn` bit.
+/// IDA's raw code for an external stub whose target never returns (`fcb_enoret`). Externals
+/// are lifted to [`ExternalExit`]s, so this raw value survives only as the `noreturn` bit.
 const FCB_ENORET: u8 = 5;
 
 /// Drains a built flow chart into an owned block arena.
@@ -313,7 +323,7 @@ fn extract(handle: *const c_void) -> Result<Arena<BasicBlock>> {
 
 /// Split block `n`'s successor edges: targets below `nproper` are internal [`BasicBlockId`]s,
 /// the rest are external stubs read into [`ExternalExit`]s (target = stub start, `noreturn`
-/// from its `fcb_enoret` kind).
+/// from the stub's terminator kind).
 fn successors(
     handle: *const c_void,
     n: c_int,
@@ -383,7 +393,7 @@ mod tests {
     // thread. A later non-Send field would fail this.
     const _: () = assert_send::<FlowChart>();
 
-    /// Discriminants match `fc_block_type_t` (gdl.hpp, IDA 9.3), and `u8`/`TryFrom` round-trip.
+    /// Discriminants match IDA's raw block-kind codes, and `u8`/`TryFrom` round-trip.
     #[rstest]
     #[case(BasicBlockKind::Normal, 0)]
     #[case(BasicBlockKind::IndirectJump, 1)]
@@ -396,8 +406,8 @@ mod tests {
         assert!(BasicBlockKind::try_from(raw).ok() == Some(kind));
     }
 
-    /// A byte outside the modelled set is rejected, not absorbed: the SDK's external kinds
-    /// (`fcb_enoret` = 5, `fcb_extern` = 6, lifted to [`ExternalExit`]s) and any other value.
+    /// A byte outside the modelled set is rejected, not absorbed: the two external kinds
+    /// (values 5 and 6, lifted to [`ExternalExit`]s) and any other value.
     #[rstest]
     #[case(5)]
     #[case(6)]

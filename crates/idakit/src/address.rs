@@ -1,6 +1,6 @@
-//! Typed effective addresses: [`Address`].
+//! Wraps raw effective addresses in a validated, niche-optimized [`Address`] type.
 //!
-//! An `Address` is any `ea_t` except the `BADADDR` sentinel (`0` is a valid
+//! An `Address` wraps any raw address except the `BADADDR` sentinel (`0` is a valid
 //! address). It stores `!raw` in a [`NonZeroU64`], so the niche sits on the sentinel and
 //! `Option<Address>` is `u64`-sized. `BADADDR`-on-failure maps straight to `None`.
 
@@ -11,19 +11,24 @@ use idakit_sys::BADADDR;
 
 const MAX_EA: u64 = BADADDR - 1;
 
-/// A validated effective address: any `ea_t` except `BADADDR`.
+/// A validated address, any real value other than the invalid sentinel.
+///
+/// The invalid-address sentinel maps to [`None`], and a niche keeps `Option<Address>` the same
+/// size as a bare [`u64`].
 ///
 /// Ordering is by the real address: the niche stores `!raw`, so a *derived* `Ord` would
 /// compare inverted bits and reverse the order. Callers expect an `Address` to sort like the
-/// `ea_t` it wraps (linear walks, chunk bounds, `BTreeMap` keys), so `Ord`/`PartialOrd` are
+/// raw address it wraps (linear walks, chunk bounds, `BTreeMap` keys), so `Ord`/`PartialOrd` are
 /// hand-written over [`get`](Self::get).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[doc(alias("ea_t"))]
 pub struct Address(NonZeroU64);
 
 impl Address {
-    /// Wrap a raw `ea_t`. `None` only when `raw == BADADDR`.
+    /// Wrap a raw address. `None` only when `raw == BADADDR`.
     #[inline]
     #[must_use]
+    #[doc(alias("BADADDR"))]
     pub const fn try_new(raw: u64) -> Option<Self> {
         // !BADADDR == 0, rejected by NonZeroU64; every other address is non-zero.
         match NonZeroU64::new(!raw) {
@@ -45,7 +50,7 @@ impl Address {
         }
     }
 
-    /// The raw `ea_t`.
+    /// The raw address.
     #[inline]
     #[must_use]
     pub const fn get(self) -> u64 {

@@ -32,8 +32,8 @@ impl Database {
         Qerrno::from_code(unsafe { sys::get_qerrno() })
     }
 
-    /// Human-readable reason for `code` (`qstrerror` already folds in the C `errno`
-    /// text for `eOS`). Never empty, since it falls back to the raw `error_t`.
+    /// Human-readable reason for `code`; the C `errno` text is already folded in for an
+    /// OS error. Never empty, since it falls back to the raw error code.
     pub(crate) fn error_reason(&self, code: Qerrno) -> String {
         // SAFETY: qstrerror returns a borrowed thread-local string; copied now.
         let reason = unsafe { cstr(sys::qstrerror(code.code())) };
@@ -44,7 +44,7 @@ impl Database {
         }
     }
 
-    /// The current `qerrno` plus its reason, but `None` reason when it is `eOk`.
+    /// The current [`Qerrno`] plus its reason, but `None` reason when it is [`Qerrno::Ok`].
     ///
     /// A failing path that set no code would otherwise borrow a stale, misleading reason.
     pub(crate) fn last_reason(&self) -> (Qerrno, Option<String>) {

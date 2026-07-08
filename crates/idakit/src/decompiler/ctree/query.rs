@@ -1,5 +1,5 @@
-//! Structural primitives for querying a [`Ctree`]: the composable layer above the bare
-//! node arenas.
+//! Structural primitives for querying a [`Ctree`], forming a composable layer above the
+//! bare node arenas.
 //!
 //! Decompiled expressions wrap the interesting node in address/place nodes (`Cast`, `&`,
 //! `*`, member access) whose exact shape varies with optimization level and whether IDA
@@ -73,7 +73,7 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 ///     location: LocalLocation::Register(0),
 /// });
 ///
-/// // `(T)this->field`, at byte offset 16 -- the cast real decompiler output wraps around it.
+/// // `(T)this->field`, at byte offset 16, the cast real decompiler output wraps around it.
 /// let v = b.var(ty, this);
 /// let member = b.member_ptr(ty, v, 16);
 /// let cast = b.cast(ty, member);
@@ -96,7 +96,7 @@ pub fn base_var(tree: &Ctree, e: ExpressionId) -> Option<(LocalId, i64)> {
         // `*p` keeps the same root and offset; the load itself is not navigation.
         ExpressionKind::Deref { x, .. } => base_var(tree, *x),
         // Pointer arithmetic `base + k`: the byte delta is the constant index scaled by the
-        // pointee size of `base`, exactly as C scales it -- so a `_QWORD*` index of 2 and a
+        // pointee size of `base`, exactly as C scales it, so a `_QWORD*` index of 2 and a
         // `char*` index of 16 both advance 16 bytes. The `pointee_size` guard means plain
         // integer addition (no pointer type) is not mistaken for navigation.
         ExpressionKind::Binary {

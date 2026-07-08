@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn far_operand_carries_selector_and_offset() {
         // A far pointer splits across two facade fields: `sel` the selector, `value` the
-        // offset -- distinct from NEAR, which lands in `addr`.
+        // offset, distinct from NEAR, which lands in `addr`.
         let mut far = blank_op();
         far.kind = sys::IDAKIT_OP_FAR;
         far.sel = 0x07;
@@ -338,8 +338,8 @@ mod tests {
 
     // The escape hatches are gone: each malformed field the facade could theoretically emit
     // now yields a typed error instead of a panic or a silent fallback. Empirically these
-    // never occur (0 across ~5.8M operands in bf4 + libida), but the decoder rejects them
-    // loudly rather than fabricating a value.
+    // never occur across millions of real operands, but the decoder rejects them loudly
+    // rather than fabricating a value.
 
     #[test]
     fn reg_operand_without_register_is_rejected() {
@@ -360,7 +360,7 @@ mod tests {
     fn out_of_domain_data_type_is_rejected() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_IMM;
-        op.data_type = 200; // outside this SDK's dt_* domain -- no longer folded to Void
+        op.data_type = 200; // outside the modeled domain, no longer folded to Void
         assert!(let Err(DecodeError::UnsupportedDataType { dtype: 200, .. }) = operand(&op, at()));
     }
 }

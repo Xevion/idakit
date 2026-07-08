@@ -1,22 +1,21 @@
-//! ctree node kinds: expressions ([`ExpressionKind`]) and statements ([`StatementKind`]).
+//! The node kinds of a decompiled function's tree: [`ExpressionKind`] and [`StatementKind`].
 //!
-//! Mirrors IDA's `cot_*` / `cit_*` split. Child links are arena handles
-//! ([`ExpressionId`]/[`StatementId`]), not boxes, so the tree is flat, `Send`, and navigable in
-//! both directions (each [`ExpressionNode`]/[`StatementNode`] also stores its `parent`).
-//! Operators are grouped (see [`BinaryOp`]/[`UnaryOp`]/[`AssignmentOp`]); leaves carry their
-//! resolved value.
+//! Child links are arena handles ([`ExpressionId`]/[`StatementId`]), not boxes, so the tree is
+//! flat, `Send`, and navigable in both directions (each [`ExpressionNode`]/[`StatementNode`] also
+//! stores its `parent`). Operators are grouped (see [`BinaryOp`]/[`UnaryOp`]/[`AssignmentOp`]);
+//! leaves carry their resolved value.
 
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use crate::address::Address;
 use crate::arena::Idx;
 use crate::types::TypeId;
 
-/// Handle to an [`ExpressionNode`].
+/// A typed handle into the tree's expression arena, naming an [`ExpressionNode`].
 pub type ExpressionId = Idx<ExpressionNode>;
-/// Handle to a [`StatementNode`].
+/// A typed handle into the tree's statement arena, naming a [`StatementNode`].
 pub type StatementId = Idx<StatementNode>;
 
-/// A reference to any node: an expression or a statement. Used for parent links and
+/// A reference to any node, an expression or a statement. Used for parent links and
 /// uniform navigation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum NodeRef {
@@ -62,62 +61,67 @@ impl NodeRef {
     }
 }
 
-/// Index of a local variable in the decompiled function's lvar table
-/// ([`Ctree::lvar`](super::Ctree::lvar)).
+/// A typed handle into a decompiled function's lvar table, resolved via
+/// [`Ctree::lvar`](super::Ctree::lvar).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[doc(alias("lvar_t"))]
 pub struct LocalId(
     /// The variable's index in the lvar table.
     pub u32,
 );
 
-/// Where a local variable lives, as the decompiler placed it. A faithful mirror of IDA's
-/// `argloc_t` space (typeinf.hpp, IDA 9.3).
+/// Where a local variable lives, as the decompiler placed it.
 ///
 /// [`Register`](LocalLocation::Register) and [`Stack`](LocalLocation::Stack) cover essentially
-/// every x86-64 local; the pair / register-relative / scattered / static forms are artifacts of
+/// every x86-64 local; the pair, register-relative, scattered, and static forms are artifacts of
 /// other architectures' calling conventions (AArch64 register pairs, AAPCS struct-scatter, MIPS
-/// / PPC register-relative, ...) and are rare-to-absent on x86-64. The variants are noted with
-/// their `ALOC_*` origin so the mapping stays checkable against the SDK.
+/// and PPC register-relative), rare to absent on x86-64.
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[doc(alias("argloc_t"))]
 pub enum LocalLocation {
-    /// In a single register (the microcode register number). The SDK forbids an in-register
-    /// offset on a decompiler location (`vdloc_t::regoff` is private), so there is none here.
-    /// (`ALOC_REG1`)
+    /// In a single register, by number. A decompiler register location carries no in-register
+    /// offset, so none is stored here.
+    #[doc(alias("ALOC_REG1"))]
     Register(u32),
-    /// Split across a register pair, with the low half in `low` and the high half in `high`.
-    /// Arises for values wider than one register on register-based ABIs; does not occur on
-    /// x86-64. (`ALOC_REG2`)
+    /// Split across a register pair, the low half in `low` and the high half in `high`.
+    /// Arises for values wider than one register on register-based ABIs; absent on x86-64.
+    #[doc(alias("ALOC_REG2"))]
     RegisterPair {
-        /// Microcode register number holding the low half.
+        /// Register number holding the low half.
         low: u32,
-        /// Microcode register number holding the high half.
+        /// Register number holding the high half.
         high: u32,
     },
-    /// On the stack, at this frame offset. (`ALOC_STACK`)
+    /// On the stack, at this frame offset.
+    #[doc(alias("ALOC_STACK"))]
     Stack(i64),
-    /// Register-relative: the value lives at `[reg + offset]`. Uncommon. (`ALOC_RREL`)
+    /// Register-relative, at `[reg + offset]`. Uncommon.
+    #[doc(alias("ALOC_RREL"))]
     RegisterRelative {
-        /// Base microcode register number.
+        /// Base register number.
         reg: u32,
         /// Byte offset added to the base register.
         offset: i64,
     },
-    /// At a fixed global address. Uncommon for a local. (`ALOC_STATIC`)
+    /// At a fixed global address. Uncommon for a local.
+    #[doc(alias("ALOC_STATIC"))]
     Static(Address),
-    /// Scattered across several register/stack fragments, each covering a byte range of the
+    /// Scattered across several register or stack fragments, each covering a byte range of the
     /// value. Arises from struct-by-value on register ABIs; effectively absent on x86-64.
-    /// (`ALOC_DIST`)
+    #[doc(alias("ALOC_DIST"))]
     Scattered(Vec<LocationPiece>),
-    /// A processor-module-specific custom location idakit does not structure. (`ALOC_CUSTOM`)
+    /// A processor-specific custom location idakit does not structure.
+    #[doc(alias("ALOC_CUSTOM"))]
     Custom,
-    /// No location assigned, since the decompiler left the variable unallocated. (`ALOC_NONE`)
+    /// No location assigned, since the decompiler left the variable unallocated.
+    #[doc(alias("ALOC_NONE"))]
     Unallocated,
 }
 
 impl LocalLocation {
-    /// Build from the facade's decoded `argloc_t` fields. `atype` is the `ALOC_*` discriminant;
-    /// the other fields are read per the SDK's union (only the ones the `atype` selects are
-    /// meaningful). `pieces` is populated only for a scattered (`ALOC_DIST`) location.
+    /// Build from the facade's decoded location fields. `atype` selects the variant; the remaining
+    /// fields form a union, so only the ones `atype` names are meaningful, and `pieces` is filled
+    /// only for a scattered location.
     pub(crate) fn from_argloc(
         atype: u32,
         reg1: u32,
@@ -139,14 +143,14 @@ impl LocalLocation {
                 offset: sval,
             },
             6 => LocalLocation::Static(Address::new_const(sval as u64)),
-            // ALOC_CUSTOM is 7 or higher; no other argloc types are defined.
+            // Custom locations are 7 or higher; no other location types are defined.
             _ => LocalLocation::Custom,
         }
     }
 }
 
-/// One fragment of a [`Scattered`](LocalLocation::Scattered) local: where the fragment lives and
-/// which byte range of the whole value it covers.
+/// One fragment of a [`Scattered`](LocalLocation::Scattered) local, naming where it lives
+/// and which byte range of the whole value it covers.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct LocationPiece {
     /// Where this fragment lives: a register or stack slot, never itself scattered.
@@ -160,6 +164,7 @@ pub struct LocationPiece {
 /// One local variable of a decompiled function: its name, resolved type, and role.
 /// [`ExpressionKind::Var`] indexes the tree's lvar table to one of these.
 #[derive(Clone, Debug, PartialEq)]
+#[doc(alias("lvar_t"))]
 pub struct Local {
     /// The variable's name, as the decompiler named it.
     pub name: String,
@@ -179,10 +184,10 @@ pub struct Local {
     pub location: LocalLocation,
 }
 
-/// An expression node: its source address, type, parent, and kind.
+/// An expression node with its source address, resolved type, parent, and kind.
 ///
-/// `address` is `None` for synthetic nodes the decompiler introduces with no backing
-/// instruction (`Option<Address>` is niche-optimized to a bare `u64`; see [`Address`]).
+/// `address` is [`None`] for synthetic nodes the decompiler introduces with no backing
+/// instruction; [`Option<Address>`](Address) niche-optimizes to a bare [`u64`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExpressionNode {
     /// The backing instruction's address, or `None` for a synthetic node.
@@ -195,8 +200,9 @@ pub struct ExpressionNode {
     pub kind: ExpressionKind,
 }
 
-/// A statement node: its source address, parent, and kind. `address` is `None` for synthetic
-/// nodes with no backing instruction.
+/// A statement node with its source address, parent, and kind.
+///
+/// `address` is [`None`] for synthetic nodes with no backing instruction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatementNode {
     /// The backing instruction's address, or `None` for a synthetic node.
@@ -209,12 +215,14 @@ pub struct StatementNode {
 
 /// An expression kind. Child links are arena handles; leaves carry their value.
 ///
-/// A closed mirror of the finalized (`CMAT_FINAL`) ctree's `cot_*` set, where extraction rejects
-/// an unmodeled tag (`UnknownExpressionTag`) rather than widening this. A new node kind in a
-/// later IDA is a deliberate, breaking addition, since idakit pins to one minor.
+/// A closed set covering the finalized decompiler tree. Extraction rejects an unmodelled node tag
+/// rather than widening this, so a new expression kind in a later IDA is a deliberate, breaking
+/// addition.
 #[derive(Clone, Debug, PartialEq)]
+#[doc(alias("ctype_t", "cexpr_t"))]
 pub enum ExpressionKind {
-    /// `x OP y`
+    /// A binary operation, `x OP y`.
+    #[doc(alias("cot_add", "cot_sub"))]
     Binary {
         /// The binary operator.
         op: BinaryOp,
@@ -223,7 +231,8 @@ pub enum ExpressionKind {
         /// The right operand.
         y: ExpressionId,
     },
-    /// `x OP= y`
+    /// A compound assignment, `x OP= y`.
+    #[doc(alias("cot_asg"))]
     Assign {
         /// The compound-assignment operator.
         op: AssignmentOp,
@@ -232,14 +241,15 @@ pub enum ExpressionKind {
         /// The assigned value.
         y: ExpressionId,
     },
-    /// `OP x` (or `x OP` for post-inc/dec)
+    /// A unary operation, `OP x` (or `x OP` for post-increment and post-decrement).
+    #[doc(alias("cot_neg", "cot_lnot"))]
     Unary {
         /// The unary operator.
         op: UnaryOp,
         /// The operand.
         x: ExpressionId,
     },
-    /// `cond ? then_ : else_`
+    /// A conditional expression, `cond ? then_ : else_`.
     Ternary {
         /// The condition.
         cond: ExpressionId,
@@ -248,78 +258,94 @@ pub enum ExpressionKind {
         /// The value when `cond` is false.
         else_: ExpressionId,
     },
-    /// `callee(args...)`
+    /// A function call, `callee(args...)`.
+    #[doc(alias("cot_call"))]
     Call {
         /// The called expression.
         callee: ExpressionId,
         /// The arguments, in order.
         args: Vec<ExpressionId>,
     },
-    /// `array[index]`
+    /// An array index, `array[index]`.
+    #[doc(alias("cot_idx"))]
     Index {
         /// The indexed expression.
         array: ExpressionId,
         /// The index expression.
         index: ExpressionId,
     },
-    /// `obj.field`, the member at `byte_offset`
+    /// A member access through a value, `obj.field`.
+    #[doc(alias("cot_memref"))]
     MemberRef {
         /// The aggregate expression.
         obj: ExpressionId,
-        /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
-        /// `cot_memref.m`). Contrast [`TypeMember::bit_offset`](crate::types::TypeMember), in bits.
+        /// Offset of the member from the start of the aggregate, in **bytes**. Contrast
+        /// [`TypeMember::bit_offset`](crate::types::TypeMember), in bits.
         byte_offset: u32,
     },
-    /// `obj->field`, the member at `byte_offset`
+    /// A member access through a pointer, `obj->field`.
+    #[doc(alias("cot_memptr"))]
     MemberPtr {
         /// The pointer-to-aggregate expression.
         obj: ExpressionId,
-        /// Offset of the member from the start of the aggregate, in **bytes** (from IDA's
-        /// `cot_memptr.m`). Contrast [`TypeMember::bit_offset`](crate::types::TypeMember), in bits.
+        /// Offset of the member from the start of the aggregate, in **bytes**. Contrast
+        /// [`TypeMember::bit_offset`](crate::types::TypeMember), in bits.
         byte_offset: u32,
     },
-    /// `(T)x`: the target type is carried on the node (added with the type arena).
+    /// A cast, `(T)x`; the target type rides on the node.
+    #[doc(alias("cot_cast"))]
     Cast {
         /// The cast operand.
         x: ExpressionId,
     },
-    /// `*x`, dereferencing `size` bytes
+    /// A pointer dereference, `*x`, reading `size` bytes.
+    #[doc(alias("cot_ptr"))]
     Deref {
         /// The pointer expression.
         x: ExpressionId,
         /// The access size in bytes.
         size: u32,
     },
-    /// `sizeof(x)`
+    /// A `sizeof(x)`.
+    #[doc(alias("cot_sizeof"))]
     Sizeof(ExpressionId),
-    /// integer literal (raw bits; signedness comes from the node's type)
+    /// An integer literal, as raw bits; signedness comes from the node's type.
+    #[doc(alias("cot_num"))]
     Num(u64),
-    /// floating-point literal.
+    /// A floating-point literal.
     ///
     /// `PartialEq` on `ExpressionKind` is structural, so `Fnum(NaN)` does not compare equal to
-    /// itself (IEEE-754 `NaN != NaN`). Accepted as a known caveat: IDA does not emit NaN
-    /// float literals, so no real node trips it.
+    /// itself (IEEE-754 `NaN != NaN`). This is an accepted caveat: IDA emits no NaN float
+    /// literals, so no real node trips it.
+    #[doc(alias("cot_fnum"))]
     Fnum(f64),
-    /// string literal
+    /// A string literal.
+    #[doc(alias("cot_str"))]
     Str(String),
-    /// reference to a global/static at `address`, carrying its symbol name when it has one
+    /// A reference to a global or static at `address`, with its symbol name when it has one.
+    #[doc(alias("cot_obj"))]
     Obj {
         /// The global's address.
         address: Address,
         /// Its symbol name, if it has one.
         name: Option<String>,
     },
-    /// reference to a local variable
+    /// A reference to a local variable.
+    #[doc(alias("cot_var"))]
     Var(LocalId),
-    /// an arbitrary decompiler helper name, e.g. `__readfsqword`
+    /// A decompiler helper name, e.g. `__readfsqword`.
+    #[doc(alias("cot_helper"))]
     Helper(String),
-    /// a bare type used in an expression position (e.g. inside `sizeof`)
+    /// A bare type in expression position, e.g. inside `sizeof`.
+    #[doc(alias("cot_type"))]
     TypeExpression,
-    /// empty/absent expression
+    /// An empty or absent expression.
+    #[doc(alias("cot_empty"))]
     Empty,
-    /// a statement embedded in an expression: internal to the decompiler, never
-    /// present in a finalized (`CMAT_FINAL`) tree. Carried so materialization is
-    /// total rather than lossy (the one allowance instead of a catch-all).
+    /// A statement embedded in an expression.
+    ///
+    /// Internal to the decompiler, never present in a finalized tree. Carried so materialization
+    /// stays total rather than lossy, the one allowance instead of a catch-all.
     Internal,
 }
 
@@ -393,15 +419,19 @@ pub struct Case {
 
 /// A statement kind. Child links are arena handles.
 ///
-/// A closed mirror of the finalized ctree's `cit_*` set, on the same terms as
-/// [`ExpressionKind`], where unmodeled tags are rejected at extraction, not folded in here.
+/// A closed set on the same terms as [`ExpressionKind`]: it covers the finalized decompiler tree,
+/// and extraction rejects an unmodelled tag rather than folding it in here.
 #[derive(Clone, Debug, PartialEq)]
+#[doc(alias("cinsn_t"))]
 pub enum StatementKind {
-    /// `{ ... }`
+    /// A block of statements, `{ ... }`.
+    #[doc(alias("cit_block"))]
     Block(Vec<StatementId>),
-    /// `expression;`
+    /// An expression statement, `expression;`.
+    #[doc(alias("cit_expr"))]
     Expression(ExpressionId),
-    /// `if (cond) then_ [else else_]`
+    /// A conditional, `if (cond) then_ [else else_]`.
+    #[doc(alias("cit_if"))]
     If {
         /// The condition.
         cond: ExpressionId,
@@ -410,7 +440,8 @@ pub enum StatementKind {
         /// The `else` branch, if any.
         else_: Option<StatementId>,
     },
-    /// `for (init; cond; step) body`
+    /// A C-style `for` loop, `for (init; cond; step) body`.
+    #[doc(alias("cit_for"))]
     For {
         /// The initializer, if any.
         init: Option<ExpressionId>,
@@ -421,50 +452,61 @@ pub enum StatementKind {
         /// The loop body.
         body: StatementId,
     },
-    /// `while (cond) body`
+    /// A `while` loop, `while (cond) body`.
+    #[doc(alias("cit_while"))]
     While {
         /// The loop condition.
         cond: ExpressionId,
         /// The loop body.
         body: StatementId,
     },
-    /// `do body while (cond)`
+    /// A `do`/`while` loop, `do body while (cond)`.
+    #[doc(alias("cit_do"))]
     Do {
         /// The loop body.
         body: StatementId,
         /// The loop condition.
         cond: ExpressionId,
     },
-    /// `switch (expression) { cases }`
+    /// A `switch`, `switch (expression) { cases }`.
+    #[doc(alias("cit_switch"))]
     Switch {
         /// The switched-on expression.
         expression: ExpressionId,
         /// The cases, including any `default`.
         cases: Vec<Case>,
     },
-    /// `break;`
+    /// A `break;`.
+    #[doc(alias("cit_break"))]
     Break,
-    /// `continue;`
+    /// A `continue;`.
+    #[doc(alias("cit_continue"))]
     Continue,
-    /// `return [expression];`
+    /// A `return [expression];`.
+    #[doc(alias("cit_return"))]
     Return(Option<ExpressionId>),
-    /// `goto label;`
+    /// A `goto label;`.
+    #[doc(alias("cit_goto"))]
     Goto {
         /// The target label number.
         label: i32,
     },
-    /// an inline-asm block, as the addresses of its instructions
+    /// An inline-asm block, as the addresses of its instructions.
+    #[doc(alias("cit_asm"))]
     Asm(Vec<Address>),
-    /// `try body { catches }`
+    /// A `try`/catch, `try body { catches }`.
+    #[doc(alias("cit_try"))]
     Try {
         /// The guarded body.
         body: StatementId,
         /// The catch handlers.
         catches: Vec<StatementId>,
     },
-    /// `throw [expression];`
+    /// A `throw [expression];`.
+    #[doc(alias("cit_throw"))]
     Throw(Option<ExpressionId>),
-    /// empty/absent statement
+    /// An empty or absent statement.
+    #[doc(alias("cit_empty"))]
     Empty,
 }
 
@@ -664,8 +706,8 @@ mod tests {
         assert!(statement.is_statement() && !statement.is_expression());
     }
 
-    /// `from_argloc` maps each `ALOC_*` discriminant to its variant, reading only the fields the
-    /// discriminant selects, and folds `ALOC_CUSTOM` (7 or higher) into `Custom`.
+    /// `from_argloc` maps each location discriminant to its variant, reading only the fields that
+    /// discriminant selects, and folds custom locations (7 or higher) into `Custom`.
     #[test]
     fn from_argloc_maps_every_atype() {
         use LocalLocation::*;
@@ -681,7 +723,7 @@ mod tests {
             LocalLocation::from_argloc(6, 0, 0, 0x1000, vec![])
                 == Static(Address::new_const(0x1000))
         );
-        // ALOC_CUSTOM is 7 or higher.
+        // Custom is 7 or higher.
         assert!(LocalLocation::from_argloc(7, 0, 0, 0, vec![]) == Custom);
         assert!(LocalLocation::from_argloc(42, 0, 0, 0, vec![]) == Custom);
 

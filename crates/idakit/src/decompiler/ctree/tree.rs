@@ -1,6 +1,7 @@
-//! [`Ctree`]: a decompiled function's ctree, as owned interned arenas plus the root
-//! statement. Built through [`CtreeBuilder`], which wires every node's `parent` link
-//! once the tree is complete.
+//! Defines the ctree snapshot type [`Ctree`] and the [`CtreeBuilder`] that assembles one.
+//!
+//! Nodes are allocated children-first into arenas; [`CtreeBuilder::finish`] wires every
+//! node's `parent` link once the tree is complete.
 
 use super::node::{
     ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef, StatementId,
@@ -27,14 +28,14 @@ fn for_each_child(
     }
 }
 
-/// A decompiled function's ctree. The root is always a block statement.
+/// An owned, interned, `Send` syntax tree of a decompiled function, from
+/// [`Database::decompile`](crate::Database::decompile). The root is always a block statement.
 ///
-/// Owned and `Send`, materialized on the kernel thread and then analyzed anywhere. A
-/// read-only analysis snapshot with no in-place mutation. It does not track the live
-/// database, so it goes stale if the function is re-decompiled. Writing back to IDA is a
-/// separate concern, not routed through these handles.
+/// Materialized on the kernel thread and then analyzed anywhere: a read-only snapshot with
+/// no in-place mutation. It does not track the live database, so it goes stale if the
+/// function is re-decompiled; writing back to IDA is a separate concern, not routed through
+/// these handles.
 ///
-/// Real trees come from decompiling a function ([`Database::decompile`](crate::Database::decompile));
 /// [`CtreeBuilder`] builds one directly, with no kernel, for testing matchers against a
 /// known shape:
 ///
@@ -75,6 +76,7 @@ fn for_each_child(
 /// assert_eq!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>(), vec![arg]);
 /// ```
 #[derive(Debug)]
+#[doc(alias("cfunc_t"))]
 pub struct Ctree {
     expressions: Arena<ExpressionNode>,
     statements: Arena<StatementNode>,
@@ -268,7 +270,7 @@ impl Ctree {
     }
 }
 
-/// Pre-order depth-first iterator over a subtree; see [`Ctree::descendants`].
+/// A lazy, pre-order depth-first iterator over a subtree, from [`Ctree::descendants`].
 pub struct Descendants<'a> {
     tree: &'a Ctree,
     stack: Vec<NodeRef>,
@@ -280,7 +282,7 @@ impl Iterator for Descendants<'_> {
     fn next(&mut self) -> Option<NodeRef> {
         let node = self.stack.pop()?;
         // Push children straight onto the stack (no intermediate child list), then
-        // reverse just that suffix so the first child is popped -- and visited -- next.
+        // reverse just that suffix so the first child is popped and visited next.
         let base = self.stack.len();
         for_each_child(&self.tree.expressions, &self.tree.statements, node, |c| {
             self.stack.push(c);
@@ -290,8 +292,8 @@ impl Iterator for Descendants<'_> {
     }
 }
 
-/// Builds a [`Ctree`]: allocate nodes (children first, since a parent references its
-/// children's handles), then [`finish`](CtreeBuilder::finish) to wire parent links.
+/// Builds a [`Ctree`] by allocating nodes (children first, since a parent references its
+/// children's handles), then calling [`finish`](CtreeBuilder::finish) to wire parent links.
 #[derive(Debug)]
 pub struct CtreeBuilder {
     expressions: Arena<ExpressionNode>,
@@ -518,7 +520,7 @@ impl CtreeBuilder {
                 stack.push(child);
             }
         }
-        // Every allocated node must be reachable from the root: a node left unattached
+        // Every allocated node must be reachable from the root. A node left unattached
         // is a builder bug. The walk can't loop, since a child's arena index is always
         // smaller than its parent's (the handle must exist to construct the parent), so
         // no node is reached twice and `visited` is an exact count.

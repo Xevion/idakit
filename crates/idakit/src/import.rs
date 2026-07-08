@@ -1,4 +1,4 @@
-//! [`Import`]: one imported symbol, read from the database's import table.
+//! Reads a database's import table through [`Import`] and [`Imports`].
 
 use std::ffi::c_void;
 use std::marker::PhantomData;
@@ -17,18 +17,20 @@ impl Database {
     /// yields owned [`Import`]s from it; the snapshot is released when the iterator drops.
     #[inline]
     #[must_use]
+    #[doc(alias("enum_import_names", "get_import_module_qty"))]
     pub fn imports(&self) -> Imports<'_> {
         Imports::new(self.imports_build())
     }
 }
 
-/// One imported symbol: an import-table slot (IAT entry / thunk) bound to a symbol in some
-/// module.
+/// An owned import-table slot (IAT entry / thunk) bound to a symbol in some module, read from
+/// a snapshot of the import table.
 ///
 /// Carries a [`name`](Self::name), an [`ordinal`](Self::ordinal), or, for a by-ordinal import
-/// IDA has resolved a name for, both; they are not mutually exclusive. Owned, as it outlives
-/// the snapshot it was read from.
+/// IDA has resolved a name for, both; they are not mutually exclusive. It outlives the
+/// snapshot it was read from.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[doc(alias("enum_import_names"))]
 pub struct Import {
     address: Address,
     ordinal: u64,
@@ -65,15 +67,17 @@ impl Import {
     /// format records none.
     #[inline]
     #[must_use]
+    #[doc(alias("get_import_module_name"))]
     pub fn module(&self) -> &str {
         &self.module
     }
 }
 
-/// Lazy iterator over the database's imports; frees the snapshot on drop.
+/// A lazy iterator over the database's imports, from [`Database::imports`]; frees the snapshot
+/// on drop.
 ///
-/// Borrows `&Database`, so it can't outlive the database or coexist with a write. `size_hint`'s
-/// lower bound is `0`: a slot with no valid address is skipped.
+/// Borrows `&Database`, so it can't coexist with a write. `size_hint`'s lower bound is `0`: a
+/// slot with no valid address is skipped.
 pub struct Imports<'db> {
     handle: *mut c_void,
     next: usize,
