@@ -1,8 +1,14 @@
-# idakit
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Xevion/idakit/master/assets/idakit-banner.png" alt="idakit" width="820">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Xevion/idakit/actions/workflows/ci.yml"><img src="https://github.com/Xevion/idakit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/MSRV-1.88-blue.svg" alt="MSRV">
+</p>
 
 Access, extend, and automate IDA through a first-class Rust API.
-
-[![CI](https://github.com/Xevion/idakit/actions/workflows/ci.yml/badge.svg)](https://github.com/Xevion/idakit/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT) ![MSRV](https://img.shields.io/badge/MSRV-1.88-blue.svg)
 
 idakit drives IDA's analysis engine from safe Rust:
 

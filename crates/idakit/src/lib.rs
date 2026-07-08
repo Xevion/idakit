@@ -111,7 +111,10 @@
 //! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64`, since the facade
 //! is compiled `__EA64__`.
 #![deny(missing_docs)]
-// Wire in `#![doc(html_logo_url = "<url>")]` here once a logo asset exists.
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/Xevion/idakit/master/assets/idakit-logo.png",
+    html_favicon_url = "https://raw.githubusercontent.com/Xevion/idakit/master/assets/idakit-favicon.png"
+)]
 #![deny(
     rustdoc::broken_intra_doc_links,
     rustdoc::missing_crate_level_docs,
