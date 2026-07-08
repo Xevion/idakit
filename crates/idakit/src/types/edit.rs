@@ -364,6 +364,11 @@ impl MemberEdit<'_> {
 
     /// Delete this member from its aggregate.
     ///
+    /// Deleting a non-tail member leaves an unnamed `TAFLD_GAP` padding member in its place
+    /// rather than shifting later members up, so the aggregate keeps its size and later members
+    /// keep their offsets; a subsequent member walk shows an empty-named entry where the deleted
+    /// member was. Deleting the tail member shrinks the aggregate normally.
+    ///
     /// # Errors
     /// [`Error::TypeEdit`] wrapping [`TypeEditError::NoType`], [`TypeEditError::NoMember`], or
     /// [`TypeEditError::Rejected`]; or [`Error::InteriorNul`] for a NUL byte in a name.

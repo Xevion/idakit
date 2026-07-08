@@ -665,8 +665,10 @@ extern "C" int idakit_func_prepend_this(idakit_ea_t ea, const uint8_t *recipe, s
 namespace {
 // Link `tif` to the named type in the local til for editing. Edits to the returned typeref save
 // back to the til and propagate to every reference (ETF_NO_SAVE stays unset). False if no such
-// type.
-bool load_named_udt(const char *type_name, tinfo_t &tif) {
+// type. Resolves ANY named type without checking it's a UDT vs enum: the kernel verb that
+// follows (add_udm, get_edm, ...) already rejects a mismatched target, so a second check here
+// would just duplicate that rejection.
+bool load_named_type(const char *type_name, tinfo_t &tif) {
   return tif.get_named_type(get_idati(), type_name) && !tif.empty();
 }
 
@@ -699,7 +701,7 @@ extern "C" int idakit_udt_add_member(const char *type_name, const char *member_n
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_udt(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       tinfo_t mt;
       if (build_recipe(recipe, len, mt) != IDAKIT_TYPE_OK)
@@ -729,7 +731,7 @@ extern "C" int idakit_udt_set_member_type(const char *type_name, const char *mem
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_udt(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       int idx = resolve_member(tif, member_name, member_bit);
       if (idx < 0)
@@ -755,7 +757,7 @@ extern "C" int idakit_udt_rename_member(const char *type_name, const char *membe
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_udt(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       int idx = resolve_member(tif, member_name, member_bit);
       if (idx < 0)
@@ -777,7 +779,7 @@ extern "C" int idakit_udt_del_member(const char *type_name, const char *member_n
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_udt(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       int idx = resolve_member(tif, member_name, member_bit);
       if (idx < 0)
@@ -792,12 +794,6 @@ extern "C" int idakit_udt_del_member(const char *type_name, const char *member_n
 }
 
 namespace {
-// Link `tif` to the named enum in the local til for editing (any named type resolves; a non-enum
-// verb below returns a tinfo_code the caller surfaces). False if no such type.
-bool load_named_enum(const char *type_name, tinfo_t &tif) {
-  return tif.get_named_type(get_idati(), type_name) && !tif.empty();
-}
-
 // Resolve an enum constant index by name; -1 if not found. Constants are keyed by name (values may
 // repeat within a bitmask enum, names are unique).
 ssize_t resolve_edm(const tinfo_t &tif, const char *name) {
@@ -818,7 +814,7 @@ extern "C" int idakit_enum_add_member(const char *type_name, const char *member_
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_enum(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       return (int)tif.add_edm(member_name, value);
     });
@@ -837,7 +833,7 @@ extern "C" int idakit_enum_set_member_value(const char *type_name, const char *m
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_enum(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, member_name);
       if (idx < 0)
@@ -859,7 +855,7 @@ extern "C" int idakit_enum_rename_member(const char *type_name, const char *memb
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_enum(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, member_name);
       if (idx < 0)
@@ -881,7 +877,7 @@ extern "C" int idakit_enum_del_member(const char *type_name, const char *member_
       errbuf[0] = 0;
     int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
-      if (!load_named_enum(type_name, tif))
+      if (!load_named_type(type_name, tif))
         return IDAKIT_TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, member_name);
       if (idx < 0)
