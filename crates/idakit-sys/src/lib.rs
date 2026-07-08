@@ -52,6 +52,7 @@ mod runtime;
 mod segment;
 mod strings;
 mod ty;
+mod ty_build;
 
 pub use bytes::*;
 pub use cfg::*;
@@ -68,3 +69,4 @@ pub use runtime::*;
 pub use segment::*;
 pub use strings::*;
 pub use ty::*;
+pub use ty_build::*;

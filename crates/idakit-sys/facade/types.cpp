@@ -1,15 +1,14 @@
-// idakit facade: local named types -- resolve a tinfo by name, expand its members, and apply
-// a parsed or named type to an address.
+// idakit facade: local type reads. Render a function's prototype, walk a named/ordinal type or a
+// function prototype into one interned table, and enumerate the local type library. The type
+// writes (apply/define/build) live in type_build.cpp.
 
 #include <pro.h>
 
 #include <ida.hpp>
 
-#include <kernwin.hpp> // msg (printer_t for parse_decls)
-#include <typeinf.hpp> // tinfo_t, print_type, get_tinfo, get_named_type, parse_decl, apply_tinfo
+#include <typeinf.hpp> // tinfo_t, print_type, get_tinfo, get_named_type
 
 #include "idakit_facade.h"
-#include "idakit_facade_internal.hpp" // guarded<>, g_output (msg-channel capture)
 #include "type_walk.hpp"
 
 extern "C" int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap) {
@@ -108,79 +107,6 @@ extern "C" int idakit_type_walk_ordinal(uint32_t ordinal, const idakit_type_vtbl
     tw.ctx = ctx;
     *root = tw.ty(tif);
     return 0;
-  } catch (...) {
-    std::abort();
-  }
-}
-
-namespace {
-// Copy the last guarded call's captured diagnostics (IDA's messages, caught off the msg channel
-// by the HT_UI hook) into errbuf snprintf-style; empty when nothing was captured.
-void copy_captured_reason(char *errbuf, size_t cap) {
-  if (errbuf != nullptr && cap != 0)
-    qstrncpy(errbuf, idakit_facade::g_output.c_str(), cap);
-}
-} // namespace
-
-// Parse `decl` against the local til and apply the resulting type at ea, forcing TINFO_DEFINITE
-// (caller `flags` add TINFO_DELAYFUNC/STRICT). PT_SIL is deliberately NOT set: without it IDA
-// emits its parse diagnostic, which the guarded capture intercepts off the msg channel with no
-// dialog (headless), giving a real reason. Returns IDAKIT_TYPE_OK / _ERR_INPUT (parse failed) /
-// _ERR_APPLY (apply_tinfo rejected it); the reason lands in errbuf on a parse failure.
-extern "C" int idakit_apply_type_decl(idakit_ea_t ea, const char *decl, int flags, char *errbuf,
-                                      size_t cap) {
-  try {
-    using namespace idakit_facade;
-    if (errbuf != nullptr && cap != 0)
-      errbuf[0] = 0;
-    int code = guarded<int>(IDAKIT_TYPE_ERR_APPLY, true, [&]() -> int {
-      tinfo_t tif;
-      qstring name;
-      if (!parse_decl(&tif, &name, get_idati(), decl, PT_SEMICOLON))
-        return IDAKIT_TYPE_ERR_INPUT;
-      if (!apply_tinfo((ea_t)ea, tif, (uint32)flags | TINFO_DEFINITE))
-        return IDAKIT_TYPE_ERR_APPLY;
-      return IDAKIT_TYPE_OK;
-    });
-    copy_captured_reason(errbuf, cap);
-    return code;
-  } catch (...) {
-    std::abort();
-  }
-}
-
-// Resolve the existing named type `name` in the local til and apply it at ea, under the same
-// fatal-trap guard as the decl path (capture=false: this path emits no msg to capture). No error
-// channel; the result code alone distinguishes not-found (_ERR_INPUT) from an apply rejection
-// (_ERR_APPLY), so the by-name path yields a clean TypeNotFound on the Rust side.
-extern "C" int idakit_apply_named_type(idakit_ea_t ea, const char *name) {
-  try {
-    using namespace idakit_facade;
-    return guarded<int>(IDAKIT_TYPE_ERR_APPLY, false, [&]() -> int {
-      tinfo_t tif;
-      if (!tif.get_named_type(get_idati(), name))
-        return IDAKIT_TYPE_ERR_INPUT;
-      if (!apply_tinfo((ea_t)ea, tif, TINFO_DEFINITE))
-        return IDAKIT_TYPE_ERR_APPLY;
-      return IDAKIT_TYPE_OK;
-    });
-  } catch (...) {
-    std::abort();
-  }
-}
-
-// Parse the C declaration(s) in `input` into the database's local til (get_idati()), routing each
-// error through `msg` so the guarded capture folds it into errbuf. Returns the error count (0 =
-// ok); parse_decls always applies HTI_DCL, so redeclarations are tolerated.
-extern "C" int idakit_define_type(const char *input, char *errbuf, size_t cap) {
-  try {
-    using namespace idakit_facade;
-    if (errbuf != nullptr && cap != 0)
-      errbuf[0] = 0;
-    int nerr = guarded<int>(1, true,
-                            [&]() -> int { return parse_decls(get_idati(), input, msg, HTI_DCL); });
-    copy_captured_reason(errbuf, cap);
-    return nerr;
   } catch (...) {
     std::abort();
   }

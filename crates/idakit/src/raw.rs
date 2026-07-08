@@ -319,7 +319,7 @@ impl Database {
     }
 
     /// Parses `decl` and applies the resulting type at `address`; the reason is copied out of the
-    /// facade buffer for a parse failure.
+    /// facade buffer on a parse or apply failure.
     pub(crate) fn apply_type_decl(
         &mut self,
         address: Address,
@@ -345,6 +345,32 @@ impl Database {
     /// Resolves the named type `name` and applies it at `address`.
     pub(crate) fn apply_named_type(&mut self, address: Address, name: *const c_char) -> c_int {
         unsafe { sys::idakit_apply_named_type(address.get(), name) }
+    }
+
+    /// Builds the type the serialized recipe `buf` encodes and applies it at `address`; the reason
+    /// is copied out of the facade buffer on a build or apply failure.
+    pub(crate) fn apply_type_recipe(
+        &mut self,
+        address: Address,
+        buf: &[u8],
+        flags: c_int,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: `buf` is a readable slice of `buf.len()`; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_apply_type_recipe(
+                address.get(),
+                buf.as_ptr(),
+                buf.len(),
+                flags,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        let reason = unsafe { cstr(err.as_ptr().cast()) };
+        (code, reason)
     }
 
     /// Parses `input` into the local type library; returns the error count and any diagnostics

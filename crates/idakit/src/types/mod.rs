@@ -1,5 +1,5 @@
-//! Reads a database's types into [`TypeTable`], the interned arena every resolved [`Type`]
-//! shares.
+//! Reads a database's types into [`TypeTable`], the interned arena every resolved [`Type`] shares,
+//! and writes them through [`TypesMut`] and the [`TypeExpr`] builder.
 //!
 //! A resolved type is an owned, `Send` [`Type`] snapshot off the kernel thread, carried by the
 //! decompiler [`Ctree`](crate::decompiler::ctree::Ctree), a function's

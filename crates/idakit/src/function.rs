@@ -1,4 +1,5 @@
-//! Enumerates a database's functions and reads them through the [`Function`] view.
+//! Enumerates a database's functions, reads them through the [`Function`] view, and edits them
+//! through the [`FunctionEdit`] cursor.
 
 use std::ops::Range;
 

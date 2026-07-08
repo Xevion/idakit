@@ -345,6 +345,52 @@ int idakit_apply_named_type(idakit_ea_t ea, const char *name);
  * (0 = ok), with any diagnostics copied to errbuf (snprintf-style, truncated to cap). */
 int idakit_define_type(const char *input, char *errbuf, size_t cap);
 
+/* Type-recipe opcodes: a postfix (RPN) bytecode idakit serializes a type builder into, walked by
+ * idakit_apply_type_recipe over a tinfo_t stack. A leaf op pushes a type; a transform op pops one
+ * and pushes the wrapped result; a well-formed recipe leaves exactly one type. Multi-byte operands
+ * are little-endian. Kept in lockstep with ty_build.rs by hand (no shared codegen). */
+#define IDAKIT_RECIPE_VOID 0
+#define IDAKIT_RECIPE_BOOL 1
+#define IDAKIT_RECIPE_INT 2      /* + u8 bytes, u8 signed */
+#define IDAKIT_RECIPE_FLOAT 3    /* + u8 bytes */
+#define IDAKIT_RECIPE_NAMED 4    /* + u32 len, then len name bytes */
+#define IDAKIT_RECIPE_DECL 5     /* + u32 len, then len decl bytes */
+#define IDAKIT_RECIPE_PTR 6      /* pop 1, push pointer-to */
+#define IDAKIT_RECIPE_ARRAY 7    /* + u64 nelems; pop 1, push array-of */
+#define IDAKIT_RECIPE_CONST 8    /* pop 1, push const-qualified */
+#define IDAKIT_RECIPE_VOLATILE 9 /* pop 1, push volatile-qualified */
+
+/* Build the tinfo the recipe in (buf, len) encodes and apply it at ea (apply_tinfo, TINFO_DEFINITE
+ * | flags). This is idakit's preferred lowering path: one crossing, no handle threading. Shares the
+ * OK/ERR_INPUT/ERR_APPLY codes. ERR_INPUT is a malformed buffer, a named leaf that does not
+ * resolve, or an embedded decl that fails to parse. Any captured diagnostic is copied to errbuf
+ * (snprintf-style, truncated to cap; empty when none). */
+int idakit_apply_type_recipe(idakit_ea_t ea, const uint8_t *buf, size_t len, int flags,
+                             char *errbuf, size_t cap);
+
+/* Granular tinfo_t construction (the node-at-a-time counterpart to the recipe path). Each builder
+ * returns a fresh owned handle (an opaque tinfo_t*, null on failure); the transforms copy their
+ * input and do not consume it, so every handle the caller mints is freed exactly once with
+ * idakit_tinfo_free. idakit itself uses the recipe path; these expose the type algebra for direct
+ * FFI. `bytes` selects the width (1/2/4/8/16 for int, 4/8 for float). */
+void *idakit_tinfo_void(void);
+void *idakit_tinfo_bool(void);
+void *idakit_tinfo_int(uint8_t bytes, int is_signed);
+void *idakit_tinfo_float(uint8_t bytes);
+/* Resolve the existing named type `name` as a typedef ref; null if no such type. */
+void *idakit_tinfo_named(const char *name);
+/* Parse `decl` against the local til; null on a parse failure, with the reason copied to errbuf. */
+void *idakit_tinfo_decl(const char *decl, char *errbuf, size_t cap);
+void *idakit_tinfo_ptr(const void *inner);
+void *idakit_tinfo_array(const void *inner, uint64_t nelems);
+void *idakit_tinfo_const(const void *inner);
+void *idakit_tinfo_volatile(const void *inner);
+/* Apply the built handle at ea (apply_tinfo, TINFO_DEFINITE | flags). OK / ERR_APPLY; any captured
+ * diagnostic is copied to errbuf. Does not free the handle. */
+int idakit_tinfo_apply(idakit_ea_t ea, const void *handle, int flags, char *errbuf, size_t cap);
+/* Dispose a handle from any idakit_tinfo_* builder. Null is tolerated. */
+void idakit_tinfo_free(void *handle);
+
 /* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
  * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the
  * byte range of the whole value this fragment covers. */

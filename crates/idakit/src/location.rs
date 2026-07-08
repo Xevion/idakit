@@ -160,7 +160,9 @@ impl Database {
     /// [`FunctionEdit::set_type`](crate::function::FunctionEdit::set_type).
     ///
     /// A named reference takes the by-name path (clean [`Error::TypeNotFound`]); a declaration is
-    /// parsed, so a bad one is [`Error::TypeParseFailed`] with IDA's own reason.
+    /// parsed, so a bad one is [`Error::TypeParseFailed`] with IDA's own reason. A scalar leaf or a
+    /// built composite lowers through the recipe interpreter, reporting [`Error::TypeApplyFailed`]
+    /// if the kernel cannot build or apply it.
     pub(crate) fn apply_type_at(&mut self, address: Address, ty: &TypeExpr) -> Result<()> {
         match ty {
             TypeExpr::Named(name) => {
@@ -189,11 +191,36 @@ impl Database {
                     }),
                 }
             }
+            // A scalar leaf or a pointer/array/qualifier composite lowers through the recipe
+            // interpreter: serialize to postfix bytecode, build the tinfo bottom-up, then apply.
+            other => {
+                let (code, reason) = self.apply_type_recipe(address, &other.serialize(), 0);
+                match code {
+                    sys::IDAKIT_TYPE_OK => Ok(()),
+                    sys::IDAKIT_TYPE_ERR_INPUT => Err(Error::TypeApplyFailed {
+                        address: address.get(),
+                        reason: reason_or(
+                            reason,
+                            &format!(
+                                "could not build `{other}` (an unknown named type or invalid \
+                                 declaration within it)"
+                            ),
+                        ),
+                    }),
+                    _ => Err(Error::TypeApplyFailed {
+                        address: address.get(),
+                        reason: reason_or(
+                            reason,
+                            &format!("the kernel could not apply the built type `{other}`"),
+                        ),
+                    }),
+                }
+            }
         }
     }
 }
 
-/// A borrowed view of the item at one address, keyed by that address.
+/// A borrowed view of one address's item, keyed by that address.
 ///
 /// A cheap `Copy` handle that borrows the [`Database`] and re-queries per accessor, from
 /// [`Database::at`]. The address-keyed counterpart to the noun views ([`Function`](crate::Function),

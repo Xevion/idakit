@@ -2,7 +2,8 @@
 //! `function_mut`, and `types_mut`.
 //!
 //! A tour of the write idioms: the read-capable cursor (read-modify-write with no re-borrow), the
-//! `&str` classifier (name vs declaration), the `Option`/`Result` shapes of the acquirers, and the
+//! `&str` classifier (name vs declaration), the `Option`/`Result` shapes of the acquirers, the
+//! `TypeExpr` builder (scalar leaves, pointers, arrays, qualifiers composed off the kernel), and the
 //! four type errors (`TypeNotFound`, `TypeParseFailed`, `TypeApplyFailed`, `TypeDefineFailed`).
 //! Nothing is persisted: the database closes with `save = false`, and the name and bytes it touches
 //! are restored first.
@@ -29,6 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             name_and_comment(idb, entry)?;
             function_types(idb, entry)?;
             defining_types(idb)?;
+            building_types(idb, entry);
             classifier_and_errors(idb, entry);
 
             idb.close(false);
@@ -136,6 +138,46 @@ fn defining_types(idb: &mut Database) -> Result<(), Error> {
     Ok(())
 }
 
+/// The `TypeExpr` builder: compose a recipe off the kernel (scalar-leaf roots, then the
+/// pointer/array/qualifier transforms), inspect it, and apply it through the same `set_type`. A
+/// composite lowers through the serialize-and-build facade, so the built form and its text twin
+/// reach one `tinfo`; `named(..).pointer()` over an unknown type fails at build time.
+fn building_types(idb: &mut Database, ea: Address) {
+    println!("\n== TypeExpr builder: compose + apply ==");
+
+    // Roots are free functions, transforms are methods, so a recipe reads left-to-right.
+    let uint_array = expr::uint32().array(4); // uint32[4]
+    let ptr_to_named = expr::named("edit_demo_t").pointer(); // edit_demo_t *
+    let const_ptr = expr::int32().const_().pointer(); // const int32 *
+    println!("  uint32().array(4)              -> {uint_array:<14} ({uint_array:?})");
+    println!("  named(\"edit_demo_t\").pointer() -> {ptr_to_named}");
+    println!("  int32().const_().pointer()     -> {const_ptr}");
+
+    // `deref` peels one layer, the inverse of `pointer`; qualifiers are idempotent.
+    println!(
+        "  (edit_demo_t *).deref() == named: {}",
+        ptr_to_named.clone().deref() == expr::named("edit_demo_t")
+    );
+
+    // Built recipes apply through the ordinary cursor. Whether a code entry accepts a data type is
+    // the kernel's call; the point is that the built form lowers and applies like its text twin.
+    report(
+        "set_type(uint32().array(4))",
+        idb.at_mut(ea).set_type(uint_array),
+    );
+    report(
+        "set_type(named(..).pointer())",
+        idb.at_mut(ea).set_type(ptr_to_named),
+    );
+
+    // A composite over an unknown named type fails while building the tinfo, a TypeApplyFailed.
+    report(
+        "set_type(named(\"no_such\").pointer())",
+        idb.at_mut(ea)
+            .set_type(expr::named("no_such_zzz").pointer()),
+    );
+}
+
 /// The `&str` classifier and the type-error taxonomy. The not-found and parse-failure paths fail
 /// before the kernel applies, so they never mutate; the closing `int` apply does reshape the item,
 /// which is harmless here since the database closes without saving.
@@ -172,7 +214,8 @@ fn classifier_and_errors(idb: &mut Database, ea: Address) {
         idb.at_mut(ea).set_type(expr::decl("%%% junk %%%")),
     );
 
-    // The Option-1 fix: a builtin keyword now parses and applies instead of a spurious not-found.
+    // A builtin keyword like "int" parses and applies, rather than reporting a spurious not-found
+    // from a by-name lookup that no til would ever satisfy.
     report("set_type(\"int\")", idb.at_mut(ea).set_type("int"));
 }
 

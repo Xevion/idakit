@@ -1,11 +1,12 @@
 //! Constructs [`TypeExpr`], the owned recipe a type write applies.
 //!
-//! A `TypeExpr` is the *constructor intent* for a type: what to apply, built off the kernel
-//! thread and infallibly, with every parse or resolution deferred to the one apply call. Two
-//! forms exist today: a raw C declaration ([`decl`]) and a reference to an existing named type
-//! ([`named`]), and a type write (`set_type`) routes between them. A bare identifier that could
-//! name a type classifies as a name; a builtin keyword (`int`) or anything with a declarator
-//! classifies as a declaration.
+//! A `TypeExpr` is the *constructor intent* for a type: what to apply, built off the kernel thread
+//! and infallibly, with every parse or resolution deferred to the one apply call. It is a small
+//! recursive algebra: scalar leaves ([`int32`], [`void`], and so on), a named-type reference
+//! ([`named`]), a raw C declaration ([`decl`]), and the transforms that wrap an inner recipe
+//! ([`pointer`](TypeExpr::pointer), [`array`](TypeExpr::array), [`const_`](TypeExpr::const_)). The
+//! shape follows one rule: a free function is a root, a method is a transform. Passing a bare `&str`
+//! classifies it: a name that could exist routes by-name, a keyword or a declarator is parsed.
 //!
 //! ```
 //! use idakit::types::expr;
@@ -21,25 +22,60 @@
 //! assert!(TypeExpr::from("Widget") == by_name);
 //! assert!(TypeExpr::from("Widget *") == by_decl);
 //! assert!(TypeExpr::from("int").is_decl()); // a builtin keyword parses; it is not a named type
+//!
+//! // The combinators build a composite by wrapping an inner recipe.
+//! let pp = expr::named("Widget").pointer().pointer(); // Widget **
+//! assert!(pp.as_pointer().unwrap().is_pointer());
 //! ```
 
 use std::fmt;
 
-/// An owned, `Send` recipe for a type to apply, from [`named`] or [`decl`].
+use idakit_sys as sys;
+
+/// An owned, `Send`, table-free recipe for a type to apply.
 ///
-/// The write-side analog of a resolved [`Type`](crate::types::Type): un-lifetimed and
-/// table-free, it names *what to apply* without touching the kernel, so it is built anywhere and
-/// applied at one fallible call. `Ord` lets a batch of recipes sort, group, and dedup.
+/// The write-side analog of a resolved [`Type`](crate::types::Type): un-lifetimed, it names *what
+/// to apply* without touching the kernel, so it is built anywhere and applied at one fallible call.
+/// `Ord` lets a batch of recipes sort, group, and dedup.
 ///
-/// Today it carries either a declaration string or a named-type reference; the combinator forms
-/// (`pointer`, `array`, `const_`, and so on) that make it a full recursive builder land with the
-/// facade that lowers a `TypeExpr` into a `tinfo_t`.
+/// Every form lowers to a `tinfo_t` at apply time: a [`Named`](Self::Named) reference resolves in
+/// the local type library, a [`Decl`](Self::Decl) is parsed, and a scalar leaf or composite is
+/// built bottom-up through the facade from a postfix serialization.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum TypeExpr {
+    /// The `void` type.
+    Void,
+    /// The boolean type.
+    Bool,
+    /// An integer type.
+    Int {
+        /// Width in bytes.
+        bytes: u8,
+        /// Signed rather than unsigned.
+        signed: bool,
+    },
+    /// A floating-point type.
+    Float {
+        /// Width in bytes.
+        bytes: u8,
+    },
     /// A C declaration, parsed against the database's type library at apply time.
     Decl(String),
     /// A reference to an existing named type, resolved at apply time.
     Named(String),
+    /// A pointer to the inner recipe.
+    Pointer(Box<TypeExpr>),
+    /// An array of the inner recipe.
+    Array {
+        /// The element type.
+        elem: Box<TypeExpr>,
+        /// The element count.
+        len: u64,
+    },
+    /// The inner recipe qualified `const`.
+    Const(Box<TypeExpr>),
+    /// The inner recipe qualified `volatile`.
+    Volatile(Box<TypeExpr>),
 }
 
 /// A reference to the existing named type `name`, resolved at apply time.
@@ -62,13 +98,171 @@ pub fn decl(text: impl Into<String>) -> TypeExpr {
     TypeExpr::Decl(text.into())
 }
 
+/// The `void` leaf.
+#[must_use]
+pub fn void() -> TypeExpr {
+    TypeExpr::Void
+}
+
+/// The boolean leaf.
+#[must_use]
+pub fn bool_() -> TypeExpr {
+    TypeExpr::Bool
+}
+
+/// The signed 8-bit character leaf.
+#[must_use]
+pub fn char_() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 1,
+        signed: true,
+    }
+}
+
+/// The signed 8-bit integer leaf.
+#[must_use]
+pub fn int8() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 1,
+        signed: true,
+    }
+}
+
+/// The signed 16-bit integer leaf.
+#[must_use]
+pub fn int16() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 2,
+        signed: true,
+    }
+}
+
+/// The signed 32-bit integer leaf.
+#[must_use]
+pub fn int32() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 4,
+        signed: true,
+    }
+}
+
+/// The signed 64-bit integer leaf.
+#[must_use]
+pub fn int64() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 8,
+        signed: true,
+    }
+}
+
+/// The unsigned 8-bit integer leaf.
+#[must_use]
+pub fn uint8() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 1,
+        signed: false,
+    }
+}
+
+/// The unsigned 16-bit integer leaf.
+#[must_use]
+pub fn uint16() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 2,
+        signed: false,
+    }
+}
+
+/// The unsigned 32-bit integer leaf.
+#[must_use]
+pub fn uint32() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 4,
+        signed: false,
+    }
+}
+
+/// The unsigned 64-bit integer leaf.
+#[must_use]
+pub fn uint64() -> TypeExpr {
+    TypeExpr::Int {
+        bytes: 8,
+        signed: false,
+    }
+}
+
+/// The 32-bit float leaf.
+#[must_use]
+pub fn float32() -> TypeExpr {
+    TypeExpr::Float { bytes: 4 }
+}
+
+/// The 64-bit float leaf.
+#[must_use]
+pub fn float64() -> TypeExpr {
+    TypeExpr::Float { bytes: 8 }
+}
+
 impl TypeExpr {
-    /// The recipe's source text, whichever form it takes.
+    /// Wraps this recipe in a pointer: `T` becomes `T *`.
+    ///
+    /// Pointers stack rather than toggle, so `named("T").pointer().pointer()` is `T **`;
+    /// [`deref`](Self::deref) peels one layer back.
     #[inline]
     #[must_use]
-    pub fn source(&self) -> &str {
+    pub fn pointer(self) -> TypeExpr {
+        TypeExpr::Pointer(Box::new(self))
+    }
+
+    /// Wraps this recipe in an array of `len` elements: `T` becomes `T[len]`.
+    #[inline]
+    #[must_use]
+    pub fn array(self, len: u64) -> TypeExpr {
+        TypeExpr::Array {
+            elem: Box::new(self),
+            len,
+        }
+    }
+
+    /// Qualifies this recipe `const`.
+    ///
+    /// Idempotent: an already-`const` recipe is returned unchanged. Order is preserved, so
+    /// `x.const_().pointer()` (`const T *`) differs structurally from `x.pointer().const_()`
+    /// (`T * const`).
+    #[inline]
+    #[must_use]
+    pub fn const_(self) -> TypeExpr {
+        if matches!(self, TypeExpr::Const(_)) {
+            self
+        } else {
+            TypeExpr::Const(Box::new(self))
+        }
+    }
+
+    /// Qualifies this recipe `volatile`.
+    ///
+    /// Idempotent: an already-`volatile` recipe is returned unchanged.
+    #[inline]
+    #[must_use]
+    pub fn volatile_(self) -> TypeExpr {
+        if matches!(self, TypeExpr::Volatile(_)) {
+            self
+        } else {
+            TypeExpr::Volatile(Box::new(self))
+        }
+    }
+
+    /// Peels one pointer or array layer: `T *` and `T[n]` become `T`.
+    ///
+    /// The inverse of [`pointer`](Self::pointer) and [`array`](Self::array), and a no-op on any
+    /// other recipe (there is nothing to peel).
+    #[inline]
+    #[must_use]
+    pub fn deref(self) -> TypeExpr {
         match self {
-            Self::Decl(s) | Self::Named(s) => s,
+            TypeExpr::Pointer(inner) => *inner,
+            TypeExpr::Array { elem, .. } => *elem,
+            other => other,
         }
     }
 
@@ -79,13 +273,13 @@ impl TypeExpr {
         matches!(self, Self::Named(_))
     }
 
-    /// The referenced type name, or `None` for a [`decl`].
+    /// The referenced type name, or `None` if this is not a [`named`] reference.
     #[inline]
     #[must_use]
     pub fn as_named(&self) -> Option<&str> {
         match self {
             Self::Named(s) => Some(s),
-            Self::Decl(_) => None,
+            _ => None,
         }
     }
 
@@ -96,15 +290,136 @@ impl TypeExpr {
         matches!(self, Self::Decl(_))
     }
 
-    /// The declaration text, or `None` for a [`named`] reference.
+    /// The declaration text, or `None` if this is not a [`decl`] recipe.
     #[inline]
     #[must_use]
     pub fn as_decl(&self) -> Option<&str> {
         match self {
             Self::Decl(s) => Some(s),
-            Self::Named(_) => None,
+            _ => None,
         }
     }
+
+    /// Whether this is a [`pointer`](Self::pointer).
+    #[inline]
+    #[must_use]
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(_))
+    }
+
+    /// The pointee, or `None` if this is not a pointer.
+    #[inline]
+    #[must_use]
+    pub fn as_pointer(&self) -> Option<&TypeExpr> {
+        match self {
+            Self::Pointer(inner) => Some(inner),
+            _ => None,
+        }
+    }
+
+    /// Whether this is an [`array`](Self::array).
+    #[inline]
+    #[must_use]
+    pub fn is_array(&self) -> bool {
+        matches!(self, Self::Array { .. })
+    }
+
+    /// The element type and length, or `None` if this is not an array.
+    #[inline]
+    #[must_use]
+    pub fn as_array(&self) -> Option<(&TypeExpr, u64)> {
+        match self {
+            Self::Array { elem, len } => Some((elem, *len)),
+            _ => None,
+        }
+    }
+
+    /// Whether this recipe is `const`-qualified at its outermost layer.
+    #[inline]
+    #[must_use]
+    pub fn is_const(&self) -> bool {
+        matches!(self, Self::Const(_))
+    }
+
+    /// Whether this recipe is `volatile`-qualified at its outermost layer.
+    #[inline]
+    #[must_use]
+    pub fn is_volatile(&self) -> bool {
+        matches!(self, Self::Volatile(_))
+    }
+
+    /// Whether this is the `void` leaf.
+    #[inline]
+    #[must_use]
+    pub fn is_void(&self) -> bool {
+        matches!(self, Self::Void)
+    }
+
+    /// Whether this is a scalar leaf: `void`, `bool`, an integer, or a float.
+    #[inline]
+    #[must_use]
+    pub fn is_scalar(&self) -> bool {
+        matches!(
+            self,
+            Self::Void | Self::Bool | Self::Int { .. } | Self::Float { .. }
+        )
+    }
+
+    /// Serializes this recipe into the facade's postfix bytecode.
+    ///
+    /// Children are emitted before their parent, so the facade rebuilds the type with one stack: a
+    /// leaf pushes, a transform pops one and pushes its wrap. The wire behind
+    /// [`set_type`](crate::LocationMut::set_type) and `idakit_apply_type_recipe`.
+    pub(crate) fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        self.encode(&mut buf);
+        buf
+    }
+
+    fn encode(&self, buf: &mut Vec<u8>) {
+        match self {
+            Self::Void => buf.push(sys::IDAKIT_RECIPE_VOID),
+            Self::Bool => buf.push(sys::IDAKIT_RECIPE_BOOL),
+            Self::Int { bytes, signed } => {
+                buf.push(sys::IDAKIT_RECIPE_INT);
+                buf.push(*bytes);
+                buf.push(u8::from(*signed));
+            }
+            Self::Float { bytes } => {
+                buf.push(sys::IDAKIT_RECIPE_FLOAT);
+                buf.push(*bytes);
+            }
+            Self::Named(name) => encode_str(buf, sys::IDAKIT_RECIPE_NAMED, name),
+            Self::Decl(text) => encode_str(buf, sys::IDAKIT_RECIPE_DECL, text),
+            Self::Pointer(inner) => {
+                inner.encode(buf);
+                buf.push(sys::IDAKIT_RECIPE_PTR);
+            }
+            Self::Array { elem, len } => {
+                elem.encode(buf);
+                buf.push(sys::IDAKIT_RECIPE_ARRAY);
+                buf.extend_from_slice(&len.to_le_bytes());
+            }
+            Self::Const(inner) => {
+                inner.encode(buf);
+                buf.push(sys::IDAKIT_RECIPE_CONST);
+            }
+            Self::Volatile(inner) => {
+                inner.encode(buf);
+                buf.push(sys::IDAKIT_RECIPE_VOLATILE);
+            }
+        }
+    }
+}
+
+/// Emits a length-prefixed string opcode: the op byte, a little-endian `u32` byte length, then the
+/// bytes. A name or declaration long enough to overflow `u32` is not a real type.
+fn encode_str(buf: &mut Vec<u8>, op: u8, s: &str) {
+    let bytes = s.as_bytes();
+    let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
+    buf.push(op);
+    buf.extend_from_slice(&len.to_le_bytes());
+    buf.extend_from_slice(&bytes[..len as usize]);
 }
 
 /// Classifies a `&str` by shape, routing a name that could exist to [`named`] and everything else
@@ -130,10 +445,31 @@ impl From<String> for TypeExpr {
     }
 }
 
+/// A readable, C-ish rendering, primarily for diagnostics.
+///
+/// It is not guaranteed valid C for every nesting: a pointer-to-array or a qualified pointer needs
+/// declarator parentheses this does not add. The authoritative form is the `tinfo_t` the lowering
+/// facade builds from the structure, never this string.
 impl fmt::Display for TypeExpr {
-    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.source())
+        match self {
+            Self::Void => f.write_str("void"),
+            Self::Bool => f.write_str("bool"),
+            Self::Int { bytes, signed } => {
+                write!(
+                    f,
+                    "{}int{}",
+                    if *signed { "" } else { "u" },
+                    u32::from(*bytes) * 8
+                )
+            }
+            Self::Float { bytes } => write!(f, "float{}", u32::from(*bytes) * 8),
+            Self::Named(s) | Self::Decl(s) => f.write_str(s),
+            Self::Pointer(inner) => write!(f, "{inner} *"),
+            Self::Array { elem, len } => write!(f, "{elem}[{len}]"),
+            Self::Const(inner) => write!(f, "const {inner}"),
+            Self::Volatile(inner) => write!(f, "volatile {inner}"),
+        }
     }
 }
 
@@ -209,7 +545,7 @@ mod tests {
     #[case("ns::Inner", true)]
     #[case("a::b::c", true)]
     #[case("int_t", true)]
-    // merely starting like a keyword is still a name
+    // merely starts like a keyword; still a full identifier
     // builtin keywords -> declaration path (no til stores them as named types)
     #[case("int", false)]
     #[case("char", false)]
@@ -233,13 +569,14 @@ mod tests {
         assert!(is_bare_type_name(input) == bare);
     }
 
-    #[test]
-    fn from_str_routes_by_classification() {
-        assert!(TypeExpr::from("Widget") == TypeExpr::Named("Widget".into()));
-        assert!(TypeExpr::from("ns::Inner") == TypeExpr::Named("ns::Inner".into()));
-        assert!(TypeExpr::from("Widget *") == TypeExpr::Decl("Widget *".into()));
-        assert!(TypeExpr::from("struct pt") == TypeExpr::Decl("struct pt".into()));
-        assert!(TypeExpr::from("int") == TypeExpr::Decl("int".into()));
+    #[rstest]
+    #[case("Widget", TypeExpr::Named("Widget".into()))]
+    #[case("ns::Inner", TypeExpr::Named("ns::Inner".into()))]
+    #[case("Widget *", TypeExpr::Decl("Widget *".into()))]
+    #[case("struct pt", TypeExpr::Decl("struct pt".into()))]
+    #[case("int", TypeExpr::Decl("int".into()))]
+    fn from_str_routes_by_classification(#[case] input: &str, #[case] expected: TypeExpr) {
+        assert!(TypeExpr::from(input) == expected);
     }
 
     #[test]
@@ -257,18 +594,125 @@ mod tests {
     }
 
     #[test]
-    fn projections_and_display() {
+    fn scalar_roots_construct_leaves() {
+        assert!(void() == TypeExpr::Void);
+        assert!(bool_() == TypeExpr::Bool);
+        assert!(
+            int32()
+                == TypeExpr::Int {
+                    bytes: 4,
+                    signed: true
+                }
+        );
+        assert!(
+            uint8()
+                == TypeExpr::Int {
+                    bytes: 1,
+                    signed: false
+                }
+        );
+        assert!(float64() == TypeExpr::Float { bytes: 8 });
+        assert!(int32().is_scalar() && void().is_void());
+        assert!(!named("X").is_scalar());
+    }
+
+    #[test]
+    fn pointer_and_array_stack_and_deref_peels() {
+        // pointers stack (not a toggle)
+        let pp = named("Foo").pointer().pointer();
+        assert!(pp.is_pointer());
+        assert!(pp.as_pointer() == Some(&named("Foo").pointer()));
+        // deref peels one layer, the inverse of pointer
+        assert!(pp.deref() == named("Foo").pointer());
+        // array carries its length; deref peels it
+        let a = int32().array(8);
+        assert!(a.as_array() == Some((&int32(), 8)));
+        assert!(a.deref() == int32());
+        // deref on a leaf is a no-op
+        assert!(named("Foo").deref() == named("Foo"));
+    }
+
+    #[test]
+    fn qualifiers_are_idempotent_and_ordered() {
+        assert!(named("Foo").const_().const_() == named("Foo").const_());
+        assert!(int32().volatile_().volatile_() == int32().volatile_());
+        assert!(named("Foo").const_().is_const());
+        // order is preserved structurally: const-of-pointer differs from pointer-of-const
+        assert!(named("Foo").const_().pointer() != named("Foo").pointer().const_());
+    }
+
+    #[test]
+    fn projections_match_shape() {
         let n = named("Widget");
         assert!(n.is_named() && !n.is_decl());
         assert!(n.as_named() == Some("Widget"));
         assert!(n.as_decl().is_none());
-        assert!(n.source() == "Widget");
-        assert!(format!("{n}") == "Widget");
+        assert!(n.as_pointer().is_none());
 
         let d = decl("Widget *");
-        assert!(d.is_decl() && !d.is_named());
-        assert!(d.as_decl() == Some("Widget *"));
-        assert!(d.as_named().is_none());
-        assert!(format!("{d}") == "Widget *");
+        assert!(d.is_decl() && d.as_decl() == Some("Widget *"));
+
+        let p = named("Foo").pointer();
+        assert!(p.as_pointer() == Some(&named("Foo")));
+        assert!(p.as_array().is_none());
+    }
+
+    #[test]
+    fn recipe_opcodes_pin_the_facade_mirror() {
+        // The opcode values are a wire contract with the facade; pin the Rust mirror so a drift
+        // trips here (the facade side is pinned by the write-path round-trip test).
+        assert!(sys::IDAKIT_RECIPE_VOID == 0);
+        assert!(sys::IDAKIT_RECIPE_BOOL == 1);
+        assert!(sys::IDAKIT_RECIPE_INT == 2);
+        assert!(sys::IDAKIT_RECIPE_FLOAT == 3);
+        assert!(sys::IDAKIT_RECIPE_NAMED == 4);
+        assert!(sys::IDAKIT_RECIPE_DECL == 5);
+        assert!(sys::IDAKIT_RECIPE_PTR == 6);
+        assert!(sys::IDAKIT_RECIPE_ARRAY == 7);
+        assert!(sys::IDAKIT_RECIPE_CONST == 8);
+        assert!(sys::IDAKIT_RECIPE_VOLATILE == 9);
+    }
+
+    // A leaf emits its op then inline operands; a composite is postfix (inner before its wrap op); a
+    // name/decl carries a little-endian u32 length then its bytes; an array's u64 length follows the
+    // op. The final pair shows qualifier order survives: const-of-pointer and pointer-of-const
+    // differ only by their trailing op sequence.
+    #[rstest]
+    #[case(void(), vec![0])]
+    #[case(bool_(), vec![1])]
+    #[case(int32(), vec![2, 4, 1])]
+    #[case(uint8(), vec![2, 1, 0])]
+    #[case(float64(), vec![3, 8])]
+    #[case(named("Foo"), vec![4, 3, 0, 0, 0, b'F', b'o', b'o'])]
+    #[case(decl("T"), vec![5, 1, 0, 0, 0, b'T'])]
+    #[case(named("Foo").pointer(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 6])]
+    #[case(int32().array(8), vec![2, 4, 1, 7, 8, 0, 0, 0, 0, 0, 0, 0])]
+    #[case(named("Foo").const_(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 8])]
+    #[case(named("Foo").volatile_(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 9])]
+    #[case(named("Foo").const_().pointer(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 8, 6])]
+    #[case(named("Foo").pointer().const_(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 6, 8])]
+    fn serializes_to_postfix_bytecode(#[case] recipe: TypeExpr, #[case] expected: Vec<u8>) {
+        assert!(recipe.serialize() == expected);
+    }
+
+    // Best-effort C rendering: scalar leaves name their width, a pointer stacks a ` *`, an array its
+    // `[len]`, a qualifier its keyword. Not guaranteed valid C for every nesting.
+    #[rstest]
+    #[case(void(), "void")]
+    #[case(bool_(), "bool")]
+    #[case(int32(), "int32")]
+    #[case(int64(), "int64")]
+    #[case(uint8(), "uint8")]
+    #[case(uint32(), "uint32")]
+    #[case(float64(), "float64")]
+    #[case(named("Foo"), "Foo")]
+    #[case(decl("Widget *"), "Widget *")]
+    #[case(named("Foo").pointer(), "Foo *")]
+    #[case(named("Foo").pointer().pointer(), "Foo * *")]
+    #[case(int32().array(8), "int32[8]")]
+    #[case(named("Foo").const_(), "const Foo")]
+    #[case(named("Foo").volatile_(), "volatile Foo")]
+    fn display_renders_readable_c(#[case] recipe: TypeExpr, #[case] expected: &str) {
+        assert!(format!("{recipe}") == expected);
     }
 }

@@ -19,9 +19,10 @@ fn run(idb: &mut idakit::Database) {
     patch_rejects_unmapped(idb);
     type_apply(idb, address);
     type_define(idb);
+    type_build(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build"
     );
 }
 
@@ -150,5 +151,41 @@ fn type_define(idb: &mut idakit::Database) {
     assert!(
         matches!(r, Err(Error::TypeDefineFailed { .. })),
         "malformed define should be TypeDefineFailed, got {r:?}"
+    );
+}
+
+/// A built recipe, a scalar leaf or a pointer/array composite, lowers through the
+/// serialize-and-build path: the encoder emits postfix bytecode, the facade interpreter rebuilds
+/// the `tinfo` bottom-up and applies it. A composite agrees with its text declaration, and one over
+/// an unknown named type surfaces the typed error instead of panicking.
+fn type_build(idb: &mut idakit::Database, address: Address) {
+    use idakit::types::expr;
+
+    idb.types_mut()
+        .define("struct idakit_built_pt { int x; int y; };")
+        .expect("define struct for the build path");
+
+    // The built composite reaches apply_tinfo with the type its text declaration parses to, so the
+    // two agree at any address (a code entry may or may not accept a data type; both paths match).
+    let built = idb
+        .at_mut(address)
+        .set_type(expr::named("idakit_built_pt").pointer());
+    let text = idb
+        .at_mut(address)
+        .set_type(expr::decl("idakit_built_pt *"));
+    assert!(
+        built.is_ok() == text.is_ok(),
+        "a built composite should agree with its text declaration: built={built:?} text={text:?}"
+    );
+    println!("type-build composite applied: {}", built.is_ok());
+
+    // A composite over an unknown named type fails at build time as a typed TypeApplyFailed, not a
+    // panic or a silent success. Deterministic regardless of the address.
+    let r = idb
+        .at_mut(address)
+        .set_type(expr::named("idakit_no_such_built").pointer());
+    assert!(
+        matches!(r, Err(Error::TypeApplyFailed { .. })),
+        "a composite over an unknown named type should be TypeApplyFailed, got {r:?}"
     );
 }
