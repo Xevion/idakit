@@ -290,19 +290,28 @@ ssize_t idaapi ui_msg_capture_cb(void *, int code, va_list va) {
   if (code != ui_msg || g_ui_output.size() >= UI_CAP)
     return 0;
   // ui_msg args (kernwin.hpp): const char *format, then its va_list. The reason often arrives as a
-  // %s arg (msg("%s -> %s", reason, "OK")), so expand rather than read the format. va_list is an
-  // array type, so the inner one decays to a pointer in the outer va; take that pointer and deref.
+  // %s arg (msg("%s -> %s", reason, "OK")), so expand rather than read the format.
   const char *format = va_arg(va, const char *);
-  va_list *pargs = va_arg(va, va_list *);
-  if (format == nullptr || pargs == nullptr)
+  if (format == nullptr)
     return 0;
-  // va_copy: IDA walks the caller's va_list again for its own handling after the hook returns, so
-  // formatting it in place corrupts that (observed as a crash). Format a copy.
-  va_list copy;
-  va_copy(copy, *pargs);
+  // How a va_list is passed as a variadic argument is ABI-specific: Win64 and Darwin arm64 pass a
+  // by-value scalar (char*), while x86-64 SysV and AAPCS64 pass a pointer to an array/struct. The
+  // SDK's set_vva keys this on __clang__, which misfires under clang-tidy (it lints with clang
+  // while the build uses gcc) as an array-not-assignable error; keying on the arch is consistent
+  // across gcc, clang, and clang-tidy.
   char tmp[1024];
-  qvsnprintf(tmp, sizeof(tmp), format, copy);
-  va_end(copy);
+#if defined(_WIN32) || (defined(__APPLE__) && defined(__aarch64__))
+  // Scalar va_list: expand it in place. No va_copy/va_end lifecycle to model (that is the array
+  // case below), which also keeps clang-tidy's valist analyzer quiet.
+  qvsnprintf(tmp, sizeof(tmp), format, va_arg(va, va_list));
+#else
+  // Array/struct va_list: copy before use so IDA's own later walk of the args stays intact
+  // (formatting them in place crashes).
+  va_list args;
+  va_copy(args, *reinterpret_cast<va_list *>(va_arg(va, void *)));
+  qvsnprintf(tmp, sizeof(tmp), format, args);
+  va_end(args);
+#endif
   g_ui_output += tmp;
   return 0; // observe only; never block the event
 }
