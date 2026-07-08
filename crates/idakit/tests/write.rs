@@ -17,42 +17,49 @@ fn run(idb: &mut idakit::Database) {
     comment_round_trips(idb, address);
     patch_round_trips(idb, address);
     patch_rejects_unmapped(idb);
+    type_apply(idb, address);
+    type_define(idb);
 
-    println!("write OK: comment round-trip, patch round-trip, unmapped patch rejected");
+    println!(
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define"
+    );
 }
 
-/// A regular and a repeatable comment set on `address` read back verbatim on their own channels.
+/// A regular and a repeatable comment set on `address` read back verbatim on their own channels,
+/// read through the same write cursor (the cursor is read-capable).
 fn comment_round_trips(idb: &mut idakit::Database, address: Address) {
-    idb.set_comment(address, "idakit regular", false)
+    let mut loc = idb.at_mut(address);
+    loc.set_comment("idakit regular", false)
         .expect("set regular comment");
-    idb.set_comment(address, "idakit repeatable", true)
+    loc.set_comment("idakit repeatable", true)
         .expect("set repeatable comment");
 
-    assert!(idb.comment(address, false).as_deref() == Some("idakit regular"));
-    assert!(idb.comment(address, true).as_deref() == Some("idakit repeatable"));
+    assert!(loc.comment().as_deref() == Some("idakit regular"));
+    assert!(loc.repeatable_comment().as_deref() == Some("idakit repeatable"));
     // The two channels are independent -- reading one never returns the other.
     assert!(
-        idb.comment(address, false) != idb.comment(address, true),
+        loc.comment() != loc.repeatable_comment(),
         "regular and repeatable channels should be distinct"
     );
 }
 
-/// Patching bytes is visible to a read-back, and restoring returns the originals.
+/// Patching bytes is visible to a read-back on the same cursor, and restoring returns the originals.
 fn patch_round_trips(idb: &mut idakit::Database, address: Address) {
-    let original = idb.bytes(address, 4);
+    let original = idb.at(address).bytes(4);
     assert!(original.len() == 4, "need 4 readable bytes at the entry");
 
     // Bitwise-not is guaranteed to differ from the original in every byte.
     let flipped: Vec<u8> = original.iter().map(|b| !b).collect();
-    idb.patch(address, &flipped).expect("patch failed");
+    let mut loc = idb.at_mut(address);
+    loc.patch(&flipped).expect("patch failed");
     assert!(
-        idb.bytes(address, 4) == flipped,
+        loc.bytes(4) == flipped,
         "read-back should show patched bytes"
     );
 
-    idb.patch(address, &original).expect("restore failed");
+    loc.patch(&original).expect("restore failed");
     assert!(
-        idb.bytes(address, 4) == original,
+        loc.bytes(4) == original,
         "restore should return the originals"
     );
 }
@@ -60,9 +67,88 @@ fn patch_round_trips(idb: &mut idakit::Database, address: Address) {
 /// A patch targeting an unmapped address is rejected whole, as a typed `WriteRejected`.
 fn patch_rejects_unmapped(idb: &mut idakit::Database) {
     let nowhere = Address::new_const(0xffff_ffff_f000);
-    let r = idb.patch(nowhere, &[0x90, 0x90]);
+    let r = idb.at_mut(nowhere).patch(&[0x90, 0x90]);
     assert!(
         matches!(r, Err(Error::WriteRejected { op: "patch", .. })),
         "unmapped patch should be WriteRejected, got {r:?}"
+    );
+}
+
+/// Applying a well-formed prototype sets it; a bad name or declaration surfaces the typed error.
+fn type_apply(idb: &mut idakit::Database, address: Address) {
+    // A well-formed prototype applies through the function cursor and shows up as a prototype.
+    idb.function_mut(address)
+        .expect("a function at the entry")
+        .set_type("int idakit_probe(int a, int b)")
+        .expect("apply function prototype");
+    assert!(
+        idb.function(address).prototype().is_some(),
+        "a prototype should be set after apply"
+    );
+
+    // A bare, nonexistent name routes to the by-name path -- a clean TypeNotFound.
+    let r = idb.at_mut(address).set_type("idakit_no_such_type_zzz");
+    assert!(
+        matches!(r, Err(Error::TypeNotFound { .. })),
+        "unknown named type should be TypeNotFound, got {r:?}"
+    );
+
+    // A garbage declaration -- TypeParseFailed carrying IDA's reason (captured off the msg channel,
+    // or the fallback when IDA left none). Print it so a run shows whether the capture landed.
+    match idb
+        .at_mut(address)
+        .set_type(idakit::types::expr::decl("%%% not a type %%%"))
+    {
+        Err(Error::TypeParseFailed { reason, .. }) => {
+            println!("type-apply parse-error reason: {reason:?}");
+        }
+        other => panic!("garbage decl should be TypeParseFailed, got {other:?}"),
+    }
+}
+
+/// Defining a struct adds it to the type library so a later apply can reference it by name; a
+/// malformed declaration surfaces the typed error.
+fn type_define(idb: &mut idakit::Database) {
+    idb.types_mut()
+        .define("struct idakit_pt { int x; int y; };")
+        .expect("define struct");
+    let names: Vec<String> = idb.named_types().map(|t| t.name()).collect();
+    assert!(
+        names.iter().any(|n| n == "idakit_pt"),
+        "the defined struct should appear in named types"
+    );
+
+    // A defined function typedef applies cleanly by bare name (the by-name OK path), routed
+    // through the scoped-closure cursor. A function type at a function entry sets its prototype.
+    let entry = idb.functions().next().expect("a function").address();
+    idb.types_mut()
+        .define("typedef int idakit_fn_t(int arg);")
+        .expect("define function typedef");
+    idb.with_function_mut(entry, |f| f.set_type("idakit_fn_t"))
+        .expect("a function at the entry")
+        .expect("apply named function type");
+    assert!(
+        idb.function(entry).prototype().is_some(),
+        "a prototype should be set after applying a named function type"
+    );
+
+    // A declaration referencing the freshly defined struct must parse -- proving parse_decl
+    // resolves against the local til -- whether or not the kernel reshapes a code address to it.
+    // Routed through the scoped-closure location cursor.
+    let r = idb.with_location_mut(entry, |loc| {
+        loc.set_type(idakit::types::expr::decl("idakit_pt *"))
+    });
+    assert!(
+        !matches!(r, Err(Error::TypeParseFailed { .. })),
+        "a decl referencing a defined local type must not fail parsing, got {r:?}"
+    );
+
+    // A malformed declaration -- TypeDefineFailed.
+    let r = idb
+        .types_mut()
+        .define("struct idakit_broken { this is not valid");
+    assert!(
+        matches!(r, Err(Error::TypeDefineFailed { .. })),
+        "malformed define should be TypeDefineFailed, got {r:?}"
     );
 }

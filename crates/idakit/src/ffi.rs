@@ -42,6 +42,19 @@ pub(crate) fn read_string(f: impl Fn(*mut c_char, usize) -> i64) -> Option<Strin
     Some(String::from_utf8_lossy(&heap[..len2]).into_owned())
 }
 
+/// The facade's captured reason if it left one (trimmed), else `fallback`.
+///
+/// Not every apply path emits a message, and the captured text carries a trailing newline from
+/// the msg channel, so it is trimmed before use.
+pub(crate) fn reason_or(reason: String, fallback: &str) -> String {
+    let trimmed = reason.trim();
+    if trimmed.is_empty() {
+        fallback.to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
 /// Borrow a facade array as a slice; a zero length yields an empty slice without dereferencing
 /// the (possibly null) pointer. The pointer is taken by reference so the returned lifetime is
 /// tied to its (stack) holder and cannot be chosen as `'static`.

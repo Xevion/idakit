@@ -53,8 +53,9 @@ int idakit_func_chunk_qty(idakit_ea_t ea); /* # chunks (entry + tails), 0 if not
 int idakit_func_chunk(
     idakit_ea_t ea, int idx, idakit_ea_t *start,
     idakit_ea_t *end); /* 1 + fills [start,end) if chunk idx exists (entry chunk = idx 0) */
-idakit_ea_t idakit_func_end(idakit_ea_t ea); /* entry-chunk end_ea, or BADADDR if not a func */
-uint64_t idakit_func_flags(idakit_ea_t ea);  /* func_t.flags (\ref FUNC_), 0 if not a func */
+idakit_ea_t idakit_func_start(idakit_ea_t ea); /* entry ea of the func containing ea, or BADADDR */
+idakit_ea_t idakit_func_end(idakit_ea_t ea);   /* entry-chunk end_ea, or BADADDR if not a func */
+uint64_t idakit_func_flags(idakit_ea_t ea);    /* func_t.flags (\ref FUNC_), 0 if not a func */
 
 int idakit_seg_qty(void);
 int64_t idakit_seg_name(int n, char *buf, size_t cap);
@@ -324,6 +325,25 @@ uint32_t idakit_type_ordinal_limit(void);
 int64_t idakit_type_name_at(uint32_t ordinal, char *buf, size_t cap);
 int idakit_type_walk_ordinal(uint32_t ordinal, const idakit_type_vtbl_t *v, void *ctx,
                              uint32_t *root);
+
+/* Type-apply writes (typeinf.hpp). Shared result codes:
+ *   OK        parsed/resolved and applied
+ *   ERR_INPUT apply_type_decl: parse failed; apply_named_type: no such type
+ *   ERR_APPLY apply_tinfo rejected the type at ea */
+#define IDAKIT_TYPE_OK 0
+#define IDAKIT_TYPE_ERR_INPUT 1
+#define IDAKIT_TYPE_ERR_APPLY 2
+
+/* Parse `decl` against the local til and apply it at ea (apply_tinfo, TINFO_DEFINITE | flags). Any
+ * captured IDA diagnostic (parse or apply) is copied to errbuf (snprintf-style, truncated to cap;
+ * empty when nothing was captured). */
+int idakit_apply_type_decl(idakit_ea_t ea, const char *decl, int flags, char *errbuf, size_t cap);
+/* Resolve the existing named type `name` in the local til and apply it at ea. No error channel:
+ * the code distinguishes not-found (ERR_INPUT) from an apply rejection (ERR_APPLY). */
+int idakit_apply_named_type(idakit_ea_t ea, const char *name);
+/* Parse the C declaration(s) in `input` into the database's local til; returns the error count
+ * (0 = ok), with any diagnostics copied to errbuf (snprintf-style, truncated to cap). */
+int idakit_define_type(const char *input, char *errbuf, size_t cap);
 
 /* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
  * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the

@@ -212,6 +212,36 @@ pub enum Error {
         name: String,
     },
 
+    /// A C type declaration could not be parsed. `reason` is IDA's own parser message, captured
+    /// off the message channel.
+    #[snafu(display("could not parse type declaration {decl:?}: {reason}"))]
+    TypeParseFailed {
+        /// The declaration text that failed to parse.
+        decl: String,
+        /// IDA's parser message.
+        reason: String,
+    },
+
+    /// A parsed or resolved type could not be applied at the address, because the kernel rejected
+    /// reshaping the item to the type.
+    #[snafu(display("could not apply type at {address:#x}: {reason}"))]
+    TypeApplyFailed {
+        /// Address the type apply targeted.
+        address: u64,
+        /// Why the apply was rejected.
+        reason: String,
+    },
+
+    /// One or more type declarations could not be added to the database's type library. `reason`
+    /// is IDA's own diagnostics, captured off the message channel.
+    #[snafu(display("could not define type {decl:?}: {reason}"))]
+    TypeDefineFailed {
+        /// The declaration text that failed.
+        decl: String,
+        /// IDA's diagnostics.
+        reason: String,
+    },
+
     /// No function covers the requested address (e.g. building a
     /// [`FlowChart`](crate::flowchart::FlowChart) at an address IDA has not attributed to any function).
     #[snafu(display("no function at {address:#x}"))]
@@ -446,6 +476,18 @@ mod tests {
     #[case::kernel(
         Error::Kernel { reason: "the kernel thread is gone".to_owned() },
         "kernel call did not return: the kernel thread is gone",
+    )]
+    #[case::type_parse_failed(
+        Error::TypeParseFailed { decl: "int[".to_owned(), reason: "syntax error".to_owned() },
+        "could not parse type declaration \"int[\": syntax error",
+    )]
+    #[case::type_apply_failed(
+        Error::TypeApplyFailed { address: 0x40_1000, reason: "cannot reshape item".to_owned() },
+        "could not apply type at 0x401000: cannot reshape item",
+    )]
+    #[case::type_define_failed(
+        Error::TypeDefineFailed { decl: "struct {".to_owned(), reason: "expected '}'".to_owned() },
+        "could not define type \"struct {\": expected '}'",
     )]
     fn error_displays(#[case] err: Error, #[case] expect: &str) {
         assert!(err.to_string() == expect);

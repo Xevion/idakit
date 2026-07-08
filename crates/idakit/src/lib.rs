@@ -159,6 +159,7 @@ mod export;
 mod ffi;
 mod flowchart;
 mod import;
+mod location;
 mod meta;
 mod name;
 mod raw;
@@ -185,6 +186,7 @@ pub use crate::bitness::Bitness;
 pub use crate::export::{Export, Exports};
 pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
 pub use crate::import::{Import, Imports};
+pub use crate::location::{Location, LocationMut};
 pub use crate::meta::DatabaseInfo;
 pub use crate::name::{Name, Names};
 pub use crate::search::{Matches, Pattern};
@@ -205,8 +207,8 @@ pub mod prelude {
     pub use crate::export::{Export, Exports};
     pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
     pub use crate::function::{
-        Function, FunctionChunk, FunctionChunks, FunctionName, FunctionSnapshot, Functions,
-        Instructions, InstructionsIn,
+        Function, FunctionChunk, FunctionChunks, FunctionEdit, FunctionName, FunctionSnapshot,
+        Functions, Instructions, InstructionsIn,
     };
     pub use crate::import::{Import, Imports};
     pub use crate::instruction::{
@@ -214,6 +216,7 @@ pub mod prelude {
         Register, RegisterClass,
     };
     pub use crate::kernel::{Ida, IdaConfig, IdaConfigBuilder};
+    pub use crate::location::{Location, LocationMut};
     pub use crate::meta::DatabaseInfo;
     pub use crate::name::{Name, Names};
     pub use crate::search::{Matches, Pattern};
@@ -224,9 +227,10 @@ pub mod prelude {
         AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, CatalogDiff, Change,
         ChangeKind, TypeCatalog, TypeDiff, TypeIdentity, TypeKey, canonicalize,
     };
+    pub use crate::types::expr;
     pub use crate::types::{
-        EnumMember, NamedType, NamedTypes, Type, TypeId, TypeMember, TypeShape, TypeTable,
-        TypeValue,
+        EnumMember, NamedType, NamedTypes, Type, TypeExpr, TypeId, TypeMember, TypeShape,
+        TypeTable, TypeValue, TypesMut,
     };
     pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
 }

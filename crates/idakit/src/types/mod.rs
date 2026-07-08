@@ -19,11 +19,15 @@ use crate::arena::{Arena, Idx};
 
 mod builder;
 pub mod diff;
+mod edit;
+pub mod expr;
 mod named;
 mod resolved;
 mod sink;
 
 pub(crate) use builder::TypeBuilder;
+pub use edit::TypesMut;
+pub use expr::TypeExpr;
 pub use named::{NamedType, NamedTypes};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;

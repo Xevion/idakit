@@ -13,7 +13,7 @@ use crate::ffi::read_string;
 use crate::flowchart::{FlowChart, flowchart_flags};
 use crate::instruction::Instruction;
 use crate::stack::StackFrame;
-use crate::types::{Type, walk_type};
+use crate::types::{Type, TypeExpr, walk_type};
 use crate::xref::Xrefs;
 
 impl Database {
@@ -34,6 +34,41 @@ impl Database {
     #[doc(alias("get_func_qty"))]
     pub fn functions(&self) -> Functions<'_> {
         Functions::new(self)
+    }
+
+    /// A write cursor for the function containing `address`, or `None` if none does.
+    ///
+    /// Normalizes to the function's entry, so `db.function_mut(f.address())` and a mid-body address
+    /// target the same function. Acquired by the address key, not by promoting a [`Function`] view.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let entry = db.functions().next().unwrap().address();
+    /// if let Some(mut function) = db.function_mut(entry) {
+    ///     function.set_type("int handler(int code)")?;
+    /// }
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[inline]
+    #[must_use]
+    #[doc(alias("get_func"))]
+    pub fn function_mut(&mut self, address: Address) -> Option<FunctionEdit<'_>> {
+        let entry = Address::try_new(self.func_start(address))?;
+        Some(FunctionEdit { db: self, entry })
+    }
+
+    /// Runs `f` against a write cursor for the function containing `address`, or returns `None`
+    /// (without calling `f`) if no function does.
+    ///
+    /// The scoped-closure companion to [`function_mut`](Self::function_mut).
+    pub fn with_function_mut<R>(
+        &mut self,
+        address: Address,
+        f: impl FnOnce(&mut FunctionEdit<'_>) -> R,
+    ) -> Option<R> {
+        let mut cursor = self.function_mut(address)?;
+        Some(f(&mut cursor))
     }
 }
 
@@ -251,6 +286,72 @@ impl<'db> Function<'db> {
             self.address,
             flowchart_flags(call_ends, externals, predecessors),
         )
+    }
+}
+
+/// A write cursor for one function, from [`Database::function_mut`].
+///
+/// Holds the database exclusively and is keyed by the function's entry address. Read-capable: the
+/// common [`Function`] reads ([`name`](Self::name), [`prototype`](Self::prototype)) are inherent
+/// here, delegating to the view, so a read-modify-write stays on one cursor. Not obtainable from a
+/// borrowing [`Function`].
+pub struct FunctionEdit<'db> {
+    db: &'db mut Database,
+    entry: Address,
+}
+
+impl FunctionEdit<'_> {
+    /// The function's entry address.
+    #[inline]
+    #[must_use]
+    pub const fn address(&self) -> Address {
+        self.entry
+    }
+
+    /// The function's name and how IDA assigned it.
+    #[must_use]
+    #[doc(alias("get_func_name"))]
+    pub fn name(&self) -> FunctionName {
+        self.db.function(self.entry).name()
+    }
+
+    /// The one-line C prototype, or `None` if the kernel has no type info.
+    #[must_use]
+    #[doc(alias("print_type"))]
+    pub fn prototype(&self) -> Option<String> {
+        self.db.function(self.entry).prototype()
+    }
+
+    /// The function's exclusive end address, or `None` if the entry is no longer a function.
+    #[must_use]
+    #[doc(alias("end_ea"))]
+    pub fn end(&self) -> Option<Address> {
+        self.db.function(self.entry).end()
+    }
+
+    /// Rename the function.
+    ///
+    /// # Errors
+    /// [`Error::WriteRejected`] if the kernel rejects the rename, or [`Error::InteriorNul`] if
+    /// `name` contains a NUL byte.
+    #[doc(alias("set_name"))]
+    pub fn rename(&mut self, name: impl AsRef<str>) -> Result<()> {
+        self.db.at_mut(self.entry).rename(name)
+    }
+
+    /// Apply a function prototype (or any type) to this function's entry.
+    ///
+    /// A function-typed declaration (`"int f(int)"`) sets the prototype. The database prototype is
+    /// not always what the decompiler renders, since a user-pinned local-variable type can
+    /// override it.
+    ///
+    /// # Errors
+    /// [`Error::TypeParseFailed`] for an unparseable declaration, [`Error::TypeNotFound`] for an
+    /// unknown named type, [`Error::TypeApplyFailed`] if the kernel rejects the type, or
+    /// [`Error::InteriorNul`] if the input contains a NUL byte.
+    #[doc(alias("apply_tinfo"))]
+    pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
+        self.db.apply_type_at(self.entry, &ty.into())
     }
 }
 

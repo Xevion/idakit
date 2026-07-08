@@ -162,18 +162,20 @@ fn run(idb: &mut idakit::Database) {
         }
     }
 
-    // Rename via &mut (first's borrow has ended), then confirm.
+    // Rename via the write cursor (first's borrow has ended), then confirm.
     let renamed = "idakit_roundtrip_probe";
-    idb.rename(address, renamed).expect("rename failed");
+    idb.at_mut(address).rename(renamed).expect("rename failed");
     let after = idb.function(address).name();
     assert_eq!(after.as_str(), renamed, "rename did not stick");
     assert!(after.is_user(), "a user rename yields a user name");
 
-    idb.set_comment(address, "touched by idakit roundtrip", false)
+    idb.at_mut(address)
+        .set_comment("touched by idakit roundtrip", false)
         .expect("set_comment failed");
 
     // Leave the DB as found.
-    idb.rename(address, &original)
+    idb.at_mut(address)
+        .rename(original.as_str())
         .expect("restore rename failed");
 
     println!("roundtrip OK: {func_count} funcs, {seg_count} segs, rename/comment verified");

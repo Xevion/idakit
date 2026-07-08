@@ -310,8 +310,52 @@ impl Database {
         unsafe { sys::idakit_type_name_at(ordinal, buf, cap) }
     }
 
+    pub(crate) fn func_start(&self, address: Address) -> sys::Address {
+        unsafe { sys::idakit_func_start(address.get()) }
+    }
+
     pub(crate) fn func_end(&self, address: Address) -> sys::Address {
         unsafe { sys::idakit_func_end(address.get()) }
+    }
+
+    /// Parses `decl` and applies the resulting type at `address`; the reason is copied out of the
+    /// facade buffer for a parse failure.
+    pub(crate) fn apply_type_decl(
+        &mut self,
+        address: Address,
+        decl: *const c_char,
+        flags: c_int,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates within it.
+        let code = unsafe {
+            sys::idakit_apply_type_decl(
+                address.get(),
+                decl,
+                flags,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        let reason = unsafe { cstr(err.as_ptr().cast()) };
+        (code, reason)
+    }
+
+    /// Resolves the named type `name` and applies it at `address`.
+    pub(crate) fn apply_named_type(&mut self, address: Address, name: *const c_char) -> c_int {
+        unsafe { sys::idakit_apply_named_type(address.get(), name) }
+    }
+
+    /// Parses `input` into the local type library; returns the error count and any diagnostics
+    /// copied out of the facade buffer.
+    pub(crate) fn define_type(&mut self, input: *const c_char) -> (c_int, String) {
+        let mut err = [0u8; 4096];
+        // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates within it.
+        let code = unsafe { sys::idakit_define_type(input, err.as_mut_ptr().cast(), err.len()) };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        let reason = unsafe { cstr(err.as_ptr().cast()) };
+        (code, reason)
     }
 
     pub(crate) fn func_flags(&self, address: Address) -> u64 {

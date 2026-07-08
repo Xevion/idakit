@@ -8,8 +8,7 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::error::{Error, Result};
-use crate::ffi::{read_string, with_cstr};
+use crate::ffi::read_string;
 
 impl Database {
     /// Whether the kernel classifies the item at `address` as an instruction.
@@ -75,33 +74,6 @@ impl Database {
         (got.max(0) as usize).min(buf.len())
     }
 
-    /// Patch `bytes` over the image at `address`, saving the originals.
-    ///
-    /// IDA can recover the saved originals, and a later save writes the patch into the `.i64`.
-    /// The write is all-or-nothing, so a bad address leaves the database untouched.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if any target byte is unmapped.
-    #[doc(alias("patch_bytes"))]
-    pub fn patch(&mut self, address: Address, bytes: &[u8]) -> Result<()> {
-        if bytes.is_empty() {
-            return Ok(());
-        }
-        let ok = self.patch_bytes(address, bytes.as_ptr().cast(), bytes.len());
-        if ok != 0 {
-            return Ok(());
-        }
-        // patch_bytes has no kernel error channel; the facade rejects an unmapped range, so
-        // there is usually no error code set. Fall back to naming the actual failure.
-        let (qerrno, reason) = self.last_reason();
-        Err(Error::WriteRejected {
-            op: "patch",
-            address: address.get(),
-            qerrno,
-            reason: reason.or_else(|| Some("target range is not fully mapped".to_owned())),
-        })
-    }
-
     /// Read up to `len` bytes at `address` into a fresh vector (empty on failure).
     #[must_use]
     #[doc(alias("get_bytes"))]
@@ -115,32 +87,10 @@ impl Database {
     /// Read the comment at `address`, or `None` when that channel carries none.
     ///
     /// `repeatable` selects the repeatable channel over the regular one. The write half is
-    /// [`set_comment`](Self::set_comment).
+    /// [`LocationMut::set_comment`](crate::LocationMut::set_comment).
     #[must_use]
     #[doc(alias("get_cmt"))]
     pub fn comment(&self, address: Address, repeatable: bool) -> Option<String> {
         read_string(|buf, cap| self.get_cmt(address, repeatable, buf, cap))
-    }
-
-    /// Set the comment at `address`.
-    ///
-    /// `repeatable` repeats it at every reference.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("set_cmt"))]
-    pub fn set_comment(&mut self, address: Address, text: &str, repeatable: bool) -> Result<()> {
-        let ok = with_cstr(text, "comment", |p| self.set_cmt(address, p, repeatable))?;
-        if ok {
-            Ok(())
-        } else {
-            let (qerrno, reason) = self.last_reason();
-            Err(Error::WriteRejected {
-                op: "set_comment",
-                address: address.get(),
-                qerrno,
-                reason,
-            })
-        }
     }
 }

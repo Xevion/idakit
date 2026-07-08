@@ -15,6 +15,7 @@ unsafe extern "C" {
         start: *mut Address,
         end: *mut Address,
     ) -> c_int;
+    pub fn idakit_func_start(address: Address) -> Address;
     pub fn idakit_func_end(address: Address) -> Address;
     pub fn idakit_func_flags(address: Address) -> u64;
 }

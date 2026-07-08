@@ -3,7 +3,6 @@
 
 use crate::Database;
 use crate::address::Address;
-use crate::error::{Error, Result};
 use crate::ffi::{read_string, with_cstr};
 
 impl Database {
@@ -53,26 +52,6 @@ impl Database {
     #[doc(alias("get_nlist_size", "get_nlist_ea", "get_nlist_name"))]
     pub fn names(&self) -> Names<'_> {
         Names::new(self)
-    }
-
-    /// Rename the item at `address`.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the rename.
-    #[doc(alias("set_name"))]
-    pub fn rename(&mut self, address: Address, name: &str) -> Result<()> {
-        let ok = with_cstr(name, "name", |p| self.set_name(address, p))?;
-        if ok {
-            Ok(())
-        } else {
-            let (qerrno, reason) = self.last_reason();
-            Err(Error::WriteRejected {
-                op: "rename",
-                address: address.get(),
-                qerrno,
-                reason,
-            })
-        }
     }
 }
 

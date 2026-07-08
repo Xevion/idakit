@@ -79,6 +79,11 @@ extern "C" int idakit_func_chunk(idakit_ea_t ea, int idx, idakit_ea_t *start, id
   return 0;
 }
 
+extern "C" idakit_ea_t idakit_func_start(idakit_ea_t ea) {
+  func_t *f = get_func((ea_t)ea);
+  return f != nullptr ? (idakit_ea_t)f->start_ea : (idakit_ea_t)BADADDR;
+}
+
 extern "C" idakit_ea_t idakit_func_end(idakit_ea_t ea) {
   func_t *f = get_func((ea_t)ea);
   return f != nullptr ? (idakit_ea_t)f->end_ea : (idakit_ea_t)BADADDR;
