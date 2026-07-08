@@ -345,6 +345,10 @@ int idakit_apply_named_type(idakit_ea_t ea, const char *name);
  * (0 = ok), with any diagnostics copied to errbuf (snprintf-style, truncated to cap). */
 int idakit_define_type(const char *input, char *errbuf, size_t cap);
 
+/* Clear any type applied at ea (set_tinfo to null). Idempotent: OK when there was nothing to clear;
+ * ERR_APPLY only if the kernel refuses to remove an existing type. */
+int idakit_clear_type(idakit_ea_t ea);
+
 /* Type-recipe opcodes: a postfix (RPN) bytecode idakit serializes a type builder into, walked by
  * idakit_apply_type_recipe over a tinfo_t stack. A leaf op pushes a type; a transform op pops one
  * and pushes the wrapped result; a well-formed recipe leaves exactly one type. Multi-byte operands

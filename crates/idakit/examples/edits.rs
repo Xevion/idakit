@@ -107,6 +107,13 @@ fn function_types(idb: &mut Database, ea: Address) -> Result<(), Error> {
     // For the entry address, `function_mut(ea).set_type` and `at_mut(ea).set_type` are the same
     // apply today; `FunctionEdit` earns its own weight when signature surgery (return/arg edits)
     // arrives.
+
+    // `clear_type` is the inverse of `set_type`; it removes the prototype and is idempotent.
+    idb.at_mut(ea).clear_type()?;
+    println!(
+        "  prototype after clear: {:?}",
+        idb.function(ea).prototype()
+    );
     Ok(())
 }
 

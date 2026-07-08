@@ -354,6 +354,17 @@ impl FunctionEdit<'_> {
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
         self.db.apply_type_at(self.entry, &ty.into())
     }
+
+    /// Remove this function's prototype, clearing the type at its entry.
+    ///
+    /// Idempotent: a function with no prototype stays that way and still succeeds.
+    ///
+    /// # Errors
+    /// [`Error::WriteRejected`] if the kernel refuses to remove the existing prototype.
+    #[doc(alias("del_tinfo"))]
+    pub fn clear_type(&mut self) -> Result<()> {
+        self.db.at_mut(self.entry).clear_type()
+    }
 }
 
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.

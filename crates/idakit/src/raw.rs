@@ -347,6 +347,11 @@ impl Database {
         unsafe { sys::idakit_apply_named_type(address.get(), name) }
     }
 
+    /// Clears any type applied at `address` (idempotent).
+    pub(crate) fn clear_type(&mut self, address: Address) -> c_int {
+        unsafe { sys::idakit_clear_type(address.get()) }
+    }
+
     /// Builds the type the serialized recipe `buf` encodes and applies it at `address`; the reason
     /// is copied out of the facade buffer on a build or apply failure.
     pub(crate) fn apply_type_recipe(

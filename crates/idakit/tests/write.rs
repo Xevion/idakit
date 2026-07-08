@@ -20,9 +20,10 @@ fn run(idb: &mut idakit::Database) {
     type_apply(idb, address);
     type_define(idb);
     type_build(idb, address);
+    type_clear(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + clear"
     );
 }
 
@@ -188,4 +189,27 @@ fn type_build(idb: &mut idakit::Database, address: Address) {
         matches!(r, Err(Error::TypeApplyFailed { .. })),
         "a composite over an unknown named type should be TypeApplyFailed, got {r:?}"
     );
+}
+
+/// Clearing a type is the inverse of applying one: set a prototype, confirm it, clear it, confirm
+/// it is gone, and confirm a second clear is an idempotent success.
+fn type_clear(idb: &mut idakit::Database, entry: Address) {
+    idb.function_mut(entry)
+        .expect("a function at the entry")
+        .set_type("int idakit_clear_probe(int a)")
+        .expect("apply a prototype to clear");
+    assert!(
+        idb.function(entry).prototype().is_some(),
+        "a prototype should be set before the clear"
+    );
+
+    idb.at_mut(entry).clear_type().expect("clear the type");
+    assert!(
+        idb.function(entry).prototype().is_none(),
+        "the prototype should be gone after clear"
+    );
+
+    idb.at_mut(entry)
+        .clear_type()
+        .expect("a second clear is an idempotent success");
 }

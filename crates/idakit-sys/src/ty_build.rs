@@ -27,6 +27,11 @@ unsafe extern "C" {
     /// (0 = ok) with any diagnostics copied to `errbuf` (truncated to `cap`).
     pub fn idakit_define_type(input: *const c_char, errbuf: *mut c_char, cap: usize) -> c_int;
 
+    /// Clear any type applied at `address` (`set_tinfo` to null). Idempotent:
+    /// [`IDAKIT_TYPE_OK`] when there was nothing to clear, [`IDAKIT_TYPE_ERR_APPLY`] only if the
+    /// kernel refuses to remove an existing type.
+    pub fn idakit_clear_type(ea: Address) -> c_int;
+
     /// Build the `tinfo` the postfix recipe in `(buf, len)` encodes and apply it at `ea`
     /// (`apply_tinfo`, `TINFO_DEFINITE | flags`). idakit's preferred lowering path: one crossing,
     /// no handle threading. Same codes as [`idakit_apply_type_decl`]; [`IDAKIT_TYPE_ERR_INPUT`] is

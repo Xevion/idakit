@@ -341,6 +341,21 @@ impl LocationMut<'_> {
         self.db.apply_type_at(self.address, &ty.into())
     }
 
+    /// Clear any type applied to the item at this address, the inverse of [`set_type`](Self::set_type).
+    ///
+    /// Idempotent: an address that carries no type stays untyped and still succeeds. On a function
+    /// entry this removes the prototype.
+    ///
+    /// # Errors
+    /// [`Error::WriteRejected`] if the kernel refuses to remove an existing type.
+    #[doc(alias("del_tinfo", "set_tinfo"))]
+    pub fn clear_type(&mut self) -> Result<()> {
+        match self.db.clear_type(self.address) {
+            sys::IDAKIT_TYPE_OK => Ok(()),
+            _ => Err(self.rejected("clear_type")),
+        }
+    }
+
     /// Builds an [`Error::WriteRejected`] for `op` from the kernel's current error channel.
     fn rejected(&self, op: &'static str) -> Error {
         let (qerrno, reason) = self.db.last_reason();

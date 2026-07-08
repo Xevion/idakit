@@ -11,6 +11,7 @@
 #include <ida.hpp>
 
 #include <kernwin.hpp> // msg (parse_decls error sink)
+#include <nalt.hpp>    // get_tinfo, set_tinfo (address-level type note)
 #include <typeinf.hpp> // tinfo_t, parse_decl, parse_decls, apply_tinfo, get_named_type, create_*
 
 #include "idakit_facade.h"
@@ -158,6 +159,23 @@ extern "C" int idakit_apply_named_type(idakit_ea_t ea, const char *name) {
       if (!apply_tinfo((ea_t)ea, tif, TINFO_DEFINITE))
         return IDAKIT_TYPE_ERR_APPLY;
       return IDAKIT_TYPE_OK;
+    });
+  } catch (...) {
+    std::abort();
+  }
+}
+
+// Clear any type applied at ea (set_tinfo to null). Idempotent: an address with no type note (or an
+// unmapped one) is already clear and reports OK; _ERR_APPLY means the kernel refused to remove an
+// existing type.
+extern "C" int idakit_clear_type(idakit_ea_t ea) {
+  try {
+    using namespace idakit_facade;
+    return guarded<int>(IDAKIT_TYPE_ERR_APPLY, false, [&]() -> int {
+      tinfo_t cur;
+      if (!get_tinfo(&cur, (ea_t)ea) || cur.empty())
+        return IDAKIT_TYPE_OK;
+      return set_tinfo((ea_t)ea, nullptr) ? IDAKIT_TYPE_OK : IDAKIT_TYPE_ERR_APPLY;
     });
   } catch (...) {
     std::abort();
