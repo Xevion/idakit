@@ -8,26 +8,28 @@
 //! [`set_calling_convention`](FunctionEdit::set_calling_convention),
 //! [`prepend_this`](FunctionEdit::prepend_this)). A surgery verb reads the existing prototype,
 //! mutates one field, and re-applies; a failure is a typed
-//! [`TypeWriteError`].
+//! [`TypeWriteError`](crate::types::TypeWriteError).
 
 use std::ffi::c_int;
-use std::ops::Range;
 
 use idakit_sys as sys;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use strum::VariantArray;
 
 use crate::Database;
 use crate::address::Address;
 use crate::decompiler::DecompiledFunction;
 use crate::decompiler::ctree::Ctree;
 use crate::error::{Error, Result};
-use crate::ffi::{read_string, reason_or, with_cstr};
+use crate::ffi::{read_string, with_cstr};
 use crate::flowchart::{FlowChart, flowchart_flags};
-use crate::instruction::Instruction;
+use crate::instruction::Instructions;
 use crate::stack::StackFrame;
-use crate::types::{Type, TypeExpr, TypeWriteError, walk_type};
+use crate::types::{Type, TypeExpr, walk_type};
 use crate::xref::Xrefs;
+
+mod signature;
+
+pub use signature::CallingConvention;
+use signature::sig_result;
 
 impl Database {
     /// A typed cursor at `address`.
@@ -359,8 +361,9 @@ impl FunctionEdit<'_> {
     /// override it.
     ///
     /// # Errors
-    /// [`TypeWriteError::ParseFailed`] for an unparseable declaration, [`TypeWriteError::NoType`]
-    /// for an unknown named type, [`TypeWriteError::ApplyRejected`] if the kernel rejects the
+    /// [`TypeWriteError::ParseFailed`](crate::types::TypeWriteError::ParseFailed) for an unparseable declaration,
+    /// [`TypeWriteError::NoType`](crate::types::TypeWriteError::NoType)
+    /// for an unknown named type, [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the
     /// type, or [`Error::InteriorNul`] if the input contains a NUL byte.
     #[doc(alias("apply_tinfo"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
@@ -384,9 +387,9 @@ impl FunctionEdit<'_> {
     /// swaps the return, and re-applies.
     ///
     /// # Errors
-    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
-    /// [`TypeWriteError::BuildFailed`] if `ret` cannot be built, or
-    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype,
+    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `ret` cannot be built, or
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_return_type(&mut self, ret: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ret.into().serialize();
@@ -397,10 +400,10 @@ impl FunctionEdit<'_> {
     /// Replace the type of parameter `index` (zero-based), keeping its name.
     ///
     /// # Errors
-    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
-    /// [`TypeWriteError::ArgIndexOutOfRange`] if `index` is past the last parameter,
-    /// [`TypeWriteError::BuildFailed`] if `ty` cannot be built, or
-    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype,
+    /// [`TypeWriteError::ArgIndexOutOfRange`](crate::types::TypeWriteError::ArgIndexOutOfRange) if `index` is past the last parameter,
+    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `ty` cannot be built, or
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_arg_type(&mut self, index: usize, ty: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ty.into().serialize();
@@ -411,9 +414,9 @@ impl FunctionEdit<'_> {
     /// Rename parameter `index` (zero-based), keeping its type.
     ///
     /// # Errors
-    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
-    /// [`TypeWriteError::ArgIndexOutOfRange`] if `index` is past the last parameter, or
-    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature; or
+    /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype,
+    /// [`TypeWriteError::ArgIndexOutOfRange`](crate::types::TypeWriteError::ArgIndexOutOfRange) if `index` is past the last parameter, or
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature; or
     /// [`Error::InteriorNul`] if `name` contains a NUL byte.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn rename_arg(&mut self, index: usize, name: impl AsRef<str>) -> Result<()> {
@@ -426,8 +429,8 @@ impl FunctionEdit<'_> {
     /// Set this function's calling convention.
     ///
     /// # Errors
-    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype, or
-    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the convention (e.g. an x86
+    /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype, or
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the convention (e.g. an x86
     /// convention on a non-x86 target).
     #[doc(alias("set_cc"))]
     pub fn set_calling_convention(&mut self, cc: CallingConvention) -> Result<()> {
@@ -443,105 +446,15 @@ impl FunctionEdit<'_> {
     /// wants it.
     ///
     /// # Errors
-    /// [`TypeWriteError::NoPrototype`] if the entry has no editable prototype,
-    /// [`TypeWriteError::BuildFailed`] if `this` cannot be built, or
-    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype,
+    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `this` cannot be built, or
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn prepend_this(&mut self, this: impl Into<TypeExpr>) -> Result<()> {
         let recipe = this.into().serialize();
         let (code, reason) = self.db.func_prepend_this(self.entry, &recipe);
         sig_result(code, self.entry, None, reason)
     }
-}
-
-/// Maps a surgery return code, the current arity, and any captured reason to a crate [`Result`],
-/// the shared tail of the [`FunctionEdit`] surgery verbs. `arg` is `Some((index, arity))` for the
-/// index-taking verbs, so an out-of-range code names both. The `IDAKIT_SIG_*` set is closed; an
-/// unexpected code names itself in the message rather than silently landing on a generic reason,
-/// so a facade drift shows up immediately instead of only in the reason text.
-fn sig_result(
-    code: c_int,
-    address: Address,
-    arg: Option<(usize, usize)>,
-    reason: String,
-) -> Result<()> {
-    match code {
-        sys::IDAKIT_SIG_OK => Ok(()),
-        sys::IDAKIT_SIG_NO_PROTOTYPE => Err(TypeWriteError::NoPrototype {
-            address: address.get(),
-        }
-        .into()),
-        sys::IDAKIT_SIG_ARG_RANGE => {
-            let (index, arity) = arg.unwrap_or_default();
-            Err(TypeWriteError::ArgIndexOutOfRange {
-                address: address.get(),
-                index,
-                arity,
-            }
-            .into())
-        }
-        sys::IDAKIT_SIG_BUILD => Err(TypeWriteError::BuildFailed {
-            reason: reason_or(
-                reason,
-                "an unknown named type or invalid declaration within it",
-            ),
-        }
-        .into()),
-        sys::IDAKIT_SIG_APPLY => Err(TypeWriteError::ApplyRejected {
-            address: address.get(),
-            reason: reason_or(reason, "the kernel rejected the edited signature"),
-        }
-        .into()),
-        n => Err(TypeWriteError::ApplyRejected {
-            address: address.get(),
-            reason: reason_or(
-                reason,
-                &format!("the kernel rejected the edited signature (unexpected facade code {n})"),
-            ),
-        }
-        .into()),
-    }
-}
-
-/// A function's calling convention: the plain register/stack conventions surgery can set.
-///
-/// A curated closed set mirroring the settable `CM_CC_*` conventions from `typeinf.hpp`
-/// (IDA 9.3), idakit's own semantic layer over IDA's open convention byte. It omits the
-/// usercall/special and custom conventions (which carry explicit argument locations), the ellipsis
-/// convention (varargs is a [`function`](crate::types::expr::function) builder flag), and the
-/// spoiled-registers marker.
-#[derive(
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Debug,
-    TryFromPrimitive,
-    IntoPrimitive,
-    VariantArray,
-)]
-#[repr(u8)]
-#[doc(alias("cm_t", "CM_CC_MASK"))]
-pub enum CallingConvention {
-    /// Unknown or unspecified (`CM_CC_UNKNOWN`).
-    Unknown = 0x10,
-    /// `__cdecl`: caller-cleaned stack (`CM_CC_CDECL`).
-    Cdecl = 0x30,
-    /// `__stdcall`: callee-cleaned stack (`CM_CC_STDCALL`).
-    Stdcall = 0x50,
-    /// `__pascal`: callee-cleaned, reversed argument order (`CM_CC_PASCAL`).
-    Pascal = 0x60,
-    /// `__fastcall`: leading arguments in registers (`CM_CC_FASTCALL`).
-    Fastcall = 0x70,
-    /// `__thiscall`: the `this` pointer in a register (`CM_CC_THISCALL`).
-    Thiscall = 0x80,
-    /// Swift: arguments and results in registers (`CM_CC_SWIFT`).
-    Swift = 0x90,
-    /// Go: arguments and results in registers or on the stack by version (`CM_CC_GOLANG`).
-    Golang = 0xB0,
 }
 
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
@@ -782,109 +695,9 @@ impl Iterator for FunctionChunks<'_> {
     }
 }
 
-/// A lazy iterator over a function's instructions, across all its chunks, from
-/// [`Function::instructions`].
-///
-/// Code-gated, decoding only addresses the kernel classifies as code ([`Database::is_code`])
-/// and stepping over data items (jump tables, embedded constants) and the alignment tail.
-/// [`Database::decode`] turns any bytes into an [`Instruction`], so a plain linear decode past a
-/// function's `ret` yields garbage; `is_code` keeps the stream to real instructions.
-pub struct Instructions<'db> {
-    db: &'db Database,
-    chunks: FunctionChunks<'db>,
-    /// `(next address to examine, current chunk end)`; `None` until the first chunk loads and
-    /// again once the last chunk drains.
-    cursor: Option<(Address, Address)>,
-}
-
-impl<'db> Instructions<'db> {
-    #[inline]
-    pub(crate) fn new(db: &'db Database, address: Address) -> Self {
-        Self {
-            db,
-            chunks: FunctionChunks::new(address, db),
-            cursor: None,
-        }
-    }
-}
-
-impl Iterator for Instructions<'_> {
-    type Item = Instruction;
-
-    fn next(&mut self) -> Option<Instruction> {
-        loop {
-            let (address, end) = match self.cursor {
-                Some((address, end)) if address < end => (address, end),
-                _ => {
-                    let chunk = self.chunks.next()?;
-                    self.cursor = Some((chunk.start, chunk.end));
-                    continue;
-                }
-            };
-            // Step past this item before deciding to yield, so every branch advances; the
-            // kernel's item end is `address + len` for a decoded instruction, and skips a whole
-            // data item in one go. The `> address` guard keeps a pathological zero-width item from
-            // stalling the walk.
-            let stepped = self.db.item_end(address);
-            self.cursor = Some((if stepped > address { stepped } else { end }, end));
-            if self.db.is_code(address)
-                && let Ok(instruction) = self.db.decode(address)
-            {
-                return Some(instruction);
-            }
-        }
-    }
-}
-
-impl Database {
-    /// Lazily decodes the instructions in the half-open range `[range.start, range.end)`,
-    /// code-gated like [`Function::instructions`].
-    ///
-    /// The ranged twin of that walk. Pass a
-    /// [`BasicBlock`](crate::flowchart::BasicBlock)'s [`range`](crate::flowchart::BasicBlock::range)
-    /// to iterate one basic block.
-    #[must_use]
-    pub fn instructions_in(&self, range: Range<Address>) -> InstructionsIn<'_> {
-        InstructionsIn {
-            db: self,
-            cursor: range.start,
-            end: range.end,
-        }
-    }
-}
-
-/// A lazy iterator over the instructions in a fixed `[start, end)` range, code-gated like
-/// [`Instructions`], from [`Database::instructions_in`].
-pub struct InstructionsIn<'db> {
-    db: &'db Database,
-    cursor: Address,
-    end: Address,
-}
-
-impl Iterator for InstructionsIn<'_> {
-    type Item = Instruction;
-
-    fn next(&mut self) -> Option<Instruction> {
-        while self.cursor < self.end {
-            let address = self.cursor;
-            // Step past this item before deciding to yield, so every branch advances; the
-            // `> address` guard keeps a zero-width item from stalling the walk (cf. Instructions).
-            let stepped = self.db.item_end(address);
-            self.cursor = if stepped > address { stepped } else { self.end };
-            if self.db.is_code(address)
-                && let Ok(instruction) = self.db.decode(address)
-            {
-                return Some(instruction);
-            }
-        }
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use assert2::assert;
-    use rstest::rstest;
 
     use super::*;
 
@@ -893,31 +706,6 @@ mod tests {
     // Both owned so they can cross the kernel-thread boundary, unlike the borrowed Function view.
     const _: () = assert_send::<FunctionSnapshot>();
     const _: () = assert_send::<FunctionName>();
-
-    /// Every `CallingConvention` round-trips its byte, so a drifted value fails here rather than
-    /// silently setting the wrong convention at the facade.
-    #[test]
-    fn calling_convention_round_trips() {
-        for &cc in CallingConvention::VARIANTS {
-            assert!(CallingConvention::try_from(u8::from(cc)).ok() == Some(cc));
-        }
-        // A byte outside the curated set is rejected, not absorbed.
-        assert!(CallingConvention::try_from(0x20u8).is_err());
-    }
-
-    /// Each discriminant is pinned to the raw `CM_CC_*` code (typeinf.hpp, IDA 9.3).
-    #[rstest]
-    #[case(CallingConvention::Unknown, 0x10)]
-    #[case(CallingConvention::Cdecl, 0x30)]
-    #[case(CallingConvention::Stdcall, 0x50)]
-    #[case(CallingConvention::Pascal, 0x60)]
-    #[case(CallingConvention::Fastcall, 0x70)]
-    #[case(CallingConvention::Thiscall, 0x80)]
-    #[case(CallingConvention::Swift, 0x90)]
-    #[case(CallingConvention::Golang, 0xB0)]
-    fn calling_convention_pins_cm_cc(#[case] cc: CallingConvention, #[case] raw: u8) {
-        assert!(u8::from(cc) == raw);
-    }
 
     #[test]
     fn from_flags_classifies_by_the_two_name_bits() {

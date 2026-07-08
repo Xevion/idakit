@@ -208,12 +208,12 @@ pub mod prelude {
     pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
     pub use crate::function::{
         CallingConvention, Function, FunctionChunk, FunctionChunks, FunctionEdit, FunctionName,
-        FunctionSnapshot, Functions, Instructions, InstructionsIn,
+        FunctionSnapshot, Functions,
     };
     pub use crate::import::{Import, Imports};
     pub use crate::instruction::{
-        Access, DecodeError, Flow, Instruction, Isa, Memory, Operand, OperandDataType, OperandKind,
-        Register, RegisterClass,
+        Access, DecodeError, Flow, Instruction, Instructions, InstructionsIn, Isa, Memory, Operand,
+        OperandDataType, OperandKind, Register, RegisterClass,
     };
     pub use crate::kernel::{Ida, IdaConfig, IdaConfigBuilder};
     pub use crate::location::{Location, LocationMut};

@@ -17,9 +17,11 @@
 
 mod data_type;
 mod decode;
+mod iter;
 mod register;
 
 pub use data_type::OperandDataType;
+pub use iter::{Instructions, InstructionsIn};
 pub use register::{Register, RegisterClass};
 
 pub(crate) use decode::insn_from_raw;
