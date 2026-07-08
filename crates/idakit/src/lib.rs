@@ -1,5 +1,47 @@
 //! Idiomatic Rust bindings for the IDA Pro 9.3 kernel.
 //!
+//! [![CI](https://github.com/Xevion/idakit/actions/workflows/ci.yml/badge.svg)](https://github.com/Xevion/idakit/actions/workflows/ci.yml)
+//! [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+//! ![MSRV](https://img.shields.io/badge/MSRV-1.88-blue.svg)
+//!
+//! `idakit` drives IDA's analysis kernel from safe Rust. Bring the kernel up, open a
+//! database, and read its functions, segments, types, cross-references, and decompiled
+//! pseudocode through typed views instead of the raw C++ SDK.
+//!
+//! # A quick look
+//!
+//! Decompile every function in a database and flag calls into risky C APIs:
+//!
+//! ```
+//! # idakit::doctest::with_db(|db| {
+//! const SINKS: &[&str] = &["strcpy", "system", "memcpy", "sprintf"];
+//!
+//! for function in db.functions().take(300) {
+//!     // Decompile to a C syntax tree; skip anything that won't decompile.
+//!     let Some(tree) = function.decompile().ok().and_then(|d| d.ctree().ok()) else { continue };
+//!
+//!     for (_, callee, _) in tree.calls() {
+//!         // Resolve the call target to a name, then match it against the list.
+//!         let Some((_, Some(name))) = tree.kind(callee).as_obj() else { continue };
+//!         if SINKS.iter().any(|s| name.contains(s)) {
+//!             println!("{} calls {name}", function.name());
+//!         }
+//!     }
+//! }
+//! # Ok(())
+//! # }).unwrap();
+//! ```
+//!
+//! # Core types
+//!
+//! - [`Ida`]: brings the kernel up and marshals work onto its thread.
+//! - [`Database`]: the open database, and the root of every read and write.
+//! - [`Function`]: a function's name, bytes, chunks, instructions, and decompilation.
+//! - [`Segment`]: a segment's range, permissions, and class.
+//! - [`Type`]: an owned type snapshot, comparable across databases via [`types::diff`].
+//! - [`Ctree`]: a decompiled function's syntax tree, walkable off the kernel thread.
+//! - [`Xref`]: a cross-reference edge between two addresses.
+//!
 //! # The kernel thread
 //!
 //! The IDA kernel is single-threaded and thread-affine. [`Ida::here`](crate::kernel::Ida::here) brings it up on
@@ -49,6 +91,19 @@
 //! return lightweight views ([`Function`], [`Segment`], ...); writes take `&mut Database`, so a read
 //! view can't be held across a mutation.
 //!
+//! # Conventions
+//!
+//! A handful of shapes recur across every domain:
+//!
+//! - A **borrowed view** ([`Function`], [`Segment`]) is a cheap `Copy` handle that borrows the
+//!   [`Database`] and re-queries the kernel per accessor.
+//! - A **lazy iterator** ([`Segments`], [`function::Functions`]) walks a domain without collecting.
+//! - An **owned snapshot** ([`Type`], [`StackFrame`], [`Ctree`]) is a `Send` value detached from
+//!   the kernel and analyzable on any thread; a `Snapshot` suffix
+//!   ([`function::FunctionSnapshot`]) marks one taken from a view.
+//! - A **kernel-handle owner** ([`Pattern`], [`decompiler::DecompiledFunction`]) holds an IDA
+//!   resource it frees on [`Drop`], so it stays `!Send` on the kernel thread.
+//!
 //! # Building
 //!
 //! Linking needs a real IDA install (`IDADIR`, holding `libida.so`); the build compiles
@@ -56,8 +111,10 @@
 //! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64`, since the facade
 //! is compiled `__EA64__`.
 #![deny(missing_docs)]
+// Wire in `#![doc(html_logo_url = "<url>")]` here once a logo asset exists.
 #![deny(
     rustdoc::broken_intra_doc_links,
+    rustdoc::missing_crate_level_docs,
     rustdoc::private_intra_doc_links,
     rustdoc::invalid_codeblock_attributes,
     rustdoc::invalid_html_tags,
@@ -179,6 +236,14 @@ use crate::kernel::KernelClaim;
 /// `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` (returning
 /// [`Function`]/[`Segment`] views); writes take `&mut Database`, so a read view can't be held
 /// across a write.
+///
+/// The `!Send` bound is load-bearing and enforced at compile time:
+///
+/// ```compile_fail
+/// # use idakit::Database;
+/// fn assert_send<T: Send>() {}
+/// assert_send::<Database>(); // fails to compile: Database is !Send
+/// ```
 pub struct Database {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.
     hexrays_ready: Cell<bool>,

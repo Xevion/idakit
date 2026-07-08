@@ -31,18 +31,22 @@ tracing = "0.1.44"
 [[example]]
 name = "actor"
 path = "examples/actor.rs"
+doc-scrape-examples = true
 
 [[example]]
 name = "taint"
 path = "examples/taint.rs"
+doc-scrape-examples = true
 
 [[example]]
 name = "analyze"
 path = "examples/analyze.rs"
+doc-scrape-examples = true
 
 [[example]]
 name = "ctree_dump"
 path = "examples/ctree_dump.rs"
+doc-scrape-examples = true
 
 # Runtime-generated corpus matrix (one case per db x check); needs a custom harness.
 [[test]]

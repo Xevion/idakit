@@ -30,7 +30,7 @@ jobs:
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - run: just fmt-check
       # Doc-lint (broken intra-doc links, bad code blocks) under DOCS_RS, so no IDA runtime.
-      - run: just doc
+      - run: just doc hermetic
 
   test:
     name: test (${{ matrix.platform }} @ ${{ matrix.version }})

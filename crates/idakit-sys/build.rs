@@ -175,9 +175,15 @@ fn has_runtime(dir: &Path) -> bool {
 /// The install dir of `idat64`/`idat` if on `PATH` (canonicalized, so a wrapper symlink
 /// resolves to the real root).
 fn idadir_from_path() -> Option<PathBuf> {
+    // The text-mode driver ships as `idat64.exe` on Windows, bare elsewhere.
+    #[cfg(windows)]
+    const IDAT: &[&str] = &["idat64.exe", "idat.exe"];
+    #[cfg(not(windows))]
+    const IDAT: &[&str] = &["idat64", "idat"];
+
     let path = env::var_os("PATH")?;
     for dir in env::split_paths(&path) {
-        for exe in ["idat64", "idat"] {
+        for exe in IDAT {
             let bin = dir.join(exe);
             if !bin.is_file() {
                 continue;
@@ -193,31 +199,82 @@ fn idadir_from_path() -> Option<PathBuf> {
     None
 }
 
-/// Scan `$HOME` and `/opt` for an `ida-pro-*` / `idapro-*` install holding the runtime,
-/// preferring the highest-named (newest) one. (These are Unix layouts; on Windows set IDADIR.)
+/// Scan the OS's default IDA install locations, preferring the highest-named (newest) one.
 fn idadir_from_known_locations() -> Option<PathBuf> {
-    let roots = env::var_os("HOME")
-        .map(PathBuf::from)
-        .into_iter()
-        .chain([PathBuf::from("/opt")]);
+    let mut found = known_install_dirs();
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found.pop().map(|(_, runtime_dir)| runtime_dir)
+}
 
-    let mut found: Vec<PathBuf> = Vec::new();
+/// Immediate children of `roots` whose name matches `pat`, resolved to where the runtime
+/// should sit (the child itself, or `runtime_subdir` within it) and kept only if it does.
+/// Returns `(child name, runtime dir)` so the caller can pick the newest by name.
+fn collect_installs(
+    roots: impl IntoIterator<Item = PathBuf>,
+    pat: impl Fn(&str) -> bool,
+    runtime_subdir: Option<&str>,
+) -> Vec<(String, PathBuf)> {
+    let mut found = Vec::new();
     for root in roots {
         let Ok(entries) = std::fs::read_dir(&root) else {
             continue;
         };
         for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if (name.starts_with("ida-pro-") || name.starts_with("idapro-"))
-                && has_runtime(&entry.path())
-            {
-                found.push(entry.path());
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !pat(&name) {
+                continue;
+            }
+            let dir = match runtime_subdir {
+                Some(sub) => entry.path().join(sub),
+                None => entry.path(),
+            };
+            if has_runtime(&dir) {
+                found.push((name, dir));
             }
         }
     }
-    found.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-    found.pop()
+    found
+}
+
+/// `(install name, runtime dir)` for every IDA install under this OS's default locations.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn known_install_dirs() -> Vec<(String, PathBuf)> {
+    // Linux: `~/ida-pro-9.3`, `/opt/idapro-9.3`; the runtime sits in the install dir.
+    let roots = env::var_os("HOME")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain([PathBuf::from("/opt")]);
+    collect_installs(
+        roots,
+        |n| n.starts_with("ida-pro-") || n.starts_with("idapro-"),
+        None,
+    )
+}
+
+/// `(install name, runtime dir)` for every IDA install under this OS's default locations.
+#[cfg(target_os = "macos")]
+fn known_install_dirs() -> Vec<(String, PathBuf)> {
+    // macOS: `/Applications/IDA Professional 9.3.app`; the runtime is in `Contents/MacOS`.
+    let roots = env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join("Applications"))
+        .into_iter()
+        .chain([PathBuf::from("/Applications")]);
+    collect_installs(
+        roots,
+        |n| n.starts_with("IDA ") && n.ends_with(".app"),
+        Some("Contents/MacOS"),
+    )
+}
+
+/// `(install name, runtime dir)` for every IDA install under this OS's default locations.
+#[cfg(windows)]
+fn known_install_dirs() -> Vec<(String, PathBuf)> {
+    // Windows: `C:\Program Files\IDA Professional 9.3`; the runtime sits in the install dir.
+    let roots = ["ProgramFiles", "ProgramFiles(x86)"]
+        .into_iter()
+        .filter_map(env::var_os)
+        .map(PathBuf::from);
+    collect_installs(roots, |n| n.starts_with("IDA "), None)
 }
 
 /// Locate the SDK `include` directory holding `idalib.hpp`: an explicit
