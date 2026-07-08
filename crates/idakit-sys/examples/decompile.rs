@@ -1,5 +1,5 @@
 //! Decompile a function and traverse its ctree (the marquee unknown).
-//! Run: cargo run -p idakit-sys --example decompile -- path/to/database.i64 [func_index]
+//! Run: `cargo run -p idakit-sys --example decompile -- path/to/database.i64 [func_index]`
 
 use std::env;
 use std::ffi::{CStr, CString, c_char, c_int, c_void};

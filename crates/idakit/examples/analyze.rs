@@ -5,7 +5,7 @@
 //! `<binary>.i64` beside the input), so it doubles as the smoke test for
 //! `open(...).run_auto(true)`.
 //!
-//!   cargo run -p idakit --example analyze -- <path/to/binary>
+//!   `cargo run -p idakit --example analyze -- <path/to/binary>`
 
 use idakit::prelude::*;
 

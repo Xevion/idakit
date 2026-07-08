@@ -2,7 +2,7 @@
 //! Hex-Rays visitor count, then dump its structure. Diagnostic for the ARM64 extraction
 //! discrepancy.
 //!
-//!   cargo run -p idakit --example probe_ctree_counts -- <db-copy.i64>
+//!   `cargo run -p idakit --example probe_ctree_counts -- <db-copy.i64>`
 
 use idakit::prelude::*;
 

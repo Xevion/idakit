@@ -2,7 +2,7 @@
 //! it auto-analyzes the input and *persists* the result beside it as `<binary>.i64`, so
 //! the output is a self-contained fixture a test can open with `IDAKIT_TEST_DB`.
 //!
-//!   cargo run -p idakit --example make_fixture -- <path/to/binary>
+//!   `cargo run -p idakit --example make_fixture -- <path/to/binary>`
 
 use idakit::prelude::*;
 

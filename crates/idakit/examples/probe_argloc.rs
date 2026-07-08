@@ -1,7 +1,7 @@
 //! Tally decompiled-local `LocalLocation` variants across a database, printing the histogram and
 //! a few example scattered/pair locations. Verifies which argloc variants a fixture exercises.
 //!
-//!   cargo run -p idakit --example probe_argloc -- <db.i64> [max-funcs]
+//!   `cargo run -p idakit --example probe_argloc -- <db.i64> [max-funcs]`
 
 use idakit::prelude::*;
 

@@ -16,7 +16,7 @@
 //! friction shows up.
 //!
 //! Run (release matters for the numbers):
-//!   cargo run -p idakit --release --example taint -- <db.i64>
+//!   `cargo run -p idakit --release --example taint -- <db.i64>`
 //! Cap the sweep with `TAINT_LIMIT=2000` while iterating.
 
 use std::collections::{HashMap, HashSet};

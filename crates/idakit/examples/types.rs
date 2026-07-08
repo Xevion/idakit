@@ -6,7 +6,7 @@
 //! opaquely (`fb::JsObject *`), and resolving that name tells you whether the database carries
 //! its field layout or merely a forward declaration.
 //!
-//! Run: cargo run -p idakit --example types -- path/to/database.i64 [TypeName]
+//! Run: `cargo run -p idakit --example types -- path/to/database.i64 [TypeName]`
 
 use std::collections::HashSet;
 

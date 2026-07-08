@@ -49,11 +49,13 @@ tidy:
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
-# Build API docs, warnings-as-errors (broken links, bad code blocks, bare URLs all fail).
-# Default scrapes example call-sites onto each item (nightly + real runtime); `hermetic`
-# skips scraping and builds under DOCS_RS, so no IDA runtime -- CI and `check` use it.
+# Build API docs, warnings-as-errors (broken links, bad code blocks, bare URLs, invalid HTML
+# tags in example doc comments all fail). Default scrapes example call-sites onto each item
+# (nightly + real runtime); `hermetic` skips scraping and builds under DOCS_RS, so no IDA
+# runtime -- CI and `check` use it. Both pass --examples so example `//!` doc comments are
+# linted too, not just the library crates.
 doc mode="scrape":
-    RUSTDOCFLAGS="-D warnings" {{ if mode == "hermetic" { "DOCS_RS=1 cargo doc --workspace --no-deps" } else { "cargo +nightly doc --workspace --no-deps -Z rustdoc-scrape-examples" } }}
+    RUSTDOCFLAGS="-D warnings" {{ if mode == "hermetic" { "DOCS_RS=1 cargo doc --workspace --no-deps --examples" } else { "cargo +nightly doc --workspace --no-deps --examples -Z rustdoc-scrape-examples" } }}
 
 # Lint the GitHub Actions workflows (auto-discovers .github/workflows/).
 actionlint:

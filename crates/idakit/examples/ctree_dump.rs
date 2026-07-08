@@ -4,7 +4,7 @@
 //! A development lens for seeing the real node shapes the decompiler produces (e.g. how a
 //! constructor installs a vtable).
 //!
-//!   cargo run -p idakit --example ctree_dump -- <binary> [name-substring]
+//!   `cargo run -p idakit --example ctree_dump -- <binary> [name-substring]`
 
 use idakit::prelude::*;
 
