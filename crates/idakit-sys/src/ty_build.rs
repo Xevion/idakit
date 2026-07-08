@@ -143,6 +143,52 @@ unsafe extern "C" {
         errbuf: *mut c_char,
         cap: usize,
     ) -> c_int;
+
+    /// Add a member named `member_name` of the recipe type in `(recipe, len)` to the named
+    /// struct/union `type_name`, placed at bit offset `member_bit` (or appended when it is
+    /// [`IDAKIT_MEMBER_APPEND`]). See the `IDAKIT_TEDIT_*` codes; diagnostics land in `errbuf`.
+    pub fn idakit_udt_add_member(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        recipe: *const u8,
+        len: usize,
+        member_bit: u64,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Replace the type of the member selected by `member_name` (or, when it is null, by bit offset
+    /// `member_bit`) in the named struct/union `type_name` with the recipe in `(recipe, len)`.
+    pub fn idakit_udt_set_member_type(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        member_bit: u64,
+        recipe: *const u8,
+        len: usize,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Rename the member selected by `member_name` (or, when it is null, by bit offset `member_bit`)
+    /// in the named struct/union `type_name` to `new_name`.
+    pub fn idakit_udt_rename_member(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        member_bit: u64,
+        new_name: *const c_char,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
+
+    /// Delete the member selected by `member_name` (or, when it is null, by bit offset `member_bit`)
+    /// from the named struct/union `type_name`.
+    pub fn idakit_udt_del_member(
+        type_name: *const c_char,
+        member_name: *const c_char,
+        member_bit: u64,
+        errbuf: *mut c_char,
+        cap: usize,
+    ) -> c_int;
 }
 
 /// A prototype-surgery edit succeeded ([`idakit_func_set_rettype`] and its siblings).
@@ -155,6 +201,17 @@ pub const IDAKIT_SIG_ARG_RANGE: c_int = 2;
 pub const IDAKIT_SIG_BUILD: c_int = 3;
 /// `create_func` or `apply_tinfo` rejected the rebuilt signature.
 pub const IDAKIT_SIG_APPLY: c_int = 4;
+
+/// Member-edit pre-failure ([`idakit_udt_add_member`] and its siblings): no such named type in the
+/// local til. A positive sentinel; a successful edit is 0 and a kernel rejection is a negative
+/// `tinfo_code_t`.
+pub const IDAKIT_TEDIT_NO_TYPE: c_int = 1;
+/// Member-edit pre-failure: the member (by name or bit offset) did not resolve.
+pub const IDAKIT_TEDIT_NO_MEMBER: c_int = 2;
+/// Member-edit pre-failure: a member-type recipe did not build.
+pub const IDAKIT_TEDIT_BUILD: c_int = 3;
+/// `member_bit` value that appends a new member at the end rather than a fixed offset.
+pub const IDAKIT_MEMBER_APPEND: u64 = u64::MAX;
 
 /// Result of a successful type apply ([`idakit_apply_type_decl`]/[`idakit_apply_named_type`]/
 /// [`idakit_apply_type_recipe`]/[`idakit_tinfo_apply`]).

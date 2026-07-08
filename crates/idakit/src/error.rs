@@ -12,6 +12,7 @@ use snafu::Snafu;
 use crate::decompiler::ctree::ExtractError;
 use crate::function::SignatureError;
 use crate::instruction::DecodeError;
+use crate::types::TypeEditError;
 
 /// IDA's error code, with the documented generic values named.
 ///
@@ -295,6 +296,15 @@ pub enum Error {
     Signature {
         /// The underlying signature-edit error.
         source: SignatureError,
+    },
+
+    /// A type-library member edit failed; carries the typed [`TypeEditError`]. `?` flattens a
+    /// [`TypeEditError`] into this via [`From`] (`context(false)`), so a member edit routes through
+    /// the crate [`Result`] like every other write.
+    #[snafu(display("{source}"), context(false))]
+    TypeEdit {
+        /// The underlying member-edit error.
+        source: TypeEditError,
     },
 
     /// A string argument contained an interior NUL byte.

@@ -23,9 +23,10 @@ fn run(idb: &mut idakit::Database) {
     type_function_build(idb, address);
     type_surgery(idb, address);
     type_clear(idb, address);
+    type_member_edit(idb);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit"
     );
 }
 
@@ -391,4 +392,127 @@ fn type_clear(idb: &mut idakit::Database, entry: Address) {
     idb.at_mut(entry)
         .clear_type()
         .expect("a second clear is an idempotent success");
+}
+
+/// Struct-member surgery on a freshly defined type: append a member, rename one by bit offset,
+/// retype another by name, then delete one. Each edit reads back structurally through `type_named`,
+/// and the typed failures (duplicate name, missing member, missing type) surface without mutating.
+fn type_member_edit(idb: &mut idakit::Database) {
+    use idakit::types::{TypeEditCode, TypeEditError, expr};
+
+    fn member_names(idb: &idakit::Database, ty: &str) -> Vec<String> {
+        let t = idb.type_named(ty).expect("resolve the type");
+        t.members()
+            .expect("a struct has members")
+            .iter()
+            .map(|m| m.name.clone())
+            .collect()
+    }
+
+    idb.types_mut()
+        .define("struct idakit_member_probe { int a; int b; };")
+        .expect("define a struct to edit");
+
+    // Append a third member; the all-int layout keeps a@0, b@32, c@64 bits with no repacking.
+    idb.types_mut()
+        .edit("idakit_member_probe")
+        .add_member("c", expr::int32())
+        .expect("append member c");
+    assert!(
+        member_names(idb, "idakit_member_probe") == ["a", "b", "c"],
+        "c should be appended after a and b"
+    );
+
+    // Offset keying on the stable layout: the member at bit 32 is b (a rename does not shift
+    // offsets, so this stays unambiguous).
+    idb.types_mut()
+        .edit("idakit_member_probe")
+        .member_at(32)
+        .rename("beta")
+        .expect("rename the member at bit 32 by offset");
+    assert!(
+        member_names(idb, "idakit_member_probe") == ["a", "beta", "c"],
+        "the middle member should be renamed by offset"
+    );
+
+    // Delete the last member by name on the clean all-int layout (deleting the tail leaves no
+    // gap member behind, unlike deleting a middle member).
+    idb.types_mut()
+        .edit("idakit_member_probe")
+        .member("c")
+        .delete()
+        .expect("delete c by name");
+    assert!(
+        member_names(idb, "idakit_member_probe") == ["a", "beta"],
+        "c should be gone, leaving a and beta"
+    );
+
+    // Renaming onto an existing name is a typed rejection carrying the structured code.
+    let dup = idb
+        .types_mut()
+        .edit("idakit_member_probe")
+        .member("beta")
+        .rename("a");
+    assert!(
+        matches!(
+            dup,
+            Err(Error::TypeEdit {
+                source: TypeEditError::Rejected {
+                    code: TypeEditCode::DupName,
+                    ..
+                }
+            })
+        ),
+        "renaming onto an existing name should be Rejected(DupName), got {dup:?}"
+    );
+
+    // A member that does not resolve is NoMember; an unknown type is NoType.
+    let ghost = idb
+        .types_mut()
+        .edit("idakit_member_probe")
+        .member("ghost")
+        .set_type(expr::int32());
+    assert!(
+        matches!(
+            ghost,
+            Err(Error::TypeEdit {
+                source: TypeEditError::NoMember { .. }
+            })
+        ),
+        "editing a missing member should be NoMember, got {ghost:?}"
+    );
+    let no_type = idb
+        .types_mut()
+        .edit("idakit_no_such_struct")
+        .add_member("x", expr::int32());
+    assert!(
+        matches!(
+            no_type,
+            Err(Error::TypeEdit {
+                source: TypeEditError::NoType { .. }
+            })
+        ),
+        "editing a missing type should be NoType, got {no_type:?}"
+    );
+
+    // Name keying with a size change: retype a to a one-byte char and confirm its width. Checked
+    // last and by size (not by the member list, which a shrink can pad with a gap member).
+    idb.types_mut()
+        .edit("idakit_member_probe")
+        .member("a")
+        .set_type(expr::char_())
+        .expect("retype member a to char");
+    let probe = idb
+        .type_named("idakit_member_probe")
+        .expect("resolve probe");
+    let a = probe
+        .members()
+        .expect("a struct has members")
+        .iter()
+        .find(|m| m.name == "a")
+        .expect("member a");
+    assert!(
+        probe.get(a.ty).size == Some(1),
+        "member a should now be a one-byte char"
+    );
 }

@@ -26,7 +26,7 @@ mod resolved;
 mod sink;
 
 pub(crate) use builder::TypeBuilder;
-pub use edit::TypesMut;
+pub use edit::{MemberEdit, TypeEdit, TypeEditCode, TypeEditError, TypesMut};
 pub use expr::TypeExpr;
 pub use named::{NamedType, NamedTypes};
 pub use resolved::Type;

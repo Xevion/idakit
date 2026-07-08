@@ -479,6 +479,110 @@ impl Database {
         (code, unsafe { cstr(err.as_ptr().cast()) })
     }
 
+    /// Adds a member named `member_name` of recipe type `buf` to the named UDT `type_name` at
+    /// `member_bit` (or [`sys::IDAKIT_MEMBER_APPEND`]); returns the code and any reason.
+    pub(crate) fn udt_add_member(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+        buf: &[u8],
+        member_bit: u64,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: the name pointers are valid C strings; `buf` is readable of `buf.len()`; `err` is
+        // a writable buffer the facade NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_udt_add_member(
+                type_name,
+                member_name,
+                buf.as_ptr(),
+                buf.len(),
+                member_bit,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Replaces the type of the member selected by `member_name` (null selects by `member_bit`) in
+    /// the named UDT `type_name` with recipe `buf`; returns the code and any reason.
+    pub(crate) fn udt_set_member_type(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+        member_bit: u64,
+        buf: &[u8],
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: name pointers are valid C strings; `buf` is readable of `buf.len()`; `err` is a
+        // writable buffer the facade NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_udt_set_member_type(
+                type_name,
+                member_name,
+                member_bit,
+                buf.as_ptr(),
+                buf.len(),
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Renames the member selected by `member_name` (null selects by `member_bit`) in the named UDT
+    /// `type_name` to `new_name`; returns the code and any reason.
+    pub(crate) fn udt_rename_member(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+        member_bit: u64,
+        new_name: *const c_char,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_udt_rename_member(
+                type_name,
+                member_name,
+                member_bit,
+                new_name,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
+    /// Deletes the member selected by `member_name` (null selects by `member_bit`) from the named
+    /// UDT `type_name`; returns the code and any reason.
+    pub(crate) fn udt_del_member(
+        &mut self,
+        type_name: *const c_char,
+        member_name: *const c_char,
+        member_bit: u64,
+    ) -> (c_int, String) {
+        let mut err = [0u8; 1024];
+        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
+        // NUL-terminates within.
+        let code = unsafe {
+            sys::idakit_udt_del_member(
+                type_name,
+                member_name,
+                member_bit,
+                err.as_mut_ptr().cast(),
+                err.len(),
+            )
+        };
+        // SAFETY: `err` holds a NUL-terminated string written by the facade.
+        (code, unsafe { cstr(err.as_ptr().cast()) })
+    }
+
     /// Parses `input` into the local type library; returns the error count and any diagnostics
     /// copied out of the facade buffer.
     pub(crate) fn define_type(&mut self, input: *const c_char) -> (c_int, String) {

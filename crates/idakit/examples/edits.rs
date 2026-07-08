@@ -3,8 +3,9 @@
 //!
 //! A tour of the write idioms: the read-capable cursor (read-modify-write with no re-borrow), the
 //! `&str` classifier (name vs declaration), the `Option`/`Result` shapes of the acquirers, the
-//! `TypeExpr` builder (scalar leaves, pointers, arrays, qualifiers composed off the kernel), and the
-//! four type errors (`TypeNotFound`, `TypeParseFailed`, `TypeApplyFailed`, `TypeDefineFailed`).
+//! `TypeExpr` builder (scalar leaves, pointers, arrays, qualifiers composed off the kernel),
+//! struct-member surgery (`edit(..).member(..)`), and the type errors (`TypeNotFound`,
+//! `TypeParseFailed`, `TypeApplyFailed`, `TypeDefineFailed`, and the member-edit `TypeEditError`).
 //! Nothing is persisted: the database closes with `save = false`, and the name and bytes it touches
 //! are restored first.
 //!
@@ -31,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             function_types(idb, entry)?;
             signature_surgery(idb, entry)?;
             defining_types(idb)?;
+            editing_members(idb)?;
             building_types(idb, entry);
             classifier_and_errors(idb, entry);
 
@@ -171,6 +173,53 @@ fn defining_types(idb: &mut Database) -> Result<(), Error> {
             println!("  malformed define -> TypeDefineFailed: {reason}");
         }
         other => println!("  malformed define -> unexpected {other:?}"),
+    }
+    Ok(())
+}
+
+/// Member surgery on a defined struct: append a member, retype and rename existing ones through the
+/// `member(..)` sub-cursor, and show the structured rejection when a rename collides. Each edit
+/// auto-saves to the local til; nothing persists past `save = false`.
+fn editing_members(idb: &mut Database) -> Result<(), Error> {
+    use idakit::types::expr;
+
+    println!("\n== types_mut: edit members ==");
+
+    idb.types_mut()
+        .define("struct edit_member_demo { int a; int b; };")?;
+
+    idb.types_mut()
+        .edit("edit_member_demo")
+        .add_member("c", expr::int32())?;
+    idb.types_mut()
+        .edit("edit_member_demo")
+        .member("a")
+        .set_type(expr::char_())?;
+    idb.types_mut()
+        .edit("edit_member_demo")
+        .member("b")
+        .rename("beta")?;
+
+    let names: Vec<String> = idb
+        .type_named("edit_member_demo")?
+        .members()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| m.name.clone())
+        .collect();
+    println!("  after add + retype + rename, members: {names:?}");
+
+    // Renaming onto an existing name surfaces the structured tinfo_code.
+    match idb
+        .types_mut()
+        .edit("edit_member_demo")
+        .member("c")
+        .rename("a")
+    {
+        Err(Error::TypeEdit {
+            source: TypeEditError::Rejected { code, .. },
+        }) => println!("  duplicate rename -> Rejected({code})"),
+        other => println!("  duplicate rename -> unexpected {other:?}"),
     }
     Ok(())
 }

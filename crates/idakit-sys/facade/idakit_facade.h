@@ -418,6 +418,26 @@ int idakit_func_set_cc(idakit_ea_t ea, int cc, char *errbuf, size_t cap);
 int idakit_func_prepend_this(idakit_ea_t ea, const uint8_t *recipe, size_t len, char *errbuf,
                              size_t cap);
 
+/* Struct/union member edits. Each shim loads the named type from the local til, resolves the
+ * member, mutates it, and lets the til auto-save (edits to an attached typeref propagate to every
+ * reference). A member is selected by name (member_name != NULL) or by bit offset (member_name ==
+ * NULL, offset in member_bit); add places at member_bit, or appends when member_bit is
+ * IDAKIT_MEMBER_APPEND. The return is 0 on success, a positive IDAKIT_TEDIT_* sentinel for an
+ * idakit-side pre-failure, or the negative raw tinfo_code_t the kernel returned (mirrored by the
+ * TypeEditCode enum). Any kernel diagnostic is captured into errbuf snprintf-style. */
+#define IDAKIT_TEDIT_NO_TYPE 1              /* no such named type in the local til */
+#define IDAKIT_TEDIT_NO_MEMBER 2            /* the member (name/offset) did not resolve */
+#define IDAKIT_TEDIT_BUILD 3                /* a member-type recipe did not build */
+#define IDAKIT_MEMBER_APPEND ((uint64_t)-1) /* add at the end rather than a fixed offset */
+int idakit_udt_add_member(const char *type_name, const char *member_name, const uint8_t *recipe,
+                          size_t len, uint64_t member_bit, char *errbuf, size_t cap);
+int idakit_udt_set_member_type(const char *type_name, const char *member_name, uint64_t member_bit,
+                               const uint8_t *recipe, size_t len, char *errbuf, size_t cap);
+int idakit_udt_rename_member(const char *type_name, const char *member_name, uint64_t member_bit,
+                             const char *new_name, char *errbuf, size_t cap);
+int idakit_udt_del_member(const char *type_name, const char *member_name, uint64_t member_bit,
+                          char *errbuf, size_t cap);
+
 /* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
  * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the
  * byte range of the whole value this fragment covers. */

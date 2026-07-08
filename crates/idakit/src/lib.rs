@@ -229,8 +229,8 @@ pub mod prelude {
     };
     pub use crate::types::expr;
     pub use crate::types::{
-        EnumMember, NamedType, NamedTypes, Type, TypeExpr, TypeId, TypeMember, TypeShape,
-        TypeTable, TypeValue, TypesMut,
+        EnumMember, MemberEdit, NamedType, NamedTypes, Type, TypeEdit, TypeEditCode, TypeEditError,
+        TypeExpr, TypeId, TypeMember, TypeShape, TypeTable, TypeValue, TypesMut,
     };
     pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
 }

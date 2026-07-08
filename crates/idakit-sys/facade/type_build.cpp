@@ -661,3 +661,132 @@ extern "C" int idakit_func_prepend_this(idakit_ea_t ea, const uint8_t *recipe, s
     std::abort();
   }
 }
+
+namespace {
+// Link `tif` to the named type in the local til for editing. Edits to the returned typeref save
+// back to the til and propagate to every reference (ETF_NO_SAVE stays unset). False if no such
+// type.
+bool load_named_udt(const char *type_name, tinfo_t &tif) {
+  return tif.get_named_type(get_idati(), type_name) && !tif.empty();
+}
+
+// Resolve a member index in `tif`: by name when `member_name` is non-null, else by bit offset.
+// -1 if no member matches.
+int resolve_member(const tinfo_t &tif, const char *member_name, uint64_t member_bit) {
+  udm_t key;
+  int flags;
+  if (member_name != nullptr) {
+    key.name = member_name;
+    flags = STRMEM_NAME;
+  } else {
+    key.offset = member_bit;
+    flags = STRMEM_OFFSET;
+  }
+  return tif.find_udm(&key, flags);
+}
+} // namespace
+
+// Member edits: load the named UDT, resolve/mutate one member, let the til auto-save. See the
+// header for the return convention (0 / positive IDAKIT_TEDIT_* / negative tinfo_code_t). Run under
+// one fatal-trap guard with any kernel diagnostic captured into errbuf.
+
+extern "C" int idakit_udt_add_member(const char *type_name, const char *member_name,
+                                     const uint8_t *recipe, size_t len, uint64_t member_bit,
+                                     char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_udt(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      tinfo_t mt;
+      if (build_recipe(recipe, len, mt) != IDAKIT_TYPE_OK)
+        return IDAKIT_TEDIT_BUILD;
+      // Append means "past the last member": offset 0 for a union (all members share it), the
+      // current byte size in bits for a struct.
+      uint64_t offset = member_bit;
+      if (offset == IDAKIT_MEMBER_APPEND) {
+        asize_t sz = tif.is_union() ? 0 : tif.get_size();
+        offset = (sz == BADSIZE ? 0 : (uint64_t)sz) * 8;
+      }
+      return (int)tif.add_udm(member_name, mt, offset);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_udt_set_member_type(const char *type_name, const char *member_name,
+                                          uint64_t member_bit, const uint8_t *recipe, size_t len,
+                                          char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_udt(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      int idx = resolve_member(tif, member_name, member_bit);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      tinfo_t mt;
+      if (build_recipe(recipe, len, mt) != IDAKIT_TYPE_OK)
+        return IDAKIT_TEDIT_BUILD;
+      return (int)tif.set_udm_type((size_t)idx, mt);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_udt_rename_member(const char *type_name, const char *member_name,
+                                        uint64_t member_bit, const char *new_name, char *errbuf,
+                                        size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_udt(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      int idx = resolve_member(tif, member_name, member_bit);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      return (int)tif.rename_udm((size_t)idx, new_name);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+extern "C" int idakit_udt_del_member(const char *type_name, const char *member_name,
+                                     uint64_t member_bit, char *errbuf, size_t cap) {
+  try {
+    using namespace idakit_facade;
+    if (errbuf != nullptr && cap != 0)
+      errbuf[0] = 0;
+    int code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_udt(type_name, tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      int idx = resolve_member(tif, member_name, member_bit);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      return (int)tif.del_udm((size_t)idx);
+    });
+    copy_captured_reason(errbuf, cap);
+    return code;
+  } catch (...) {
+    std::abort();
+  }
+}
