@@ -86,13 +86,15 @@ pedantic:
 # nightly-only (needs -Z build-std). `mode` is "address" or "thread"; UBSan rides only on the
 # C++ side (rustc has no `-Zsanitizer=undefined`, and its runtime is ASan xor TSan). Leak
 # detection is off -- IDA's kernel is a process-lifetime singleton, so LSan's exit findings all
-# sit in libida.so, not real leaks.
+# sit in libida.so, not real leaks. Thread mode carries a suppressions file for the same
+# reason: see crates/idakit-sys/tsan-suppressions.txt.
 sanitize mode="address":
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "{{ mode }}" = thread ]; then
       export IDAKIT_SANITIZE=thread
       export RUSTFLAGS="-Zsanitizer=thread -Cdebuginfo=1"
+      export TSAN_OPTIONS="suppressions=$(pwd)/crates/idakit-sys/tsan-suppressions.txt"
     else
       export IDAKIT_SANITIZE=address,undefined
       export RUSTFLAGS="-Zsanitizer=address -Cdebuginfo=1"

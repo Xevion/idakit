@@ -1,0 +1,5 @@
+# init_library() takes an SDK-internal mutex once and never releases it; close_database()
+# later takes a second one while that first is still held, inside libida.so. idakit only ever
+# runs one kernel thread, so this can never actually deadlock.
+deadlock:bring_up_kernel
+deadlock:idakit_guarded_close

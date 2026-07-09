@@ -122,11 +122,6 @@ jobs:
       AWS_REGION: auto
       S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
-    # TSan's one finding so far is a lock-order inversion inside libida.so's own locking
-    # (qmutex_lock, reached via guarded<> during Database::close) -- not idakit's code, not
-    # fixable in a closed kernel, and TSan can't fully reason about an uninstrumented library.
-    # Non-blocking until triaged; ASan+UBSan (the clean mode) still gates.
-    continue-on-error: ${{ matrix.mode == 'thread' }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
