@@ -171,6 +171,10 @@ pub enum RetKind {
     U64,
     Usize,
     ResultUsize,
+    ResultU8,
+    ResultU16,
+    ResultU32,
+    ResultU64,
     String,
     ResultString,
     /// A by-value `Trivial` `ExternType`, by Rust name.
@@ -188,6 +192,8 @@ pub enum RetKind {
     /// An owned `Vec` of a scalar (`u32`).
     VecU32,
     ResultVecU32,
+    /// An owned `Vec<u8>` (a raw byte-range snapshot).
+    ResultVecU8,
 }
 
 /// How a function's C++ body is produced. The templated variants exist for segment's trivial
@@ -1129,9 +1135,189 @@ pub const REFERENCE: Domain = Domain {
     }],
 };
 
+/// The bytes domain: raw byte-range reads, typed scalar reads (each `Err`s when a covered byte is
+/// uninitialized), string-literal decode, item classification, and linear navigation. `min_ea`/
+/// `max_ea` are templated passthroughs; every other body is hand-written in `facade/gen_bytes.cc`.
+/// Writes (`patch_bytes`, `set_cmt`) and the binary-pattern search handle stay on the raw facade,
+/// deferred to the write-side spine.
+pub const BYTES: Domain = Domain {
+    name: "bytes",
+    sdk_includes: &["<bytes.hpp>", "<stdexcept>"],
+    externs: &[],
+    structs: &[],
+    custom_tu: Some("facade/gen_bytes.cc"),
+    fns: &[
+        FnSpec {
+            name: "get_bytes",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "size",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::ResultVecU8,
+            body: BodyKind::Custom,
+            doc: "The `size` bytes at `ea` as an owned `Vec<u8>`; `Err` when the range is not \
+                  fully mapped.",
+        },
+        FnSpec {
+            name: "get_u8",
+            receiver: None,
+            args: EA,
+            ret: RetKind::ResultU8,
+            body: BodyKind::Custom,
+            doc: "The byte at `ea`; `Err` when it is uninitialized.",
+        },
+        FnSpec {
+            name: "get_u16",
+            receiver: None,
+            args: EA,
+            ret: RetKind::ResultU16,
+            body: BodyKind::Custom,
+            doc: "The little-endian word at `ea`; `Err` when any covered byte is uninitialized.",
+        },
+        FnSpec {
+            name: "get_u32",
+            receiver: None,
+            args: EA,
+            ret: RetKind::ResultU32,
+            body: BodyKind::Custom,
+            doc: "The little-endian dword at `ea`; `Err` when any covered byte is uninitialized.",
+        },
+        FnSpec {
+            name: "get_u64",
+            receiver: None,
+            args: EA,
+            ret: RetKind::ResultU64,
+            body: BodyKind::Custom,
+            doc: "The little-endian qword at `ea`; `Err` when any covered byte is uninitialized.",
+        },
+        FnSpec {
+            name: "get_strlit",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "strtype",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "The auto-detected string literal at `ea` (given its `STRTYPE`) decoded to UTF-8; \
+                  `Err` when there is none or it cannot be decoded.",
+        },
+        FnSpec {
+            name: "min_ea",
+            receiver: None,
+            args: &[],
+            ret: RetKind::U64,
+            body: BodyKind::ScalarCall {
+                call: "inf_get_min_ea()",
+            },
+            doc: "Lowest mapped address in the database (`inf_get_min_ea`).",
+        },
+        FnSpec {
+            name: "max_ea",
+            receiver: None,
+            args: &[],
+            ret: RetKind::U64,
+            body: BodyKind::ScalarCall {
+                call: "inf_get_max_ea()",
+            },
+            doc: "One past the highest mapped address in the database (`inf_get_max_ea`).",
+        },
+        FnSpec {
+            name: "get_flags",
+            receiver: None,
+            args: EA,
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Flag word of the item at `ea` (`get_flags`).",
+        },
+        FnSpec {
+            name: "get_item_head",
+            receiver: None,
+            args: EA,
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Start address of the item covering `ea` (`ea` itself when it is an item head).",
+        },
+        FnSpec {
+            name: "get_item_end",
+            receiver: None,
+            args: EA,
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Address just past the item covering `ea` (`get_item_end`).",
+        },
+        FnSpec {
+            name: "get_next_head",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "maxea",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Next item head after `ea`, searching up to `maxea`, or `BADADDR` when none.",
+        },
+        FnSpec {
+            name: "get_prev_head",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "minea",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Previous item head before `ea`, searching down to `minea`, or `BADADDR` when \
+                  none.",
+        },
+        FnSpec {
+            name: "get_cmt",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "rptble",
+                    ty: ArgTy::Bool,
+                },
+            ],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "The regular (or repeatable, when `rptble`) comment at `ea`; `Err` when there is \
+                  none.",
+        },
+    ],
+};
+
 /// Every domain fed into the unified bridge, in emission order.
 pub const DOMAINS: &[&Domain] = &[
-    &SEGMENT, &IMPORT, &RANGE, &FUNCTION, &EXPORT, &META, &NAME, &STRINGS, &CFG, &REFERENCE,
+    &SEGMENT, &IMPORT, &RANGE, &FUNCTION, &EXPORT, &META, &NAME, &STRINGS, &CFG, &REFERENCE, &BYTES,
 ];
 
 impl FieldTy {
@@ -1201,6 +1387,10 @@ impl RetKind {
             RetKind::U64 => quote!(-> u64),
             RetKind::Usize => quote!(-> usize),
             RetKind::ResultUsize => quote!(-> Result<usize>),
+            RetKind::ResultU8 => quote!(-> Result<u8>),
+            RetKind::ResultU16 => quote!(-> Result<u16>),
+            RetKind::ResultU32 => quote!(-> Result<u32>),
+            RetKind::ResultU64 => quote!(-> Result<u64>),
             RetKind::String => quote!(-> String),
             RetKind::ResultString => quote!(-> Result<String>),
             RetKind::Extern(n) => {
@@ -1237,6 +1427,7 @@ impl RetKind {
             }
             RetKind::VecU32 => quote!(-> Vec<u32>),
             RetKind::ResultVecU32 => quote!(-> Result<Vec<u32>>),
+            RetKind::ResultVecU8 => quote!(-> Result<Vec<u8>>),
         }
     }
     /// The C++ return type. `cxx` maps a `Result<T>` to a C++ function returning `T` that throws,
@@ -1246,8 +1437,10 @@ impl RetKind {
             RetKind::Unit => "void".into(),
             RetKind::Bool => "bool".into(),
             RetKind::I32 => "int32_t".into(),
-            RetKind::U32 => "uint32_t".into(),
-            RetKind::U64 => "uint64_t".into(),
+            RetKind::ResultU8 => "uint8_t".into(),
+            RetKind::ResultU16 => "uint16_t".into(),
+            RetKind::U32 | RetKind::ResultU32 => "uint32_t".into(),
+            RetKind::U64 | RetKind::ResultU64 => "uint64_t".into(),
             RetKind::Usize | RetKind::ResultUsize => "size_t".into(),
             RetKind::String | RetKind::ResultString => "rust::String".into(),
             RetKind::Extern(n) | RetKind::ResultExtern(n) => format!("::{}", extern_cxx_name(n)),
@@ -1257,6 +1450,7 @@ impl RetKind {
             }
             RetKind::Vec(n) | RetKind::ResultVec(n) => format!("rust::Vec<{}>", vec_elem_cxx(n)),
             RetKind::VecU32 | RetKind::ResultVecU32 => "rust::Vec<uint32_t>".into(),
+            RetKind::ResultVecU8 => "rust::Vec<uint8_t>".into(),
         }
     }
 }

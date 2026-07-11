@@ -14,10 +14,12 @@ pub use ffi::{
     demangle_name, export_ea, export_forwarder, export_name, export_ordinal, export_qty,
     file_type_name, func_chunk_qty, func_ea, func_end, func_flags, func_name, func_qty, func_start,
     gen_seg_bitness, gen_seg_class, gen_seg_end, gen_seg_name, gen_seg_perm, gen_seg_qty,
-    gen_seg_span_total, gen_seg_start, get_ea_name, get_name_ea, has_auto_name, has_dummy_name,
-    has_user_name, image_base, imports_build, input_path, nlist_ea, nlist_name, nlist_size,
-    proc_name, range_all_chunks, range_chunk_info, range_entry_chunk, range_size, root_filename,
-    strlist_build, strlist_item, strlist_qty, strlit_contents, xrefs_build,
+    gen_seg_span_total, gen_seg_start, get_bytes, get_cmt, get_ea_name, get_flags, get_item_end,
+    get_item_head, get_name_ea, get_next_head, get_prev_head, get_strlit, get_u8, get_u16, get_u32,
+    get_u64, has_auto_name, has_dummy_name, has_user_name, image_base, imports_build, input_path,
+    max_ea, min_ea, nlist_ea, nlist_name, nlist_size, proc_name, range_all_chunks,
+    range_chunk_info, range_entry_chunk, range_size, root_filename, strlist_build, strlist_item,
+    strlist_qty, strlit_contents, xrefs_build,
 };
 // RangeT and FlowChart are module-level `pub` types (from the generated ExternType impls, outside
 // `mod ffi`), so they re-export through the crate-root glob without an explicit `pub use` here.

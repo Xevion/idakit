@@ -304,6 +304,7 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/gen_strings.cc");
     println!("cargo:rerun-if-changed=facade/gen_cfg.cc");
     println!("cargo:rerun-if-changed=facade/gen_reference.cc");
+    println!("cargo:rerun-if-changed=facade/gen_bytes.cc");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
     println!("cargo:rerun-if-changed=facade/type_walk.hpp");
