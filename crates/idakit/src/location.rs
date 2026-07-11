@@ -16,7 +16,7 @@ use crate::Database;
 use crate::address::Address;
 use crate::error::{Error, Result};
 use crate::ffi::{nul_checked, reason_or, with_cstr};
-use crate::types::{TypeExpr, TypeWriteError};
+use crate::types::{TypeExpr, TypeInfo, TypeWriteError};
 use crate::xref::Xrefs;
 
 /// Emits the scalar read accessors shared by [`Location`] and [`LocationMut`].
@@ -226,6 +226,23 @@ impl Database {
                 }
             }
         }
+    }
+}
+
+/// Maps a [`sys::tinfo_apply`] result to a [`Result`], the shared tail behind
+/// [`LocationMut::apply_type`] and
+/// [`FunctionEdit::apply_type`](crate::function::FunctionEdit::apply_type).
+///
+/// A pre-built handle is never a parse or build failure, so the only non-OK outcome is the kernel
+/// refusing to reshape the item: [`TypeWriteError::ApplyRejected`].
+pub(crate) fn tinfo_apply_result(res: sys::TypeWriteResult, address: Address) -> Result<()> {
+    match res.code {
+        sys::IDAKIT_TYPE_OK => Ok(()),
+        _ => Err(TypeWriteError::ApplyRejected {
+            address: address.get(),
+            reason: reason_or(res.reason, "the kernel could not apply the built type"),
+        }
+        .into()),
     }
 }
 

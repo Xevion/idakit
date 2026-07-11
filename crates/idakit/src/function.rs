@@ -22,8 +22,9 @@ use crate::error::{Error, Result};
 use crate::ffi::{nul_checked, read_string};
 use crate::flowchart::{FlowChart, flowchart_flags};
 use crate::instruction::Instructions;
+use crate::location::tinfo_apply_result;
 use crate::stack::StackFrame;
-use crate::types::{Type, TypeExpr, walk_type};
+use crate::types::{Type, TypeExpr, TypeInfo, walk_type};
 use crate::xref::Xrefs;
 
 mod signature;
@@ -367,6 +368,20 @@ impl FunctionEdit<'_> {
     #[doc(alias("apply_tinfo"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
         self.db.apply_type_at(self.entry, &ty.into())
+    }
+
+    /// Apply a pre-built [`TypeInfo`] handle to this function's entry.
+    ///
+    /// The eager-handle counterpart to [`set_type`](Self::set_type): a function-typed handle sets
+    /// the prototype, and `ty` is borrowed, so one handle applies to many entries.
+    ///
+    /// # Errors
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel
+    /// rejects the type.
+    #[doc(alias("apply_tinfo"))]
+    pub fn apply_type(&mut self, ty: &TypeInfo) -> Result<()> {
+        let res = self.db.apply_tinfo(self.entry, ty.tinfo(), 0);
+        tinfo_apply_result(res, self.entry)
     }
 
     /// Remove this function's prototype, clearing the type at its entry.

@@ -340,6 +340,15 @@ impl Database {
         sys::apply_type_recipe(address.get(), buf, flags)
     }
 
+    pub(crate) fn apply_tinfo(
+        &mut self,
+        address: Address,
+        handle: &sys::TInfo,
+        flags: c_int,
+    ) -> sys::TypeWriteResult {
+        sys::tinfo_apply(address.get(), handle, flags)
+    }
+
     pub(crate) fn func_set_rettype(
         &mut self,
         address: Address,

@@ -24,6 +24,7 @@ pub mod expr;
 mod named;
 mod resolved;
 mod sink;
+mod tinfo;
 
 pub(crate) use builder::TypeBuilder;
 pub use edit::{
@@ -34,6 +35,7 @@ pub use named::{NamedType, NamedTypes};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;
 pub(crate) use sink::{TypeSink, raw, reborrow, tid, type_vtbl};
+pub use tinfo::TypeInfo;
 
 /// A typed handle into a [`TypeTable`].
 pub type TypeId = Idx<TypeValue>;
