@@ -8,7 +8,6 @@
 //! analogue of the decompiler's [`Ctree`](crate::decompiler::ctree::Ctree).
 
 use std::cell::OnceCell;
-use std::ffi::{c_int, c_void};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -16,12 +15,11 @@ use idakit_sys as sys;
 
 use super::diff::TypeKey;
 use super::{
-    TypeBuilder, TypeId, TypeMember, TypeShape, TypeSink, TypeTable, TypeValue, tid, type_vtbl,
+    SinkAdapter, TypeBuilder, TypeId, TypeMember, TypeShape, TypeSink, TypeTable, TypeValue, tid,
 };
 use crate::Database;
 use crate::decompiler::ctree::ExtractError;
 use crate::error::{Error, Result};
-use crate::ffi::with_cstr;
 
 impl Database {
     /// Resolves a named type into an owned [`Type`], its structured shape and every member's type
@@ -32,11 +30,8 @@ impl Database {
     /// malformed.
     #[doc(alias("get_named_type"))]
     pub fn type_named(&self, name: &str) -> Result<Type> {
-        let walked = with_cstr(name, "name", |p| {
-            // SAFETY: `p` is a valid C string for the call; the kernel is claimed for `&self`.
-            walk_type(|v, ctx, root| unsafe { sys::idakit_type_walk(p, v, ctx, root) })
-        })?;
-        match walked {
+        // The kernel is claimed for `&self`; the driver marshals `name` and walks it into the sink.
+        match walk_type(|sink| sys::walk_type_named(name, sink)) {
             Ok(Some(image)) => Ok(image),
             Ok(None) => Err(Error::TypeNotFound {
                 name: name.to_owned(),
@@ -162,27 +157,22 @@ impl TypeSink for ResolvedTypeBuilder {
     }
 }
 
-/// Drive a standalone-type facade walk into a [`Type`]. `run` invokes the chosen facade entry
-/// (a named-type or function-prototype walk) with the shared type vtbl, its context, and the
-/// root-handle out-param, returning the entry's rc. `Ok(None)` when the entry reports no such type
-/// (non-zero rc); `Err` when the walked table is malformed. Callers map the [`ExtractError`] to
-/// their own boundary (an address, a type name).
+/// Drive a standalone-type `cxx` walk into a [`Type`]. `run` invokes the chosen driver (a
+/// named-type, ordinal, or function-prototype walk) with the sink to intern into, returning the
+/// root handle. `Ok(None)` when the driver reports no such type (`None`); `Err` when the walked
+/// table is malformed. Callers map the [`ExtractError`] to their own boundary (an address, a type
+/// name).
 pub(crate) fn walk_type(
-    run: impl FnOnce(*const sys::TypeVtbl, *mut c_void, *mut u32) -> c_int,
+    run: impl FnOnce(&mut dyn sys::TypeWalkSink) -> Option<u32>,
 ) -> core::result::Result<Option<Type>, ExtractError> {
     let mut b = ResolvedTypeBuilder {
         types: TypeBuilder::new(),
     };
-    let vtbl = type_vtbl::<ResolvedTypeBuilder>();
-    let mut root = 0u32;
-    let rc = run(
-        &vtbl,
-        (&mut b as *mut ResolvedTypeBuilder).cast(),
-        &mut root,
-    );
-    if rc != 0 {
+    // Scope the adapter so its borrow of `b` ends before the table is validated below.
+    let root = run(&mut SinkAdapter(&mut b));
+    let Some(root) = root else {
         return Ok(None);
-    }
+    };
     // The builder is error-type-agnostic (see the ctree walk): surface an over-wide scalar or an
     // unfilled placeholder rather than shipping a malformed table.
     if let Some(bytes) = b.types.too_wide() {

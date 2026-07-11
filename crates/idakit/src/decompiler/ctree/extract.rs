@@ -14,7 +14,7 @@
 
 use std::ffi::{c_char, c_void};
 
-use idakit_sys::{CaseDesc, EmitVtbl, IDAKIT_NONE, LvarLoc};
+use idakit_sys::{CaseDesc, EmitVtbl, EnumConstInfo, IDAKIT_NONE, LvarLoc, MemberInfo};
 use snafu::Snafu;
 
 use super::node::{
@@ -26,7 +26,7 @@ use super::tree::{Ctree, CtreeBuilder};
 use crate::address::Address;
 use crate::arena::Idx;
 use crate::ffi::{lossy, slice};
-use crate::types::{TypeBuilder, TypeSink, raw, tid, type_vtbl};
+use crate::types::{SinkAdapter, TypeBuilder, TypeSink, raw, tid};
 
 /// Structural operator-tag values the generic operator callback dispatches by name
 /// (operators proper go through the `TryFrom<u16>` derives).
@@ -401,6 +401,79 @@ impl TypeSink for CallbackBuilder {
     }
 }
 
+/// The ctree walk drives the `cxx` type visitor over a raw pointer to the builder (so it can share
+/// one provenance with the node context), which needs [`CallbackBuilder`] to be the sink itself
+/// rather than a borrowed [`SinkAdapter`]. Each method forwards through a fresh adapter, so the
+/// span-marshalling lives in one place; the trait is named by path so its methods don't shadow the
+/// [`TypeSink`] ones the unit tests call on a [`CallbackBuilder`].
+impl idakit_sys::TypeWalkSink for CallbackBuilder {
+    fn scalar(&mut self, kind: u32, bytes: u32, signed: u32, size: u64, has_size: u32) -> u32 {
+        idakit_sys::TypeWalkSink::scalar(
+            &mut SinkAdapter(self),
+            kind,
+            bytes,
+            signed,
+            size,
+            has_size,
+        )
+    }
+    fn ptr(&mut self, target: u32, size: u64, has_size: u32) -> u32 {
+        idakit_sys::TypeWalkSink::ptr(&mut SinkAdapter(self), target, size, has_size)
+    }
+    fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
+        idakit_sys::TypeWalkSink::array(&mut SinkAdapter(self), elem, nelems, size, has_size)
+    }
+    fn func(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
+        idakit_sys::TypeWalkSink::func(&mut SinkAdapter(self), ret, params, vararg)
+    }
+    fn opaque(&mut self, name: &str) -> u32 {
+        idakit_sys::TypeWalkSink::opaque(&mut SinkAdapter(self), name)
+    }
+    fn named_ref(&mut self, name: &str) -> u32 {
+        idakit_sys::TypeWalkSink::named_ref(&mut SinkAdapter(self), name)
+    }
+    fn anon(&mut self) -> u32 {
+        idakit_sys::TypeWalkSink::anon(&mut SinkAdapter(self))
+    }
+    fn fill_struct(
+        &mut self,
+        id: u32,
+        is_union: bool,
+        members: &[MemberInfo],
+        size: u64,
+        has_size: u32,
+    ) {
+        idakit_sys::TypeWalkSink::fill_struct(
+            &mut SinkAdapter(self),
+            id,
+            is_union,
+            members,
+            size,
+            has_size,
+        );
+    }
+    fn fill_enum(
+        &mut self,
+        id: u32,
+        underlying: u32,
+        consts: &[EnumConstInfo],
+        size: u64,
+        has_size: u32,
+    ) {
+        idakit_sys::TypeWalkSink::fill_enum(
+            &mut SinkAdapter(self),
+            id,
+            underlying,
+            consts,
+            size,
+            has_size,
+        );
+    }
+    fn fill_typedef(&mut self, id: u32, underlying: u32) {
+        idakit_sys::TypeWalkSink::fill_typedef(&mut SinkAdapter(self), id, underlying);
+    }
+}
+
 /// Reborrow the opaque context as the builder the walk threads through every callback. The
 /// raw pointer is taken by reference so the returned lifetime is tied to its (stack) holder
 /// and cannot be chosen as `'static`.
@@ -630,10 +703,8 @@ unsafe extern "C" fn cb_lvar(
     unsafe { builder(&ctx) }.push_lvar(lvar);
 }
 
-// TODO: cxx opaque-visitor for the ctree walk -- swap this hand-maintained EmitVtbl for a cxx
-// `extern "Rust"` visitor like `idakit_sys::bridge_typewalk` proved for the type walk, dropping the
-// offset-indexed table kept in lockstep with the facade header by hand.
-/// The callback table handed to the facade. Field order matches `idakit_emit_vtbl_t`.
+/// The node-callback table handed to the facade. Field order matches `idakit_emit_vtbl_t`. Node
+/// types are emitted through the `cxx` [`TypeWalkVisitor`] passed alongside, not this table.
 static VTBL: EmitVtbl = EmitVtbl {
     e_num: cb_num,
     e_fnum: cb_fnum,
@@ -661,7 +732,6 @@ static VTBL: EmitVtbl = EmitVtbl {
     s_try: cb_try,
     s_throw: cb_throw,
     s_empty: cb_empty,
-    types: type_vtbl::<CallbackBuilder>(),
     l_lvar: cb_lvar,
 };
 
@@ -671,13 +741,22 @@ static VTBL: EmitVtbl = EmitVtbl {
 pub(crate) fn walk(cfunc: *mut c_void) -> Result<Ctree, ExtractError> {
     let mut cb = CallbackBuilder::new();
     let mut root: u32 = 0;
-    // SAFETY: `cfunc` is a live handle (caller's invariant); `VTBL` is static; `cb` is a
-    // valid out-context borrowed only during the call; `root` is a valid out-param.
+    // Derive both the node context and the type visitor from one raw pointer to `cb`, so the
+    // per-callback reborrows (nodes via `ctx`, node types via the visitor) share a provenance and
+    // never conflict; the walk drives them one callback at a time.
+    let cb_ptr: *mut CallbackBuilder = &raw mut cb;
+    // SAFETY: `cb_ptr` points to the live, stack-local `cb` and outlives the walk; the walk is
+    // single-threaded and non-reentrant, so the sink stays unaliased per callback.
+    let mut visitor =
+        unsafe { idakit_sys::type_walk_visitor(cb_ptr as *mut dyn idakit_sys::TypeWalkSink) };
+    // SAFETY: `cfunc` is a live handle (caller's invariant); `VTBL` is static; `cb_ptr` and
+    // `visitor` reach the same `cb`, reborrowed one callback at a time; `root` is a valid out-param.
     let rc = unsafe {
         idakit_sys::idakit_cfunc_walk_ctree(
             cfunc,
             &VTBL,
-            (&mut cb as *mut CallbackBuilder).cast(),
+            cb_ptr.cast(),
+            (&mut visitor as *mut idakit_sys::TypeWalkVisitor).cast(),
             &mut root,
         )
     };

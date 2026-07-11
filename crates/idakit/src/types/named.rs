@@ -76,10 +76,8 @@ impl<'db> NamedType<'db> {
     /// [`Error::Extract`] if the walked table is malformed.
     #[doc(alias("get_numbered_type"))]
     pub fn resolve(&self) -> Result<Type> {
-        // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
-        match walk_type(|v, ctx, root| unsafe {
-            sys::idakit_type_walk_ordinal(self.ordinal, v, ctx, root)
-        }) {
+        // The kernel is claimed for `self.db`; the driver walks the ordinal's type into the sink.
+        match walk_type(|sink| sys::walk_type_ordinal(self.ordinal, sink)) {
             Ok(Some(ty)) => Ok(ty),
             // A live ordinal that refuses to walk is near-unreachable; report it addressless.
             Ok(None) => Err(Error::TypeNotFound { name: self.name() }),

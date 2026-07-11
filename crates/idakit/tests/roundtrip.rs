@@ -476,85 +476,36 @@ fn run(idb: &mut idakit::Database) {
         }
     }
 
-    // cxx extern "Rust" opaque-visitor cross-check (Round 7): the tinfo type walk driven by a Rust
-    // opaque `TypeWalkVisitor` (its `&mut self` methods called from C++, names crossing as
-    // `rust::Str`, struct members as a `rust::Slice<const MemberInfo>` of a lifetime-generic
-    // shared struct with a borrowed `&str` name) must produce the same node/name stream as the
-    // existing raw `TypeVtbl` function-pointer walk over the same types. Both paths record a
-    // `Vec<VisitEvent>`; the visitor path is `typewalk_visit_*`, the raw path
-    // `typewalk_record_*` (a hand-written recording vtbl over the production `idakit_*_walk`
-    // entry). A name that is not valid UTF-8 makes only the `rust::Str` visitor path bail (the
-    // recorder is lossy), so a one-sided result is skipped rather than failed.
+    // The cxx opaque-visitor type walk over every named local type: resolve each through the
+    // production path (`NamedType::resolve` -> the cxx `TypeWalkVisitor`, names crossing as
+    // `rust::Str`, struct members as a `rust::Slice<const MemberInfo>` of a lifetime-generic shared
+    // struct with a borrowed `&str` name) and confirm it structures real aggregates, so the
+    // borrowed-name-in-array fill_struct/fill_enum path is exercised on the corpus.
     {
-        use idakit_sys as sys;
-
-        let mut compared = 0usize;
-        let mut skipped = 0usize;
+        let mut resolved = 0usize;
         let mut saw_struct_member = false;
         let mut saw_named_or_opaque = false;
-
-        // Named local types (ordinals): the richest coverage -- structs/unions/enums/typedefs, so
-        // the fill_struct/fill_enum borrowed-name-in-array path (Goal B) is exercised.
         for nt in idb.named_types().take(2000) {
-            let ord = nt.ordinal();
-            match (
-                sys::typewalk_visit_ordinal(ord),
-                sys::typewalk_record_ordinal(ord),
-            ) {
-                (Some(visited), Some(recorded)) => {
-                    assert_eq!(
-                        visited, recorded,
-                        "cxx visitor vs raw TypeVtbl walk disagree on named type ordinal {ord}"
-                    );
-                    compared += 1;
-                    for ev in &visited {
-                        match ev {
-                            sys::VisitEvent::FillStruct { members, .. } => {
-                                if members.iter().any(|m| !m.name.is_empty()) {
-                                    saw_struct_member = true;
-                                }
-                            }
-                            sys::VisitEvent::NamedRef { .. } | sys::VisitEvent::Opaque { .. } => {
-                                saw_named_or_opaque = true;
-                            }
-                            _ => {}
+            let Ok(ty) = nt.resolve() else { continue };
+            resolved += 1;
+            for (_, val) in ty.types().iter() {
+                match &val.shape {
+                    TypeShape::Struct { members, .. } | TypeShape::Union { members, .. } => {
+                        if members.iter().any(|m| !m.name.is_empty()) {
+                            saw_struct_member = true;
                         }
                     }
+                    TypeShape::Opaque(_) | TypeShape::Typedef { .. } => saw_named_or_opaque = true,
+                    _ => {}
                 }
-                (None, None) => {}
-                _ => skipped += 1,
             }
         }
-
-        // Function prototypes (Goal D "typed functions"): the same cross-check, keyed by address.
-        let mut func_compared = 0usize;
-        for f in idb.functions().take(2000) {
-            let ea = f.address().get();
-            match (sys::typewalk_visit_func(ea), sys::typewalk_record_func(ea)) {
-                (Some(visited), Some(recorded)) => {
-                    assert_eq!(
-                        visited, recorded,
-                        "cxx visitor vs raw TypeVtbl walk disagree on function prototype at {ea:#x}"
-                    );
-                    func_compared += 1;
-                }
-                (None, None) => {}
-                _ => skipped += 1,
-            }
-        }
-
-        // Guard against a vacuous pass: the canonical DB carries named types and typed functions,
-        // so the visitor must actually have walked something for the agreement to mean anything.
-        assert!(
-            compared + func_compared > 0,
-            "cxx opaque-visitor cross-check walked nothing (compared={compared}, \
-             func_compared={func_compared})"
-        );
+        // Guard against a vacuous pass: the canonical DB carries named types, so the walk must have
+        // structured something for the coverage to mean anything.
+        assert!(resolved > 0, "the cxx type walk resolved no named types");
         println!(
-            "cxx opaque-visitor cross-check OK: {compared} named types + {func_compared} function \
-             prototypes agree with the raw TypeVtbl walk ({skipped} one-sided skips; \
-             struct-member names seen: {saw_struct_member}, named/opaque refs seen: \
-             {saw_named_or_opaque})"
+            "cxx type walk resolved {resolved} named types (struct-member names seen: \
+             {saw_struct_member}, named/opaque refs seen: {saw_named_or_opaque})"
         );
     }
 

@@ -137,13 +137,12 @@ impl<'db> Function<'db> {
     /// [`Error::Extract`] if the walked type is malformed.
     #[doc(alias("get_tinfo"))]
     pub fn prototype_type(&self) -> Result<Option<Type>> {
-        // SAFETY: the kernel is claimed for `self.db`; the walk's out-params are valid locals.
-        walk_type(|v, ctx, root| unsafe {
-            sys::idakit_func_type_walk(self.address.get(), v, ctx, root)
-        })
-        .map_err(|source| Error::Extract {
-            address: self.address.get(),
-            source,
+        // The kernel is claimed for `self.db`; the driver walks the prototype into the sink.
+        walk_type(|sink| sys::walk_func_type(self.address.get(), sink)).map_err(|source| {
+            Error::Extract {
+                address: self.address.get(),
+                source,
+            }
         })
     }
 

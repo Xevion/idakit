@@ -34,7 +34,7 @@ pub use expr::TypeExpr;
 pub use named::{NamedType, NamedTypes};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;
-pub(crate) use sink::{TypeSink, raw, reborrow, tid, type_vtbl};
+pub(crate) use sink::{SinkAdapter, TypeSink, raw, tid};
 pub use tinfo::TypeInfo;
 
 /// A typed handle into a [`TypeTable`].

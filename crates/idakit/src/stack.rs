@@ -14,16 +14,13 @@
 //! name (`__return_address`) carries no information the [`kind`](StackSlot::kind) doesn't, so it
 //! is dropped rather than surfaced as a placeholder.
 
-use std::ffi::{c_char, c_void};
-
 use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
 use crate::decompiler::ctree::ExtractError;
 use crate::error::{Error, Result};
-use crate::ffi::lossy;
-use crate::types::{TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue, reborrow, tid, type_vtbl};
+use crate::types::{SinkAdapter, TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue, tid};
 
 /// A [`StackSlot`] is either a real stack variable, carrying its name and type, or one of the
 /// two slots IDA reserves in every frame.
@@ -203,42 +200,16 @@ impl StackFrame {
     }
 }
 
-/// Accumulates the frame walk: the shared [`TypeBuilder`] every variable's type is interned in,
-/// plus the variable rows themselves (their `ty` handles into that builder's table).
-struct FrameBuilder {
+/// Accumulates the frame walk's type table: every variable's type is interned here, and the
+/// [`FrameVar`](sys::FrameVar) handles the walk returns index it.
+struct FrameTypes {
     types: TypeBuilder,
-    slots: Vec<StackSlot>,
 }
 
-impl TypeSink for FrameBuilder {
+impl TypeSink for FrameTypes {
     fn type_builder(&mut self) -> &mut TypeBuilder {
         &mut self.types
     }
-}
-
-/// Appends one frame variable.
-///
-/// `ty` is [`IDAKIT_NONE`](sys::IDAKIT_NONE) for a reserved or untyped slot, otherwise a handle
-/// into the shared table.
-unsafe extern "C" fn cb_f_var(
-    ctx: *mut c_void,
-    name: *const c_char,
-    name_len: usize,
-    offset: i64,
-    size: u64,
-    flags: u32,
-    ty: u32,
-) {
-    let name = unsafe { lossy(name, name_len) }.unwrap_or_default();
-    let ty = (ty != sys::IDAKIT_NONE).then(|| tid(ty));
-    // SAFETY: `ctx` is the `*mut FrameBuilder` passed to the walk, unaliased for this call.
-    unsafe { reborrow::<FrameBuilder>(&ctx) }
-        .slots
-        .push(StackSlot {
-            offset,
-            size,
-            kind: StackSlotKind::from_parts(flags, name, ty),
-        });
 }
 
 impl Database {
@@ -251,49 +222,47 @@ impl Database {
     /// # Errors
     /// [`Error::Extract`] if a variable's type could not be structured.
     pub fn frame(&self, address: Address) -> Result<Option<StackFrame>> {
-        let mut fb = FrameBuilder {
+        let mut ft = FrameTypes {
             types: TypeBuilder::new(),
-            slots: Vec::new(),
         };
-        // TODO: cxx opaque-visitor for the frame walk -- the frame walk rides the same TypeVtbl
-        // shims as the type walk (see `idakit_sys::bridge_typewalk`); migrate it alongside them.
-        let vtbl = sys::FrameVtbl {
-            types: type_vtbl::<FrameBuilder>(),
-            f_var: cb_f_var,
-        };
-        let mut size = 0u64;
-        // SAFETY: the kernel is claimed for `&self`; `vtbl`'s callbacks are static and `fb` is a
-        // valid out-context borrowed only for this call; `size` is a valid out-param.
-        let rc = unsafe {
-            sys::idakit_frame_type_walk(
-                address.get(),
-                &vtbl,
-                (&mut fb as *mut FrameBuilder).cast(),
-                &mut size,
-            )
-        };
-        if rc != 0 {
+        // The kernel is claimed for `&self`; the driver interns each variable's type into `ft` and
+        // returns the frame size and its variables (their `ty` handles into `ft`'s table).
+        let Some(walk) = sys::walk_frame_type(address.get(), &mut SinkAdapter(&mut ft)) else {
             return Ok(None);
-        }
+        };
         // The builder is error-type-agnostic (see the ctree walk): surface an over-wide scalar or
         // an unfilled placeholder as an extraction failure rather than shipping a malformed table.
-        if let Some(bytes) = fb.types.too_wide() {
+        if let Some(bytes) = ft.types.too_wide() {
             return Err(Error::Extract {
                 address: address.get(),
                 source: ExtractError::ScalarTooWide { bytes },
             });
         }
-        let unfilled = fb.types.unfilled();
+        let unfilled = ft.types.unfilled();
         if unfilled != 0 {
             return Err(Error::Extract {
                 address: address.get(),
                 source: ExtractError::UnfilledType { count: unfilled },
             });
         }
+        let slots = walk
+            .vars
+            .into_iter()
+            .map(|v| StackSlot {
+                offset: v.offset,
+                size: v.size,
+                // A reserved/untyped slot reports IDAKIT_NONE; only a real variable carries a type.
+                kind: StackSlotKind::from_parts(
+                    v.flags,
+                    v.name,
+                    (v.ty != sys::IDAKIT_NONE).then(|| tid(v.ty)),
+                ),
+            })
+            .collect();
         Ok(Some(StackFrame {
-            size,
-            types: fb.types.into_table(),
-            slots: fb.slots,
+            size: walk.size,
+            types: ft.types.into_table(),
+            slots,
         }))
     }
 }

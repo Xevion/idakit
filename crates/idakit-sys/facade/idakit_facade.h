@@ -83,10 +83,6 @@ int idakit_patch_bytes(idakit_ea_t ea, const void *buf, size_t size);
 
 int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap); /* prototype text, <0 on miss */
 
-/* The disassembly-level stack frame (frame.hpp) is exposed only through the structured
- * frame-type walk (idakit_frame_type_walk), which lives with the shared type vtbl below since it
- * drives that machinery. */
-
 int idakit_hexrays_init(void); /* 1 = decompiler ready, 0 = unavailable */
 
 /* Streaming ctree extraction. The facade is a pure SDK walker: it reads a decompiled
@@ -100,23 +96,6 @@ int idakit_hexrays_init(void); /* 1 = decompiler ready, 0 = unavailable */
  * child. `ctx` is passed back to every callback untouched. */
 #define IDAKIT_NONE 0xFFFFFFFFu
 
-/* One struct/union member: `name` (UTF-8, `name_len` bytes, may be empty), `bit_offset`
- * from the aggregate start, member type `ty`, and `bitfield_width` (0 = not a bitfield). */
-typedef struct {
-  const char *name;
-  size_t name_len;
-  uint64_t bit_offset;
-  uint32_t ty;
-  uint32_t bitfield_width;
-} idakit_member_t;
-
-/* One enum constant: `name` and its integer `value`. */
-typedef struct {
-  const char *name;
-  size_t name_len;
-  uint64_t value;
-} idakit_enum_const_t;
-
 /* One switch case: its `values` (empty = default) and `body` statement handle. */
 typedef struct {
   const uint64_t *values;
@@ -124,68 +103,11 @@ typedef struct {
   uint32_t body;
 } idakit_case_t;
 
-/* The type-emit callbacks, shared by every walk that builds an interned type table: the
- * ctree walk and the bare-tinfo walks (frame/member). Each returns the handle of the type it
- * minted; children are emitted before their container. kind: 1 void, 2 bool, 3 int, 4 float
- * (int also carries enum-underlying and bitfield base). A non-structural type is emitted via
- * t_opaque, never t_scalar. `name`/member-name spans borrow a C++ stack temporary valid only
- * for that single call (see the lifetime note on idakit_emit_vtbl_t). */
-typedef struct idakit_type_vtbl_t {
-  uint32_t (*t_scalar)(void *ctx, uint32_t kind, uint32_t bytes, uint32_t is_signed, uint64_t size,
-                       uint32_t has_size);
-  uint32_t (*t_ptr)(void *ctx, uint32_t target, uint64_t size, uint32_t has_size);
-  uint32_t (*t_array)(void *ctx, uint32_t elem, uint64_t nelems, uint64_t size, uint32_t has_size);
-  uint32_t (*t_func)(void *ctx, uint32_t ret, const uint32_t *params, size_t n, uint32_t vararg);
-  /* A named type IDA can name but not structurally describe here (a forward-declared or
-   * incomplete aggregate, an unresolved reference): a bodyless leaf carrying just the name. */
-  uint32_t (*t_opaque)(void *ctx, const char *name, size_t name_len);
-  /* Reference a named aggregate/typedef; mints (or returns the existing) placeholder so a
-   * recursive member can point back before the definition is filled. */
-  uint32_t (*t_named_ref)(void *ctx, const char *name, size_t name_len);
-  /* Mint an anonymous (un-deduped) placeholder for an unnamed struct/union/enum. */
-  uint32_t (*t_anon)(void *ctx);
-  /* Fill a placeholder `id` minted by t_named_ref/t_anon. */
-  void (*t_fill_struct)(void *ctx, uint32_t id, uint32_t is_union, const idakit_member_t *members,
-                        size_t n, uint64_t size, uint32_t has_size);
-  void (*t_fill_enum)(void *ctx, uint32_t id, uint32_t underlying,
-                      const idakit_enum_const_t *consts, size_t n, uint64_t size,
-                      uint32_t has_size);
-  void (*t_fill_typedef)(void *ctx, uint32_t id, uint32_t underlying);
-} idakit_type_vtbl_t;
-
-/* Structured frame-type walk. `types` drives the shared tinfo walker to mint each variable's
- * type on the consumer side (building one interned table); `f_var` then reports the variable,
- * with its fp-relative offset (var_18 sits at -0x18), byte size, and flags (bit0 = return
- * address, bit1 = saved registers; both clear = an ordinary variable/argument). */
-typedef struct idakit_frame_vtbl_t {
-  idakit_type_vtbl_t types;
-  void (*f_var)(void *ctx, const char *name, size_t name_len, int64_t offset, uint64_t size,
-                uint32_t flags, uint32_t ty);
-} idakit_frame_vtbl_t;
-
-/* Walk the frame of the function at `ea` in one pass, driving `v` (with `ctx`): each variable's
- * type is emitted through `v->types` and the variable reported via `v->f_var`, and the frame's
- * total byte size written to `*frame_size`. A named type shared by two variables is emitted
- * once. Returns 0 on success, non-zero (leaving `*frame_size` untouched) if there is no function
- * or no frame at `ea`. */
-int idakit_frame_type_walk(idakit_ea_t ea, const idakit_frame_vtbl_t *v, void *ctx,
-                           uint64_t *frame_size);
-
-/* Structured walks of a standalone type, driving the shared type vtbl `v` (with `ctx`) to mint
- * the type into one interned table and writing its root handle to `*root`. type_walk resolves the
- * local named type `name`; func_type_walk the stored prototype of the function at `ea`. Each
- * returns 0 on success, non-zero (leaving `*root` untouched) if there is no such named type / the
- * function has no type info. */
-int idakit_type_walk(const char *name, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
-int idakit_func_type_walk(idakit_ea_t ea, const idakit_type_vtbl_t *v, void *ctx, uint32_t *root);
-
 /* Enumerate the local type library by ordinal: valid ordinals run 1..idakit_type_ordinal_limit().
  * type_name_at writes the ordinal's name (0-length for an anonymous type, -1 if the ordinal is
- * empty); type_walk_ordinal is idakit_type_walk keyed by ordinal instead of name. */
+ * empty). The structured walks themselves are the cxx opaque-visitor entries (typewalk_cxx.cc). */
 uint32_t idakit_type_ordinal_limit(void);
 int64_t idakit_type_name_at(uint32_t ordinal, char *buf, size_t cap);
-int idakit_type_walk_ordinal(uint32_t ordinal, const idakit_type_vtbl_t *v, void *ctx,
-                             uint32_t *root);
 
 /* Type-apply result codes (shared with the generated type-build bridge; decoded by idakit against
  * TypeWriteResult.code):
@@ -306,9 +228,6 @@ typedef struct idakit_emit_vtbl_t {
   uint32_t (*s_throw)(void *ctx, idakit_ea_t ea, uint32_t expr /* or IDAKIT_NONE */);
   uint32_t (*s_empty)(void *ctx, idakit_ea_t ea);
 
-  /* type-emit callbacks, shared with the bare-tinfo walks (see idakit_type_vtbl_t). */
-  idakit_type_vtbl_t types;
-
   /* locals. Append one lvar; the call order is the lvar index that `e_var.idx` refers to. flags:
    * bit0 is_arg, bit1 is_result, bit2 is_byref. `loc` carries the decoded argloc_t. */
   void (*l_lvar)(void *ctx, const char *name, size_t name_len, uint32_t ty, uint32_t flags,
@@ -316,9 +235,11 @@ typedef struct idakit_emit_vtbl_t {
                  const idakit_lvar_loc_t *loc);
 } idakit_emit_vtbl_t;
 
-/* Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) and writing the root statement handle
- * to `*root`. Returns 0 on success, non-zero if `cfunc` is NULL. */
-int idakit_cfunc_walk_ctree(void *cfunc, const idakit_emit_vtbl_t *vtbl, void *ctx, uint32_t *root);
+/* Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) for nodes and `visitor` (an opaque
+ * idakit_cxx::TypeWalkVisitor*) for each node's type, writing the root statement handle to `*root`.
+ * Returns 0 on success, non-zero if any of `cfunc`/`vtbl`/`visitor`/`root` is NULL. */
+int idakit_cfunc_walk_ctree(void *cfunc, const idakit_emit_vtbl_t *vtbl, void *ctx, void *visitor,
+                            uint32_t *root);
 
 /* Instruction-decode sentinels shared with the generated decode bridge and the Rust
  * idakit_sys::IDAKIT_* consts; the bridge caps populated operands at IDAKIT_MAX_OPS. */

@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "idakit_facade_internal.hpp"
-#include "type_walk.hpp"
+#include "typewalk_walker.hpp"
 
 using namespace idakit_facade;
 
@@ -33,11 +33,13 @@ namespace {
 struct walker_t {
   const idakit_emit_vtbl_t *v;
   void *ctx;
-  type_walker_t tw; // walks node types into the shared type table (see type_walk.hpp)
+  // Walks node types into the shared type table via the cxx opaque visitor (see
+  // typewalk_walker.hpp); created/freed around the walk in the entry below.
+  idakit_cxx::visit_walker_t *vw;
 
   uint32_t expr(const cexpr_t *e) {
     ea_t ea = e->ea;
-    uint32_t t = tw.ty(e->type);
+    uint32_t t = idakit_cxx::visit_walker_ty(vw, e->type);
     switch (e->op) {
     case cot_num:
       return v->e_num(ctx, ea, e->n->value(e->type), t);
@@ -235,8 +237,8 @@ struct walker_t {
       default:
         break; // ALOC_NONE / ALOC_CUSTOM: atype alone carries it
       }
-      v->l_lvar(ctx, l.name.c_str(), l.name.length(), tw.ty(l.tif), flags, (uint32_t)l.width,
-                l.cmt.c_str(), l.cmt.length(), &out);
+      v->l_lvar(ctx, l.name.c_str(), l.name.length(), idakit_cxx::visit_walker_ty(vw, l.tif), flags,
+                (uint32_t)l.width, l.cmt.c_str(), l.cmt.length(), &out);
     }
   }
 };
@@ -244,8 +246,8 @@ struct walker_t {
 } // namespace
 
 extern "C" int idakit_cfunc_walk_ctree(void *h, const idakit_emit_vtbl_t *v, void *ctx,
-                                       uint32_t *root) {
-  if (h == nullptr || v == nullptr || root == nullptr)
+                                       void *visitor, uint32_t *root) {
+  if (h == nullptr || v == nullptr || visitor == nullptr || root == nullptr)
     return 1;
   try {
     cfunc_t *cf = *reinterpret_cast<cfuncptr_t *>(h);
@@ -253,8 +255,13 @@ extern "C" int idakit_cfunc_walk_ctree(void *h, const idakit_emit_vtbl_t *v, voi
     walker_t w;
     w.v = v;
     w.ctx = ctx;
-    w.tw.v = &v->types;
-    w.tw.ctx = ctx;
+    // `visitor` is the Rust TypeWalkVisitor as an opaque pointer; the walker drives it for node
+    // types. The guard frees it on the normal return and on the exception path below.
+    w.vw = idakit_cxx::visit_walker_new(visitor);
+    struct walker_guard {
+      idakit_cxx::visit_walker_t *w;
+      ~walker_guard() { idakit_cxx::visit_walker_free(w); }
+    } guard{w.vw};
     w.lvars(cf);
     *root = w.stmt(&cf->body);
     return 0;
