@@ -44,6 +44,13 @@ int idakit_accept_eula(void); /* record EULA acceptance; returns its value */
 #define IDAKIT_FATAL_INTERR 2
 int idakit_test_fatal(int kind);
 int idakit_get_batch(void); /* read back the `batch` global, to prove bring-up wired it */
+/* Fire a fatal (IDAKIT_FATAL_*) from any TU; the exit/abort stand-ins are file-local to
+ * runtime.cpp, so the cxx probe body calls this to reach them. */
+void idakit_trigger_fatal(int kind);
+/* Arm guarded<>, then call the cxx-generated shim for probe_fatal_through_cxx from inside it, so
+ * the fatal's longjmp must cross the shim's try/catch frame. Returns IDAKIT_EXIT_TRAPPED when the
+ * longjmp fired (exit/abort), or 1 when cxx caught the throw first (interr) and reported an Err. */
+int idakit_test_fatal_through_cxx(int kind);
 #endif
 
 size_t idakit_func_qty(void);

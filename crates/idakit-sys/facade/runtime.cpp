@@ -462,4 +462,17 @@ extern "C" int idakit_test_fatal(int kind) {
 }
 
 extern "C" int idakit_get_batch(void) { return batch ? 1 : 0; }
+
+// Fire the chosen fatal from an arbitrary translation unit. The exit/abort stand-ins are
+// file-local to this TU, so the cxx probe body (in probe_cxx.cc, a separate archive) can't
+// reach them directly; it calls here instead. exit/abort take the longjmp path; interr throws
+// (set_interr_throws, armed by guarded<>).
+extern "C" void idakit_trigger_fatal(int kind) {
+  if (kind == IDAKIT_FATAL_EXIT)
+    idakit_exit(42);
+  else if (kind == IDAKIT_FATAL_ABORT)
+    idakit_abort();
+  else if (kind == IDAKIT_FATAL_INTERR)
+    interr(1);
+}
 #endif

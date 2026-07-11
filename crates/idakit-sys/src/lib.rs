@@ -37,6 +37,20 @@ pub type Address = u64;
 /// "no address".
 pub const BADADDR: Address = u64::MAX;
 
+mod bridge;
+mod bridge_cfg;
+mod bridge_cfg2;
+#[cfg(feature = "test-shims")]
+mod bridge_cfunc;
+mod bridge_gen;
+mod bridge_import;
+#[cfg(feature = "test-shims")]
+mod bridge_probe;
+#[cfg(feature = "test-shims")]
+mod bridge_probe_ext;
+mod bridge_qvec;
+mod bridge_range;
+mod bridge_typewalk;
 mod bytes;
 mod cfg;
 mod export;
@@ -54,6 +68,20 @@ mod strings;
 mod ty;
 mod ty_build;
 
+pub use bridge::*;
+pub use bridge_cfg::*;
+pub use bridge_cfg2::*;
+#[cfg(feature = "test-shims")]
+pub use bridge_cfunc::*;
+pub use bridge_gen::*;
+pub use bridge_import::*;
+#[cfg(feature = "test-shims")]
+pub use bridge_probe::*;
+#[cfg(feature = "test-shims")]
+pub use bridge_probe_ext::*;
+pub use bridge_qvec::*;
+pub use bridge_range::*;
+pub use bridge_typewalk::*;
 pub use bytes::*;
 pub use cfg::*;
 pub use export::*;

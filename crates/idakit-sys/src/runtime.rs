@@ -74,4 +74,9 @@ unsafe extern "C" {
     pub fn idakit_test_fatal(kind: c_int) -> c_int;
     /// Read back the `batch` global, to prove bring-up wired [`idakit_set_batch`].
     pub fn idakit_get_batch() -> c_int;
+    /// Arm `guarded<>`, then reach the chosen fatal *through* a cxx `Result`-shim, so the trap's
+    /// `longjmp` (exit/abort) must unwind across the shim's `try/catch` frame. Returns
+    /// [`IDAKIT_EXIT_TRAPPED`] when the longjmp fired, or `1` when cxx caught the throw first
+    /// (interr, which is a `std::exception`) and reported a Rust `Err` instead of trapping.
+    pub fn idakit_test_fatal_through_cxx(kind: c_int) -> c_int;
 }
