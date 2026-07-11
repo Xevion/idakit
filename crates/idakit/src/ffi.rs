@@ -92,6 +92,20 @@ pub(crate) fn with_cstr<R>(
     Ok(f(c.as_ptr()))
 }
 
+/// Reject `s` for an interior NUL before it crosses a `&str` FFI boundary, returning it unchanged
+/// when clean.
+///
+/// A cxx `&str` does not reject an embedded NUL and the C++ side truncates at `.c_str()`, so a
+/// name or declaration bound for a generated `&str` fn is guarded here to keep the
+/// [`Error::InteriorNul`] contract that [`with_cstr`] gave the raw pointer path.
+pub(crate) fn nul_checked<'a>(s: &'a str, arg: &'static str) -> Result<&'a str> {
+    if s.bytes().any(|b| b == 0) {
+        Err(Error::InteriorNul { arg })
+    } else {
+        Ok(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert2::assert;

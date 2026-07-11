@@ -293,6 +293,7 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/gen_bytes.cc");
     println!("cargo:rerun-if-changed=facade/gen_instruction.cc");
     println!("cargo:rerun-if-changed=facade/gen_hexrays.cc");
+    println!("cargo:rerun-if-changed=facade/gen_type_build.cc");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
     println!("cargo:rerun-if-changed=facade/type_walk.hpp");

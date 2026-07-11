@@ -10,20 +10,25 @@ include!(concat!(env!("OUT_DIR"), "/gen_bridge.rs"));
 
 pub use ffi::{
     BlockInfo, ChunkInfo, CtreeCounts, ExprGap, ImportRec, InstructionData, OperandData,
-    RegisterData, StrlistItem, XrefRec, bitness, cfg_block, cfg_build, cfg_nblocks, cfg_npred,
+    RegisterData, SigWriteResult, StrlistItem, TypeWriteResult, XrefRec, apply_named_type,
+    apply_type_decl, apply_type_recipe, bitness, cfg_block, cfg_build, cfg_nblocks, cfg_npred,
     cfg_nproper, cfg_nsucc, cfg_pred, cfg_preds, cfg_succ, cfg_succs, cfunc_counts, cfunc_expr_gap,
-    cfunc_pseudocode, decode_insn, decompile, demangle_name, export_ea, export_forwarder,
-    export_name, export_ordinal, export_qty, file_type_name, func_chunk_qty, func_ea, func_end,
-    func_flags, func_name, func_qty, func_start, gen_seg_bitness, gen_seg_class, gen_seg_end,
-    gen_seg_name, gen_seg_perm, gen_seg_qty, gen_seg_span_total, gen_seg_start, get_bytes, get_cmt,
-    get_ea_name, get_flags, get_item_end, get_item_head, get_name_ea, get_next_head, get_prev_head,
-    get_strlit, get_u8, get_u16, get_u32, get_u64, has_auto_name, has_dummy_name, has_user_name,
-    image_base, imports_build, input_path, max_ea, min_ea, nlist_ea, nlist_name, nlist_size,
-    op_dtype_ids, proc_name, range_all_chunks, range_chunk_info, range_entry_chunk, range_size,
-    reg_class_ids, root_filename, strlist_build, strlist_item, strlist_qty, strlit_contents,
-    xrefs_build,
+    cfunc_pseudocode, clear_type, decode_insn, decompile, define_type, demangle_name,
+    enum_add_member, enum_del_member, enum_rename_member, enum_set_member_value, export_ea,
+    export_forwarder, export_name, export_ordinal, export_qty, file_type_name, func_chunk_qty,
+    func_ea, func_end, func_flags, func_name, func_prepend_this, func_qty, func_rename_arg,
+    func_set_argtype, func_set_cc, func_set_rettype, func_start, gen_seg_bitness, gen_seg_class,
+    gen_seg_end, gen_seg_name, gen_seg_perm, gen_seg_qty, gen_seg_span_total, gen_seg_start,
+    get_bytes, get_cmt, get_ea_name, get_flags, get_item_end, get_item_head, get_name_ea,
+    get_next_head, get_prev_head, get_strlit, get_u8, get_u16, get_u32, get_u64, has_auto_name,
+    has_dummy_name, has_user_name, image_base, imports_build, input_path, max_ea, min_ea, nlist_ea,
+    nlist_name, nlist_size, op_dtype_ids, proc_name, range_all_chunks, range_chunk_info,
+    range_entry_chunk, range_size, reg_class_ids, root_filename, strlist_build, strlist_item,
+    strlist_qty, strlit_contents, tinfo_apply, tinfo_array, tinfo_bool, tinfo_const, tinfo_decl,
+    tinfo_float, tinfo_int, tinfo_named, tinfo_ptr, tinfo_void, tinfo_volatile, udt_add_member,
+    udt_del_member, udt_rename_member, udt_set_member_type, xrefs_build,
 };
-// RangeT, FlowChart, and CFunc are module-level `pub` types (from the generated ExternType impls,
-// outside `mod ffi`), so they re-export through the crate-root glob without an explicit `pub use`
-// here. `size` is a `self:`-member method on `FlowChart`, reached as `fc.size()`, not a free
-// function.
+// RangeT, FlowChart, CFunc, and TInfo are module-level `pub` types (from the generated ExternType
+// impls, outside `mod ffi`), so they re-export through the crate-root glob without an explicit
+// `pub use` here. `size` is a `self:`-member method on `FlowChart`, reached as `fc.size()`, not a
+// free function.

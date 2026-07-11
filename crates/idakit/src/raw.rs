@@ -310,369 +310,150 @@ impl Database {
         sys::func_end(address.get())
     }
 
-    /// Parses `decl` and applies the resulting type at `address`; the reason is copied out of the
-    /// facade buffer on a parse or apply failure.
     pub(crate) fn apply_type_decl(
         &mut self,
         address: Address,
-        decl: *const c_char,
+        decl: &str,
         flags: c_int,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates within it.
-        let code = unsafe {
-            sys::idakit_apply_type_decl(
-                address.get(),
-                decl,
-                flags,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        let reason = unsafe { cstr(err.as_ptr().cast()) };
-        (code, reason)
+    ) -> sys::TypeWriteResult {
+        sys::apply_type_decl(address.get(), decl, flags)
     }
 
-    /// Resolves the named type `name` and applies it at `address`.
-    pub(crate) fn apply_named_type(&mut self, address: Address, name: *const c_char) -> c_int {
-        unsafe { sys::idakit_apply_named_type(address.get(), name) }
+    pub(crate) fn apply_named_type(
+        &mut self,
+        address: Address,
+        name: &str,
+    ) -> sys::TypeWriteResult {
+        sys::apply_named_type(address.get(), name)
     }
 
-    /// Clears any type applied at `address` (idempotent).
-    pub(crate) fn clear_type(&mut self, address: Address) -> c_int {
-        unsafe { sys::idakit_clear_type(address.get()) }
+    pub(crate) fn clear_type(&mut self, address: Address) -> sys::TypeWriteResult {
+        sys::clear_type(address.get())
     }
 
-    /// Builds the type the serialized recipe `buf` encodes and applies it at `address`; the reason
-    /// is copied out of the facade buffer on a build or apply failure.
     pub(crate) fn apply_type_recipe(
         &mut self,
         address: Address,
         buf: &[u8],
         flags: c_int,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: `buf` is a readable slice of `buf.len()`; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_apply_type_recipe(
-                address.get(),
-                buf.as_ptr(),
-                buf.len(),
-                flags,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        let reason = unsafe { cstr(err.as_ptr().cast()) };
-        (code, reason)
+    ) -> sys::TypeWriteResult {
+        sys::apply_type_recipe(address.get(), buf, flags)
     }
 
-    /// Replaces the return type of the function at `address` with the recipe `buf`; the reason is
-    /// copied out of the facade buffer on a build or apply failure.
-    pub(crate) fn func_set_rettype(&mut self, address: Address, buf: &[u8]) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: `buf` is readable of `buf.len()`; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_func_set_rettype(
-                address.get(),
-                buf.as_ptr(),
-                buf.len(),
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    pub(crate) fn func_set_rettype(
+        &mut self,
+        address: Address,
+        buf: &[u8],
+    ) -> sys::TypeWriteResult {
+        sys::func_set_rettype(address.get(), buf)
     }
 
-    /// Replaces parameter `idx`'s type at `address` with the recipe `buf`, returning the code, the
-    /// current parameter count (for an out-of-range diagnostic), and any reason.
     pub(crate) fn func_set_argtype(
         &mut self,
         address: Address,
         idx: usize,
         buf: &[u8],
-    ) -> (c_int, usize, String) {
-        let mut err = [0u8; 1024];
-        let mut arity = 0usize;
-        // SAFETY: `buf` is readable of `buf.len()`; `arity`/`err` are writable out-params the facade
-        // fills, `err` NUL-terminated within.
-        let code = unsafe {
-            sys::idakit_func_set_argtype(
-                address.get(),
-                idx,
-                buf.as_ptr(),
-                buf.len(),
-                &mut arity,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, arity, unsafe { cstr(err.as_ptr().cast()) })
+    ) -> sys::SigWriteResult {
+        sys::func_set_argtype(address.get(), idx, buf)
     }
 
-    /// Renames parameter `idx` at `address`, returning the code, the current parameter count, and
-    /// any reason.
     pub(crate) fn func_rename_arg(
         &mut self,
         address: Address,
         idx: usize,
-        name: *const c_char,
-    ) -> (c_int, usize, String) {
-        let mut err = [0u8; 1024];
-        let mut arity = 0usize;
-        // SAFETY: `name` is a valid C string; `arity`/`err` are writable out-params the facade
-        // fills, `err` NUL-terminated within.
-        let code = unsafe {
-            sys::idakit_func_rename_arg(
-                address.get(),
-                idx,
-                name,
-                &mut arity,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, arity, unsafe { cstr(err.as_ptr().cast()) })
+        name: &str,
+    ) -> sys::SigWriteResult {
+        sys::func_rename_arg(address.get(), idx, name)
     }
 
-    /// Sets the calling convention (a raw `CM_CC_*` code) of the function at `address`.
-    pub(crate) fn func_set_cc(&mut self, address: Address, cc: c_int) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: `err` is a writable buffer the facade NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_func_set_cc(address.get(), cc, err.as_mut_ptr().cast(), err.len())
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    pub(crate) fn func_set_cc(&mut self, address: Address, cc: c_int) -> sys::TypeWriteResult {
+        sys::func_set_cc(address.get(), cc)
     }
 
-    /// Inserts a leading implicit `this` parameter of recipe type `buf` at `address`.
-    pub(crate) fn func_prepend_this(&mut self, address: Address, buf: &[u8]) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: `buf` is readable of `buf.len()`; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_func_prepend_this(
-                address.get(),
-                buf.as_ptr(),
-                buf.len(),
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    pub(crate) fn func_prepend_this(
+        &mut self,
+        address: Address,
+        buf: &[u8],
+    ) -> sys::TypeWriteResult {
+        sys::func_prepend_this(address.get(), buf)
     }
 
-    /// Adds a member named `member_name` of recipe type `buf` to the named UDT `type_name` at
-    /// `member_bit` (or [`sys::IDAKIT_MEMBER_APPEND`]); returns the code and any reason.
     pub(crate) fn udt_add_member(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
+        type_name: &str,
+        member_name: &str,
         buf: &[u8],
         member_bit: u64,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: the name pointers are valid C strings; `buf` is readable of `buf.len()`; `err` is
-        // a writable buffer the facade NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_udt_add_member(
-                type_name,
-                member_name,
-                buf.as_ptr(),
-                buf.len(),
-                member_bit,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    ) -> sys::TypeWriteResult {
+        sys::udt_add_member(type_name, member_name, buf, member_bit)
     }
 
-    /// Replaces the type of the member selected by `member_name` (null selects by `member_bit`) in
-    /// the named UDT `type_name` with recipe `buf`; returns the code and any reason.
     pub(crate) fn udt_set_member_type(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
+        type_name: &str,
+        member_name: &str,
         member_bit: u64,
         buf: &[u8],
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: name pointers are valid C strings; `buf` is readable of `buf.len()`; `err` is a
-        // writable buffer the facade NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_udt_set_member_type(
-                type_name,
-                member_name,
-                member_bit,
-                buf.as_ptr(),
-                buf.len(),
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    ) -> sys::TypeWriteResult {
+        sys::udt_set_member_type(type_name, member_name, member_bit, buf)
     }
 
-    /// Renames the member selected by `member_name` (null selects by `member_bit`) in the named UDT
-    /// `type_name` to `new_name`; returns the code and any reason.
     pub(crate) fn udt_rename_member(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
+        type_name: &str,
+        member_name: &str,
         member_bit: u64,
-        new_name: *const c_char,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_udt_rename_member(
-                type_name,
-                member_name,
-                member_bit,
-                new_name,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+        new_name: &str,
+    ) -> sys::TypeWriteResult {
+        sys::udt_rename_member(type_name, member_name, member_bit, new_name)
     }
 
-    /// Deletes the member selected by `member_name` (null selects by `member_bit`) from the named
-    /// UDT `type_name`; returns the code and any reason.
     pub(crate) fn udt_del_member(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
+        type_name: &str,
+        member_name: &str,
         member_bit: u64,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_udt_del_member(
-                type_name,
-                member_name,
-                member_bit,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    ) -> sys::TypeWriteResult {
+        sys::udt_del_member(type_name, member_name, member_bit)
     }
 
-    /// Adds an enum constant `member_name` = `value` to the named enum `type_name`; returns the
-    /// code and any reason.
     pub(crate) fn enum_add_member(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
+        type_name: &str,
+        member_name: &str,
         value: u64,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_enum_add_member(
-                type_name,
-                member_name,
-                value,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    ) -> sys::TypeWriteResult {
+        sys::enum_add_member(type_name, member_name, value)
     }
 
-    /// Sets the value of enum constant `member_name` in the named enum `type_name`; returns the
-    /// code and any reason.
     pub(crate) fn enum_set_member_value(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
+        type_name: &str,
+        member_name: &str,
         value: u64,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_enum_set_member_value(
-                type_name,
-                member_name,
-                value,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+    ) -> sys::TypeWriteResult {
+        sys::enum_set_member_value(type_name, member_name, value)
     }
 
-    /// Renames enum constant `member_name` in the named enum `type_name` to `new_name`; returns the
-    /// code and any reason.
     pub(crate) fn enum_rename_member(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
-        new_name: *const c_char,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_enum_rename_member(
-                type_name,
-                member_name,
-                new_name,
-                err.as_mut_ptr().cast(),
-                err.len(),
-            )
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+        type_name: &str,
+        member_name: &str,
+        new_name: &str,
+    ) -> sys::TypeWriteResult {
+        sys::enum_rename_member(type_name, member_name, new_name)
     }
 
-    /// Deletes enum constant `member_name` from the named enum `type_name`; returns the code and
-    /// any reason.
     pub(crate) fn enum_del_member(
         &mut self,
-        type_name: *const c_char,
-        member_name: *const c_char,
-    ) -> (c_int, String) {
-        let mut err = [0u8; 1024];
-        // SAFETY: the name pointers are valid C strings; `err` is a writable buffer the facade
-        // NUL-terminates within.
-        let code = unsafe {
-            sys::idakit_enum_del_member(type_name, member_name, err.as_mut_ptr().cast(), err.len())
-        };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        (code, unsafe { cstr(err.as_ptr().cast()) })
+        type_name: &str,
+        member_name: &str,
+    ) -> sys::TypeWriteResult {
+        sys::enum_del_member(type_name, member_name)
     }
 
-    /// Parses `input` into the local type library; returns the error count and any diagnostics
-    /// copied out of the facade buffer.
-    pub(crate) fn define_type(&mut self, input: *const c_char) -> (c_int, String) {
-        let mut err = [0u8; 4096];
-        // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates within it.
-        let code = unsafe { sys::idakit_define_type(input, err.as_mut_ptr().cast(), err.len()) };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        let reason = unsafe { cstr(err.as_ptr().cast()) };
-        (code, reason)
+    pub(crate) fn define_type(&mut self, input: &str) -> sys::TypeWriteResult {
+        sys::define_type(input)
     }
 
     pub(crate) fn func_flags(&self, address: Address) -> u64 {

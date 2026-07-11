@@ -19,7 +19,7 @@ use crate::address::Address;
 use crate::decompiler::DecompiledFunction;
 use crate::decompiler::ctree::Ctree;
 use crate::error::{Error, Result};
-use crate::ffi::{read_string, with_cstr};
+use crate::ffi::{nul_checked, read_string};
 use crate::flowchart::{FlowChart, flowchart_flags};
 use crate::instruction::Instructions;
 use crate::stack::StackFrame;
@@ -392,8 +392,8 @@ impl FunctionEdit<'_> {
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_return_type(&mut self, ret: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ret.into().serialize();
-        let (code, reason) = self.db.func_set_rettype(self.entry, &recipe);
-        sig_result(code, self.entry, None, reason)
+        let result = self.db.func_set_rettype(self.entry, &recipe);
+        sig_result(result.code, self.entry, None, result.reason)
     }
 
     /// Replace the type of parameter `index` (zero-based), keeping its name.
@@ -406,8 +406,13 @@ impl FunctionEdit<'_> {
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_arg_type(&mut self, index: usize, ty: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ty.into().serialize();
-        let (code, arity, reason) = self.db.func_set_argtype(self.entry, index, &recipe);
-        sig_result(code, self.entry, Some((index, arity)), reason)
+        let result = self.db.func_set_argtype(self.entry, index, &recipe);
+        sig_result(
+            result.code,
+            self.entry,
+            Some((index, result.arity)),
+            result.reason,
+        )
     }
 
     /// Rename parameter `index` (zero-based), keeping its type.
@@ -419,10 +424,14 @@ impl FunctionEdit<'_> {
     /// [`Error::InteriorNul`] if `name` contains a NUL byte.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn rename_arg(&mut self, index: usize, name: impl AsRef<str>) -> Result<()> {
-        let (code, arity, reason) = with_cstr(name.as_ref(), "name", |p| {
-            self.db.func_rename_arg(self.entry, index, p)
-        })?;
-        sig_result(code, self.entry, Some((index, arity)), reason)
+        let name = nul_checked(name.as_ref(), "name")?;
+        let result = self.db.func_rename_arg(self.entry, index, name);
+        sig_result(
+            result.code,
+            self.entry,
+            Some((index, result.arity)),
+            result.reason,
+        )
     }
 
     /// Set this function's calling convention.
@@ -433,8 +442,8 @@ impl FunctionEdit<'_> {
     /// convention on a non-x86 target).
     #[doc(alias("set_cc"))]
     pub fn set_calling_convention(&mut self, cc: CallingConvention) -> Result<()> {
-        let (code, reason) = self.db.func_set_cc(self.entry, c_int::from(u8::from(cc)));
-        sig_result(code, self.entry, None, reason)
+        let result = self.db.func_set_cc(self.entry, c_int::from(u8::from(cc)));
+        sig_result(result.code, self.entry, None, result.reason)
     }
 
     /// Insert an implicit `this` pointer as the first parameter, shifting the rest.
@@ -451,8 +460,8 @@ impl FunctionEdit<'_> {
     #[doc(alias("get_func_details", "create_func"))]
     pub fn prepend_this(&mut self, this: impl Into<TypeExpr>) -> Result<()> {
         let recipe = this.into().serialize();
-        let (code, reason) = self.db.func_prepend_this(self.entry, &recipe);
-        sig_result(code, self.entry, None, reason)
+        let result = self.db.func_prepend_this(self.entry, &recipe);
+        sig_result(result.code, self.entry, None, result.reason)
     }
 }
 

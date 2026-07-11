@@ -15,7 +15,7 @@ use idakit_sys as sys;
 use crate::Database;
 use crate::address::Address;
 use crate::error::{Error, Result};
-use crate::ffi::{reason_or, with_cstr};
+use crate::ffi::{nul_checked, reason_or, with_cstr};
 use crate::types::{TypeExpr, TypeWriteError};
 use crate::xref::Xrefs;
 
@@ -167,8 +167,8 @@ impl Database {
     pub(crate) fn apply_type_at(&mut self, address: Address, ty: &TypeExpr) -> Result<()> {
         match ty {
             TypeExpr::Named(name) => {
-                let code = with_cstr(name, "name", |p| self.apply_named_type(address, p))?;
-                match code {
+                let result = self.apply_named_type(address, nul_checked(name, "name")?);
+                match result.code {
                     sys::IDAKIT_TYPE_OK => Ok(()),
                     sys::IDAKIT_TYPE_ERR_INPUT => {
                         Err(TypeWriteError::NoType { name: name.clone() }.into())
@@ -181,18 +181,20 @@ impl Database {
                 }
             }
             TypeExpr::Decl(decl) => {
-                let (code, reason) =
-                    with_cstr(decl, "decl", |p| self.apply_type_decl(address, p, 0))?;
-                match code {
+                let result = self.apply_type_decl(address, nul_checked(decl, "decl")?, 0);
+                match result.code {
                     sys::IDAKIT_TYPE_OK => Ok(()),
                     sys::IDAKIT_TYPE_ERR_INPUT => Err(TypeWriteError::ParseFailed {
                         decl: decl.clone(),
-                        reason: reason_or(reason, "the declaration is not valid"),
+                        reason: reason_or(result.reason, "the declaration is not valid"),
                     }
                     .into()),
                     _ => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
-                        reason: reason_or(reason, "the kernel could not apply the parsed type"),
+                        reason: reason_or(
+                            result.reason,
+                            "the kernel could not apply the parsed type",
+                        ),
                     }
                     .into()),
                 }
@@ -200,12 +202,12 @@ impl Database {
             // A scalar leaf or a pointer/array/qualifier composite lowers through the recipe
             // interpreter: serialize to postfix bytecode, build the tinfo bottom-up, then apply.
             other => {
-                let (code, reason) = self.apply_type_recipe(address, &other.serialize(), 0);
-                match code {
+                let result = self.apply_type_recipe(address, &other.serialize(), 0);
+                match result.code {
                     sys::IDAKIT_TYPE_OK => Ok(()),
                     sys::IDAKIT_TYPE_ERR_INPUT => Err(TypeWriteError::BuildFailed {
                         reason: reason_or(
-                            reason,
+                            result.reason,
                             &format!(
                                 "could not build `{other}` (an unknown named type or invalid \
                                  declaration within it)"
@@ -216,7 +218,7 @@ impl Database {
                     _ => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: reason_or(
-                            reason,
+                            result.reason,
                             &format!("the kernel could not apply the built type `{other}`"),
                         ),
                     }
@@ -348,6 +350,30 @@ impl LocationMut<'_> {
         self.db.apply_type_at(self.address, &ty.into())
     }
 
+    /// Apply a pre-built [`TypeInfo`] handle to the item at this address.
+    ///
+    /// The eager-handle counterpart to [`set_type`](Self::set_type): where `set_type` lowers a
+    /// [`TypeExpr`] recipe, this writes a live handle built through [`Database::type_int`] and
+    /// friends. `ty` is borrowed, so one handle applies to many addresses.
+    ///
+    /// # Errors
+    /// [`TypeWriteError::ApplyRejected`] if the kernel rejects reshaping the item to the type.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let entry = db.functions().next().unwrap().address();
+    /// // A function-typed handle sets the prototype at the entry, so this apply succeeds.
+    /// let proto = db.parse_type("int handler(int code)")?;
+    /// db.at_mut(entry).apply_type(&proto)?;
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[doc(alias("apply_tinfo"))]
+    pub fn apply_type(&mut self, ty: &TypeInfo) -> Result<()> {
+        let res = self.db.apply_tinfo(self.address, ty.tinfo(), 0);
+        tinfo_apply_result(res, self.address)
+    }
+
     /// Clear any type applied to the item at this address, the inverse of [`set_type`](Self::set_type).
     ///
     /// Idempotent: an address that carries no type stays untyped and still succeeds. On a function
@@ -357,7 +383,7 @@ impl LocationMut<'_> {
     /// [`Error::WriteRejected`] if the kernel refuses to remove an existing type.
     #[doc(alias("del_tinfo", "set_tinfo"))]
     pub fn clear_type(&mut self) -> Result<()> {
-        match self.db.clear_type(self.address) {
+        match self.db.clear_type(self.address).code {
             sys::IDAKIT_TYPE_OK => Ok(()),
             _ => Err(self.rejected("clear_type")),
         }

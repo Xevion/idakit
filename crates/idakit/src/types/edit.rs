@@ -8,10 +8,9 @@
 //! everywhere it is used.
 
 use std::collections::hash_map::DefaultHasher;
-use std::ffi::{CString, c_char, c_int};
+use std::ffi::c_int;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::ptr;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use snafu::Snafu;
@@ -21,7 +20,7 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::error::{Error, Result};
-use crate::ffi::{reason_or, with_cstr};
+use crate::ffi::{nul_checked, reason_or};
 use crate::types::TypeExpr;
 
 impl Database {
@@ -68,13 +67,13 @@ impl TypesMut<'_> {
     #[doc(alias("parse_decls"))]
     pub fn define(&mut self, decl: impl AsRef<str>) -> Result<()> {
         let decl = decl.as_ref();
-        let (errors, reason) = with_cstr(decl, "decl", |p| self.db.define_type(p))?;
-        if errors == 0 {
+        let result = self.db.define_type(nul_checked(decl, "decl")?);
+        if result.code == 0 {
             Ok(())
         } else {
             Err(Error::TypeDefineFailed {
                 decl: decl.to_owned(),
-                reason: reason_or(reason, "the declaration is not valid"),
+                reason: reason_or(result.reason, "the declaration is not valid"),
             })
         }
     }
@@ -138,13 +137,13 @@ impl TypeEdit<'_> {
     fn add_member_impl(&mut self, name: &str, ty: TypeExpr, member_bit: u64) -> Result<()> {
         let recipe = ty.serialize();
         let type_name = self.name.clone();
-        let db = &mut *self.db;
-        let (code, reason) = with_cstr(&type_name, "type name", |tp| {
-            with_cstr(name, "member name", |mp| {
-                db.udt_add_member(tp, mp, &recipe, member_bit)
-            })
-        })??;
-        edit_result(code, reason, &type_name, None)
+        let result = self.db.udt_add_member(
+            nul_checked(&type_name, "type name")?,
+            nul_checked(name, "member name")?,
+            &recipe,
+            member_bit,
+        );
+        edit_result(result.code, result.reason, &type_name, None)
     }
 
     /// Select the member named `name` for editing.
@@ -181,13 +180,12 @@ impl TypeEdit<'_> {
     #[doc(alias("add_edm"))]
     pub fn add_constant(&mut self, name: impl AsRef<str>, value: u64) -> Result<()> {
         let type_name = self.name.clone();
-        let db = &mut *self.db;
-        let (code, reason) = with_cstr(&type_name, "type name", |tp| {
-            with_cstr(name.as_ref(), "constant name", |np| {
-                db.enum_add_member(tp, np, value)
-            })
-        })??;
-        edit_result(code, reason, &type_name, None)
+        let result = self.db.enum_add_member(
+            nul_checked(&type_name, "type name")?,
+            nul_checked(name.as_ref(), "constant name")?,
+            value,
+        );
+        edit_result(result.code, result.reason, &type_name, None)
     }
 
     /// Select the enum constant named `name` for editing.
@@ -353,9 +351,9 @@ impl MemberEdit<'_> {
     #[doc(alias("set_udm_type"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ty.into().serialize();
-        let (code, reason) =
+        let result =
             self.dispatch(|db, tp, mp, bit| db.udt_set_member_type(tp, mp, bit, &recipe))?;
-        edit_result(code, reason, &self.type_name, Some(&self.key))
+        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
     }
 
     /// Rename this member. The new name must be unique within the aggregate.
@@ -365,12 +363,10 @@ impl MemberEdit<'_> {
     /// (e.g. [`TypeEditCode::DupName`]); or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("rename_udm"))]
     pub fn rename(&mut self, new_name: impl AsRef<str>) -> Result<()> {
-        let nn = CString::new(new_name.as_ref()).map_err(|_| Error::InteriorNul {
-            arg: "new member name",
-        })?;
-        let (code, reason) =
-            self.dispatch(|db, tp, mp, bit| db.udt_rename_member(tp, mp, bit, nn.as_ptr()))?;
-        edit_result(code, reason, &self.type_name, Some(&self.key))
+        let new_name = nul_checked(new_name.as_ref(), "new member name")?;
+        let result =
+            self.dispatch(|db, tp, mp, bit| db.udt_rename_member(tp, mp, bit, new_name))?;
+        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
     }
 
     /// Delete this member from its aggregate.
@@ -385,31 +381,22 @@ impl MemberEdit<'_> {
     /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("del_udm"))]
     pub fn delete(&mut self) -> Result<()> {
-        let (code, reason) = self.dispatch(|db, tp, mp, bit| db.udt_del_member(tp, mp, bit))?;
-        edit_result(code, reason, &self.type_name, Some(&self.key))
+        let result = self.dispatch(|db, tp, mp, bit| db.udt_del_member(tp, mp, bit))?;
+        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
     }
 
-    /// Resolve the type-name and member-name C pointers from the key, then run `f`. For an offset
-    /// key the member pointer is null and the offset is passed instead. The C strings outlive the
-    /// synchronous `f`.
+    /// Resolve the type-name and member-name from the key, then run `f`. An offset key passes an
+    /// empty member name (the generated fn's by-bit selector) and the offset instead.
     fn dispatch(
         &mut self,
-        f: impl FnOnce(&mut Database, *const c_char, *const c_char, u64) -> (c_int, String),
-    ) -> Result<(c_int, String)> {
-        let tn = CString::new(self.type_name.as_str())
-            .map_err(|_| Error::InteriorNul { arg: "type name" })?;
-        let (member_c, bit) = match &self.key {
-            MemberKey::Name(n) => (
-                Some(
-                    CString::new(n.as_str())
-                        .map_err(|_| Error::InteriorNul { arg: "member name" })?,
-                ),
-                0,
-            ),
-            MemberKey::Offset(o) => (None, *o),
+        f: impl FnOnce(&mut Database, &str, &str, u64) -> sys::TypeWriteResult,
+    ) -> Result<sys::TypeWriteResult> {
+        let type_name = nul_checked(&self.type_name, "type name")?;
+        let (member, bit) = match &self.key {
+            MemberKey::Name(n) => (nul_checked(n, "member name")?, 0),
+            MemberKey::Offset(o) => ("", *o),
         };
-        let member_p = member_c.as_ref().map_or(ptr::null(), |c| c.as_ptr());
-        Ok(f(&mut *self.db, tn.as_ptr(), member_p, bit))
+        Ok(f(&mut *self.db, type_name, member, bit))
     }
 }
 
@@ -431,8 +418,8 @@ impl ConstantEdit<'_> {
     /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("edit_edm"))]
     pub fn set_value(&mut self, value: u64) -> Result<()> {
-        let (code, reason) = self.dispatch(|db, tp, np| db.enum_set_member_value(tp, np, value))?;
-        self.result(code, reason)
+        let result = self.dispatch(|db, tp, np| db.enum_set_member_value(tp, np, value))?;
+        self.result(result.code, result.reason)
     }
 
     /// Rename this constant. The new name must be unique.
@@ -443,12 +430,9 @@ impl ConstantEdit<'_> {
     /// for a NUL byte in a name.
     #[doc(alias("rename_edm"))]
     pub fn rename(&mut self, new_name: impl AsRef<str>) -> Result<()> {
-        let nn = CString::new(new_name.as_ref()).map_err(|_| Error::InteriorNul {
-            arg: "new constant name",
-        })?;
-        let (code, reason) =
-            self.dispatch(|db, tp, np| db.enum_rename_member(tp, np, nn.as_ptr()))?;
-        self.result(code, reason)
+        let new_name = nul_checked(new_name.as_ref(), "new constant name")?;
+        let result = self.dispatch(|db, tp, np| db.enum_rename_member(tp, np, new_name))?;
+        self.result(result.code, result.reason)
     }
 
     /// Delete this constant from its enum.
@@ -458,22 +442,18 @@ impl ConstantEdit<'_> {
     /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("del_edm"))]
     pub fn delete(&mut self) -> Result<()> {
-        let (code, reason) = self.dispatch(|db, tp, np| db.enum_del_member(tp, np))?;
-        self.result(code, reason)
+        let result = self.dispatch(|db, tp, np| db.enum_del_member(tp, np))?;
+        self.result(result.code, result.reason)
     }
 
-    /// Resolve the type-name and constant-name C pointers, then run `f`. The C strings outlive the
-    /// synchronous `f`.
+    /// Resolve the type-name and constant-name, then run `f`.
     fn dispatch(
         &mut self,
-        f: impl FnOnce(&mut Database, *const c_char, *const c_char) -> (c_int, String),
-    ) -> Result<(c_int, String)> {
-        let tn = CString::new(self.type_name.as_str())
-            .map_err(|_| Error::InteriorNul { arg: "type name" })?;
-        let np = CString::new(self.name.as_str()).map_err(|_| Error::InteriorNul {
-            arg: "constant name",
-        })?;
-        Ok(f(&mut *self.db, tn.as_ptr(), np.as_ptr()))
+        f: impl FnOnce(&mut Database, &str, &str) -> sys::TypeWriteResult,
+    ) -> Result<sys::TypeWriteResult> {
+        let type_name = nul_checked(&self.type_name, "type name")?;
+        let name = nul_checked(&self.name, "constant name")?;
+        Ok(f(&mut *self.db, type_name, name))
     }
 
     fn result(&self, code: c_int, reason: String) -> Result<()> {

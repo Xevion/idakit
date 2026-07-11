@@ -1655,6 +1655,585 @@ pub const HEXRAYS: Domain = Domain {
     ],
 };
 
+/// The type-write domain: parse, resolve, build, and apply `tinfo`s, define types into the local
+/// til, and edit UDT/enum members. Every call returns a [`TypeWriteResult`] (or [`SigWriteResult`]
+/// for the two signature-surgery fns that also report the parameter count) in place of the raw
+/// facade's `int` code plus error-buffer out-param: the struct's `code` carries the same return
+/// value and `reason` the captured diagnostic. Bodies are hand-written in `facade/gen_type_build.cc`.
+pub const TYPE_BUILD: Domain = Domain {
+    name: "type_build",
+    sdk_includes: &["<kernwin.hpp>", "<nalt.hpp>", "<typeinf.hpp>"],
+    externs: &[ExternTy {
+        rust_name: "TInfo",
+        cxx_name: "tinfo_t",
+        kind: ExternKind::Opaque,
+        doc: "The SDK's `tinfo_t`, an opaque type-info handle handled only behind indirection \
+              (`&TInfo` or `UniquePtr<TInfo>`).",
+        safety: "The type id names the real SDK class tinfo_t; Opaque is correct because tinfo_t \
+                 has a nontrivial copy-ctor and destructor, so it may only cross the bridge behind \
+                 a reference or UniquePtr, never by value. The UniquePtr's cxx deleter runs \
+                 ~tinfo_t, matching the raw handle's free.",
+    }],
+    structs: &[
+        SharedStruct {
+            name: "TypeWriteResult",
+            doc: "The outcome of a type-write call, returned by value from every type-write \
+                  function except the two signature-surgery fns.",
+            fields: &[
+                Field {
+                    name: "code",
+                    ty: FieldTy::I32,
+                    doc: "Raw facade code: an `IDAKIT_TYPE_*`/`IDAKIT_TEDIT_*` sentinel, a negative \
+                          `tinfo_code_t`, or `define_type`'s parse-error count.",
+                },
+                Field {
+                    name: "reason",
+                    ty: FieldTy::Str,
+                    doc: "Captured IDA diagnostic, empty when the call has no error channel.",
+                },
+            ],
+        },
+        SharedStruct {
+            name: "SigWriteResult",
+            doc: "The outcome of a signature-surgery call that also reports the function's \
+                  parameter count.",
+            fields: &[
+                Field {
+                    name: "code",
+                    ty: FieldTy::I32,
+                    doc: "Raw facade `IDAKIT_SIG_*` code.",
+                },
+                Field {
+                    name: "arity",
+                    ty: FieldTy::Usize,
+                    doc: "Parameter count of the edited function type (`0` when it has no type).",
+                },
+                Field {
+                    name: "reason",
+                    ty: FieldTy::Str,
+                    doc: "Captured IDA diagnostic, empty when none.",
+                },
+            ],
+        },
+    ],
+    custom_tu: Some("facade/gen_type_build.cc"),
+    fns: &[
+        FnSpec {
+            name: "apply_type_decl",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "decl",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "flags",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Parse `decl` against the local til and apply it at `ea`. `code` is \
+                  `IDAKIT_TYPE_OK`, `_ERR_INPUT` (parse failed), or `_ERR_APPLY`.",
+        },
+        FnSpec {
+            name: "apply_named_type",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "name",
+                    ty: ArgTy::Str,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Resolve the existing named type `name` and apply it at `ea`. `code` \
+                  distinguishes not-found (`_ERR_INPUT`) from an apply rejection (`_ERR_APPLY`); \
+                  `reason` is empty (no error channel).",
+        },
+        FnSpec {
+            name: "clear_type",
+            receiver: None,
+            args: EA,
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Clear any type applied at `ea`. Idempotent: `code` is `IDAKIT_TYPE_OK` when \
+                  there was nothing to clear; `reason` is empty (no error channel).",
+        },
+        FnSpec {
+            name: "apply_type_recipe",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "recipe",
+                    ty: ArgTy::Bytes,
+                },
+                Arg {
+                    name: "flags",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Build the `tinfo` the postfix recipe encodes and apply it at `ea`. Same codes as \
+                  [`apply_type_decl`]; `_ERR_INPUT` is a malformed buffer, an unresolved named \
+                  leaf, or an unparseable embedded decl.",
+        },
+        FnSpec {
+            name: "define_type",
+            receiver: None,
+            args: &[Arg {
+                name: "input",
+                ty: ArgTy::Str,
+            }],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Parse the C declaration(s) in `input` into the local til. `code` is the \
+                  parse-error count (`0` = ok).",
+        },
+        FnSpec {
+            name: "func_set_rettype",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "recipe",
+                    ty: ArgTy::Bytes,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Replace the return type of the function type at `ea` with the recipe type, then \
+                  rebuild and re-apply. See the `IDAKIT_SIG_*` codes.",
+        },
+        FnSpec {
+            name: "func_set_argtype",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::Usize,
+                },
+                Arg {
+                    name: "recipe",
+                    ty: ArgTy::Bytes,
+                },
+            ],
+            ret: RetKind::Shared("SigWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Replace parameter `idx`'s type with the recipe type, then rebuild and re-apply. \
+                  `arity` reports the current parameter count; `IDAKIT_SIG_ARG_RANGE` when `idx` \
+                  is past it.",
+        },
+        FnSpec {
+            name: "func_rename_arg",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::Usize,
+                },
+                Arg {
+                    name: "name",
+                    ty: ArgTy::Str,
+                },
+            ],
+            ret: RetKind::Shared("SigWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Rename parameter `idx` to `name`, then rebuild and re-apply. `arity` reports the \
+                  current parameter count; `IDAKIT_SIG_ARG_RANGE` when `idx` is past it.",
+        },
+        FnSpec {
+            name: "func_set_cc",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "cc",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Set the calling convention of the function type at `ea` to the raw `CM_CC_*` \
+                  code `cc`, then rebuild and re-apply.",
+        },
+        FnSpec {
+            name: "func_prepend_this",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "recipe",
+                    ty: ArgTy::Bytes,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Insert an implicit `this` parameter of the recipe type at index 0, then rebuild \
+                  and re-apply.",
+        },
+        FnSpec {
+            name: "udt_add_member",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "recipe",
+                    ty: ArgTy::Bytes,
+                },
+                Arg {
+                    name: "member_bit",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Add a member of the recipe type to the named struct/union `type_name` at bit \
+                  offset `member_bit` (or appended when it is `IDAKIT_MEMBER_APPEND`). An empty \
+                  `member_name` adds an anonymous member. See the `IDAKIT_TEDIT_*` codes.",
+        },
+        FnSpec {
+            name: "udt_set_member_type",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_bit",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "recipe",
+                    ty: ArgTy::Bytes,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Replace the type of the member selected by `member_name` (or, when it is empty, \
+                  by bit offset `member_bit`) in `type_name` with the recipe type.",
+        },
+        FnSpec {
+            name: "udt_rename_member",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_bit",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "new_name",
+                    ty: ArgTy::Str,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Rename the member selected by `member_name` (or, when it is empty, by bit offset \
+                  `member_bit`) in `type_name` to `new_name`.",
+        },
+        FnSpec {
+            name: "udt_del_member",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_bit",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Delete the member selected by `member_name` (or, when it is empty, by bit offset \
+                  `member_bit`) from `type_name`.",
+        },
+        FnSpec {
+            name: "enum_add_member",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Add an enum constant named `member_name` with `value` to the named enum \
+                  `type_name`. Same `IDAKIT_TEDIT_*` codes as the `udt_*` fns.",
+        },
+        FnSpec {
+            name: "enum_set_member_value",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Set the value of the enum constant `member_name` in the named enum `type_name`.",
+        },
+        FnSpec {
+            name: "enum_rename_member",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "new_name",
+                    ty: ArgTy::Str,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Rename the enum constant `member_name` in the named enum `type_name` to \
+                  `new_name`.",
+        },
+        FnSpec {
+            name: "enum_del_member",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Delete the enum constant `member_name` from the named enum `type_name`.",
+        },
+        FnSpec {
+            name: "tinfo_void",
+            receiver: None,
+            args: &[],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "The `void` type as a fresh [`UniquePtr`](cxx::UniquePtr) handle, freed by the \
+                  cxx deleter (`~tinfo_t`) on drop.",
+        },
+        FnSpec {
+            name: "tinfo_bool",
+            receiver: None,
+            args: &[],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "The boolean type as a fresh [`UniquePtr`](cxx::UniquePtr) handle.",
+        },
+        FnSpec {
+            name: "tinfo_int",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "bytes",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "is_signed",
+                    ty: ArgTy::Bool,
+                },
+            ],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "A `bytes`-wide integer (1/2/4/8/16), signed when `is_signed`, as a fresh handle; \
+                  a null handle when the width is unsupported.",
+        },
+        FnSpec {
+            name: "tinfo_float",
+            receiver: None,
+            args: &[Arg {
+                name: "bytes",
+                ty: ArgTy::U32,
+            }],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "A `bytes`-wide float (4 or 8) as a fresh handle; a null handle when the width is \
+                  not 4 or 8.",
+        },
+        FnSpec {
+            name: "tinfo_named",
+            receiver: None,
+            args: &[Arg {
+                name: "name",
+                ty: ArgTy::Str,
+            }],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "The existing named type `name` resolved as a typedef ref, as a fresh handle; a \
+                  null handle when the local til has no such type.",
+        },
+        FnSpec {
+            name: "tinfo_decl",
+            receiver: None,
+            args: &[Arg {
+                name: "decl",
+                ty: ArgTy::Str,
+            }],
+            ret: RetKind::ResultUniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "The type `decl` parses to against the local til, as a fresh handle; `Err` (with \
+                  the captured parse diagnostic) on a parse failure.",
+        },
+        FnSpec {
+            name: "tinfo_ptr",
+            receiver: None,
+            args: &[Arg {
+                name: "inner",
+                ty: ArgTy::ExternRef("TInfo"),
+            }],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "A pointer to `inner` as a fresh handle. `inner` is copied, not consumed; a null \
+                  handle if the pointer type cannot be built.",
+        },
+        FnSpec {
+            name: "tinfo_array",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "inner",
+                    ty: ArgTy::ExternRef("TInfo"),
+                },
+                Arg {
+                    name: "nelems",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "An `nelems`-element array of `inner` as a fresh handle. `inner` is copied, not \
+                  consumed; a null handle when `nelems` exceeds `u32` or the array cannot be built.",
+        },
+        FnSpec {
+            name: "tinfo_const",
+            receiver: None,
+            args: &[Arg {
+                name: "inner",
+                ty: ArgTy::ExternRef("TInfo"),
+            }],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "A `const`-qualified copy of `inner` as a fresh handle. `inner` is not consumed.",
+        },
+        FnSpec {
+            name: "tinfo_volatile",
+            receiver: None,
+            args: &[Arg {
+                name: "inner",
+                ty: ArgTy::ExternRef("TInfo"),
+            }],
+            ret: RetKind::UniquePtr("TInfo"),
+            body: BodyKind::Custom,
+            doc: "A `volatile`-qualified copy of `inner` as a fresh handle. `inner` is not \
+                  consumed.",
+        },
+        FnSpec {
+            name: "tinfo_apply",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "handle",
+                    ty: ArgTy::ExternRef("TInfo"),
+                },
+                Arg {
+                    name: "flags",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Apply the built `handle` at `ea` (`apply_tinfo`, `TINFO_DEFINITE | flags`). \
+                  `code` is `IDAKIT_TYPE_OK`/`_ERR_APPLY`; the handle is not consumed.",
+        },
+    ],
+};
+
 /// Every domain fed into the unified bridge, in emission order.
 pub const DOMAINS: &[&Domain] = &[
     &SEGMENT,
@@ -1670,6 +2249,7 @@ pub const DOMAINS: &[&Domain] = &[
     &BYTES,
     &INSTRUCTION,
     &HEXRAYS,
+    &TYPE_BUILD,
 ];
 
 impl FieldTy {
