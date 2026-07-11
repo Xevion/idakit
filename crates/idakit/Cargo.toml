@@ -1,6 +1,6 @@
 [package]
 name = "idakit"
-version = "0.0.0"
+version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -20,7 +20,7 @@ targets = []
 bon = "3.9.3"
 cxx = "1.0.197"
 dotenvy = "0.15.7"
-idakit-sys = { path = "../idakit-sys", version = "0.0.0" }
+idakit-sys = { path = "../idakit-sys", version = "0.1.0" }
 num_enum = "0.7.6"
 serde = { version = "1.0.228", features = ["derive"] }
 siphasher = "1.0.3"
