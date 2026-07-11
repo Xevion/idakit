@@ -44,27 +44,41 @@ impl Database {
 
     /// A `bytes`-wide integer (1, 2, 4, 8, or 16), signed when `signed`, as a live handle.
     ///
+    /// # Errors
+    /// [`TypeWriteError::BuildFailed`] if `bytes` is not one of 1, 2, 4, 8, or 16.
+    ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
     /// let entry = db.functions().next().unwrap().address();
-    /// let int32 = db.type_int(4, true);
+    /// let int32 = db.type_int(4, true)?;
     /// // A scalar applies where the item can hold it; a code entry may reject a data type, so the
     /// // apply returns a `Result` either way.
     /// let _ = db.at_mut(entry).apply_type(&int32);
     /// # Ok(())
     /// # }).unwrap();
     /// ```
-    #[must_use]
     #[doc(alias("BTF_INT"))]
-    pub fn type_int(&self, bytes: u32, signed: bool) -> TypeInfo {
-        TypeInfo::from_handle(sys::tinfo_int(bytes, signed))
+    pub fn type_int(&self, bytes: u32, signed: bool) -> Result<TypeInfo> {
+        TypeInfo::from_nullable(sys::tinfo_int(bytes, signed)).ok_or_else(|| {
+            TypeWriteError::BuildFailed {
+                reason: format!("{bytes} is not a valid integer width (1, 2, 4, 8, or 16)"),
+            }
+            .into()
+        })
     }
 
     /// A `bytes`-wide float (4 or 8) as a live handle.
-    #[must_use]
+    ///
+    /// # Errors
+    /// [`TypeWriteError::BuildFailed`] if `bytes` is not 4 or 8.
     #[doc(alias("BTF_FLOAT"))]
-    pub fn type_float(&self, bytes: u32) -> TypeInfo {
-        TypeInfo::from_handle(sys::tinfo_float(bytes))
+    pub fn type_float(&self, bytes: u32) -> Result<TypeInfo> {
+        TypeInfo::from_nullable(sys::tinfo_float(bytes)).ok_or_else(|| {
+            TypeWriteError::BuildFailed {
+                reason: format!("{bytes} is not a valid float width (4 or 8)"),
+            }
+            .into()
+        })
     }
 
     /// The existing named type `name`, resolved against the local til, as a live handle.
@@ -149,7 +163,7 @@ impl Database {
 /// let entry = db.functions().next().unwrap().address();
 /// // Build `int *` node-at-a-time; the apply returns a `Result` (a code entry may reject a data
 /// // type), while a function prototype below applies cleanly at the entry.
-/// let ptr = db.type_int(4, true).pointer();
+/// let ptr = db.type_int(4, true)?.pointer();
 /// let _ = db.at_mut(entry).apply_type(&ptr);
 /// let proto = db.parse_type("int handler(int code)")?;
 /// db.function_mut(entry).unwrap().apply_type(&proto)?;
@@ -171,6 +185,16 @@ impl TypeInfo {
             handle,
             _not_send: PhantomData,
         }
+    }
+
+    /// Take ownership of a builder handle that may be null, `None` when the builder rejected its
+    /// input (an out-of-set leaf width, an over-large array count).
+    #[inline]
+    fn from_nullable(handle: cxx::UniquePtr<sys::TInfo>) -> Option<Self> {
+        (!handle.is_null()).then_some(Self {
+            handle,
+            _not_send: PhantomData,
+        })
     }
 
     /// The live `tinfo_t` behind the handle, non-null by construction (see the type docs).

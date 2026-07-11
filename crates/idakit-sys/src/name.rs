@@ -1,4 +1,4 @@
-//! Name lookup and the name list (`name.hpp`), plus the name write (`set_name`).
+//! Name-classification flag bits ([`FF_NAME`], [`FF_LABL`]) and the name write (`set_name`).
 
 use std::ffi::{c_char, c_int};
 
@@ -11,19 +11,6 @@ use crate::Address;
 pub const FF_NAME: u64 = 1 << 14;
 /// `FF_LABL` (`bytes.hpp`): the address has a dummy (address-derived) name. See [`FF_NAME`].
 pub const FF_LABL: u64 = 1 << 15;
-
-// names and the name list (name.hpp)
-unsafe extern "C" {
-    pub fn idakit_get_ea_name(address: Address, buf: *mut c_char, cap: usize) -> i64;
-    pub fn idakit_get_name_ea(name: *const c_char) -> Address;
-    pub fn idakit_demangle_name(name: *const c_char, buf: *mut c_char, cap: usize) -> i64;
-    pub fn idakit_nlist_size() -> usize;
-    pub fn idakit_nlist_ea(idx: usize) -> Address;
-    pub fn idakit_nlist_name(idx: usize, buf: *mut c_char, cap: usize) -> i64;
-    pub fn idakit_has_user_name(flags: u64) -> c_int;
-    pub fn idakit_has_auto_name(flags: u64) -> c_int;
-    pub fn idakit_has_dummy_name(flags: u64) -> c_int;
-}
 
 // name write (plain libida symbol)
 unsafe extern "C" {

@@ -1,7 +1,7 @@
 // Hand-written Custom bodies for the generated type-write domain (namespace idakit_gen). Each fn
 // parses/resolves/builds a tinfo and applies it, defines types into the local til, or edits a
-// UDT/enum member, then folds the raw facade's int return code plus errbuf out-param into a
-// TypeWriteResult/SigWriteResult shared struct: `code` carries the same value, `reason` the
+// UDT/enum member, then reports an int result code plus captured diagnostic through a
+// TypeWriteResult/SigWriteResult shared struct: `code` carries the outcome, `reason` the
 // captured diagnostic (empty where a call has no error channel), and `arity` (signature surgery)
 // the parameter count. The leaf/recipe/surgery helpers have internal linkage and cannot be shared
 // across the translation-unit boundary, so this TU carries its own copies.

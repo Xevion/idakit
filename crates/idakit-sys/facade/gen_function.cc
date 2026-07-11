@@ -1,6 +1,6 @@
 // Hand-written Custom bodies for the generated function domain (namespace idakit_gen). Scalar
-// lookup accessors over get_func/getn_func, plus the name as a rust::String (Err on no name). These
-// mirror the raw idakit_func_* facade; func_qty is templated (gen_function_bodies.cc), not here.
+// lookup accessors over get_func/getn_func, plus the name as a rust::String (Err on no name).
+// func_qty is templated (gen_function_bodies.cc), not here.
 
 #include <pro.h>
 #include <ida.hpp>

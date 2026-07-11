@@ -19,6 +19,7 @@ fn run(idb: &mut idakit::Database) {
     let entry = idb.functions().next().expect("a function").address();
 
     leaf_handles_apply(idb, entry);
+    leaf_width_validation(idb);
     composite_handles_apply(idb, entry);
     named_ref_resolves_and_applies(idb, entry);
     named_ref_missing_is_no_type(idb);
@@ -44,19 +45,46 @@ fn leaf_handles_apply(idb: &mut idakit::Database, entry: Address) {
     let _ = idb.type_void();
     let _ = idb.type_bool();
     for bytes in [1u32, 2, 4, 8, 16] {
-        let _ = idb.type_int(bytes, true);
-        let _ = idb.type_int(bytes, false);
+        idb.type_int(bytes, true).expect("a valid signed int width");
+        idb.type_int(bytes, false)
+            .expect("a valid unsigned int width");
     }
-    let _ = idb.type_float(4);
-    let _ = idb.type_float(8);
+    idb.type_float(4).expect("float");
+    idb.type_float(8).expect("double");
 
-    let handle = idb.type_int(4, true);
+    let handle = idb.type_int(4, true).expect("build int32");
     let built = idb.at_mut(entry).apply_type(&handle);
     let recipe = idb.at_mut(entry).set_type(expr::int32());
     assert!(
         built.is_ok() == recipe.is_ok(),
         "the int32 handle should agree with its recipe twin: built={built:?} recipe={recipe:?}"
     );
+}
+
+/// An out-of-set leaf width is a clean [`TypeWriteError::BuildFailed`], never a panic: integers
+/// admit 1/2/4/8/16, floats admit 4/8.
+fn leaf_width_validation(idb: &mut idakit::Database) {
+    assert!(idb.type_int(4, true).is_ok());
+    assert!(idb.type_int(16, false).is_ok());
+    for bad in [0u32, 3, 5, 12, 32] {
+        assert!(matches!(
+            idb.type_int(bad, true),
+            Err(Error::TypeWrite {
+                source: TypeWriteError::BuildFailed { .. }
+            })
+        ));
+    }
+
+    assert!(idb.type_float(4).is_ok());
+    assert!(idb.type_float(8).is_ok());
+    for bad in [0u32, 1, 2, 3, 16] {
+        assert!(matches!(
+            idb.type_float(bad),
+            Err(Error::TypeWrite {
+                source: TypeWriteError::BuildFailed { .. }
+            })
+        ));
+    }
 }
 
 /// Each composite (pointer, array, const, volatile) over int32 applies in parity with its
@@ -73,7 +101,7 @@ fn composite_handles_apply(idb: &mut idakit::Database, entry: Address) {
         );
     }
 
-    let base = idb.type_int(4, true);
+    let base = idb.type_int(4, true).expect("build int32 base");
     parity(idb, entry, &base.pointer(), expr::int32().pointer());
     parity(idb, entry, &base.array(8), expr::int32().array(8));
     parity(idb, entry, &base.const_(), expr::int32().const_());
@@ -158,7 +186,7 @@ fn parse_type_resolves_local_til(idb: &mut idakit::Database) {
 /// A base handle seeds two derivations from one `&self`, proving the composites copy rather than
 /// consume: both the pointer and the array apply.
 fn handle_reuse(idb: &mut idakit::Database, entry: Address) {
-    let base = idb.type_int(4, true);
+    let base = idb.type_int(4, true).expect("build int32 base");
     let ptr = base.pointer();
     let arr = base.array(4);
     // `base` is still usable here; if `pointer` had consumed it, this line would not compile.
@@ -212,7 +240,7 @@ fn apply_through_both_cursors(idb: &mut idakit::Database, entry: Address) {
         "a prototype should be set after applying a function-typed handle"
     );
 
-    let int32 = idb.type_int(4, true);
+    let int32 = idb.type_int(4, true).expect("build int32");
     // The location cursor reaches the same helper; its outcome at a code entry is not asserted.
     let _ = idb.at_mut(entry).apply_type(&int32);
 }

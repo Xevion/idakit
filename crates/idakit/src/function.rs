@@ -779,15 +779,13 @@ mod tests {
             for &bits in &[0, sys::FF_NAME, sys::FF_LABL, sys::FF_NAME | sys::FF_LABL] {
                 let flags = extra | bits;
                 let ours = FunctionName::from_flags(flags, String::new());
-                // SAFETY: has_*_name are pure bit tests over `flags`, requiring no kernel state
-                // and no open database.
-                let (user, auto, dummy) = unsafe {
-                    (
-                        sys::idakit_has_user_name(flags) != 0,
-                        sys::idakit_has_auto_name(flags) != 0,
-                        sys::idakit_has_dummy_name(flags) != 0,
-                    )
-                };
+                // has_*_name are pure bit tests over `flags`, requiring no kernel state and no
+                // open database.
+                let (user, auto, dummy) = (
+                    sys::has_user_name(flags),
+                    sys::has_auto_name(flags),
+                    sys::has_dummy_name(flags),
+                );
                 assert!(ours.is_user() == user);
                 assert!(ours.is_auto() == auto);
                 // IDA's dummy always maps to ours; ours additionally absorbs the no-name case.

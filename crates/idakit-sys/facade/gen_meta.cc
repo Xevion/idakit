@@ -1,7 +1,6 @@
 // Hand-written Custom bodies for the generated meta domain (namespace idakit_gen). Database-wide
 // metadata: bitness, image base, and four identity strings (processor, file-type text, input path,
-// root filename). These mirror the raw idakit_* meta facade; the string getters throw when the SDK
-// reports no value (Err on the Rust side) instead of the raw's negative/empty sentinel.
+// root filename). The string getters throw when the SDK reports no value (Err on the Rust side).
 
 #include <pro.h>
 #include <ida.hpp>

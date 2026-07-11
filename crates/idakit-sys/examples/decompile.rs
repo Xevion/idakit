@@ -1,27 +1,18 @@
-//! Decompile a function and traverse its ctree (the marquee unknown).
+//! Decompile a function and inspect its ctree through the generated cxx bridge.
 //! Run: `cargo run -p idakit-sys --example decompile -- path/to/database.i64 [func_index]`
 
 use std::env;
-use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::ffi::CString;
 use std::ptr;
 
 use idakit_sys::*;
-
-fn pseudocode(cf: *mut c_void) -> String {
-    let mut buf = vec![0 as c_char; 64 * 1024];
-    let n = unsafe { idakit_cfunc_pseudocode(cf, buf.as_mut_ptr(), buf.len()) };
-    if n <= 0 {
-        return String::new();
-    }
-    unsafe { CStr::from_ptr(buf.as_ptr()) }
-        .to_string_lossy()
-        .into_owned()
-}
 
 fn main() {
     let db = env::args().nth(1).expect("usage: decompile <db.i64> [idx]");
     let idx: usize = env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(7);
 
+    // SAFETY: the library lifecycle and hexrays init are the raw C ABI; decompile/cfunc_* are safe
+    // bridge calls.
     unsafe {
         assert_eq!(init_library(0, ptr::null_mut()), 0, "init_library failed");
         let cpath = CString::new(db).unwrap();
@@ -34,26 +25,37 @@ fn main() {
         let hr = idakit_hexrays_init();
         println!("hexrays_init -> {hr}");
         assert_eq!(hr, 1, "hexrays unavailable");
+    }
 
-        let address = idakit_func_ea(idx);
-        println!("decompiling function[{idx}] @ {address:#x} ...\n");
+    let address = func_ea(idx);
+    println!("decompiling function[{idx}] @ {address:#x} ...\n");
 
-        let mut err = [0 as c_char; 256];
-        let cf = idakit_decompile(address, err.as_mut_ptr(), err.len());
-        assert!(!cf.is_null(), "decompile returned null");
+    // `decompile` returns a `UniquePtr<CFunc>` (one owned cfuncptr_t ref); its cxx deleter frees it
+    // on drop, so there is no manual dispose.
+    let cf = decompile(address).expect("decompile returned an error");
+    let (counts, text) = {
+        let cref = cf.as_ref().expect("non-null cfunc handle");
+        (
+            cfunc_counts(cref),
+            cfunc_pseudocode(cref).unwrap_or_default(),
+        )
+    };
 
-        let (mut ni, mut ne, mut nc): (c_int, c_int, c_int) = (0, 0, 0);
-        idakit_cfunc_ctree_counts(cf, &mut ni, &mut ne, &mut nc);
+    let shown: String = text.lines().take(30).collect::<Vec<_>>().join("\n");
+    println!("{shown}");
+    if text.lines().count() > 30 {
+        println!("    ... ({} lines total)", text.lines().count());
+    }
+    println!(
+        "\nctree: statements={} expressions={} calls={}",
+        counts.insns, counts.expressions, counts.calls
+    );
 
-        let text = pseudocode(cf);
-        let shown: String = text.lines().take(30).collect::<Vec<_>>().join("\n");
-        println!("{shown}");
-        if text.lines().count() > 30 {
-            println!("    ... ({} lines total)", text.lines().count());
-        }
-        println!("\nctree: statements={ni} expressions={ne} calls={nc}");
+    // Free the cfunc before tearing down the database.
+    drop(cf);
 
-        idakit_cfunc_dispose(cf);
+    // SAFETY: raw C ABI lifecycle call.
+    unsafe {
         close_database(false);
     }
 

@@ -1,7 +1,7 @@
 // Hand-written Custom bodies for the generated export domain (namespace idakit_gen). Entry-point
 // lookups over get_entry/get_entry_ordinal, plus the name and forwarder as a rust::String (Err when
-// absent -- most exports have no forwarder). These mirror the raw idakit_export_* facade; export_qty
-// is templated (gen_export_bodies.cc), not here.
+// absent, since most exports have no forwarder). export_qty is templated (gen_export_bodies.cc),
+// not here.
 
 #include <pro.h>
 #include <ida.hpp>

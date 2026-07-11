@@ -1,26 +1,6 @@
-//! String-literal enumeration facade (`idakit_strlist_*`, `idakit_strlit_contents`).
+//! STRTYPE field masks from `nalt.hpp`: [`STRWIDTH_MASK`], [`STRLYT_MASK`], [`STRLYT_SHIFT`].
 
-use std::ffi::{c_char, c_int};
-
-use crate::Address;
-
-unsafe extern "C" {
-    pub fn idakit_strlist_build();
-    pub fn idakit_strlist_qty() -> usize;
-    pub fn idakit_strlist_item(
-        n: usize,
-        ea: *mut Address,
-        length: *mut c_int,
-        ty: *mut c_int,
-    ) -> c_int;
-    pub fn idakit_strlit_contents(
-        ea: Address,
-        len: usize,
-        ty: c_int,
-        buf: *mut c_char,
-        cap: usize,
-    ) -> i64;
-}
+use std::ffi::c_int;
 
 /// `STRWIDTH_MASK` from `nalt.hpp`: the STRTYPE bits selecting bytes-per-character.
 pub const STRWIDTH_MASK: c_int = 0x03;

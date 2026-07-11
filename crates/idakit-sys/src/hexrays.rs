@@ -1,5 +1,5 @@
-//! Hex-Rays decompiler facade: the ctree-emit vtbl PODs ([`EmitVtbl`]) and the
-//! `idakit_cfunc_*` / `idakit_decompile` entry points.
+//! Hex-Rays ctree-emit vtbl PODs ([`EmitVtbl`]) and the ctree-walk entry points
+//! (`idakit_hexrays_init`, `idakit_cfunc_walk_ctree`).
 
 use std::ffi::{c_char, c_int, c_void};
 
@@ -143,19 +143,6 @@ pub struct EmitVtbl {
 // hex-rays decompiler
 unsafe extern "C" {
     pub fn idakit_hexrays_init() -> c_int;
-    pub fn idakit_decompile(address: Address, errbuf: *mut c_char, cap: usize) -> *mut c_void;
-    pub fn idakit_cfunc_dispose(cfunc: *mut c_void);
-    pub fn idakit_cfunc_pseudocode(cfunc: *mut c_void, buf: *mut c_char, cap: usize) -> i64;
-    pub fn idakit_cfunc_ctree_counts(
-        cfunc: *mut c_void,
-        n_insn: *mut c_int,
-        n_expr: *mut c_int,
-        n_calls: *mut c_int,
-    );
-    /// Diagnostic: fill two 256-int per-op expression histograms, `v_hist` from the SDK's
-    /// `ctree_visitor_t` (ground truth) and `w_hist` from a mirror of the extraction walker's
-    /// recursion. Their per-op difference localizes any extraction under/over-visit.
-    pub fn idakit_cfunc_ctree_expr_gap(cfunc: *mut c_void, v_hist: *mut c_int, w_hist: *mut c_int);
     /// Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) per node and writing the root
     /// statement handle to `*root`. Returns 0 on success, non-zero if `cfunc` is null.
     pub fn idakit_cfunc_walk_ctree(

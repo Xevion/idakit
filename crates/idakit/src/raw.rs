@@ -228,24 +228,6 @@ impl Database {
         unsafe { sys::idakit_hexrays_init() }
     }
 
-    /// Decompiles the function at `address`.
-    ///
-    /// On failure the handle is null and the second element carries the Hex-Rays failure
-    /// reason copied out of the facade buffer.
-    // TODO: retained for the roundtrip gen-vs-raw cross-check -- production rides sys::decompile,
-    // retire with the raw idakit_decompile path in Stage 4.
-    #[allow(dead_code)]
-    pub(crate) fn decompile_at(&self, address: Address) -> (*mut c_void, String) {
-        let mut err = [0u8; 256];
-        // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates
-        // within it and reports the reason there when it returns null.
-        let handle =
-            unsafe { sys::idakit_decompile(address.get(), err.as_mut_ptr().cast(), err.len()) };
-        // SAFETY: `err` holds a NUL-terminated string written by the facade.
-        let reason = unsafe { cstr(err.as_ptr().cast()) };
-        (handle, reason)
-    }
-
     pub(crate) fn set_name(&mut self, address: Address, name: *const c_char) -> bool {
         unsafe { sys::set_name(address.get(), name, 0) }
     }

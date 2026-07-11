@@ -1,24 +1,4 @@
-//! Function enumeration facade (`idakit_func_*`).
-
-use std::ffi::{c_char, c_int};
-
-use crate::Address;
-
-unsafe extern "C" {
-    pub fn idakit_func_qty() -> usize;
-    pub fn idakit_func_ea(n: usize) -> Address;
-    pub fn idakit_func_name(address: Address, buf: *mut c_char, cap: usize) -> i64;
-    pub fn idakit_func_chunk_qty(address: Address) -> c_int;
-    pub fn idakit_func_chunk(
-        address: Address,
-        idx: c_int,
-        start: *mut Address,
-        end: *mut Address,
-    ) -> c_int;
-    pub fn idakit_func_start(address: Address) -> Address;
-    pub fn idakit_func_end(address: Address) -> Address;
-    pub fn idakit_func_flags(address: Address) -> u64;
-}
+//! Function flag bits from `funcs.hpp`: [`FUNC_NORET`], [`FUNC_LIB`], [`FUNC_THUNK`].
 
 /// `FUNC_NORET` from `funcs.hpp`: the function does not return.
 pub const FUNC_NORET: u64 = 0x0000_0001;

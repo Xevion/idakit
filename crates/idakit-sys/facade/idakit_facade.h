@@ -53,93 +53,14 @@ void idakit_trigger_fatal(int kind);
 int idakit_test_fatal_through_cxx(int kind);
 #endif
 
-size_t idakit_func_qty(void);
-idakit_ea_t idakit_func_ea(size_t n); /* start_ea of nth func, or BADADDR */
-int64_t idakit_func_name(idakit_ea_t ea, char *buf, size_t cap); /* name length, <0 on miss */
-int idakit_func_chunk_qty(idakit_ea_t ea); /* # chunks (entry + tails), 0 if not a func */
-int idakit_func_chunk(
-    idakit_ea_t ea, int idx, idakit_ea_t *start,
-    idakit_ea_t *end); /* 1 + fills [start,end) if chunk idx exists (entry chunk = idx 0) */
-idakit_ea_t idakit_func_start(idakit_ea_t ea); /* entry ea of the func containing ea, or BADADDR */
-idakit_ea_t idakit_func_end(idakit_ea_t ea);   /* entry-chunk end_ea, or BADADDR if not a func */
-uint64_t idakit_func_flags(idakit_ea_t ea);    /* func_t.flags (\ref FUNC_), 0 if not a func */
-
-int idakit_seg_qty(void);
-int64_t idakit_seg_name(int n, char *buf, size_t cap);
-idakit_ea_t idakit_seg_start(int n);
-idakit_ea_t idakit_seg_end(int n);
-int idakit_seg_perm(int n);    /* SEGPERM_ bits (0 = no info) */
-int idakit_seg_bitness(int n); /* addressing bits: 16, 32, or 64 (0 if no such segment) */
-int64_t idakit_seg_class(int n, char *buf, size_t cap); /* class name length, -1 if none */
-
-/* Exports / entry points (entry.hpp). Indexed [0, export_qty); each row is one entry point.
- * export_ea is its address (BADADDR for a pure forwarder), export_ordinal its ordinal (or,
- * for a name-only entry, its entry index); name/forwarder are snprintf-style (<0 = none, and
- * most exports have no forwarder). */
-size_t idakit_export_qty(void);
-idakit_ea_t idakit_export_ea(size_t idx);
-uint64_t idakit_export_ordinal(size_t idx);
-int64_t idakit_export_name(size_t idx, char *buf, size_t cap);
-int64_t idakit_export_forwarder(size_t idx, char *buf, size_t cap);
-
-/* Imports (nalt.hpp). Import addresses have no stable random-access index, so imports_build
- * walks every module's names into one owned snapshot handle (never NULL; empty if none),
- * released with imports_free. qty is its length; item n fills the thunk address and ordinal
- * (0 = imported by name); name/module copy snprintf-style (name is absent, -1, for an
- * import-by-ordinal). */
-void *idakit_imports_build(void);
-size_t idakit_imports_qty(const void *h);
-int idakit_imports_item(const void *h, size_t n, idakit_ea_t *ea, uint64_t *ord);
-int64_t idakit_imports_name(const void *h, size_t n, char *buf, size_t cap);
-int64_t idakit_imports_module(const void *h, size_t n, char *buf, size_t cap);
-void idakit_imports_free(void *h);
-
-/* Strings (strlist.hpp + bytes.hpp). strlist_build (re)builds IDA's string list (an
- * O(database) scan); strlist_qty is its length and strlist_item fills the nth entry's address,
- * octet length, and STRTYPE code (1 ok / 0 out of range). strlit_contents decodes the string
- * at (ea, len, type) to UTF-8, snprintf-style (<0 = undecodable), replacing undecodable units
- * with U+FFFD. */
-void idakit_strlist_build(void);
-size_t idakit_strlist_qty(void);
-int idakit_strlist_item(size_t n, idakit_ea_t *ea, int *length, int *type);
-int64_t idakit_strlit_contents(idakit_ea_t ea, size_t len, int type, char *buf, size_t cap);
-
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size); /* bytes read, <0 on fail */
-
-/* Typed value reads (bytes.hpp). Each reads a value in the database's byte order and returns 1
- * with *out filled, or 0 if any covered byte is uninitialized (unmapped or never assigned a
- * value). Widths are 1/2/4/8 bytes. */
-int idakit_get_u8(idakit_ea_t ea, uint8_t *out);
-int idakit_get_u16(idakit_ea_t ea, uint16_t *out);
-int idakit_get_u32(idakit_ea_t ea, uint32_t *out);
-int idakit_get_u64(idakit_ea_t ea, uint64_t *out);
-
-/* Read the string literal at ea (bytes.hpp): auto-detect its length (get_max_strlit_length) for
- * STRTYPE code `strtype` (0 = 1-byte C string), then decode to UTF-8 snprintf-style, replacing
- * undecodable units with U+FFFD. Returns the decoded length, or -1 if ea holds no such string. */
-int64_t idakit_get_strlit(idakit_ea_t ea, int strtype, char *buf, size_t cap);
-
-/* Byte/item classification and navigation (bytes.hpp). `flags` is IDA's per-address class
- * word; the Rust side masks it against MS_CLS for is_code/is_data. An item head is the first
- * address of a defined instruction or data item; next/prev_head return BADADDR when no head
- * lies within the given bound. */
-uint64_t idakit_get_flags(idakit_ea_t ea);
-idakit_ea_t idakit_get_item_head(idakit_ea_t ea); /* start of the item covering ea */
-idakit_ea_t idakit_get_item_end(idakit_ea_t ea);  /* one-past-end of the item at ea */
-idakit_ea_t idakit_get_next_head(idakit_ea_t ea,
-                                 idakit_ea_t maxea); /* next head before maxea, or BADADDR */
-idakit_ea_t idakit_get_prev_head(idakit_ea_t ea,
-                                 idakit_ea_t minea); /* prev head at/after minea, or BADADDR */
 
 /* Binary pattern search (bytes.hpp). binpat_compile parses an IDA-style pattern string
  * ("B8 ? ? ? ? 90", ? = wildcard byte) at radix `radix` into an opaque handle bound to
  * `ea`'s byte width; returns NULL on a parse error, with the reason written to errbuf.
  * bin_search scans [start,end) for a compiled pattern, returning the match address or
  * BADADDR when none is found (the headless NOBREAK/NOSHOW flags are always applied); `flags`
- * adds BIN_SEARCH_* semantics (case, bitmask). Release the handle with binpat_free.
- * min_ea/max_ea are the database's address bounds, the natural default search range. */
-idakit_ea_t idakit_min_ea(void);
-idakit_ea_t idakit_max_ea(void);
+ * adds BIN_SEARCH_* semantics (case, bitmask). Release the handle with binpat_free. */
 void *idakit_binpat_compile(idakit_ea_t ea, const char *pattern, int radix, char *errbuf,
                             size_t errcap);
 /* Build a compiled pattern directly from raw bytes and a per-byte mask (no parsing): the
@@ -154,86 +75,19 @@ void idakit_binpat_free(void *pat);
 void idakit_binpat_stats(const void *pat, size_t *total, size_t *anchors);
 idakit_ea_t idakit_bin_search(idakit_ea_t start, idakit_ea_t end, const void *pat, int flags);
 
-/* Comment read (bytes.hpp get_cmt): fills buf snprintf-style with the comment at ea, regular
- * (rptble 0) or repeatable (rptble 1); returns its length, or -1 if there is none. The write
- * half is the plain libida `set_cmt`. */
-int64_t idakit_get_cmt(idakit_ea_t ea, uint8_t rptble, char *buf, size_t cap);
-
 /* Patch `size` bytes at ea (bytes.hpp patch_bytes; originals are saved and recoverable via
  * IDA's get_original_*). Returns 0 without patching anything when any target byte is
  * unmapped, so a bad address fails cleanly instead of patching a truncated prefix, and 1
  * on success. */
 int idakit_patch_bytes(idakit_ea_t ea, const void *buf, size_t size);
 
-/* Database-wide metadata. String getters are snprintf-style (return the full length). */
-int idakit_bitness(void);                             /* 16, 32, or 64 */
-idakit_ea_t idakit_image_base(void);                  /* preferred load address */
-int64_t idakit_proc_name(char *buf, size_t cap);      /* processor id, e.g. "metapc" */
-int64_t idakit_file_type_name(char *buf, size_t cap); /* input file format, human text */
-int64_t idakit_input_path(char *buf, size_t cap);     /* full path of the analyzed input */
-int64_t idakit_root_filename(char *buf, size_t cap);  /* input's base file name */
-
-/* Names (name.hpp). get_ea_name reads the name at an address; get_name_ea is the reverse
- * lookup (BADADDR if unknown); demangle_name turns a mangled symbol into readable form (<0
- * if the name is not mangled). The nlist enumerates every named address. String getters are
- * snprintf-style; <0 means "no such name". */
-int64_t idakit_get_ea_name(idakit_ea_t ea, char *buf, size_t cap);
-idakit_ea_t idakit_get_name_ea(const char *name);
-int64_t idakit_demangle_name(const char *name, char *buf, size_t cap);
-size_t idakit_nlist_size(void);
-idakit_ea_t idakit_nlist_ea(size_t idx);
-int64_t idakit_nlist_name(size_t idx, char *buf, size_t cap);
-
-/* Name classification predicates (bytes.hpp has_*_name) over an address's flags word
- * (idakit_get_flags): 1/0 for user (explicit), auto (IDA-generated), dummy (address-derived).
- * Exposed so idakit can pin its FF_NAME/FF_LABL derivation to IDA's own logic. */
-int idakit_has_user_name(uint64_t flags);
-int idakit_has_auto_name(uint64_t flags);
-int idakit_has_dummy_name(uint64_t flags);
-
-/* Cross-reference cursor (ordinary flow excluded). `is_to` selects xrefs TO ea (callers
- * of ea) vs FROM ea (what ea references). Open returns an opaque cursor; step it with
- * next (writes from/to/type/iscode/user, returns 1 until exhausted, then 0); release with
- * close. type is the cref_t/dref_t byte; user is xrefblk_t::user (1 = user-defined, 0 = IDA). */
-void *idakit_xref_open(idakit_ea_t ea, uint8_t is_to);
-uint8_t idakit_xref_next(void *cursor, idakit_ea_t *from, idakit_ea_t *to, uint8_t *type,
-                         uint8_t *iscode, uint8_t *user);
-void idakit_xref_close(void *cursor);
-
 int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap); /* prototype text, <0 on miss */
-
-/* Disassembly-level control-flow graph (gdl.hpp qflow_chart_t). cfg_build constructs the
- * flow chart for the function containing `ea`, including tail chunks, with the given
- * FC_ flags, returning an opaque handle (NULL if no function is there); the block list is
- * fully materialized at build time. Blocks are indexed [0, nblocks); block() fills the
- * range and fc_block_type_t `kind`. The first nproper() blocks are the function's own; the
- * rest are external stubs for out-of-function jump/call targets, built as zero-length
- * [target, target) ranges. Edges are block indices: succ/pred(n, i) return the i-th
- * successor/predecessor of block n, or -1 if out of range. Release with cfg_free. */
-void *idakit_cfg_build(idakit_ea_t ea, int flags);
-int idakit_cfg_nblocks(const void *h);
-int idakit_cfg_nproper(const void *h);
-int idakit_cfg_block(const void *h, int n, idakit_ea_t *start, idakit_ea_t *end, int *kind);
-int idakit_cfg_nsucc(const void *h, int n);
-int idakit_cfg_succ(const void *h, int n, int i);
-int idakit_cfg_npred(const void *h, int n);
-int idakit_cfg_pred(const void *h, int n, int i);
-void idakit_cfg_free(void *h);
 
 /* The disassembly-level stack frame (frame.hpp) is exposed only through the structured
  * frame-type walk (idakit_frame_type_walk), which lives with the shared type vtbl below since it
  * drives that machinery. */
 
 int idakit_hexrays_init(void); /* 1 = decompiler ready, 0 = unavailable */
-void *idakit_decompile(idakit_ea_t ea, char *errbuf,
-                       size_t cap); /* cfunc handle (owns a ref); NULL on fail, reason in errbuf */
-void idakit_cfunc_dispose(void *cfunc);
-int64_t idakit_cfunc_pseudocode(void *cfunc, char *buf, size_t cap); /* tag-stripped text length */
-void idakit_cfunc_ctree_counts(void *cfunc, int *n_insn, int *n_expr, int *n_calls);
-/* Diagnostic: per-op expression histograms (256 ints each), from the SDK visitor (v_hist,
- * ground truth) and a mirror of the extraction walker's recursion (w_hist). Their difference
- * names the op the walker mis-visits. */
-void idakit_cfunc_ctree_expr_gap(void *cfunc, int *v_hist, int *w_hist);
 
 /* Streaming ctree extraction. The facade is a pure SDK walker: it reads a decompiled
  * function's ctree depth-first and, per node, calls one Rust callback in `vtbl` to mint
@@ -333,33 +187,20 @@ int64_t idakit_type_name_at(uint32_t ordinal, char *buf, size_t cap);
 int idakit_type_walk_ordinal(uint32_t ordinal, const idakit_type_vtbl_t *v, void *ctx,
                              uint32_t *root);
 
-/* Type-apply writes (typeinf.hpp). Shared result codes:
+/* Type-apply result codes (shared with the generated type-build bridge; decoded by idakit against
+ * TypeWriteResult.code):
  *   OK        parsed/resolved and applied
- *   ERR_INPUT apply_type_decl: parse failed; apply_named_type: no such type
+ *   ERR_INPUT parse failed, or no such named type
  *   ERR_APPLY apply_tinfo rejected the type at ea */
 #define IDAKIT_TYPE_OK 0
 #define IDAKIT_TYPE_ERR_INPUT 1
 #define IDAKIT_TYPE_ERR_APPLY 2
 
-/* Parse `decl` against the local til and apply it at ea (apply_tinfo, TINFO_DEFINITE | flags). Any
- * captured IDA diagnostic (parse or apply) is copied to errbuf (snprintf-style, truncated to cap;
- * empty when nothing was captured). */
-int idakit_apply_type_decl(idakit_ea_t ea, const char *decl, int flags, char *errbuf, size_t cap);
-/* Resolve the existing named type `name` in the local til and apply it at ea. No error channel:
- * the code distinguishes not-found (ERR_INPUT) from an apply rejection (ERR_APPLY). */
-int idakit_apply_named_type(idakit_ea_t ea, const char *name);
-/* Parse the C declaration(s) in `input` into the database's local til; returns the error count
- * (0 = ok), with any diagnostics copied to errbuf (snprintf-style, truncated to cap). */
-int idakit_define_type(const char *input, char *errbuf, size_t cap);
-
-/* Clear any type applied at ea (set_tinfo to null). Idempotent: OK when there was nothing to clear;
- * ERR_APPLY only if the kernel refuses to remove an existing type. */
-int idakit_clear_type(idakit_ea_t ea);
-
 /* Type-recipe opcodes: a postfix (RPN) bytecode idakit serializes a type builder into, walked by
- * idakit_apply_type_recipe over a tinfo_t stack. A leaf op pushes a type; a transform op pops one
- * and pushes the wrapped result; a well-formed recipe leaves exactly one type. Multi-byte operands
- * are little-endian. Kept in lockstep with ty_build.rs by hand (no shared codegen). */
+ * the generated bridge's recipe apply path over a tinfo_t stack. A leaf op pushes a type; a
+ * transform op pops one and pushes the wrapped result; a well-formed recipe leaves exactly one
+ * type. Multi-byte operands are little-endian. Kept in lockstep with ty_build.rs by hand (no shared
+ * codegen). */
 #define IDAKIT_RECIPE_VOID 0
 #define IDAKIT_RECIPE_BOOL 1
 #define IDAKIT_RECIPE_INT 2      /* + u8 bytes, u8 signed */
@@ -375,88 +216,22 @@ int idakit_clear_type(idakit_ea_t ea);
         types then the return type (return pushed first, params in order), push the function type. \
       */
 
-/* Build the tinfo the recipe in (buf, len) encodes and apply it at ea (apply_tinfo, TINFO_DEFINITE
- * | flags). This is idakit's preferred lowering path: one crossing, no handle threading. Shares the
- * OK/ERR_INPUT/ERR_APPLY codes. ERR_INPUT is a malformed buffer, a named leaf that does not
- * resolve, or an embedded decl that fails to parse. Any captured diagnostic is copied to errbuf
- * (snprintf-style, truncated to cap; empty when none). */
-int idakit_apply_type_recipe(idakit_ea_t ea, const uint8_t *buf, size_t len, int flags,
-                             char *errbuf, size_t cap);
-
-/* Granular tinfo_t construction (the node-at-a-time counterpart to the recipe path). Each builder
- * returns a fresh owned handle (an opaque tinfo_t*, null on failure); the transforms copy their
- * input and do not consume it, so every handle the caller mints is freed exactly once with
- * idakit_tinfo_free. idakit itself uses the recipe path; these expose the type algebra for direct
- * FFI. `bytes` selects the width (1/2/4/8/16 for int, 4/8 for float). */
-void *idakit_tinfo_void(void);
-void *idakit_tinfo_bool(void);
-void *idakit_tinfo_int(uint8_t bytes, int is_signed);
-void *idakit_tinfo_float(uint8_t bytes);
-/* Resolve the existing named type `name` as a typedef ref; null if no such type. */
-void *idakit_tinfo_named(const char *name);
-/* Parse `decl` against the local til; null on a parse failure, with the reason copied to errbuf. */
-void *idakit_tinfo_decl(const char *decl, char *errbuf, size_t cap);
-void *idakit_tinfo_ptr(const void *inner);
-void *idakit_tinfo_array(const void *inner, uint64_t nelems);
-void *idakit_tinfo_const(const void *inner);
-void *idakit_tinfo_volatile(const void *inner);
-/* Apply the built handle at ea (apply_tinfo, TINFO_DEFINITE | flags). OK / ERR_APPLY; any captured
- * diagnostic is copied to errbuf. Does not free the handle. */
-int idakit_tinfo_apply(idakit_ea_t ea, const void *handle, int flags, char *errbuf, size_t cap);
-/* Dispose a handle from any idakit_tinfo_* builder. Null is tolerated. */
-void idakit_tinfo_free(void *handle);
-
-/* Prototype surgery: read the function type at ea, mutate one field, then rebuild (create_func) and
- * re-apply. Each is a full read-modify-write under one fatal-trap guard; replacement types arrive
- * as a recipe buffer (the same postfix bytecode as idakit_apply_type_recipe). The idx-taking shims
- * write the current parameter count to *arity (for an out-of-range diagnostic). */
+/* Prototype-surgery result codes (IDAKIT_SIG_*), shared with the generated type-build bridge and
+ * decoded by idakit against TypeWriteResult.code. */
 #define IDAKIT_SIG_OK 0
 #define IDAKIT_SIG_NO_PROTOTYPE 1 /* ea has no function type to edit */
 #define IDAKIT_SIG_ARG_RANGE 2    /* arg index >= parameter count */
 #define IDAKIT_SIG_BUILD 3        /* a replacement-type recipe did not build */
 #define IDAKIT_SIG_APPLY 4        /* create_func or apply_tinfo rejected the rebuilt signature */
-int idakit_func_set_rettype(idakit_ea_t ea, const uint8_t *recipe, size_t len, char *errbuf,
-                            size_t cap);
-int idakit_func_set_argtype(idakit_ea_t ea, size_t idx, const uint8_t *recipe, size_t len,
-                            size_t *arity, char *errbuf, size_t cap);
-int idakit_func_rename_arg(idakit_ea_t ea, size_t idx, const char *name, size_t *arity,
-                           char *errbuf, size_t cap);
-int idakit_func_set_cc(idakit_ea_t ea, int cc, char *errbuf, size_t cap);
-int idakit_func_prepend_this(idakit_ea_t ea, const uint8_t *recipe, size_t len, char *errbuf,
-                             size_t cap);
 
-/* Struct/union member edits. Each shim loads the named type from the local til, resolves the
- * member, mutates it, and lets the til auto-save (edits to an attached typeref propagate to every
- * reference). A member is selected by name (member_name != NULL) or by bit offset (member_name ==
- * NULL, offset in member_bit); add places at member_bit, or appends when member_bit is
- * IDAKIT_MEMBER_APPEND. The return is 0 on success, a positive IDAKIT_TEDIT_* sentinel for an
+/* Member-edit result codes (IDAKIT_TEDIT_* and IDAKIT_MEMBER_APPEND), shared with the generated
+ * type-build bridge. The edit returns 0 on success, a positive IDAKIT_TEDIT_* sentinel for an
  * idakit-side pre-failure, or the negative raw tinfo_code_t the kernel returned (mirrored by the
- * TypeEditCode enum). Any kernel diagnostic is captured into errbuf snprintf-style. */
+ * TypeEditCode enum). */
 #define IDAKIT_TEDIT_NO_TYPE 1              /* no such named type in the local til */
 #define IDAKIT_TEDIT_NO_MEMBER 2            /* the member (name/offset) did not resolve */
 #define IDAKIT_TEDIT_BUILD 3                /* a member-type recipe did not build */
 #define IDAKIT_MEMBER_APPEND ((uint64_t)-1) /* add at the end rather than a fixed offset */
-int idakit_udt_add_member(const char *type_name, const char *member_name, const uint8_t *recipe,
-                          size_t len, uint64_t member_bit, char *errbuf, size_t cap);
-int idakit_udt_set_member_type(const char *type_name, const char *member_name, uint64_t member_bit,
-                               const uint8_t *recipe, size_t len, char *errbuf, size_t cap);
-int idakit_udt_rename_member(const char *type_name, const char *member_name, uint64_t member_bit,
-                             const char *new_name, char *errbuf, size_t cap);
-int idakit_udt_del_member(const char *type_name, const char *member_name, uint64_t member_bit,
-                          char *errbuf, size_t cap);
-
-/* Enum-member edits, mirroring the struct/union verbs for enum constants. A constant is selected
- * by name (values may repeat within a bitmask enum, names are unique), so there is no offset key or
- * recipe build. Same return convention as the idakit_udt_* shims (0 / positive IDAKIT_TEDIT_* /
- * negative tinfo_code_t). */
-int idakit_enum_add_member(const char *type_name, const char *member_name, uint64_t value,
-                           char *errbuf, size_t cap);
-int idakit_enum_set_member_value(const char *type_name, const char *member_name, uint64_t value,
-                                 char *errbuf, size_t cap);
-int idakit_enum_rename_member(const char *type_name, const char *member_name, const char *new_name,
-                              char *errbuf, size_t cap);
-int idakit_enum_del_member(const char *type_name, const char *member_name, char *errbuf,
-                           size_t cap);
 
 /* One fragment of a scattered (ALOC_DIST) local's location. `atype` is the fragment's own
  * ALOC_* (register or stack); `reg`/`sval` hold its register or stack offset; off/size give the
@@ -545,95 +320,26 @@ typedef struct idakit_emit_vtbl_t {
  * to `*root`. Returns 0 on success, non-zero if `cfunc` is NULL. */
 int idakit_cfunc_walk_ctree(void *cfunc, const idakit_emit_vtbl_t *vtbl, void *ctx, uint32_t *root);
 
-/* Instruction decode. One flat POD per instruction (no owned handle): the facade decodes
- * on the kernel thread, folds every raw operand type into a semantic kind, resolves
- * register names and control-flow facts, and copies it all into `*out`. Bounded to
- * IDAKIT_MAX_OPS operands, so a fixed struct beats a streaming vtable here. */
+/* Instruction-decode sentinels shared with the generated decode bridge and the Rust
+ * idakit_sys::IDAKIT_* consts; the bridge caps populated operands at IDAKIT_MAX_OPS. */
 #define IDAKIT_MAX_OPS 8
 
-/* idakit_op_t::kind: semantic operand classification (raw optype is folded away). */
+/* Semantic operand kind codes (raw optype folded away). */
 #define IDAKIT_OP_REG 0
 #define IDAKIT_OP_MEM 1
 #define IDAKIT_OP_IMM 2
 #define IDAKIT_OP_NEAR 3
 #define IDAKIT_OP_FAR 4
 
-/* idakit_reg_t::num sentinel for an absent base/index register. */
+/* Sentinel for an absent base/index register. */
 #define IDAKIT_REG_NONE 0xFFFF
 
-/* idakit_insn_t::flow bit flags. */
+/* Instruction control-flow bit flags. */
 #define IDAKIT_FLOW_CALL 0x01
 #define IDAKIT_FLOW_RET 0x02
 #define IDAKIT_FLOW_JUMP 0x04
 #define IDAKIT_FLOW_INDIRECT 0x08
 #define IDAKIT_FLOW_STOPS 0x10
-
-/* A register reference: number, idakit RegClass code, selected byte width, and IDA's
- * resolved name (NUL-terminated, empty if unresolved). num == IDAKIT_REG_NONE means the
- * slot is absent (a memory operand with no base/index). */
-typedef struct {
-  uint16_t num;
-  uint8_t cls;
-  uint8_t width;
-  char name[16];
-} idakit_reg_t;
-
-/* One decoded operand. Which fields are meaningful depends on `kind`:
- *   REG  -> reg
- *   MEM  -> base, index, scale, disp, addr (target, BADADDR if none)
- *   IMM  -> value
- *   NEAR -> addr (target)
- *   FAR  -> value (offset), sel (selector)
- * `idx` is the original operand slot (feature bits are keyed by it). `access` bit0 =
- * read, bit1 = written. `dtype` is the raw op_dtype_t. */
-typedef struct {
-  uint8_t kind;
-  uint8_t idx;
-  uint8_t dtype;
-  uint8_t access;
-  uint8_t scale;
-  idakit_reg_t reg;
-  idakit_reg_t base;
-  idakit_reg_t index;
-  int64_t disp;
-  uint64_t value;
-  uint64_t addr;
-  uint16_t sel;
-} idakit_op_t;
-
-/* One decoded instruction. `isa`: 0 = x86, 1 = x64. `target` is the direct branch/call
- * destination or BADADDR. `nops` counts the populated `ops` (trailing empty slots
- * dropped). On the error return -3, `err_optype`/`err_op` carry the offending raw type
- * and operand index. */
-typedef struct {
-  uint64_t ea;
-  uint64_t target;
-  uint16_t itype;
-  uint8_t len;
-  uint8_t isa;
-  uint8_t nops;
-  uint8_t flow;
-  uint8_t err_optype;
-  uint8_t err_op;
-  char mnemonic[24];
-  idakit_op_t ops[IDAKIT_MAX_OPS];
-} idakit_insn_t;
-
-/* Decode the instruction at `ea` into `*out`. Returns 0 on success, or negative:
- *   -1 no instruction decodes at `ea`
- *   -2 the database's processor has no wired decoder (only x86/x64 for now)
- *   -3 a supported processor produced an operand this decoder cannot model
- *      (should be unreachable for x86; err_op is the slot, err_optype the raw operand type)
- *   -4 an o_reg operand's register lands in no modelled RegClass (flags, fpu/sse
- *      control-status, ...); err_op is the slot, err_optype the register number. */
-int idakit_decode_insn(idakit_ea_t ea, idakit_insn_t *out);
-
-/* Alignment sources: the facade's own discriminants, so idakit can pin its hand-maintained
- * mirrors to this SDK build in a test. Each fills the caller's buffer in the corresponding
- * Rust enum's discriminant order: reg_class_ids -> 13 idakit RegClass codes; op_dtype_ids ->
- * 19 op_dtype_t (dt_*) values. */
-void idakit_reg_class_ids(uint8_t *out);
-void idakit_op_dtype_ids(uint8_t *out);
 
 #ifdef __cplusplus
 }

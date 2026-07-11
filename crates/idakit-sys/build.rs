@@ -49,10 +49,8 @@ const FACADE_SOURCES: &[&str] = &[
     "facade/runtime.cpp",
     "facade/db.cpp",
     "facade/types.cpp",
-    "facade/type_build.cpp",
     "facade/type_walk.cpp",
     "facade/hexrays.cpp",
-    "facade/decode.cpp",
 ];
 
 // Compile one cxx bridge into its own static archive. cxx_build seeds a cc::Build with the

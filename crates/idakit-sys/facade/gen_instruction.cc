@@ -150,8 +150,8 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
 // Fold one raw op_t into a semantic OperandData. Returns 0, -3 for a raw operand type this decoder
 // does not model (unreachable for x86, which enumerates all of its operand types), or -4 for an
 // o_reg whose register lands in no modelled class (reg_class_of -> RC_BAD).
-// `dst` arrives value-initialized ({}), so every field the raw facade left at memset-zero (value,
-// sel, scale, disp, and addr for a non-mem/non-near operand) is already zero here; only the register
+// `dst` arrives value-initialized ({}), so the fields that stay zero for a given operand (value,
+// sel, scale, disp, and addr for a non-mem/non-near operand) are already zero here; only the register
 // slots need the REG_NONE sentinel that a zeroed RegisterData would not carry.
 int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
   dst.idx = (uint8_t)idx;

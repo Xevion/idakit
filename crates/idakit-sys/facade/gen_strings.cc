@@ -1,5 +1,5 @@
-// Hand-written Custom bodies for the generated strings domain (namespace idakit_gen). Mirrors the
-// raw idakit_strlist_* facade over IDA's string list: build_strlist (an O(database) scan), its
+// Hand-written Custom bodies for the generated strings domain (namespace idakit_gen). Wraps IDA's
+// string list: build_strlist (an O(database) scan), its
 // length, and the nth entry filled into the StrlistItem shared struct (throw when out of range).
 // strlit_contents decodes the string at (ea,len,type) to a rust::String (throw when undecodable).
 // StrlistItem is a cxx shared struct, defined by the cxx-generated gen_bridge.h.

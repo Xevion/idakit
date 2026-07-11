@@ -1,7 +1,7 @@
 // Hand-written Custom bodies for the generated name domain (namespace idakit_gen). Name lookups
 // (get_ea_name, get_name_ea, demangle_name), the name-list accessors, and the flags-word name
-// classifiers. These mirror the raw idakit_name_* facade; the string getters throw (Err on no
-// name) rather than returning a -1 length. SDK calls are ::-qualified: several generated symbols
+// classifiers. The string getters throw (Err on no name) rather than returning a -1 length. SDK
+// calls are ::-qualified: several generated symbols
 // share the SDK's own spelling (get_ea_name, has_user_name, ...), so an unqualified call would
 // recurse into this namespace instead of reaching the kernel.
 

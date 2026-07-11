@@ -1,18 +1,6 @@
-//! Segment enumeration facade (`idakit_seg_*`).
+//! Segment permission bits from `segment.hpp`: [`SEGPERM_EXEC`], [`SEGPERM_WRITE`], [`SEGPERM_READ`].
 
-use std::ffi::{c_char, c_int};
-
-use crate::Address;
-
-unsafe extern "C" {
-    pub fn idakit_seg_qty() -> c_int;
-    pub fn idakit_seg_name(n: c_int, buf: *mut c_char, cap: usize) -> i64;
-    pub fn idakit_seg_start(n: c_int) -> Address;
-    pub fn idakit_seg_end(n: c_int) -> Address;
-    pub fn idakit_seg_perm(n: c_int) -> c_int;
-    pub fn idakit_seg_bitness(n: c_int) -> c_int;
-    pub fn idakit_seg_class(n: c_int, buf: *mut c_char, cap: usize) -> i64;
-}
+use std::ffi::c_int;
 
 /// `SEGPERM_EXEC` from `segment.hpp`: the segment is executable.
 pub const SEGPERM_EXEC: c_int = 1;

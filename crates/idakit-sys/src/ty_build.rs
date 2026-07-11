@@ -1,233 +1,12 @@
-//! Type-write facade (`idakit_apply_*`, `idakit_define_type`, `idakit_apply_type_recipe`, the
-//! granular `idakit_tinfo_*` builders).
+//! Type-write result codes and recipe opcodes shared with the generated type-build bridge.
+//!
+//! These constants pin idakit's decode of the generated bridge's `TypeWriteResult.code` and its
+//! recipe serialization to the values the generated C++ (`gen_type_build.cc`) emits; the two sides
+//! are kept aligned by hand.
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::c_int;
 
-use crate::Address;
-
-unsafe extern "C" {
-    /// Parse `decl` against the local til and apply it at `ea` (`apply_tinfo`, `TINFO_DEFINITE |
-    /// flags`). Returns [`IDAKIT_TYPE_OK`]/[`IDAKIT_TYPE_ERR_INPUT`] (parse failed)/
-    /// [`IDAKIT_TYPE_ERR_APPLY`]; any captured IDA diagnostic is copied to `errbuf` (truncated to
-    /// `cap`).
-    pub fn idakit_apply_type_decl(
-        ea: Address,
-        decl: *const c_char,
-        flags: c_int,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Resolve the existing named type `name` in the local til and apply it at `ea`. The code
-    /// distinguishes not-found ([`IDAKIT_TYPE_ERR_INPUT`]) from an apply rejection
-    /// ([`IDAKIT_TYPE_ERR_APPLY`]); there is no error text.
-    pub fn idakit_apply_named_type(ea: Address, name: *const c_char) -> c_int;
-
-    /// Parse C declaration(s) in `input` into the database's local til, returning the error count
-    /// (0 = ok) with any diagnostics copied to `errbuf` (truncated to `cap`).
-    pub fn idakit_define_type(input: *const c_char, errbuf: *mut c_char, cap: usize) -> c_int;
-
-    /// Clear any type applied at `address` (`set_tinfo` to null). Idempotent:
-    /// [`IDAKIT_TYPE_OK`] when there was nothing to clear, [`IDAKIT_TYPE_ERR_APPLY`] only if the
-    /// kernel refuses to remove an existing type.
-    pub fn idakit_clear_type(ea: Address) -> c_int;
-
-    /// Build the `tinfo` the postfix recipe in `(buf, len)` encodes and apply it at `ea`
-    /// (`apply_tinfo`, `TINFO_DEFINITE | flags`). idakit's preferred lowering path: one crossing,
-    /// no handle threading. Same codes as [`idakit_apply_type_decl`]; [`IDAKIT_TYPE_ERR_INPUT`] is
-    /// a malformed buffer, an unresolved named leaf, or an unparseable embedded decl. The opcodes
-    /// are the `IDAKIT_RECIPE_*` constants; multi-byte operands are little-endian.
-    pub fn idakit_apply_type_recipe(
-        ea: Address,
-        buf: *const u8,
-        len: usize,
-        flags: c_int,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// The `void` type as a fresh owned handle, freed with [`idakit_tinfo_free`].
-    pub fn idakit_tinfo_void() -> *mut c_void;
-
-    /// The boolean type as a fresh owned handle, freed with [`idakit_tinfo_free`].
-    pub fn idakit_tinfo_bool() -> *mut c_void;
-
-    /// A `bytes`-wide integer (1/2/4/8/16), signed when `is_signed` is non-zero, as a fresh owned
-    /// handle. Null if the width is unsupported.
-    pub fn idakit_tinfo_int(bytes: u8, is_signed: c_int) -> *mut c_void;
-
-    /// A `bytes`-wide float (4 or 8) as a fresh owned handle. Null if the width is not 4 or 8.
-    pub fn idakit_tinfo_float(bytes: u8) -> *mut c_void;
-
-    /// The existing named type `name`, resolved as a typedef ref into a fresh owned handle. Null if
-    /// the local til has no such type.
-    pub fn idakit_tinfo_named(name: *const c_char) -> *mut c_void;
-
-    /// The type `decl` parses to against the local til, as a fresh owned handle. Null on a parse
-    /// failure, with the reason copied to `errbuf` (truncated to `cap`).
-    pub fn idakit_tinfo_decl(decl: *const c_char, errbuf: *mut c_char, cap: usize) -> *mut c_void;
-
-    /// A pointer to `inner` as a fresh owned handle. `inner` is copied, not consumed; both handles
-    /// must be freed. Null if `inner` is null.
-    pub fn idakit_tinfo_ptr(inner: *const c_void) -> *mut c_void;
-
-    /// An `nelems`-element array of `inner` as a fresh owned handle. `inner` is copied, not
-    /// consumed. Null if `inner` is null or `nelems` exceeds `u32`.
-    pub fn idakit_tinfo_array(inner: *const c_void, nelems: u64) -> *mut c_void;
-
-    /// A `const`-qualified copy of `inner` as a fresh owned handle. `inner` is not consumed. Null
-    /// if `inner` is null.
-    pub fn idakit_tinfo_const(inner: *const c_void) -> *mut c_void;
-
-    /// A `volatile`-qualified copy of `inner` as a fresh owned handle. `inner` is not consumed.
-    /// Null if `inner` is null.
-    pub fn idakit_tinfo_volatile(inner: *const c_void) -> *mut c_void;
-
-    /// Apply the built `handle` at `ea` (`apply_tinfo`, `TINFO_DEFINITE | flags`). Returns
-    /// [`IDAKIT_TYPE_OK`]/[`IDAKIT_TYPE_ERR_APPLY`] ([`IDAKIT_TYPE_ERR_INPUT`] if `handle` is null),
-    /// with any captured diagnostic copied to `errbuf`. Does not free the handle.
-    pub fn idakit_tinfo_apply(
-        ea: Address,
-        handle: *const c_void,
-        flags: c_int,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Dispose a handle from any `idakit_tinfo_*` builder. Null is tolerated.
-    pub fn idakit_tinfo_free(handle: *mut c_void);
-
-    /// Replace the return type of the function type at `ea` with the recipe in `(recipe, len)`,
-    /// then rebuild and re-apply. See the `IDAKIT_SIG_*` codes; diagnostics land in `errbuf`.
-    pub fn idakit_func_set_rettype(
-        ea: Address,
-        recipe: *const u8,
-        len: usize,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Replace parameter `idx`'s type with the recipe in `(recipe, len)`, then rebuild and re-apply.
-    /// Writes the current parameter count to `*arity`; [`IDAKIT_SIG_ARG_RANGE`] if `idx` is past it.
-    pub fn idakit_func_set_argtype(
-        ea: Address,
-        idx: usize,
-        recipe: *const u8,
-        len: usize,
-        arity: *mut usize,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Rename parameter `idx` to `name`, then rebuild and re-apply. Writes the current parameter
-    /// count to `*arity`; [`IDAKIT_SIG_ARG_RANGE`] if `idx` is past it.
-    pub fn idakit_func_rename_arg(
-        ea: Address,
-        idx: usize,
-        name: *const c_char,
-        arity: *mut usize,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Set the calling convention of the function type at `ea` to the raw `CM_CC_*` code `cc`, then
-    /// rebuild and re-apply.
-    pub fn idakit_func_set_cc(ea: Address, cc: c_int, errbuf: *mut c_char, cap: usize) -> c_int;
-
-    /// Insert an implicit `this` parameter of the recipe type in `(recipe, len)` at index 0, then
-    /// rebuild and re-apply.
-    pub fn idakit_func_prepend_this(
-        ea: Address,
-        recipe: *const u8,
-        len: usize,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Add a member named `member_name` of the recipe type in `(recipe, len)` to the named
-    /// struct/union `type_name`, placed at bit offset `member_bit` (or appended when it is
-    /// [`IDAKIT_MEMBER_APPEND`]). See the `IDAKIT_TEDIT_*` codes; diagnostics land in `errbuf`.
-    pub fn idakit_udt_add_member(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        recipe: *const u8,
-        len: usize,
-        member_bit: u64,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Replace the type of the member selected by `member_name` (or, when it is null, by bit offset
-    /// `member_bit`) in the named struct/union `type_name` with the recipe in `(recipe, len)`.
-    pub fn idakit_udt_set_member_type(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        member_bit: u64,
-        recipe: *const u8,
-        len: usize,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Rename the member selected by `member_name` (or, when it is null, by bit offset `member_bit`)
-    /// in the named struct/union `type_name` to `new_name`.
-    pub fn idakit_udt_rename_member(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        member_bit: u64,
-        new_name: *const c_char,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Delete the member selected by `member_name` (or, when it is null, by bit offset `member_bit`)
-    /// from the named struct/union `type_name`.
-    pub fn idakit_udt_del_member(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        member_bit: u64,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Add an enum constant named `member_name` with `value` to the named enum `type_name`. Same
-    /// `IDAKIT_TEDIT_*` codes as the `idakit_udt_*` shims.
-    pub fn idakit_enum_add_member(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        value: u64,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Set the value of the enum constant `member_name` in the named enum `type_name`.
-    pub fn idakit_enum_set_member_value(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        value: u64,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Rename the enum constant `member_name` in the named enum `type_name` to `new_name`.
-    pub fn idakit_enum_rename_member(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        new_name: *const c_char,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-
-    /// Delete the enum constant `member_name` from the named enum `type_name`.
-    pub fn idakit_enum_del_member(
-        type_name: *const c_char,
-        member_name: *const c_char,
-        errbuf: *mut c_char,
-        cap: usize,
-    ) -> c_int;
-}
-
-/// A prototype-surgery edit succeeded ([`idakit_func_set_rettype`] and its siblings).
+/// A prototype-surgery edit succeeded.
 pub const IDAKIT_SIG_OK: c_int = 0;
 /// The address carries no function type to edit.
 pub const IDAKIT_SIG_NO_PROTOTYPE: c_int = 1;
@@ -238,9 +17,8 @@ pub const IDAKIT_SIG_BUILD: c_int = 3;
 /// `create_func` or `apply_tinfo` rejected the rebuilt signature.
 pub const IDAKIT_SIG_APPLY: c_int = 4;
 
-/// Member-edit pre-failure ([`idakit_udt_add_member`] and its siblings): no such named type in the
-/// local til. A positive sentinel; a successful edit is 0 and a kernel rejection is a negative
-/// `tinfo_code_t`.
+/// Member-edit pre-failure: no such named type in the local til. A positive sentinel; a successful
+/// edit is 0 and a kernel rejection is a negative `tinfo_code_t`.
 pub const IDAKIT_TEDIT_NO_TYPE: c_int = 1;
 /// Member-edit pre-failure: the member (by name or bit offset) did not resolve.
 pub const IDAKIT_TEDIT_NO_MEMBER: c_int = 2;
@@ -249,8 +27,7 @@ pub const IDAKIT_TEDIT_BUILD: c_int = 3;
 /// `member_bit` value that appends a new member at the end rather than a fixed offset.
 pub const IDAKIT_MEMBER_APPEND: u64 = u64::MAX;
 
-/// Result of a successful type apply ([`idakit_apply_type_decl`]/[`idakit_apply_named_type`]/
-/// [`idakit_apply_type_recipe`]/[`idakit_tinfo_apply`]).
+/// Result of a successful type apply.
 pub const IDAKIT_TYPE_OK: c_int = 0;
 /// A bad input to a type apply: an unparseable declaration, a named type that does not exist, or a
 /// malformed recipe.

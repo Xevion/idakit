@@ -1,6 +1,6 @@
 // Hand-written Custom body for the generated import domain (namespace idakit_gen). One walk of
 // every module's enum_import_names collects the whole import table into an owned rust::Vec<ImportRec>
-// returned by value, retiring the raw facade's build-handle -> index-N -> free dance. ImportRec is a
+// returned by value in a single crossing. ImportRec is a
 // cxx shared struct (name/module are rust::String), defined by the cxx-generated gen_bridge.h.
 
 #include <pro.h>
