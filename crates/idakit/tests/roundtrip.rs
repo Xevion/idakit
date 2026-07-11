@@ -113,6 +113,67 @@ fn run(idb: &mut idakit::Database) {
         );
     }
 
+    // Generated function domain (idakit_gen::func_*): every accessor cross-checked against the raw
+    // idakit_func_* facade over every function. func_qty is a templated body; the lookups are
+    // hand-written (facade/gen_function.cc).
+    {
+        use std::os::raw::c_char;
+
+        use idakit_sys as sys;
+
+        // SAFETY: read-only raw facade calls on the open database, used throughout this block.
+        assert_eq!(
+            sys::func_qty(),
+            unsafe { sys::idakit_func_qty() },
+            "generated func_qty disagrees with raw"
+        );
+        for (n, func) in idb.functions().enumerate() {
+            let ea = func.address().get();
+            assert_eq!(
+                sys::func_ea(n),
+                unsafe { sys::idakit_func_ea(n) },
+                "generated func_ea disagrees with raw at index {n}"
+            );
+            assert_eq!(
+                sys::func_start(ea),
+                unsafe { sys::idakit_func_start(ea) },
+                "generated func_start disagrees with raw at {ea:#x}"
+            );
+            assert_eq!(
+                sys::func_end(ea),
+                unsafe { sys::idakit_func_end(ea) },
+                "generated func_end disagrees with raw at {ea:#x}"
+            );
+            assert_eq!(
+                sys::func_flags(ea),
+                unsafe { sys::idakit_func_flags(ea) },
+                "generated func_flags disagrees with raw at {ea:#x}"
+            );
+            assert_eq!(
+                sys::func_chunk_qty(ea),
+                unsafe { sys::idakit_func_chunk_qty(ea) },
+                "generated func_chunk_qty disagrees with raw at {ea:#x}"
+            );
+            // func_name: generated Result<String> vs the raw snprintf buffer (large enough for any
+            // realistic name; the assert guards against silent truncation).
+            let mut buf = [0u8; 4096];
+            let raw_len =
+                unsafe { sys::idakit_func_name(ea, buf.as_mut_ptr() as *mut c_char, buf.len()) };
+            assert!(
+                (raw_len as usize) < buf.len(),
+                "func_name buffer too small at {ea:#x}"
+            );
+            let raw_name = (raw_len > 0)
+                .then(|| String::from_utf8_lossy(&buf[..raw_len as usize]).into_owned());
+            assert_eq!(
+                sys::func_name(ea).ok(),
+                raw_name,
+                "generated func_name disagrees with raw at {ea:#x}"
+            );
+        }
+        println!("cxx generated function cross-check OK: {func_count} functions agree with raw");
+    }
+
     let first = idb.functions().next().expect("a function");
     let address = first.address();
     let original = first.name();

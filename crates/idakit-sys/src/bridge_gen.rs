@@ -9,7 +9,8 @@
 include!(concat!(env!("OUT_DIR"), "/gen_bridge.rs"));
 
 pub use ffi::{
-    ChunkInfo, ImportRec, gen_seg_bitness, gen_seg_class, gen_seg_end, gen_seg_name, gen_seg_perm,
+    ChunkInfo, ImportRec, func_chunk_qty, func_ea, func_end, func_flags, func_name, func_qty,
+    func_start, gen_seg_bitness, gen_seg_class, gen_seg_end, gen_seg_name, gen_seg_perm,
     gen_seg_qty, gen_seg_span_total, gen_seg_start, imports_build, range_all_chunks,
     range_chunk_info, range_entry_chunk, range_size,
 };
