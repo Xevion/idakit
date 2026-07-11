@@ -313,8 +313,53 @@ pub const SEGMENT: Domain = Domain {
     ],
 };
 
+/// The import-table domain: the whole table returned as one owned `Vec<ImportRec>` snapshot,
+/// retiring the raw handle/index/free dance. The single body is hand-written in
+/// `facade/gen_import.cc` (a callback walk over every module's `enum_import_names`).
+pub const IMPORT: Domain = Domain {
+    name: "import",
+    sdk_includes: &["<nalt.hpp>"],
+    externs: &[],
+    structs: &[SharedStruct {
+        name: "ImportRec",
+        doc: "One import-table row, returned inside the [`imports_build`] snapshot.",
+        fields: &[
+            Field {
+                name: "ea",
+                ty: FieldTy::U64,
+                doc: "Address the import is bound to.",
+            },
+            Field {
+                name: "ord",
+                ty: FieldTy::U64,
+                doc: "Ordinal, or `0` when imported by name.",
+            },
+            Field {
+                name: "name",
+                ty: FieldTy::Str,
+                doc: "Symbol name, empty when imported by ordinal.",
+            },
+            Field {
+                name: "module",
+                ty: FieldTy::Str,
+                doc: "Owning module (library) name.",
+            },
+        ],
+    }],
+    custom_tu: Some("facade/gen_import.cc"),
+    fns: &[FnSpec {
+        name: "imports_build",
+        receiver: None,
+        args: &[],
+        ret: RetKind::Vec("ImportRec"),
+        body: BodyKind::Custom,
+        doc: "The whole import table as an owned, `Send` snapshot, built in one walk of every \
+              module's `enum_import_names`.",
+    }],
+};
+
 /// Every domain fed into the unified bridge, in emission order.
-pub const DOMAINS: &[&Domain] = &[&SEGMENT];
+pub const DOMAINS: &[&Domain] = &[&SEGMENT, &IMPORT];
 
 impl FieldTy {
     fn rust(&self) -> TokenStream {

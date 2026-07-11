@@ -1,21 +1,19 @@
-// cxx-bridged import-table snapshot (namespace idakit_cxx). One call walks every module's
-// enum_import_names into an owned rust::Vec<ImportRec>, returned by value. This retires the raw
-// facade's build-handle -> index-N-times -> free dance (idakit_imports_build/_qty/_item/_name/
-// _module/_free): no handle, no per-field accessor, no free. ImportRec is a cxx shared struct
-// whose name/module fields are rust::String, so the owned strings ride inside the snapshot.
+// Hand-written Custom body for the generated import domain (namespace idakit_gen). One walk of
+// every module's enum_import_names collects the whole import table into an owned rust::Vec<ImportRec>
+// returned by value, retiring the raw facade's build-handle -> index-N -> free dance. ImportRec is a
+// cxx shared struct (name/module are rust::String), defined by the cxx-generated gen_bridge.h.
 
 #include <pro.h>
-
 #include <ida.hpp>
 
 #include <nalt.hpp> // enum_import_names, get_import_module_qty, get_import_module_name
 
-#include "import_cxx.h"
-// The generated header defines the ImportRec shared struct (full definition needed to
-// construct and push it); import_cxx.h only forward-declares it.
-#include "idakit-sys/src/bridge_import.rs.h"
+#include "gen_import.h"
+// The cxx-generated header defines ImportRec (full definition needed to construct and push it) and
+// instantiates rust::Vec<ImportRec>; gen_import.h only forward-declares ImportRec.
+#include "gen_bridge.h"
 
-namespace idakit_cxx {
+namespace idakit_gen {
 
 namespace {
 
@@ -50,4 +48,4 @@ rust::Vec<ImportRec> imports_build() {
   return rows;
 }
 
-} // namespace idakit_cxx
+} // namespace idakit_gen

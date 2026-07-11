@@ -43,7 +43,6 @@ mod bridge_cfg2;
 #[cfg(feature = "test-shims")]
 mod bridge_cfunc;
 mod bridge_gen;
-mod bridge_import;
 #[cfg(feature = "test-shims")]
 mod bridge_probe;
 #[cfg(feature = "test-shims")]
@@ -74,7 +73,6 @@ pub use bridge_cfg2::*;
 #[cfg(feature = "test-shims")]
 pub use bridge_cfunc::*;
 pub use bridge_gen::*;
-pub use bridge_import::*;
 #[cfg(feature = "test-shims")]
 pub use bridge_probe::*;
 #[cfg(feature = "test-shims")]

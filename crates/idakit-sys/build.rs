@@ -176,14 +176,6 @@ fn main() {
         sdk_include_str,
         &[],
     );
-    // The whole import table returned by value as one owned Vec<ImportRec> snapshot.
-    cxx_bridge(
-        "src/bridge_import.rs",
-        &["facade/import_cxx.cc"],
-        "idakit_cxx_import_bridge",
-        sdk_include_str,
-        &[],
-    );
     // The SDK POD range_t bound as a Trivial ExternType, crossing by value.
     cxx_bridge(
         "src/bridge_range.rs",
@@ -299,9 +291,6 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/cfg_cxx.cc");
     println!("cargo:rerun-if-changed=facade/cfg_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_cfg.rs");
-    println!("cargo:rerun-if-changed=facade/import_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/import_cxx.h");
-    println!("cargo:rerun-if-changed=src/bridge_import.rs");
     println!("cargo:rerun-if-changed=facade/range_cxx.cc");
     println!("cargo:rerun-if-changed=facade/range_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_range.rs");
@@ -327,6 +316,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bridge_gen.rs");
     println!("cargo:rerun-if-changed=build_support/gen.rs");
     println!("cargo:rerun-if-changed=facade/gen_custom.cc");
+    println!("cargo:rerun-if-changed=facade/gen_import.cc");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
     println!("cargo:rerun-if-changed=facade/type_walk.hpp");
