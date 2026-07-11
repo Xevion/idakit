@@ -1,6 +1,6 @@
-//! Question B (the spike): turning a `cxx::Exception` into a structured `idakit` snafu error.
+//! Turning a `cxx::Exception` into a structured `idakit` snafu error.
 //!
-//! `cxx`'s `Result<T>` gives back a `cxx::Exception` whose only datum is `what()` -- a flat string,
+//! `cxx`'s `Result<T>` gives back a `cxx::Exception` whose only datum is `what()`, a flat string,
 //! the C++ `std::exception::what()`. That alone does not match idakit's house style, where an
 //! [`Error`] variant is struct-style and carries context (`op`, `address`, `qerrno`, `reason`).
 //! These tests exercise a real `cxx::Exception` (from the `probe_throw` shim, which needs no
@@ -17,8 +17,8 @@ use idakit_sys as sys;
 
 /// Illustrative conversion: the message from a `cxx::Exception` (a segment-index read that threw),
 /// mapped to a structured variant carrying the offending index and the C++ message. The variant
-/// here is only a stand-in (idakit has no segment-by-index error today); the point is the *shape*
-/// -- a flat `what()` becoming a struct-style snafu error with call-site context. In a real kernel
+/// here is only a stand-in (idakit has no segment-by-index error today); the point is the *shape*,
+/// a flat `what()` becoming a struct-style snafu error with call-site context. In a real kernel
 /// path `qerrno` and `reason` would come from `Database::last_reason()` rather than from `what()`.
 fn to_structured(op: &'static str, index: i32, what: &str) -> Error {
     Error::WriteRejected {
@@ -54,7 +54,7 @@ fn cxx_exception_becomes_structured_error() {
 #[test]
 fn cxx_exception_is_a_flat_string_only() {
     // The limitation, made explicit: everything cxx hands back is the one what() string. There is
-    // no qerrno, index, or typed reason to read off the Exception itself -- any structure has to be
+    // no qerrno, index, or typed reason to read off the Exception itself; any structure has to be
     // supplied by the Rust call site (context) or re-derived from the kernel (last_reason()).
     let err = sys::probe_throw(1).unwrap_err();
     assert!(err.what().contains("out_of_range"));

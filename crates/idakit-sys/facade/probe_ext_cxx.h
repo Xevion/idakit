@@ -1,6 +1,6 @@
-// Declarations for the Round-10 cxx spike bridge (test-shims only). Actuates three findings the
-// earlier rounds only characterized: a custom rust::behavior::trycatch, a Pin<&mut Self> mutation
-// path, and a real database write crossing the bridge. Bodies live in probe_ext_cxx.cc; the
+// Declarations for the cxx spike bridge (test-shims only). Proves three findings: a custom
+// rust::behavior::trycatch, a Pin<&mut Self> mutation path, and a real database write crossing the
+// bridge. Bodies live in probe_ext_cxx.cc; the
 // cxx-generated shim (from src/bridge_probe_ext.rs) calls them by their idakit_cxx-namespaced name.
 #pragma once
 
@@ -25,9 +25,9 @@
 // cxx's ::rust::detail::Fail (with operator()(char const*) / (std::string const&)) is complete.
 //
 // Two arms beyond cxx's stock `catch (std::exception const&)`:
-//   * interr_exc_t -- more-derived, so it must precede the std::exception arm; formats the internal
+//   * interr_exc_t: more-derived, so it must precede the std::exception arm; formats the internal
 //     code into the message (the base what() would just say "std::exception").
-//   * catch (...)  -- a non-std::exception throw (e.g. `throw 42;`) that cxx's default lets escape
+//   * catch (...): a non-std::exception throw (e.g. `throw 42;`) that cxx's default lets escape
 //     to std::terminate becomes an ordinary Rust Err here.
 namespace rust {
 namespace behavior {
@@ -63,20 +63,20 @@ using AddrCursor = ::idakit_addr_cursor_t;
 // name it by value; probe_ext_cxx.cc includes the generated header for the full definition.
 enum class WriteOutcome : int32_t;
 
-// Goal A: throwing probes exercising the three trycatch arms above.
+// Throwing probes exercising the three trycatch arms above.
 rust::String ext_throw_plain_int();
 rust::String ext_throw_interr(int32_t code);
 rust::String ext_throw_coded(int32_t code);
 
-// Goal B: the Pin<&mut Self> cursor.
+// The Pin<&mut Self> cursor.
 std::unique_ptr<AddrCursor> make_addr_cursor(uint64_t init);
 
-// Goal B: real database writes crossing the bridge (implicit-current-DB libida calls). Each throws
-// on rejection, so cxx surfaces it as a Rust Err -- a bare failure signal, per idakit's strategy.
+// Real database writes crossing the bridge (implicit-current-DB libida calls). Each throws
+// on rejection, so cxx surfaces it as a Rust Err, a bare failure signal, per idakit's strategy.
 void ext_set_name(uint64_t ea, rust::Str name);
 void ext_set_cmt(uint64_t ea, rust::Str comment, bool repeatable);
 
-// Goal C: a cxx shared enum returned by value.
+// A cxx shared enum returned by value.
 WriteOutcome ext_classify(int32_t code);
 
 } // namespace idakit_cxx

@@ -1,14 +1,14 @@
 // Fault-injection probes for the cxx bridge (test-shims only). Two jobs:
 //
-//   * probe_fatal_through_cxx / idakit_test_fatal_through_cxx -- force the "dangerous topology"
-//     for Question A: a guarded<> setjmp ABOVE a cxx Result-shim, with the fatal firing from C++
+//   * probe_fatal_through_cxx / idakit_test_fatal_through_cxx force the "dangerous topology": a
+//     guarded<> setjmp ABOVE a cxx Result-shim, with the fatal firing from C++
 //     BELOW the shim, so the trap's longjmp must unwind through the cxx-generated try/catch
 //     landing-pad frame. idakit's real code never produces this (cxx bridge fns are leaves that
 //     never call guarded<>, and the guarded entry points are raw extern "C" whose lambdas call
-//     the SDK directly), so this is synthetic on purpose -- it establishes the empirical boundary.
+//     the SDK directly), so this is synthetic on purpose; it establishes the empirical boundary.
 //
-//   * probe_throw -- a body that throws the selected C++ exception, so a test can see exactly how
-//     cxx surfaces each as a Rust Err (Question B) and where it does not (a non-std::exception
+//   * probe_throw: a body that throws the selected C++ exception, so a test can see exactly how
+//     cxx surfaces each as a Rust Err and where it does not (a non-std::exception
 //     throw escapes cxx's `catch (std::exception const&)` shim and std::terminate()s).
 
 #include <pro.h>
@@ -63,7 +63,7 @@ idakit_drop_probe_t::~idakit_drop_probe_t() {
 // The cxx-generated C-ABI shim for probe_fatal_through_cxx. cxx does not offer a supported way to
 // call a bridge shim from C++, so we declare the mangled symbol directly. Its shape is pattern (d)
 // from cxxbridge's mangle scheme: {namespace}$cxxbridge1${CXXVERSION}${name}, where CXXVERSION is
-// cxx's minor version -- 197 for cxx 1.0.197 (pinned in Cargo.toml). A cxx bump changes it and
+// cxx's minor version, 197 for cxx 1.0.197 (pinned in Cargo.toml). A cxx bump changes it and
 // breaks this test-only link loudly. The return value is a {ptr,len} POD (rust::repr::PtrLen);
 // we mirror its layout with an identical local struct (extern "C" keys on the name, not the type).
 namespace {
@@ -85,7 +85,7 @@ extern "C" int idakit_test_fatal_through_cxx(int kind) {
     ::rust::String ret;
     ProbePtrLen pl = idakit_cxx$cxxbridge1$197$probe_fatal_through_cxx(kind, &ret);
     // Only reached if no longjmp fired: the interr kind, where cxx's shim caught interr_exc_t and
-    // reported a Rust Err (pl.ptr != nullptr). The Err's heap allocation leaks here -- acceptable
+    // reported a Rust Err (pl.ptr != nullptr). The Err's heap allocation leaks here, acceptable
     // in a one-shot test process, and it never happens on the exit/abort (longjmp) paths.
     return pl.ptr != nullptr ? 1 : 0;
   });

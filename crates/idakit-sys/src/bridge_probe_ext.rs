@@ -1,26 +1,26 @@
-//! Round-10 cxx spike bridge actuating three findings (`idakit_cxx::ext_*`, `test-shims` only).
+//! `cxx` spike bridge proving three findings about the bridge boundary (`idakit_cxx::ext_*`,
+//! `test-shims` only).
 //!
 //! A hand-written `cxx_build` bridge (not the `cxx-gen` one, which inlines the `trycatch`
-//! definition and complicates the override) carrying the last three cxx probes:
+//! definition and complicates the override) carrying three probes:
 //!
-//! - **Goal A** installs a custom [`rust::behavior::trycatch`](https://docs.rs/cxx) in
-//!   `facade/probe_ext_cxx.h`, so this bridge's shims catch more than cxx's stock
-//!   `std::exception`: a non-`std::exception` throw ([`ext_throw_plain_int`]) becomes an `Err`
-//!   instead of a `std::terminate`, and an `interr_exc_t` ([`ext_throw_interr`]) carries its code
-//!   in the message rather than the base `what()`'s uninformative `"std::exception"`.
-//! - **Goal B** proves the `Pin<&mut Self>` mutation path: [`AddrCursor::advance`] /
-//!   [`AddrCursor::seek`] take `self: Pin<&mut AddrCursor>` and bind to the **non-const** C++
-//!   members, mutating state that [`AddrCursor::pos`] (a `&self` const member) reads back. The
-//!   real-database writes [`ext_set_name`] / [`ext_set_cmt`] cross the same boundary into
-//!   implicit-current-DB libida calls.
-//! - **Goal C** carries a cxx **shared enum** [`WriteOutcome`], returned by value from
-//!   [`ext_classify`]; cxx emits its own C++ enum and (because the type can hold any `repr`) a
-//!   Rust match over it needs a wildcard arm.
+//! - A custom [`rust::behavior::trycatch`](https://docs.rs/cxx) in `facade/probe_ext_cxx.h`
+//!   makes this bridge's shims catch more than cxx's stock `std::exception`: a non-`std::exception`
+//!   throw ([`ext_throw_plain_int`]) becomes an `Err` instead of a `std::terminate`, and an
+//!   `interr_exc_t` ([`ext_throw_interr`]) carries its code in the message rather than the base
+//!   `what()`'s uninformative `"std::exception"`.
+//! - [`AddrCursor::advance`] / [`AddrCursor::seek`] take `self: Pin<&mut AddrCursor>` and bind to
+//!   the **non-const** C++ members, mutating state that [`AddrCursor::pos`] (a `&self` const
+//!   member) reads back. The real-database writes [`ext_set_name`] / [`ext_set_cmt`] cross the
+//!   same boundary into implicit-current-DB libida calls.
+//! - [`WriteOutcome`] is a cxx **shared enum**, returned by value from [`ext_classify`]; cxx emits
+//!   its own C++ enum and (because the type can hold any `repr`) a Rust match over it needs a
+//!   wildcard arm.
 //!
 //! The C++ side (custom `trycatch`, cursor, bodies) is `facade/probe_ext_cxx.{h,cc}`. Gated behind
 //! `test-shims` like [`bridge_probe`](crate::bridge_probe) and [`bridge_cfunc`](crate::bridge_cfunc).
 
-// Goal A's custom trycatch is now productionized as the shared `facade/idakit_trycatch.h`, which
+// The custom trycatch here is also productionized as the shared `facade/idakit_trycatch.h`, which
 // every production bridge includes (plus a scoped `set_interr_throws` arm). This spike keeps its own
 // inline copy so its throwing probes stay self-contained.
 #[cxx::bridge(namespace = "idakit_cxx")]

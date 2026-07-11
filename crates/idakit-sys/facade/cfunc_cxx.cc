@@ -2,7 +2,7 @@
 // smart pointer cfuncptr_t (typedef qrefcnt_t<cfunc_t>), for the still-experimental inline CfuncVal
 // value type (test-shims only). Plain facade TU, no cxx.
 //
-// qrefcnt_t is NOT std::shared_ptr -- it holds a bare cfunc_t* whose copy-ctor increments an
+// qrefcnt_t is NOT std::shared_ptr, it holds a bare cfunc_t* whose copy-ctor increments an
 // intrusive cfunc_t::refcnt and whose destructor calls release() (decrement, delete at zero). The
 // shims placement-construct / copy-construct / destruct a cfuncptr_t at a caller-owned address (a
 // repr(C) Rust mirror on the stack), which moveit drives to give the inline value type C++
@@ -32,8 +32,8 @@ bool ensure_hexrays() {
 
 // Decompile ea's function into a heap cfuncptr_t (one owned ref), or nullptr on any failure.
 // NOT wrapped in the setjmp/longjmp guard: a decompiler fatal would abort here rather than trap
-// (the production idakit_decompile guards; this spike path stays deliberately simple -- see the
-// Goal C discussion). Callers in the test drive a known-decompilable function.
+// (the production idakit_decompile guards; this spike path stays deliberately simple since callers
+// only ever drive a known-decompilable function).
 ::cfuncptr_t *decompile_heap(std::uint64_t ea) {
   if (!ensure_hexrays())
     return nullptr;

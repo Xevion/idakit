@@ -1,9 +1,9 @@
 // cxx extern "Rust" opaque-visitor type walk (namespace idakit_cxx). visit_walker_t (declared in
-// typewalk_walker.hpp) is a faithful parallel of the raw facade's type_walker_t: the same
-// depth-first tinfo_t recursion and the same recursion-safe placeholder + `defined`-set dedup, but
-// the emit target is the extern "Rust" opaque visitor's member functions (vis->scalar(...),
-// vis->named_ref(...), vis->fill_struct(...)) that cxx generates, not a C function-pointer table.
-// Per-call names cross as rust::Str and arrays as rust::Slice, borrowed for the one call.
+// typewalk_walker.hpp) does a depth-first tinfo_t recursion guarded by a placeholder plus a
+// `defined`-set dedup, so a self-referential type resolves instead of looping. It emits through the
+// extern "Rust" opaque visitor's member functions (vis->scalar(...), vis->named_ref(...),
+// vis->fill_struct(...)) that cxx generates, not a C function-pointer table. Per-call names cross as
+// rust::Str and arrays as rust::Slice, borrowed for the one call.
 
 #include <pro.h>
 

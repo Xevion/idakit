@@ -75,7 +75,6 @@ pub struct ExternTy {
 }
 
 /// Whether an [`ExternTy`] is trivially relocatable (crosses by value) or opaque.
-#[allow(dead_code)]
 pub enum ExternKind {
     /// `#[repr(C)]` mirror crossing by value; the fields mirror the SDK POD's layout.
     Trivial(&'static [Field]),
@@ -84,7 +83,6 @@ pub enum ExternKind {
 }
 
 /// A `cxx` shared struct: one POD declared once, generated into both languages, crossed by value.
-#[allow(dead_code)]
 pub struct SharedStruct {
     /// The struct's name (e.g. `"ChunkInfo"`).
     pub name: &'static str,
@@ -95,7 +93,6 @@ pub struct SharedStruct {
 }
 
 /// One field of a [`SharedStruct`] or a `Trivial` [`ExternTy`] mirror.
-#[allow(dead_code)]
 pub struct Field {
     /// Field name.
     pub name: &'static str,
@@ -858,8 +855,8 @@ pub const STRINGS: Domain = Domain {
 };
 
 /// The control-flow-graph domain: the SDK's `qflow_chart_t` bound as an `Opaque` `ExternType`
-/// (`FlowChart`) owned by [`UniquePtr`](cxx::UniquePtr), so its C++ deleter retires the raw path's
-/// manual free plus a Rust `Drop`. `size` is a `self:`-member call bound straight to
+/// (`FlowChart`) owned by [`UniquePtr`](cxx::UniquePtr), so its C++ deleter handles cleanup without
+/// a manual free function or a hand-written `Drop` impl. `size` is a `self:`-member call bound straight to
 /// `qflow_chart_t::size()` (no facade body); every other accessor is a free function over a
 /// `&FlowChart`, hand-written in `facade/gen_cfg.cc`. Block bounds return by value as a `BlockInfo`
 /// shared struct, and the successor/predecessor edge lists copy into owned `Vec<u32>`.

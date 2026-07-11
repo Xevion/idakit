@@ -337,7 +337,7 @@ mod tests {
     fn out_of_domain_data_type_is_rejected() {
         let mut op = blank_op();
         op.kind = sys::IDAKIT_OP_IMM;
-        op.data_type = 200; // outside the modeled domain, no longer folded to Void
+        op.data_type = 200; // outside the modeled scalar/float domain
         assert!(let Err(DecodeError::UnsupportedDataType { dtype: 200, .. }) = operand(&op, at()));
     }
 }

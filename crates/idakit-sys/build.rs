@@ -162,7 +162,7 @@ fn main() {
     // bridge is its own static archive (see `cxx_bridge`).
     //
     // A hand-written bridge over the *generated* qflow_chart_t ExternType, proving a hand bridge
-    // can share a spec-generated ExternType (the cfg domain itself is now generated).
+    // can share a spec-generated ExternType with the CFG domain.
     cxx_bridge(
         "src/bridge_cfg2.rs",
         &["facade/cfg2_cxx.cc"],
@@ -178,7 +178,8 @@ fn main() {
         sdk_include_str,
         &[],
     );
-    // The tinfo type walk driven by an extern "Rust" opaque visitor (retires the raw fn-ptr vtbl).
+    // The tinfo type walk driven by an extern "Rust" opaque visitor: each node forwards straight
+    // into the sink, with no C function-pointer table or void* context to marshal.
     cxx_bridge(
         "src/bridge_typewalk.rs",
         &["facade/typewalk_cxx.cc"],

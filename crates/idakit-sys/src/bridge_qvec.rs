@@ -35,7 +35,7 @@
 /// `(RustName, "cxx_name")` per instantiation. The `#[cxx::bridge]` fn declarations and the
 /// `impl UniquePtr<T> {}` container glue cannot be folded in here, because `cxx_build` parses
 /// the source file textually (with `syn`) and cannot expand a `macro_rules!`, so anything it
-/// must see -- the bridge module itself -- has to be written literally below.
+/// must see, the bridge module itself, has to be written literally below.
 macro_rules! qvec_opaque {
     ($rust:ident, $cxx:literal) => {
         #[doc = concat!("An `Opaque` `cxx` binding of the SDK container `", $cxx, "`.")]

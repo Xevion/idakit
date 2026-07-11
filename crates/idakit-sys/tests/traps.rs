@@ -40,7 +40,7 @@ fn interr_inside_guarded_call_is_trapped() {
     assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
 }
 
-// The Question-A probe: force the dangerous topology the ordinary trap tests never hit -- a
+// Force the dangerous topology the ordinary trap tests never hit: a
 // guarded<> setjmp ABOVE a cxx `Result`-shim, with the fatal firing from C++ BELOW the shim, so
 // the trap's longjmp must unwind *through* the cxx-generated try/catch landing-pad frame. If a
 // longjmp past a cxx shim corrupted the C++ runtime or the stack, these would crash or hang
@@ -63,7 +63,7 @@ fn abort_longjmp_across_cxx_shim_is_trapped() {
 }
 
 // An interr is a *throw* (interr_exc_t : std::exception), not a longjmp. Fired below a cxx shim,
-// cxx's own `catch (std::exception const&)` intercepts it first -- so it becomes a bridge Err (the
+// cxx's own `catch (std::exception const&)` intercepts it first, so it becomes a bridge Err (the
 // guard sees the shim return, not a trap) rather than reaching guarded<>'s interr catch. The guard
 // entry reports this interception as rc == 1. Linux-only: interr throws across the libida boundary
 // only there.
@@ -82,7 +82,7 @@ fn interr_across_cxx_shim_is_intercepted_by_cxx() {
     );
 }
 
-// Question B, the cxx-side: what cxx's default trycatch actually surfaces. Its generated shim
+// What cxx's default trycatch actually surfaces. Its generated shim
 // catches only `std::exception const&`, giving back a flat `cxx::Exception` whose `what()` is the
 // C++ message and nothing else (no qerrno, no structured context). A non-std::exception throw
 // (kind 2) escapes the catch and std::terminate()s the process, so it is documented, not run.
@@ -99,7 +99,7 @@ fn cxx_surfaces_std_exception_as_flat_err() {
     );
 }
 
-// Goal A (Round 10): the custom `rust::behavior::trycatch` in probe_ext_cxx.h widens what the
+// The custom `rust::behavior::trycatch` in probe_ext_cxx.h widens what the
 // bridge shims catch. cxx's default terminates on a non-`std::exception` throw; the `catch (...)`
 // arm turns it into an ordinary `Err`. (If the override had failed to take, `throw 42` would
 // std::terminate and abort this test process instead of returning here.)
@@ -113,7 +113,7 @@ fn custom_trycatch_catches_non_std_exception() {
     );
 }
 
-// Goal A: an interr_exc_t carries only an int code and inherits the uninformative base what()
+// An interr_exc_t carries only an int code and inherits the uninformative base what()
 // ("std::exception"). The custom `catch (const interr_exc_t&)` arm is what makes the code legible.
 #[test]
 fn custom_trycatch_enriches_interr_with_its_code() {
@@ -125,11 +125,11 @@ fn custom_trycatch_enriches_interr_with_its_code() {
     );
 }
 
-// Goal A, the enrichment boundary: a `cxx::Exception` carries only `what()` -- one flat string, no
+// The enrichment boundary: a `cxx::Exception` carries only `what()`, one flat string, no
 // qerrno/typed context. Structured data can ride only AS that string. Here a code is encoded into
 // the throw message and re-parsed Rust-side. idakit's production path instead treats the throw as a
 // bare failure signal and re-derives qerrno/reason from the kernel (Database::last_reason()), so the
-// C++ body needs no message at all -- see crates/idakit/tests/cxx_error.rs.
+// C++ body needs no message at all (see crates/idakit/tests/cxx_error.rs).
 #[test]
 fn cxx_exception_only_carries_a_string_code_must_be_encoded() {
     let err = ext_throw_coded(7).unwrap_err();
@@ -142,7 +142,7 @@ fn cxx_exception_only_carries_a_string_code_must_be_encoded() {
     assert_eq!(code, 7, "the only channel is the what() string");
 }
 
-// Goal B (Round 10): a `self: Pin<&mut Self>` receiver on a cxx opaque type binds to a NON-const
+// A `self: Pin<&mut Self>` receiver on a cxx opaque type binds to a NON-const
 // C++ member and mutates. The generated shim takes `&AddrCursor::advance` as a non-const member
 // pointer; here the mutation persists across separate calls (advance then seek then read back).
 #[test]
@@ -168,8 +168,8 @@ fn pin_mut_self_mutates_opaque_across_calls() {
     assert_eq!(cursor.pos(), 0x2000, "Pin<&mut Self> seek persisted");
 }
 
-// Goal C (Round 10): a cxx shared enum returned by value. cxx emits its own C++ enum and, on the
-// Rust side, a `#[repr(transparent)] struct { repr: i32 }` with associated consts -- it can hold
+// A cxx shared enum returned by value. cxx emits its own C++ enum and, on the
+// Rust side, a `#[repr(transparent)] struct { repr: i32 }` with associated consts; it can hold
 // any i32, so this match REQUIRES the wildcard arm (there is no exhaustive variant set to match).
 #[test]
 fn shared_enum_crosses_by_value_and_needs_a_wildcard() {
@@ -189,10 +189,10 @@ fn shared_enum_crosses_by_value_and_needs_a_wildcard() {
     assert_eq!(ext_classify(1).repr, 1);
 }
 
-// The Round-3 win, in isolation: dropping a cxx `UniquePtr<T>` runs the C++ deleter. DropProbe's
-// destructor bumps a process-global counter (nextest gives each test its own process, so it
-// starts at 0). This is the same generated `$unique_ptr$...$drop` glue that backs the cfg
-// bridge's `FlowChart`, so it proves the manual `_free` + Rust `Drop` really are retired.
+// Dropping a cxx `UniquePtr<T>` runs the C++ deleter. DropProbe's destructor bumps a
+// process-global counter (nextest gives each test its own process, so it starts at 0). This is the
+// same generated `$unique_ptr$...$drop` glue that backs the cfg bridge's `FlowChart`, so a
+// UniquePtr field needs no manual free function or hand-written Drop impl.
 #[test]
 fn cxx_unique_ptr_runs_cpp_deleter_on_drop() {
     assert_eq!(drop_probe_count(), 0, "counter should start clean");

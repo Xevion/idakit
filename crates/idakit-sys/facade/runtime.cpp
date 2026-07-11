@@ -60,7 +60,7 @@
 namespace idakit_facade {
 
 // libida's frames carry no unwind info, so a C++ throw from our stand-in can't propagate
-// through them -- longjmp can (it just restores the stack pointer). It must reach a setjmp
+// through them; longjmp can (it just restores the stack pointer). It must reach a setjmp
 // in the same C call chain, with no Rust frame between (Rust can't be longjmped over).
 thread_local jmp_buf g_exit_jmp;
 thread_local bool g_exit_guarded = false;
@@ -345,15 +345,15 @@ void end_ui_capture() {
 
 using namespace idakit_facade;
 
-// idalib writes a goodbye banner to stdout during teardown -- on Windows at idalib.dll's
-// DLL_PROCESS_DETACH -- which corrupts a stdout parser like `nextest --list`. From a static ctor
+// idalib writes a goodbye banner to stdout during teardown (on Windows at idalib.dll's
+// DLL_PROCESS_DETACH), which corrupts a stdout parser like `nextest --list`. From a static ctor
 // (portable across MSVC/GCC/clang unlike __attribute__((constructor))) we register an atexit that
 // points fd 1 at the null device. The CRT runs atexit handlers before it detaches dependency DLLs,
-// so the redirect is already in place when idalib emits the banner -- it lands in the null fd.
+// so the redirect is already in place when idalib emits the banner; it lands in the null fd.
 // Flush first so any legitimate buffered stdout still reaches the real fd 1.
 //
 // This runs only on the normal CRT exit path. On Windows std::process::exit is ExitProcess, which
-// skips atexit -- the swallow never runs and the banner leaks; returning from main (or exit())
+// skips atexit, so the swallow never runs and the banner leaks; returning from main (or exit())
 // runs it. POSIX std::process::exit calls exit(), which runs atexit, so Unix is unaffected. Test
 // binaries must therefore return from main, not call std::process::exit (see corpus_matrix).
 // Whole-archive linking (build.rs) keeps this object in every binary, even ones that call no

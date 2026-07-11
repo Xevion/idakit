@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <memory>
 
-// The two qvector<T> instantiations bound here name real global SDK types --
-// intvec_t (typedef qvector<int>) and rangevec_t (struct : qvector<range_t>) --
+// The two qvector<T> instantiations bound here name real global SDK types,
+// intvec_t (typedef qvector<int>) and rangevec_t (struct : qvector<range_t>),
 // so cxx names them with no local `using` alias. Both must be complete here:
 // cxx's UniquePtr glue instantiates std::unique_ptr<rangevec_t> in its own
 // generated TU, which sees only this header.

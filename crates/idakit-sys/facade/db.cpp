@@ -47,7 +47,7 @@ extern "C" void idakit_binpat_free(void *pat) {
 }
 
 // Fills *total with the compiled pattern's byte length and *anchors with the count of
-// concrete (non-wildcard) bytes -- mask[i] != 0, or every byte when the mask is empty.
+// concrete (non-wildcard) bytes: mask[i] != 0, or every byte when the mask is empty.
 // IDA's parser silently drops tokens it can't read, so a typo'd pattern lands here with
 // anchors == 0: nothing to match on.
 extern "C" void idakit_binpat_stats(const void *pat, size_t *total, size_t *anchors) {

@@ -2,7 +2,7 @@
 // recipe applied to two of IDA's own generic containers. intvec_t (qvector<int>)
 // and rangevec_t (qvector<range_t>) are each bound as a cxx Opaque ExternType and
 // read two ways: a copying shim to an owned rust::Vec, and a zero-copy rust::Slice
-// borrowed from the container's {array, n} (never touching alloc/qalloc/qfree --
+// borrowed from the container's {array, n} (never touching alloc/qalloc/qfree;
 // Rust only reads). The cross-check in roundtrip.rs proves both agree with the
 // existing per-index / raw-facade paths.
 
@@ -23,7 +23,7 @@
 // qvector<T>::resize_noinit carries CASSERT(is_trivially_constructible<T>), which
 // range_t (user-declared ctors) fails. qvector's members are all inline in pro.h,
 // so use-based implicit instantiation emits exactly the members we call
-// (push_back/size/begin/empty/ctor/dtor) and none of the asserting ones -- which is
+// (push_back/size/begin/empty/ctor/dtor) and none of the asserting ones, which is
 // all we need. So no explicit instantiation is used.
 
 // int is 32-bit on every target this crate builds (LP64 / LLP64), so an intvec_t's

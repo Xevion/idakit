@@ -57,8 +57,8 @@ harness = false
 
 # The integration tests under tests/ are ordinary `#[test]` binaries (auto-discovered). Each
 # brings the kernel up on the thread `Ida::run` spawns and skips without its precondition
-# (`IDAKIT_TEST_DB`, or `g++` for `ctor`). They must not run concurrently -- init_library is a
-# process global and idalib locks the database file -- so `.config/nextest.toml` puts every
+# (`IDAKIT_TEST_DB`, or `g++` for `ctor`). They must not run concurrently (init_library is a
+# process global and idalib locks the database file), so `.config/nextest.toml` puts every
 # integration test in a `max-threads = 1` group. Run the suite with nextest, never bare
 # `cargo test` (which would run them in parallel and collide).
 

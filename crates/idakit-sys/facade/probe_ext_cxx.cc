@@ -1,5 +1,5 @@
-// Round-10 cxx spike bodies (test-shims only). See probe_ext_cxx.h for the custom trycatch that
-// every Result-returning body here routes through.
+// cxx spike bodies (test-shims only). See probe_ext_cxx.h for the custom trycatch that every
+// Result-returning body here routes through.
 
 #include <pro.h>
 
@@ -20,21 +20,21 @@
 
 namespace idakit_cxx {
 
-// Goal A. A non-std::exception throw: cxx's default trycatch would std::terminate here; the custom
+// A non-std::exception throw: cxx's default trycatch would std::terminate here; the custom
 // catch(...) arm turns it into a Rust Err instead. Never returns normally.
 rust::String ext_throw_plain_int() {
   throw 42;
   return rust::String("unreachable");
 }
 
-// Goal A. interr_exc_t carries only an int code and inherits the generic base what(); the custom
+// interr_exc_t carries only an int code and inherits the generic base what(); the custom
 // catch(const interr_exc_t&) arm is what makes the code legible on the Rust side.
 rust::String ext_throw_interr(int32_t code) {
   throw interr_exc_t(code);
   return rust::String("unreachable");
 }
 
-// Goal A. Structured data encoded INTO the message string, the only channel a cxx::Exception has
+// Structured data encoded INTO the message string, the only channel a cxx::Exception has
 // (it carries what() and nothing else). The Rust side re-parses the code back out.
 rust::String ext_throw_coded(int32_t code) {
   throw std::runtime_error("idakit:qerrno=" + std::to_string(code));
@@ -45,7 +45,7 @@ std::unique_ptr<AddrCursor> make_addr_cursor(uint64_t init) {
   return std::unique_ptr<AddrCursor>(new AddrCursor{init});
 }
 
-// Goal B. rust::Str is not NUL-terminated; copy into a std::string for the C API. set_name returns
+// rust::Str is not NUL-terminated; copy into a std::string for the C API. set_name returns
 // false on rejection -> throw, which cxx maps to a Rust Err (the failure SIGNAL; the Rust caller
 // re-derives qerrno/reason from last_reason(), it is not read off the message).
 void ext_set_name(uint64_t ea, rust::Str name) {
@@ -60,7 +60,7 @@ void ext_set_cmt(uint64_t ea, rust::Str comment, bool repeatable) {
     throw std::runtime_error("set_cmt rejected");
 }
 
-// Goal C. Return the generated shared enum by value; the Rust side matches it with a wildcard arm.
+// Return the generated shared enum by value; the Rust side matches it with a wildcard arm.
 WriteOutcome ext_classify(int32_t code) {
   switch (code) {
   case 0:

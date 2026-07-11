@@ -218,7 +218,7 @@ fn run(idb: &mut idakit::Database) {
                 );
             }
 
-            // Goal A (qvector<int>): the block's successor intvec_t bound as an Opaque cxx
+            // qvector<int>: the block's successor intvec_t bound as an Opaque cxx
             // container, borrowed out of the live flow chart. Read it BOTH ways (a copying shim to
             // Vec<i32>, and a zero-copy &[i32] borrowed from the container's {array, n}) and cross-
             // check both against the cfg_succs copy and per-index cfg_succ paths.
@@ -265,7 +265,7 @@ fn run(idb: &mut idakit::Database) {
             "cfg_nproper exceeds the total block count"
         );
 
-        // Goal C: a `self:`-receiver method binds to a real C++ *member* (`qflow_chart_t::size`);
+        // A `self:`-receiver method binds to a real C++ *member* (`qflow_chart_t::size`);
         // a free function (`cfg_nblocks`) binds to a namespaced free function. Both count blocks,
         // so they must agree, proving the two accessor shapes map to the two C++ call forms.
         assert_eq!(
@@ -274,7 +274,7 @@ fn run(idb: &mut idakit::Database) {
             "member-fn size() disagrees with free-fn cfg_nblocks()"
         );
 
-        // Goal B: the sibling `bridge_cfg2` bridge accepts the *same* `&FlowChart` built here (one
+        // The sibling `bridge_cfg2` bridge accepts the *same* `&FlowChart` built here (one
         // shared ExternType across two bridges) and sums every block's successor count. Cross-
         // check it against the per-block `cfg_nsucc` totals from this bridge.
         let edge_total: usize = (0..n).map(|b| sys::cfg_nsucc(&fc, b)).sum();
@@ -322,7 +322,7 @@ fn run(idb: &mut idakit::Database) {
         }
     }
 
-    // cxx ExternType bridge (Goal A): the `range_t` Trivial ExternType crosses by value four ways
+    // cxx ExternType bridge: the `range_t` Trivial ExternType crosses by value four ways
     // (returned bare, taken by value, a by-value shared-struct field, and a Vec element). Its four
     // shapes are cross-checked against each other, then against the qvector<range_t> Opaque path.
     {
@@ -371,7 +371,7 @@ fn run(idb: &mut idakit::Database) {
             "range_chunk_info should Err past the last chunk"
         );
 
-        // Goal B (qvector<range_t>): the recipe generalized from scalar to a Trivial-struct
+        // qvector<range_t>: the recipe generalized from scalar to a Trivial-struct
         // element. rangevec_build_chunks yields a rangevec_t owned by UniquePtr (so the zero-copy
         // borrow ties to a container Rust controls); rangevec_slice borrows it as &[RangeT] with no
         // copy. Cross-check element-for-element against the range_all_chunks Vec<RangeT> copy path.
@@ -651,7 +651,7 @@ fn run(idb: &mut idakit::Database) {
         }
     }
 
-    // cxx real-database-write cross-check (Round 10, Goal B): a mutation crossing the cxx boundary
+    // cxx real-database-write cross-check: a mutation crossing the cxx boundary
     // (libida `set_name`/`set_cmt` wrapped as bridge fns) must land and read back through idakit's
     // existing read path. Follows roundtrip.rs's mutate-then-restore discipline exactly: the name is
     // restored to `original` and the DB is closed `save = false`, so the fixture never changes on
@@ -681,7 +681,7 @@ fn run(idb: &mut idakit::Database) {
         );
 
         // The Err path: writing a name at an unmapped address is rejected; cxx surfaces it as Err
-        // (a bare failure signal -- idakit re-derives qerrno/reason kernel-side, not from what()).
+        // (a bare failure signal; idakit re-derives qerrno/reason kernel-side, not from what()).
         assert!(
             sys::ext_set_name(0xffff_ffff_f000, "nope").is_err(),
             "cxx set_name at an unmapped address should Err"
