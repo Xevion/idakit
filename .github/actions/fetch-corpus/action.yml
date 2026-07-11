@@ -1,5 +1,5 @@
 name: fetch-corpus
-description: Fetch the platform-independent CI-tier corpus fixtures from R2 (content-addressed blobs + a filtered manifest) and export IDAKIT_CORPUS_MANIFEST.
+description: Fetch the platform-independent CI-tier corpus fixtures from S3 (content-addressed blobs + a filtered manifest) and export IDAKIT_CORPUS_MANIFEST.
 
 runs:
   using: composite

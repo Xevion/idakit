@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish = true
 description = "Idiomatic Rust bindings for IDA Pro's idalib kernel"
 keywords = ["ida", "ida-pro", "reverse-engineering", "decompiler", "disassembler"]
 categories = ["api-bindings", "development-tools"]
@@ -20,7 +20,7 @@ targets = []
 bon = "3.9.3"
 cxx = "1.0.197"
 dotenvy = "0.15.7"
-idakit-sys = { path = "../idakit-sys" }
+idakit-sys = { path = "../idakit-sys", version = "0.0.0" }
 num_enum = "0.7.6"
 serde = { version = "1.0.228", features = ["derive"] }
 siphasher = "1.0.3"
