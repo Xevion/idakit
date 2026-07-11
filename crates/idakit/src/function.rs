@@ -203,13 +203,13 @@ impl<'db> Function<'db> {
         self.db.func_flags(self.address) & sys::FUNC_NORET != 0
     }
 
-    /// Lazily iterates cross-references targeting this function's entry.
+    /// Iterates cross-references targeting this function's entry.
     #[must_use]
     pub fn xrefs_to(&self) -> Xrefs {
         self.db.xrefs_to(self.address)
     }
 
-    /// Lazily iterates cross-references originating at this function's entry.
+    /// Iterates cross-references originating at this function's entry.
     #[must_use]
     pub fn xrefs_from(&self) -> Xrefs {
         self.db.xrefs_from(self.address)

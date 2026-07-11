@@ -11,7 +11,7 @@ use crate::Database;
 use crate::address::Address;
 
 impl Database {
-    /// Lazily iterates every cross-reference targeting `address`.
+    /// Iterates every cross-reference targeting `address`.
     ///
     /// Its callers and the data that points at it (ordinary sequential flow excluded).
     #[inline]
@@ -21,7 +21,7 @@ impl Database {
         Xrefs::new(self.xrefs_build(address, true))
     }
 
-    /// Lazily iterates every cross-reference originating at `address`.
+    /// Iterates every cross-reference originating at `address`.
     ///
     /// What the code there calls, jumps to, or reads (ordinary sequential flow excluded).
     #[inline]
@@ -108,33 +108,22 @@ pub enum XrefOrigin {
     User,
 }
 
-/// A lazy iterator over cross-references, from [`Database::xrefs_to`]/[`Database::xrefs_from`].
+/// An iterator over cross-references, from [`Database::xrefs_to`]/[`Database::xrefs_from`].
 ///
-/// Owns a materialized snapshot of the reference edges, so it holds no database borrow while
-/// iterating. An edge with a `BADADDR` endpoint, or a type byte outside the modelled set, is
-/// skipped.
+/// Fetches the whole edge list from the kernel up front into an owned snapshot, so it holds no
+/// database borrow while iterating, then converts records to [`Xref`]s lazily as it yields. An
+/// edge with a `BADADDR` endpoint, or a type byte outside the modelled set, is skipped.
 #[doc(alias("first_to", "next_to", "first_from", "next_from"))]
 pub struct Xrefs {
-    edges: std::vec::IntoIter<Xref>,
+    recs: std::vec::IntoIter<sys::XrefRec>,
 }
 
 impl Xrefs {
     #[inline]
     pub(crate) fn new(recs: Vec<sys::XrefRec>) -> Self {
-        let edges = recs
-            .into_iter()
-            .filter_map(|r| {
-                Xref::from_raw(
-                    r.from,
-                    r.to,
-                    r.type_ as u8,
-                    u8::from(r.iscode),
-                    u8::from(r.user),
-                )
-            })
-            .collect::<Vec<_>>()
-            .into_iter();
-        Self { edges }
+        Self {
+            recs: recs.into_iter(),
+        }
     }
 }
 
@@ -143,12 +132,22 @@ impl Iterator for Xrefs {
 
     #[inline]
     fn next(&mut self) -> Option<Xref> {
-        self.edges.next()
+        // Skip records with a BADADDR endpoint or an out-of-set type byte, converting the rest.
+        self.recs.by_ref().find_map(|r| {
+            Xref::from_raw(
+                r.from,
+                r.to,
+                r.type_ as u8,
+                u8::from(r.iscode),
+                u8::from(r.user),
+            )
+        })
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.edges.size_hint()
+        // Lower bound 0: any record may be filtered out; upper bound is one Xref per record.
+        (0, self.recs.size_hint().1)
     }
 }
 
