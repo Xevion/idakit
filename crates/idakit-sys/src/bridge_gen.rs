@@ -9,6 +9,9 @@
 include!(concat!(env!("OUT_DIR"), "/gen_bridge.rs"));
 
 pub use ffi::{
-    ImportRec, gen_seg_bitness, gen_seg_class, gen_seg_end, gen_seg_name, gen_seg_perm, gen_seg_qty,
-    gen_seg_span_total, gen_seg_start, imports_build,
+    ChunkInfo, ImportRec, gen_seg_bitness, gen_seg_class, gen_seg_end, gen_seg_name, gen_seg_perm,
+    gen_seg_qty, gen_seg_span_total, gen_seg_start, imports_build, range_all_chunks,
+    range_chunk_info, range_entry_chunk, range_size,
 };
+// RangeT is a module-level `pub` type (from the generated ExternType impl, outside `mod ffi`), so
+// it re-exports through the crate-root glob without an explicit `pub use` here.

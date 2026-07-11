@@ -10,8 +10,8 @@
 //! - [`IntVec`] binds the SDK's `intvec_t` (`qvector<int>`), sourced from a flow-chart block's
 //!   successor edge list.
 //! - [`RangeVec`] binds the SDK's `rangevec_t` (`struct : qvector<range_t>`), built from a
-//!   function's chunk ranges, with [`RangeT`](crate::bridge_range::RangeT) (the `Trivial`
-//!   ExternType from [`bridge_range`](crate::bridge_range)) as its element.
+//!   function's chunk ranges, with [`RangeT`](crate::bridge_gen::RangeT) (the `Trivial` ExternType
+//!   from the generated [`bridge_gen`](crate::bridge_gen)) as its element.
 //!
 //! Both `intvec_t` and `rangevec_t` are real global SDK names, so `#[cxx_name]` names them
 //! directly with no C++ `using` alias (angle-bracketed `#[cxx_name = "qvector<int>"]` does not
@@ -66,11 +66,11 @@ mod ffi {
     unsafe extern "C++" {
         include!("qvec_cxx.h");
 
-        /// The SDK's `range_t`, shared from [`bridge_range`](crate::bridge_range) so it can be a
-        /// zero-copy [`RangeVec`] slice element (one ExternType across both bridges).
+        /// The SDK's `range_t`, shared from the generated [`bridge_gen`](crate::bridge_gen) so it
+        /// can be a zero-copy [`RangeVec`] slice element (one ExternType across both bridges).
         #[namespace = ""]
         #[cxx_name = "range_t"]
-        type RangeT = crate::bridge_range::RangeT;
+        type RangeT = crate::bridge_gen::RangeT;
 
         /// The SDK's `qflow_chart_t`, shared from [`bridge_cfg`](crate::bridge_cfg); the source
         /// of the borrowed [`IntVec`].

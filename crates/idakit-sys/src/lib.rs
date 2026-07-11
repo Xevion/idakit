@@ -48,7 +48,6 @@ mod bridge_probe;
 #[cfg(feature = "test-shims")]
 mod bridge_probe_ext;
 mod bridge_qvec;
-mod bridge_range;
 mod bridge_typewalk;
 mod bytes;
 mod cfg;
@@ -78,7 +77,6 @@ pub use bridge_probe::*;
 #[cfg(feature = "test-shims")]
 pub use bridge_probe_ext::*;
 pub use bridge_qvec::*;
-pub use bridge_range::*;
 pub use bridge_typewalk::*;
 pub use bytes::*;
 pub use cfg::*;

@@ -1,11 +1,9 @@
-// cxx-bridged range_t facade (namespace idakit_cxx). range_t is the SDK POD exposed as a cxx
-// Trivial ExternType (RangeT), so it crosses the bridge by value: returned bare, taken as an
-// argument, carried by value inside the ChunkInfo shared struct, and collected into an owned
-// rust::Vec<range_t>. This coexists with the raw idakit_func_chunk out-param facade; the cross-
-// check in roundtrip.rs proves the two paths agree. Out-of-range indices throw -> Rust Err.
+// Hand-written Custom bodies for the generated range domain (namespace idakit_gen). range_t is a
+// Trivial ExternType, so it crosses by value: returned bare (range_entry_chunk), taken by value
+// (range_size), carried in the ChunkInfo shared struct (range_chunk_info), and collected into an
+// owned rust::Vec<range_t> (range_all_chunks). Out-of-range indices throw -> Rust Err.
 
 #include <pro.h>
-
 #include <ida.hpp>
 
 #include <funcs.hpp> // get_func, func_tail_iterator_t
@@ -13,12 +11,12 @@
 
 #include <stdexcept>
 
-#include "range_cxx.h"
-// The generated header defines the ChunkInfo shared struct (full definition needed to construct
-// it) and instantiates rust::Vec<range_t>; range_cxx.h only forward-declares ChunkInfo.
-#include "idakit-sys/src/bridge_range.rs.h"
+#include "gen_range.h"
+// The cxx-generated header defines the ChunkInfo shared struct (full definition needed to construct
+// it) and instantiates rust::Vec<range_t>; gen_range.h only forward-declares ChunkInfo.
+#include "gen_bridge.h"
 
-namespace idakit_cxx {
+namespace idakit_gen {
 
 ::range_t range_entry_chunk(uint64_t ea) {
   func_t *pfn = get_func((ea_t)ea);
@@ -60,4 +58,4 @@ rust::Vec<::range_t> range_all_chunks(uint64_t ea) {
   return out;
 }
 
-} // namespace idakit_cxx
+} // namespace idakit_gen
