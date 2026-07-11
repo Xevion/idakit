@@ -1,7 +1,8 @@
 // cxx-bridged second flow-chart accessor (namespace idakit_cxx). Its only purpose is to prove
-// cross-bridge ExternType sharing: it takes a const qflow_chart_t& built by the cfg bridge's
-// cfg_build and sums each block's successor count. Because both bridges bind the same
-// ::qflow_chart_t ExternType, the Rust FlowChart is one type across both, no conversion needed.
+// a hand-written bridge can share the generated FlowChart ExternType: it takes a const
+// qflow_chart_t& built by the generated cfg_build and sums each block's successor count. Because
+// both bridges bind the same ::qflow_chart_t ExternType, the Rust FlowChart is one type across
+// both, no conversion needed.
 
 #include <pro.h>
 

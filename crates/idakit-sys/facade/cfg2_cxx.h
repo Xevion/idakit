@@ -12,8 +12,8 @@
 
 namespace idakit_cxx {
 
-// FlowChart binds ::qflow_chart_t directly (shared ExternType, cxx_name set in bridge_cfg.rs),
-// so this names the SDK class with no local alias.
+// FlowChart binds ::qflow_chart_t directly (shared ExternType, cxx_name set by the generated
+// bridge), so this names the SDK class with no local alias.
 size_t cfg2_total_edges(const ::qflow_chart_t &fc);
 
 } // namespace idakit_cxx

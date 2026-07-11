@@ -115,6 +115,7 @@ pub enum FieldTy {
     Usize,
     I32,
     U32,
+    Bool,
     /// An owned string (`String` in Rust, `rust::String` in C++).
     Str,
     /// A by-value `Trivial` `ExternType`, named by its Rust name (e.g. `"RangeT"`).
@@ -169,6 +170,7 @@ pub enum RetKind {
     U32,
     U64,
     Usize,
+    ResultUsize,
     String,
     ResultString,
     /// A by-value `Trivial` `ExternType`, by Rust name.
@@ -843,9 +845,293 @@ pub const STRINGS: Domain = Domain {
     ],
 };
 
+/// The control-flow-graph domain: the SDK's `qflow_chart_t` bound as an `Opaque` `ExternType`
+/// (`FlowChart`) owned by [`UniquePtr`](cxx::UniquePtr), so its C++ deleter retires the raw path's
+/// manual free plus a Rust `Drop`. `size` is a `self:`-member call bound straight to
+/// `qflow_chart_t::size()` (no facade body); every other accessor is a free function over a
+/// `&FlowChart`, hand-written in `facade/gen_cfg.cc`. Block bounds return by value as a `BlockInfo`
+/// shared struct, and the successor/predecessor edge lists copy into owned `Vec<u32>`.
+pub const CFG: Domain = Domain {
+    name: "cfg",
+    sdk_includes: &["<funcs.hpp>", "<gdl.hpp>", "<stdexcept>"],
+    externs: &[ExternTy {
+        rust_name: "FlowChart",
+        cxx_name: "qflow_chart_t",
+        kind: ExternKind::Opaque,
+        doc: "The SDK's `qflow_chart_t`, an opaque control-flow graph handled only behind \
+              indirection (`&FlowChart` or `UniquePtr<FlowChart>`).",
+        safety: "The type id names the real SDK class qflow_chart_t; Opaque is correct because \
+                 qflow_chart_t has a virtual destructor (nontrivial), so it may only cross the \
+                 bridge behind a reference or UniquePtr, never by value.",
+    }],
+    structs: &[SharedStruct {
+        name: "BlockInfo",
+        doc: "One basic block's bounds and kind, returned by value from [`cfg_block`].",
+        fields: &[
+            Field {
+                name: "start",
+                ty: FieldTy::U64,
+                doc: "Start address of the block.",
+            },
+            Field {
+                name: "end",
+                ty: FieldTy::U64,
+                doc: "End address (exclusive) of the block.",
+            },
+            Field {
+                name: "kind",
+                ty: FieldTy::I32,
+                doc: "Raw `fc_block_type_t` discriminant (`fcb_normal`, `fcb_ret`, ...).",
+            },
+        ],
+    }],
+    custom_tu: Some("facade/gen_cfg.cc"),
+    fns: &[
+        FnSpec {
+            name: "cfg_build",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "flags",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::ResultUniquePtr("FlowChart"),
+            body: BodyKind::Custom,
+            doc: "Build the flow chart for the function containing `ea`; `Err` when no function \
+                  is there. Runs analysis, so it can also fail from a thrown SDK exception.",
+        },
+        FnSpec {
+            name: "size",
+            receiver: Some("FlowChart"),
+            args: &[],
+            ret: RetKind::I32,
+            body: BodyKind::Custom,
+            doc: "Number of basic blocks, bound to `qflow_chart_t::size()` directly (the `self:` \
+                  receiver). The return is `i32` to match the member's exact `int` signature.",
+        },
+        FnSpec {
+            name: "cfg_nblocks",
+            receiver: None,
+            args: &[Arg {
+                name: "fc",
+                ty: ArgTy::ExternRef("FlowChart"),
+            }],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Total number of basic blocks (external blocks included).",
+        },
+        FnSpec {
+            name: "cfg_nproper",
+            receiver: None,
+            args: &[Arg {
+                name: "fc",
+                ty: ArgTy::ExternRef("FlowChart"),
+            }],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Number of blocks belonging to the function's own range.",
+        },
+        FnSpec {
+            name: "cfg_block",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "fc",
+                    ty: ArgTy::ExternRef("FlowChart"),
+                },
+                Arg {
+                    name: "n",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::ResultShared("BlockInfo"),
+            body: BodyKind::Custom,
+            doc: "Bounds and kind of block `n`; `Err` when `n` is out of range.",
+        },
+        FnSpec {
+            name: "cfg_nsucc",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "fc",
+                    ty: ArgTy::ExternRef("FlowChart"),
+                },
+                Arg {
+                    name: "n",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Number of successors of block `n` (`0` when `n` is out of range).",
+        },
+        FnSpec {
+            name: "cfg_succ",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "fc",
+                    ty: ArgTy::ExternRef("FlowChart"),
+                },
+                Arg {
+                    name: "n",
+                    ty: ArgTy::Usize,
+                },
+                Arg {
+                    name: "i",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::ResultUsize,
+            body: BodyKind::Custom,
+            doc: "The `i`-th successor block index of block `n`; `Err` when `n`/`i` is out of range.",
+        },
+        FnSpec {
+            name: "cfg_npred",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "fc",
+                    ty: ArgTy::ExternRef("FlowChart"),
+                },
+                Arg {
+                    name: "n",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Number of predecessors of block `n` (`0` when `n` is out of range).",
+        },
+        FnSpec {
+            name: "cfg_pred",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "fc",
+                    ty: ArgTy::ExternRef("FlowChart"),
+                },
+                Arg {
+                    name: "n",
+                    ty: ArgTy::Usize,
+                },
+                Arg {
+                    name: "i",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::ResultUsize,
+            body: BodyKind::Custom,
+            doc: "The `i`-th predecessor block index of block `n`; `Err` when `n`/`i` is out of \
+                  range.",
+        },
+        FnSpec {
+            name: "cfg_succs",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "fc",
+                    ty: ArgTy::ExternRef("FlowChart"),
+                },
+                Arg {
+                    name: "n",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::ResultVecU32,
+            body: BodyKind::Custom,
+            doc: "The whole successor edge list of block `n` as one owned `Vec<u32>`; `Err` when \
+                  `n` is out of range.",
+        },
+        FnSpec {
+            name: "cfg_preds",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "fc",
+                    ty: ArgTy::ExternRef("FlowChart"),
+                },
+                Arg {
+                    name: "n",
+                    ty: ArgTy::Usize,
+                },
+            ],
+            ret: RetKind::ResultVecU32,
+            body: BodyKind::Custom,
+            doc: "The whole predecessor edge list of block `n` as one owned `Vec<u32>`; `Err` \
+                  when `n` is out of range.",
+        },
+    ],
+};
+
+/// The cross-reference domain: every xref edge at an address returned as one owned `Vec<XrefRec>`
+/// snapshot, retiring the raw open-cursor/next/close dance. The single body is hand-written in
+/// `facade/gen_reference.cc` (one walk of an `xrefblk_t`).
+pub const REFERENCE: Domain = Domain {
+    name: "reference",
+    sdk_includes: &["<xref.hpp>"],
+    externs: &[],
+    structs: &[SharedStruct {
+        name: "XrefRec",
+        doc: "One cross-reference edge, returned inside the [`xrefs_build`] snapshot.",
+        fields: &[
+            Field {
+                name: "from",
+                ty: FieldTy::U64,
+                doc: "Source address of the reference.",
+            },
+            Field {
+                name: "to",
+                ty: FieldTy::U64,
+                doc: "Target address of the reference.",
+            },
+            Field {
+                name: "type_",
+                ty: FieldTy::I32,
+                doc: "Raw `cref_t`/`dref_t` type code of the edge.",
+            },
+            Field {
+                name: "iscode",
+                ty: FieldTy::Bool,
+                doc: "`true` for a code reference, `false` for a data reference.",
+            },
+            Field {
+                name: "user",
+                ty: FieldTy::Bool,
+                doc: "`true` when user-defined, `false` when IDA's analysis generated it.",
+            },
+        ],
+    }],
+    custom_tu: Some("facade/gen_reference.cc"),
+    fns: &[FnSpec {
+        name: "xrefs_build",
+        receiver: None,
+        args: &[
+            Arg {
+                name: "ea",
+                ty: ArgTy::U64,
+            },
+            Arg {
+                name: "is_to",
+                ty: ArgTy::Bool,
+            },
+        ],
+        ret: RetKind::Vec("XrefRec"),
+        body: BodyKind::Custom,
+        doc: "Every cross-reference edge at `ea` as an owned, `Send` snapshot: xrefs *to* `ea` \
+              when `is_to`, else xrefs *from* it. Ordinary next-instruction flow edges are \
+              excluded (`XREF_NOFLOW`).",
+    }],
+};
+
 /// Every domain fed into the unified bridge, in emission order.
 pub const DOMAINS: &[&Domain] = &[
-    &SEGMENT, &IMPORT, &RANGE, &FUNCTION, &EXPORT, &META, &NAME, &STRINGS,
+    &SEGMENT, &IMPORT, &RANGE, &FUNCTION, &EXPORT, &META, &NAME, &STRINGS, &CFG, &REFERENCE,
 ];
 
 impl FieldTy {
@@ -855,6 +1141,7 @@ impl FieldTy {
             FieldTy::Usize => quote!(usize),
             FieldTy::I32 => quote!(i32),
             FieldTy::U32 => quote!(u32),
+            FieldTy::Bool => quote!(bool),
             FieldTy::Str => quote!(String),
             FieldTy::Extern(name) => {
                 let id = format_ident!("{name}");
@@ -913,6 +1200,7 @@ impl RetKind {
             RetKind::U32 => quote!(-> u32),
             RetKind::U64 => quote!(-> u64),
             RetKind::Usize => quote!(-> usize),
+            RetKind::ResultUsize => quote!(-> Result<usize>),
             RetKind::String => quote!(-> String),
             RetKind::ResultString => quote!(-> Result<String>),
             RetKind::Extern(n) => {
@@ -960,7 +1248,7 @@ impl RetKind {
             RetKind::I32 => "int32_t".into(),
             RetKind::U32 => "uint32_t".into(),
             RetKind::U64 => "uint64_t".into(),
-            RetKind::Usize => "size_t".into(),
+            RetKind::Usize | RetKind::ResultUsize => "size_t".into(),
             RetKind::String | RetKind::ResultString => "rust::String".into(),
             RetKind::Extern(n) | RetKind::ResultExtern(n) => format!("::{}", extern_cxx_name(n)),
             RetKind::Shared(n) | RetKind::ResultShared(n) => (*n).into(),
@@ -1188,6 +1476,11 @@ fn header_source(d: &Domain) -> String {
         s.push('\n');
     }
     for f in d.fns {
+        // A `self:`-member fn binds the SDK member directly (cxx calls `self.member()`), so it
+        // has no free-function declaration or body here.
+        if f.receiver.is_some() {
+            continue;
+        }
         s.push_str(&cxx_signature(f));
         s.push_str(";\n");
     }

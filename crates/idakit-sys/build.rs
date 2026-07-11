@@ -168,15 +168,8 @@ fn main() {
         &[],
     );
 
-    // qflow_chart_t as a UniquePtr-owned opaque type (retires the manual _free + Rust Drop).
-    cxx_bridge(
-        "src/bridge_cfg.rs",
-        &["facade/cfg_cxx.cc"],
-        "idakit_cxx_cfg_bridge",
-        sdk_include_str,
-        &[],
-    );
-    // A second bridge over the same qflow_chart_t ExternType, proving cross-bridge type sharing.
+    // A hand-written bridge over the *generated* qflow_chart_t ExternType, proving a hand bridge
+    // can share a spec-generated ExternType (the cfg domain itself is now generated).
     cxx_bridge(
         "src/bridge_cfg2.rs",
         &["facade/cfg2_cxx.cc"],
@@ -280,9 +273,6 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=facade/segment_cxx.cc");
     println!("cargo:rerun-if-changed=facade/segment_cxx.h");
-    println!("cargo:rerun-if-changed=facade/cfg_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/cfg_cxx.h");
-    println!("cargo:rerun-if-changed=src/bridge_cfg.rs");
     println!("cargo:rerun-if-changed=facade/cfg2_cxx.cc");
     println!("cargo:rerun-if-changed=facade/cfg2_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_cfg2.rs");
@@ -312,6 +302,8 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/gen_meta.cc");
     println!("cargo:rerun-if-changed=facade/gen_name.cc");
     println!("cargo:rerun-if-changed=facade/gen_strings.cc");
+    println!("cargo:rerun-if-changed=facade/gen_cfg.cc");
+    println!("cargo:rerun-if-changed=facade/gen_reference.cc");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
     println!("cargo:rerun-if-changed=facade/type_walk.hpp");

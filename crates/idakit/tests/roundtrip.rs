@@ -772,6 +772,78 @@ fn run(idb: &mut idakit::Database) {
         );
     }
 
+    // cxx snapshot cross-check: `xrefs_build(ea, is_to)` returns every cross-reference edge at an
+    // address as one owned Vec<XrefRec>, retiring the raw open/next/close cursor. Sampled over the
+    // first 200 function entries (xrefs *to* each), it must match the raw open/next/close loop edge
+    // for edge.
+    {
+        use idakit_sys as sys;
+
+        let sample = sys::func_qty().min(200);
+        let mut edge_total = 0usize;
+        for n in 0..sample {
+            let ea = sys::func_ea(n);
+
+            let recs = sys::xrefs_build(ea, true);
+
+            // SAFETY: cursor from idakit_xref_open; closed below.
+            let cursor = unsafe { sys::idakit_xref_open(ea, 1) };
+            assert!(!cursor.is_null(), "raw xref_open returned null at {ea:#x}");
+            let mut i = 0usize;
+            loop {
+                let (mut from, mut to) = (0u64, 0u64);
+                let (mut type_, mut iscode, mut user) = (0u8, 0u8, 0u8);
+                // SAFETY: cursor is live; out-params are valid stack locals.
+                let more = unsafe {
+                    sys::idakit_xref_next(
+                        cursor,
+                        &mut from,
+                        &mut to,
+                        &mut type_,
+                        &mut iscode,
+                        &mut user,
+                    )
+                };
+                if more == 0 {
+                    break;
+                }
+                assert!(
+                    i < recs.len(),
+                    "raw produced more xref edges than xrefs_build at {ea:#x}"
+                );
+                let rec = &recs[i];
+                assert_eq!(rec.from, from, "xref edge {i} from disagrees at {ea:#x}");
+                assert_eq!(rec.to, to, "xref edge {i} to disagrees at {ea:#x}");
+                assert_eq!(
+                    rec.type_, type_ as i32,
+                    "xref edge {i} type disagrees at {ea:#x}"
+                );
+                assert_eq!(
+                    rec.iscode,
+                    iscode != 0,
+                    "xref edge {i} iscode disagrees at {ea:#x}"
+                );
+                assert_eq!(
+                    rec.user,
+                    user != 0,
+                    "xref edge {i} user disagrees at {ea:#x}"
+                );
+                i += 1;
+            }
+            // SAFETY: cursor came from idakit_xref_open and has not been closed.
+            unsafe { sys::idakit_xref_close(cursor) };
+            assert_eq!(
+                recs.len(),
+                i,
+                "xrefs_build count disagrees with raw at {ea:#x}"
+            );
+            edge_total += i;
+        }
+        println!(
+            "cxx xrefs snapshot cross-check OK: {edge_total} xref edges agree with the raw facade over {sample} functions"
+        );
+    }
+
     // Best-effort; just exercise the paths (consume the lazy reference cursors).
     let _ = first.xrefs_to().count();
     let _ = first.xrefs_from().count();

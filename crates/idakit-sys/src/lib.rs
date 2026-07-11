@@ -38,7 +38,6 @@ pub type Address = u64;
 pub const BADADDR: Address = u64::MAX;
 
 mod bridge;
-mod bridge_cfg;
 mod bridge_cfg2;
 #[cfg(feature = "test-shims")]
 mod bridge_cfunc;
@@ -67,7 +66,6 @@ mod ty;
 mod ty_build;
 
 pub use bridge::*;
-pub use bridge_cfg::*;
 pub use bridge_cfg2::*;
 #[cfg(feature = "test-shims")]
 pub use bridge_cfunc::*;
