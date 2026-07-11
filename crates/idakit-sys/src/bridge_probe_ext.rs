@@ -20,9 +20,9 @@
 //! The C++ side (custom `trycatch`, cursor, bodies) is `facade/probe_ext_cxx.{h,cc}`. Gated behind
 //! `test-shims` like [`bridge_probe`](crate::bridge_probe) and [`bridge_cfunc`](crate::bridge_cfunc).
 
-// TODO: productionize the custom trycatch -- adopt Goal A's `catch (...)`/`catch (const
-// interr_exc_t&)` in the generated bridges so an idalib interr or non-std throw surfaces as `Err`
-// instead of the stock cxx trycatch's `std::terminate`.
+// Goal A's custom trycatch is now productionized as the shared `facade/idakit_trycatch.h`, which
+// every production bridge includes (plus a scoped `set_interr_throws` arm). This spike keeps its own
+// inline copy so its throwing probes stay self-contained.
 #[cxx::bridge(namespace = "idakit_cxx")]
 mod ffi {
     /// How a database write turned out, a cxx **shared enum** generated into both languages.

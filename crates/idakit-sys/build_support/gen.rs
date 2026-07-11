@@ -2599,7 +2599,10 @@ fn header_source(d: &Domain) -> String {
     for inc in d.sdk_includes {
         s.push_str(&format!("#include {inc}\n"));
     }
-    s.push_str("\n#include \"rust/cxx.h\"\n\n");
+    // The custom trycatch (an idalib interr or a non-std throw becomes a Rust Err, not a terminate)
+    // must be in scope in the generated .cc, which includes this header, so cxx's default is
+    // disabled; it pulls in rust/cxx.h itself.
+    s.push_str("\n#include \"idakit_trycatch.h\"\n\n");
     s.push_str(&format!("namespace {NAMESPACE} {{\n\n"));
     // Shared structs are defined by the cxx-generated header; forward-declare so a decl may name
     // one by value (the body TU includes the generated header for the full definition).

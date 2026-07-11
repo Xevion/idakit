@@ -6,6 +6,7 @@
 
 #include <cstdint>
 
+#include "idakit_trycatch.h"
 #include "rust/cxx.h"
 
 namespace idakit_cxx {

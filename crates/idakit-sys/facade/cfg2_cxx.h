@@ -10,6 +10,8 @@
 
 #include <gdl.hpp>
 
+#include "idakit_trycatch.h"
+
 namespace idakit_cxx {
 
 // FlowChart binds ::qflow_chart_t directly (shared ExternType, cxx_name set by the generated
