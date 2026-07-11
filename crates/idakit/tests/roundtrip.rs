@@ -174,6 +174,290 @@ fn run(idb: &mut idakit::Database) {
         println!("cxx generated function cross-check OK: {func_count} functions agree with raw");
     }
 
+    // Generated export domain (idakit_gen::export_*): every accessor cross-checked against the raw
+    // idakit_export_* facade over every entry point.
+    {
+        use std::os::raw::c_char;
+
+        use idakit_sys as sys;
+
+        // SAFETY: read-only raw facade calls on the open database, used throughout this block.
+        let export_count = sys::export_qty();
+        assert_eq!(
+            export_count,
+            unsafe { sys::idakit_export_qty() },
+            "generated export_qty disagrees with raw"
+        );
+        for idx in 0..export_count {
+            assert_eq!(
+                sys::export_ea(idx),
+                unsafe { sys::idakit_export_ea(idx) },
+                "generated export_ea disagrees with raw at index {idx}"
+            );
+            assert_eq!(
+                sys::export_ordinal(idx),
+                unsafe { sys::idakit_export_ordinal(idx) },
+                "generated export_ordinal disagrees with raw at index {idx}"
+            );
+            let mut buf = [0u8; 4096];
+            let raw_len =
+                unsafe { sys::idakit_export_name(idx, buf.as_mut_ptr() as *mut c_char, buf.len()) };
+            let raw_name = (raw_len > 0).then(|| {
+                assert!(
+                    (raw_len as usize) < buf.len(),
+                    "export_name buffer too small at index {idx}"
+                );
+                String::from_utf8_lossy(&buf[..raw_len as usize]).into_owned()
+            });
+            assert_eq!(
+                sys::export_name(idx).ok(),
+                raw_name,
+                "generated export_name disagrees with raw at index {idx}"
+            );
+
+            let mut fbuf = [0u8; 4096];
+            let fwd_len = unsafe {
+                sys::idakit_export_forwarder(idx, fbuf.as_mut_ptr() as *mut c_char, fbuf.len())
+            };
+            let raw_fwd = (fwd_len > 0).then(|| {
+                assert!(
+                    (fwd_len as usize) < fbuf.len(),
+                    "export_forwarder buffer too small at index {idx}"
+                );
+                String::from_utf8_lossy(&fbuf[..fwd_len as usize]).into_owned()
+            });
+            assert_eq!(
+                sys::export_forwarder(idx).ok(),
+                raw_fwd,
+                "generated export_forwarder disagrees with raw at index {idx}"
+            );
+        }
+        println!("cxx generated export cross-check OK: {export_count} exports agree with raw");
+    }
+
+    // Generated meta domain (idakit_gen): database-wide metadata cross-checked against the raw
+    // idakit_* meta facade. No iteration -- these are single db-wide values.
+    {
+        use std::os::raw::c_char;
+
+        use idakit_sys as sys;
+
+        // SAFETY: read-only raw facade calls on the open database, used throughout this block.
+        assert_eq!(
+            sys::bitness(),
+            unsafe { sys::idakit_bitness() },
+            "generated bitness disagrees with raw"
+        );
+        assert_eq!(
+            sys::image_base(),
+            unsafe { sys::idakit_image_base() },
+            "generated image_base disagrees with raw"
+        );
+
+        // Each string getter: generated Result<String> vs the raw snprintf-style buffer, guarded
+        // against silent truncation. A non-positive length means "no value" (generated Err).
+        let check_str = |raw: unsafe extern "C" fn(*mut c_char, usize) -> i64,
+                         got: Option<String>,
+                         what: &str| {
+            let mut buf = [0u8; 4096];
+            let raw_len = unsafe { raw(buf.as_mut_ptr() as *mut c_char, buf.len()) };
+            let raw_str = (raw_len > 0).then(|| {
+                assert!((raw_len as usize) < buf.len(), "{what} buffer too small");
+                String::from_utf8_lossy(&buf[..raw_len as usize]).into_owned()
+            });
+            assert_eq!(got, raw_str, "generated {what} disagrees with raw");
+        };
+
+        check_str(sys::idakit_proc_name, sys::proc_name().ok(), "proc_name");
+        check_str(
+            sys::idakit_file_type_name,
+            sys::file_type_name().ok(),
+            "file_type_name",
+        );
+        check_str(sys::idakit_input_path, sys::input_path().ok(), "input_path");
+        check_str(
+            sys::idakit_root_filename,
+            sys::root_filename().ok(),
+            "root_filename",
+        );
+
+        println!("cxx generated meta cross-check OK: all db-wide metadata agrees with raw");
+    }
+
+    // Generated name domain (idakit_gen::{get_ea_name, ...}): every accessor cross-checked against
+    // the raw idakit_* name facade; the has_*_name predicates are fed each function's flags word.
+    {
+        use std::os::raw::c_char;
+
+        use idakit_sys as sys;
+
+        // SAFETY: read-only raw facade calls on the open database, used throughout this block.
+        assert_eq!(
+            sys::nlist_size(),
+            unsafe { sys::idakit_nlist_size() },
+            "generated nlist_size disagrees with raw"
+        );
+        for idx in 0..sys::nlist_size() {
+            assert_eq!(
+                sys::nlist_ea(idx),
+                unsafe { sys::idakit_nlist_ea(idx) },
+                "generated nlist_ea disagrees with raw at {idx}"
+            );
+            let mut buf = [0u8; 4096];
+            let raw_len =
+                unsafe { sys::idakit_nlist_name(idx, buf.as_mut_ptr() as *mut c_char, buf.len()) };
+            let raw_name = (raw_len > 0).then(|| {
+                assert!(
+                    (raw_len as usize) < buf.len(),
+                    "nlist_name buffer too small at {idx}"
+                );
+                String::from_utf8_lossy(&buf[..raw_len as usize]).into_owned()
+            });
+            assert_eq!(
+                sys::nlist_name(idx).ok(),
+                raw_name,
+                "generated nlist_name disagrees with raw at {idx}"
+            );
+        }
+
+        for func in idb.functions() {
+            let ea = func.address().get();
+
+            let mut buf = [0u8; 4096];
+            let raw_len =
+                unsafe { sys::idakit_get_ea_name(ea, buf.as_mut_ptr() as *mut c_char, buf.len()) };
+            let raw_name = (raw_len > 0).then(|| {
+                assert!(
+                    (raw_len as usize) < buf.len(),
+                    "get_ea_name buffer too small at {ea:#x}"
+                );
+                String::from_utf8_lossy(&buf[..raw_len as usize]).into_owned()
+            });
+            assert_eq!(
+                sys::get_ea_name(ea).ok(),
+                raw_name,
+                "generated get_ea_name disagrees with raw at {ea:#x}"
+            );
+
+            let flags = unsafe { sys::idakit_get_flags(ea) };
+            assert_eq!(
+                sys::has_user_name(flags),
+                unsafe { sys::idakit_has_user_name(flags) } != 0,
+                "generated has_user_name disagrees with raw at {ea:#x}"
+            );
+            assert_eq!(
+                sys::has_auto_name(flags),
+                unsafe { sys::idakit_has_auto_name(flags) } != 0,
+                "generated has_auto_name disagrees with raw at {ea:#x}"
+            );
+            assert_eq!(
+                sys::has_dummy_name(flags),
+                unsafe { sys::idakit_has_dummy_name(flags) } != 0,
+                "generated has_dummy_name disagrees with raw at {ea:#x}"
+            );
+
+            if let Ok(name) = sys::get_ea_name(ea) {
+                assert_eq!(
+                    sys::get_name_ea(&name),
+                    unsafe {
+                        let c = std::ffi::CString::new(name.as_str()).unwrap();
+                        sys::idakit_get_name_ea(c.as_ptr())
+                    },
+                    "generated get_name_ea disagrees with raw for {name:?}"
+                );
+
+                let mut dbuf = [0u8; 4096];
+                let draw_len = unsafe {
+                    let c = std::ffi::CString::new(name.as_str()).unwrap();
+                    sys::idakit_demangle_name(
+                        c.as_ptr(),
+                        dbuf.as_mut_ptr() as *mut c_char,
+                        dbuf.len(),
+                    )
+                };
+                let draw = (draw_len > 0).then(|| {
+                    assert!(
+                        (draw_len as usize) < dbuf.len(),
+                        "demangle_name buffer too small for {name:?}"
+                    );
+                    String::from_utf8_lossy(&dbuf[..draw_len as usize]).into_owned()
+                });
+                assert_eq!(
+                    sys::demangle_name(&name).ok(),
+                    draw,
+                    "generated demangle_name disagrees with raw for {name:?}"
+                );
+            }
+        }
+        println!("cxx generated name cross-check OK");
+    }
+
+    // Generated strings domain (idakit_gen::strlist_*/strlit_contents): the string list built and
+    // walked through the generated facade, cross-checked against the raw idakit_strlist_* /
+    // idakit_strlit_contents facade. Capped at the first 200 entries so a corpus with a huge string
+    // list stays cheap; the cross-check is uniform per entry, so the cap costs no coverage.
+    {
+        use std::os::raw::c_char;
+
+        use idakit_sys as sys;
+
+        // SAFETY: read-only raw facade calls on the open database, used throughout this block.
+        sys::strlist_build();
+        assert_eq!(
+            sys::strlist_qty(),
+            unsafe { sys::idakit_strlist_qty() },
+            "generated strlist_qty disagrees with raw"
+        );
+
+        let qty = sys::strlist_qty().min(200);
+        for n in 0..qty {
+            let item = sys::strlist_item(n).expect("strlist_item within range");
+
+            let mut ea: u64 = 0;
+            let mut length: i32 = 0;
+            let mut type_: i32 = 0;
+            let ok = unsafe { sys::idakit_strlist_item(n, &mut ea, &mut length, &mut type_) };
+            assert_eq!(ok, 1, "raw idakit_strlist_item failed at index {n}");
+            assert_eq!(
+                item.ea, ea,
+                "generated strlist_item.ea disagrees with raw at {n}"
+            );
+            assert_eq!(
+                item.length, length,
+                "generated strlist_item.length disagrees with raw at {n}"
+            );
+            assert_eq!(
+                item.type_, type_,
+                "generated strlist_item.type_ disagrees with raw at {n}"
+            );
+
+            let mut buf = [0u8; 4096];
+            let raw_len = unsafe {
+                sys::idakit_strlit_contents(
+                    ea,
+                    length as usize,
+                    type_,
+                    buf.as_mut_ptr() as *mut c_char,
+                    buf.len(),
+                )
+            };
+            if raw_len >= 0 {
+                assert!(
+                    (raw_len as usize) < buf.len(),
+                    "strlit_contents buffer too small at {ea:#x}"
+                );
+            }
+            let raw_str = (raw_len >= 0)
+                .then(|| String::from_utf8_lossy(&buf[..raw_len as usize]).into_owned());
+            assert_eq!(
+                sys::strlit_contents(ea, length as usize, type_).ok(),
+                raw_str,
+                "generated strlit_contents disagrees with raw at {ea:#x}"
+            );
+        }
+        println!("cxx generated strings cross-check OK: {qty} string-list entries agree with raw");
+    }
+
     let first = idb.functions().next().expect("a function");
     let address = first.address();
     let original = first.name();

@@ -538,8 +538,315 @@ pub const FUNCTION: Domain = Domain {
     ],
 };
 
+const IDX: &[Arg] = &[Arg {
+    name: "idx",
+    ty: ArgTy::Usize,
+}];
+
+/// The export (entry-point) domain: per-export scalar accessors plus the name and forwarder
+/// strings, indexed `[0, export_qty)`. `export_qty` is a templated passthrough; the lookups are
+/// hand-written in `facade/gen_export.cc` (a forwarder-less export legitimately `Err`s).
+pub const EXPORT: Domain = Domain {
+    name: "export",
+    sdk_includes: &["<entry.hpp>", "<stdexcept>"],
+    externs: &[],
+    structs: &[],
+    custom_tu: Some("facade/gen_export.cc"),
+    fns: &[
+        FnSpec {
+            name: "export_qty",
+            receiver: None,
+            args: &[],
+            ret: RetKind::Usize,
+            body: BodyKind::ScalarCall {
+                call: "get_entry_qty()",
+            },
+            doc: "Number of exported entry points in the database (`get_entry_qty`).",
+        },
+        FnSpec {
+            name: "export_ea",
+            receiver: None,
+            args: IDX,
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Address of export `idx`, or `BADADDR` when the export is a pure forwarder.",
+        },
+        FnSpec {
+            name: "export_ordinal",
+            receiver: None,
+            args: IDX,
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Ordinal of export `idx`.",
+        },
+        FnSpec {
+            name: "export_name",
+            receiver: None,
+            args: IDX,
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Name of export `idx`; `Err` when it has none.",
+        },
+        FnSpec {
+            name: "export_forwarder",
+            receiver: None,
+            args: IDX,
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Forwarder target of export `idx`; `Err` when it has none (most exports do not).",
+        },
+    ],
+};
+
+/// The meta domain: database-wide metadata (bitness, image base) and four identity strings
+/// (processor, file-type text, input path, root filename). All bodies are hand-written in
+/// `facade/gen_meta.cc`; the string getters throw when the SDK has no value.
+pub const META: Domain = Domain {
+    name: "meta",
+    sdk_includes: &["<nalt.hpp>", "<loader.hpp>", "<stdexcept>"],
+    externs: &[],
+    structs: &[],
+    custom_tu: Some("facade/gen_meta.cc"),
+    fns: &[
+        FnSpec {
+            name: "bitness",
+            receiver: None,
+            args: &[],
+            ret: RetKind::I32,
+            body: BodyKind::Custom,
+            doc: "Application bitness (`inf_get_app_bitness`): 16, 32, or 64.",
+        },
+        FnSpec {
+            name: "image_base",
+            receiver: None,
+            args: &[],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Preferred load address of the input (`get_imagebase`).",
+        },
+        FnSpec {
+            name: "proc_name",
+            receiver: None,
+            args: &[],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Processor module id, e.g. `metapc`; `Err` when none is set.",
+        },
+        FnSpec {
+            name: "file_type_name",
+            receiver: None,
+            args: &[],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Human-readable input file format text; `Err` when unavailable.",
+        },
+        FnSpec {
+            name: "input_path",
+            receiver: None,
+            args: &[],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Full path of the analyzed input; `Err` when unknown.",
+        },
+        FnSpec {
+            name: "root_filename",
+            receiver: None,
+            args: &[],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Base filename of the input; `Err` when unknown.",
+        },
+    ],
+};
+
+/// The name domain: name lookups (address<->name, demangle), the name-list accessors, and the
+/// three flags-word name classifiers. Every body is hand-written in `facade/gen_name.cc` (the
+/// getters throw on no-name, and SDK calls are `::`-qualified to avoid recursing on the shared
+/// symbol spellings).
+pub const NAME: Domain = Domain {
+    name: "name",
+    sdk_includes: &["<name.hpp>", "<bytes.hpp>", "<stdexcept>"],
+    externs: &[],
+    structs: &[],
+    custom_tu: Some("facade/gen_name.cc"),
+    fns: &[
+        FnSpec {
+            name: "get_ea_name",
+            receiver: None,
+            args: EA,
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Name at address `ea`; `Err` when the address has none.",
+        },
+        FnSpec {
+            name: "get_name_ea",
+            receiver: None,
+            args: &[Arg {
+                name: "name",
+                ty: ArgTy::Str,
+            }],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Address the symbol `name` resolves to, or `BADADDR` when it is unknown.",
+        },
+        FnSpec {
+            name: "demangle_name",
+            receiver: None,
+            args: &[Arg {
+                name: "name",
+                ty: ArgTy::Str,
+            }],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Fully demangled form of `name`; `Err` when `name` is not mangled.",
+        },
+        FnSpec {
+            name: "nlist_size",
+            receiver: None,
+            args: &[],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Number of entries in the sorted name list (`get_nlist_size`).",
+        },
+        FnSpec {
+            name: "nlist_ea",
+            receiver: None,
+            args: IDX,
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Address of name-list entry `idx`.",
+        },
+        FnSpec {
+            name: "nlist_name",
+            receiver: None,
+            args: IDX,
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Name of name-list entry `idx`; `Err` when `idx` is out of range.",
+        },
+        FnSpec {
+            name: "has_user_name",
+            receiver: None,
+            args: &[Arg {
+                name: "flags",
+                ty: ArgTy::U64,
+            }],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Whether a flags word marks a user-given (explicit) name.",
+        },
+        FnSpec {
+            name: "has_auto_name",
+            receiver: None,
+            args: &[Arg {
+                name: "flags",
+                ty: ArgTy::U64,
+            }],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Whether a flags word marks an IDA-generated (auto) name.",
+        },
+        FnSpec {
+            name: "has_dummy_name",
+            receiver: None,
+            args: &[Arg {
+                name: "flags",
+                ty: ArgTy::U64,
+            }],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Whether a flags word marks a dummy (address-derived) name.",
+        },
+    ],
+};
+
+/// The strings domain: IDA's string list plus per-literal decoding. `strlist_build` runs an
+/// O(database) scan to (re)build the list; `strlist_item` returns the nth entry as a `StrlistItem`
+/// (throws when out of range), and `strlit_contents` decodes one literal to UTF-8 (throws when
+/// undecodable). All bodies are hand-written in `facade/gen_strings.cc`.
+pub const STRINGS: Domain = Domain {
+    name: "strings",
+    sdk_includes: &["<strlist.hpp>", "<bytes.hpp>", "<stdexcept>"],
+    externs: &[],
+    structs: &[SharedStruct {
+        name: "StrlistItem",
+        doc: "One string-list entry: its address, octet length, and `STRTYPE` code.",
+        fields: &[
+            Field {
+                name: "ea",
+                ty: FieldTy::U64,
+                doc: "Address of the string literal.",
+            },
+            Field {
+                name: "length",
+                ty: FieldTy::I32,
+                doc: "Length in octets (raw bytes, not decoded characters).",
+            },
+            Field {
+                name: "type_",
+                ty: FieldTy::I32,
+                doc: "`STRTYPE` code describing the encoding.",
+            },
+        ],
+    }],
+    custom_tu: Some("facade/gen_strings.cc"),
+    fns: &[
+        FnSpec {
+            name: "strlist_build",
+            receiver: None,
+            args: &[],
+            ret: RetKind::Unit,
+            body: BodyKind::Custom,
+            doc: "(Re)build IDA's string list, an O(database) scan of the whole image.",
+        },
+        FnSpec {
+            name: "strlist_qty",
+            receiver: None,
+            args: &[],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Number of entries in the current string list (`get_strlist_qty`).",
+        },
+        FnSpec {
+            name: "strlist_item",
+            receiver: None,
+            args: &[Arg {
+                name: "n",
+                ty: ArgTy::Usize,
+            }],
+            ret: RetKind::ResultShared("StrlistItem"),
+            body: BodyKind::Custom,
+            doc: "The `n`-th string-list entry as a `StrlistItem`; `Err` when `n` is out of range.",
+        },
+        FnSpec {
+            name: "strlit_contents",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "len",
+                    ty: ArgTy::Usize,
+                },
+                Arg {
+                    name: "strtype",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Decode the string literal at `ea` (given octet length and `STRTYPE`) to UTF-8; \
+                  `Err` when it cannot be decoded.",
+        },
+    ],
+};
+
 /// Every domain fed into the unified bridge, in emission order.
-pub const DOMAINS: &[&Domain] = &[&SEGMENT, &IMPORT, &RANGE, &FUNCTION];
+pub const DOMAINS: &[&Domain] = &[
+    &SEGMENT, &IMPORT, &RANGE, &FUNCTION, &EXPORT, &META, &NAME, &STRINGS,
+];
 
 impl FieldTy {
     fn rust(&self) -> TokenStream {

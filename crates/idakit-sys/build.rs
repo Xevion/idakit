@@ -308,6 +308,10 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/gen_import.cc");
     println!("cargo:rerun-if-changed=facade/gen_range.cc");
     println!("cargo:rerun-if-changed=facade/gen_function.cc");
+    println!("cargo:rerun-if-changed=facade/gen_export.cc");
+    println!("cargo:rerun-if-changed=facade/gen_meta.cc");
+    println!("cargo:rerun-if-changed=facade/gen_name.cc");
+    println!("cargo:rerun-if-changed=facade/gen_strings.cc");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
     println!("cargo:rerun-if-changed=facade/type_walk.hpp");
