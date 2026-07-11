@@ -5,7 +5,6 @@ use idakit_sys as sys;
 use crate::Database;
 use crate::address::Address;
 use crate::bitness::Bitness;
-use crate::ffi::read_string;
 
 impl Database {
     /// Iterate every segment in the database, in kernel order.
@@ -42,7 +41,7 @@ impl<'db> Segment<'db> {
     #[must_use]
     #[doc(alias("get_visible_segm_name"))]
     pub fn name(&self) -> Option<String> {
-        read_string(|buf, cap| self.db.seg_name(self.index, buf, cap))
+        self.db.seg_name(self.index)
     }
 
     /// First address of the segment.
@@ -76,7 +75,7 @@ impl<'db> Segment<'db> {
     #[must_use]
     #[doc(alias("get_segm_class"))]
     pub fn class_name(&self) -> Option<String> {
-        read_string(|buf, cap| self.db.seg_class(self.index, buf, cap))
+        self.db.seg_class(self.index)
     }
 
     /// The segment's class, classified from its [`class_name`](Self::class_name) string, or

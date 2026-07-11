@@ -115,8 +115,7 @@ impl<'db> Function<'db> {
     #[must_use]
     #[doc(alias("get_func_name"))]
     pub fn name(&self) -> FunctionName {
-        let text =
-            read_string(|buf, cap| self.db.func_name(self.address, buf, cap)).unwrap_or_default();
+        let text = self.db.func_name(self.address).unwrap_or_default();
         FunctionName::from_flags(self.db.get_flags(self.address), text)
     }
 
@@ -152,7 +151,7 @@ impl<'db> Function<'db> {
     ///
     /// A contiguous function yields exactly one [`FunctionChunk`].
     #[must_use]
-    pub fn chunks(&self) -> FunctionChunks<'db> {
+    pub fn chunks(&self) -> FunctionChunks {
         FunctionChunks::new(self.address, self.db)
     }
 
@@ -206,13 +205,13 @@ impl<'db> Function<'db> {
 
     /// Lazily iterates cross-references targeting this function's entry.
     #[must_use]
-    pub fn xrefs_to(&self) -> Xrefs<'db> {
+    pub fn xrefs_to(&self) -> Xrefs {
         self.db.xrefs_to(self.address)
     }
 
     /// Lazily iterates cross-references originating at this function's entry.
     #[must_use]
-    pub fn xrefs_from(&self) -> Xrefs<'db> {
+    pub fn xrefs_from(&self) -> Xrefs {
         self.db.xrefs_from(self.address)
     }
 
@@ -650,50 +649,47 @@ pub struct FunctionChunk {
 
 /// A lazy iterator over a function's chunks, entry chunk first then tail chunks in address
 /// order, from [`Function::chunks`].
+///
+/// Materializes the chunk ranges once as an owned snapshot on construction, so it holds no
+/// database borrow while iterating.
 #[doc(alias("func_tail_iterator_t"))]
-pub struct FunctionChunks<'db> {
-    db: &'db Database,
-    address: Address,
-    next: i32,
-    count: i32,
+pub struct FunctionChunks {
+    chunks: std::vec::IntoIter<FunctionChunk>,
 }
 
-impl<'db> FunctionChunks<'db> {
+impl FunctionChunks {
     #[inline]
-    pub(crate) fn new(address: Address, db: &'db Database) -> Self {
-        Self {
-            db,
-            address,
-            next: 0,
-            count: db.func_chunk_qty(address),
-        }
+    pub(crate) fn new(address: Address, db: &Database) -> Self {
+        let chunks = db
+            .range_all_chunks(address)
+            .into_iter()
+            .filter_map(|r| {
+                Some(FunctionChunk {
+                    start: Address::try_new(r.start)?,
+                    end: Address::try_new(r.end)?,
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+        Self { chunks }
     }
 }
 
-impl Iterator for FunctionChunks<'_> {
+impl Iterator for FunctionChunks {
     type Item = FunctionChunk;
 
+    #[inline]
     fn next(&mut self) -> Option<FunctionChunk> {
-        if self.next >= self.count {
-            return None;
-        }
-        let idx = self.next;
-        self.next += 1;
-        let (mut start, mut end): (u64, u64) = (0, 0);
-        if self.db.func_chunk(self.address, idx, &mut start, &mut end) == 0 {
-            return None;
-        }
-        Some(FunctionChunk {
-            start: Address::try_new(start)?,
-            end: Address::try_new(end)?,
-        })
+        self.chunks.next()
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some((self.count - self.next).max(0) as usize))
+        self.chunks.size_hint()
     }
 }
+
+impl ExactSizeIterator for FunctionChunks {}
 
 #[cfg(test)]
 mod tests {

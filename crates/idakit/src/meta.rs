@@ -5,7 +5,6 @@ use std::ops::Range;
 use crate::Database;
 use crate::address::Address;
 use crate::bitness::Bitness;
-use crate::ffi::read_string;
 
 /// An owned, `Send` snapshot of database-wide metadata, from [`Database::info`].
 ///
@@ -51,10 +50,10 @@ impl Database {
         DatabaseInfo {
             bitness: self.bitness(),
             image_base: Address::try_new(self.image_base()),
-            processor: read_string(|buf, cap| self.proc_name(buf, cap)),
-            file_type: read_string(|buf, cap| self.file_type_name(buf, cap)),
-            input_path: read_string(|buf, cap| self.input_path(buf, cap)),
-            root_filename: read_string(|buf, cap| self.root_filename(buf, cap)),
+            processor: self.proc_name(),
+            file_type: self.file_type_name(),
+            input_path: self.input_path(),
+            root_filename: self.root_filename(),
         }
     }
 }

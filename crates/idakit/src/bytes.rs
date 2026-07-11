@@ -8,7 +8,6 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::ffi::read_string;
 
 impl Database {
     /// Whether the kernel classifies the item at `address` as an instruction.
@@ -78,10 +77,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_bytes"))]
     pub fn bytes(&self, address: Address, len: usize) -> Vec<u8> {
-        let mut buf = vec![0u8; len];
-        let got = self.read_into(address, &mut buf);
-        buf.truncate(got);
-        buf
+        self.get_bytes_owned(address, len).unwrap_or_default()
     }
 
     /// Read the comment at `address`, or `None` when that channel carries none.
@@ -91,6 +87,6 @@ impl Database {
     #[must_use]
     #[doc(alias("get_cmt"))]
     pub fn comment(&self, address: Address, repeatable: bool) -> Option<String> {
-        read_string(|buf, cap| self.get_cmt(address, repeatable, buf, cap))
+        self.get_cmt(address, repeatable)
     }
 }

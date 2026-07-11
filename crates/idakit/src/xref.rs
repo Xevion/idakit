@@ -3,9 +3,6 @@
 //! [`CodeXref`]/[`DataXref`], each a closed mirror of IDA's own reference-type enums that
 //! rejects a byte outside the set rather than folding it into a catch-all.
 
-use std::ffi::c_void;
-use std::marker::PhantomData;
-
 use idakit_sys as sys;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
@@ -20,8 +17,8 @@ impl Database {
     #[inline]
     #[must_use]
     #[doc(alias("xrefblk_t", "first_to"))]
-    pub fn xrefs_to(&self, address: Address) -> Xrefs<'_> {
-        Xrefs::new(self.xref_open(address, true))
+    pub fn xrefs_to(&self, address: Address) -> Xrefs {
+        Xrefs::new(self.xrefs_build(address, true))
     }
 
     /// Lazily iterates every cross-reference originating at `address`.
@@ -30,8 +27,8 @@ impl Database {
     #[inline]
     #[must_use]
     #[doc(alias("xrefblk_t", "first_from"))]
-    pub fn xrefs_from(&self, address: Address) -> Xrefs<'_> {
-        Xrefs::new(self.xref_open(address, false))
+    pub fn xrefs_from(&self, address: Address) -> Xrefs {
+        Xrefs::new(self.xrefs_build(address, false))
     }
 }
 
@@ -113,56 +110,45 @@ pub enum XrefOrigin {
 
 /// A lazy iterator over cross-references, from [`Database::xrefs_to`]/[`Database::xrefs_from`].
 ///
-/// Closes the cursor on [`Drop`]. Borrows `&Database`, so it can't coexist with a write.
+/// Owns a materialized snapshot of the reference edges, so it holds no database borrow while
+/// iterating. An edge with a `BADADDR` endpoint, or a type byte outside the modelled set, is
+/// skipped.
 #[doc(alias("first_to", "next_to", "first_from", "next_from"))]
-pub struct Xrefs<'db> {
-    cursor: *mut c_void,
-    _db: PhantomData<&'db Database>,
+pub struct Xrefs {
+    edges: std::vec::IntoIter<Xref>,
 }
 
-impl Xrefs<'_> {
+impl Xrefs {
     #[inline]
-    pub(crate) fn new(cursor: *mut c_void) -> Self {
-        Self {
-            cursor,
-            _db: PhantomData,
-        }
+    pub(crate) fn new(recs: Vec<sys::XrefRec>) -> Self {
+        let edges = recs
+            .into_iter()
+            .filter_map(|r| {
+                Xref::from_raw(
+                    r.from,
+                    r.to,
+                    r.type_ as u8,
+                    u8::from(r.iscode),
+                    u8::from(r.user),
+                )
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+        Self { edges }
     }
 }
 
-impl Iterator for Xrefs<'_> {
+impl Iterator for Xrefs {
     type Item = Xref;
 
+    #[inline]
     fn next(&mut self) -> Option<Xref> {
-        loop {
-            let (mut from, mut to, mut ty, mut iscode, mut user) = (0u64, 0u64, 0u8, 0u8, 0u8);
-            // SAFETY: `cursor` came from `idakit_xref_open` and is live until our `Drop`;
-            // the out-pointers are valid for this call.
-            let ok = unsafe {
-                sys::idakit_xref_next(
-                    self.cursor,
-                    &mut from,
-                    &mut to,
-                    &mut ty,
-                    &mut iscode,
-                    &mut user,
-                )
-            };
-            if ok == 0 {
-                return None;
-            }
-            // A `BADADDR` endpoint is not a usable edge; skip it and keep stepping.
-            if let Some(reference) = Xref::from_raw(from, to, ty, iscode, user) {
-                return Some(reference);
-            }
-        }
+        self.edges.next()
     }
-}
 
-impl Drop for Xrefs<'_> {
-    fn drop(&mut self) {
-        // SAFETY: `cursor` came from `idakit_xref_open` and is closed exactly once here.
-        unsafe { sys::idakit_xref_close(self.cursor) };
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.edges.size_hint()
     }
 }
 

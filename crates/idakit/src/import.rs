@@ -1,24 +1,20 @@
 //! Reads a database's import table through [`Import`] and [`Imports`].
 
-use std::ffi::c_void;
-use std::marker::PhantomData;
-
 use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::ffi::read_string;
 
 impl Database {
     /// Iterate every imported symbol, across all import modules.
     ///
     /// Unlike [`segments`](Database::segments)/[`exports`](Database::exports), imports have no stable
     /// random-access index in IDA, so this materializes a snapshot of the whole import table and
-    /// yields owned [`Import`]s from it; the snapshot is released when the iterator drops.
+    /// yields owned [`Import`]s from it.
     #[inline]
     #[must_use]
     #[doc(alias("enum_import_names", "get_import_module_qty"))]
-    pub fn imports(&self) -> Imports<'_> {
+    pub fn imports(&self) -> Imports {
         Imports::new(self.imports_build())
     }
 }
@@ -73,79 +69,52 @@ impl Import {
     }
 }
 
-/// A lazy iterator over the database's imports, from [`Database::imports`]; frees the snapshot
-/// on drop.
+/// A lazy iterator over the database's imports, from [`Database::imports`].
 ///
-/// Borrows `&Database`, so it can't coexist with a write. `size_hint`'s lower bound is `0`: a
-/// slot with no valid address is skipped.
-pub struct Imports<'db> {
-    handle: *mut c_void,
-    next: usize,
-    count: usize,
-    _db: PhantomData<&'db Database>,
+/// Owns a materialized snapshot of the import table, so it holds no database borrow while
+/// iterating. `size_hint`'s lower bound is `0`: a slot with no valid address is skipped.
+pub struct Imports {
+    rows: std::vec::IntoIter<Import>,
 }
 
-impl Imports<'_> {
+impl Imports {
     #[inline]
-    pub(crate) fn new(handle: *mut c_void) -> Self {
-        // SAFETY: `handle` came from `idakit_imports_build` (never null) and is freed once, in Drop.
-        let count = unsafe { sys::idakit_imports_qty(handle) };
-        Self {
-            handle,
-            next: 0,
-            count,
-            _db: PhantomData,
-        }
+    pub(crate) fn new(recs: Vec<sys::ImportRec>) -> Self {
+        let rows = recs
+            .into_iter()
+            .filter_map(Import::from_rec)
+            .collect::<Vec<_>>()
+            .into_iter();
+        Self { rows }
     }
+}
 
-    /// Read row `n` of the snapshot into an owned [`Import`], or `None` if its slot address is
-    /// `BADADDR` (nothing usable to point at).
-    fn row(&self, n: usize) -> Option<Import> {
-        let (mut ea, mut ord) = (0u64, 0u64);
-        // SAFETY: `handle` is live until Drop; `n < count`; the out-pointers are valid locals.
-        if unsafe { sys::idakit_imports_item(self.handle, n, &mut ea, &mut ord) } == 0 {
-            return None;
-        }
-        let address = Address::try_new(ea)?;
-        // SAFETY (both): `handle` live, `n` in range; the getters fill `(buf, cap)` snprintf-style.
-        let name =
-            read_string(|buf, cap| unsafe { sys::idakit_imports_name(self.handle, n, buf, cap) });
-        let module =
-            read_string(|buf, cap| unsafe { sys::idakit_imports_module(self.handle, n, buf, cap) })
-                .unwrap_or_default();
-        Some(Import {
+impl Import {
+    /// Builds an owned [`Import`] from a snapshot row, or `None` if its slot address is `BADADDR`
+    /// (nothing usable to point at). IDA encodes an absent name as an empty string, folded to
+    /// `None` here.
+    fn from_rec(rec: sys::ImportRec) -> Option<Self> {
+        let address = Address::try_new(rec.ea)?;
+        Some(Self {
             address,
-            ordinal: ord,
-            name,
-            module,
+            ordinal: rec.ord,
+            name: (!rec.name.is_empty()).then_some(rec.name),
+            module: rec.module,
         })
     }
 }
 
-impl Iterator for Imports<'_> {
+impl Iterator for Imports {
     type Item = Import;
 
+    #[inline]
     fn next(&mut self) -> Option<Import> {
-        while self.next < self.count {
-            let n = self.next;
-            self.next += 1;
-            if let Some(import) = self.row(n) {
-                return Some(import);
-            }
-        }
-        None
+        self.rows.next()
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(self.count - self.next))
-    }
-}
-
-impl Drop for Imports<'_> {
-    fn drop(&mut self) {
-        // SAFETY: `handle` came from `idakit_imports_build` and is freed exactly once here.
-        unsafe { sys::idakit_imports_free(self.handle) };
+        self.rows.size_hint()
     }
 }
 

@@ -16,7 +16,7 @@ use crate::function::FunctionChunks;
 /// function's `ret` yields garbage; `is_code` keeps the stream to real instructions.
 pub struct Instructions<'db> {
     db: &'db Database,
-    chunks: FunctionChunks<'db>,
+    chunks: FunctionChunks,
     /// `(next address to examine, current chunk end)`; `None` until the first chunk loads and
     /// again once the last chunk drains.
     cursor: Option<(Address, Address)>,

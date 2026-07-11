@@ -160,14 +160,7 @@ fn main() {
 
     // The cxx signature-bridge spine coexists with the raw facade rather than replacing it; each
     // bridge is its own static archive (see `cxx_bridge`).
-    cxx_bridge(
-        "src/bridge.rs",
-        &["facade/segment_cxx.cc"],
-        "idakit_cxx_bridge",
-        sdk_include_str,
-        &[],
-    );
-
+    //
     // A hand-written bridge over the *generated* qflow_chart_t ExternType, proving a hand bridge
     // can share a spec-generated ExternType (the cfg domain itself is now generated).
     cxx_bridge(
@@ -271,8 +264,6 @@ fn main() {
     for src in FACADE_SOURCES {
         println!("cargo:rerun-if-changed={src}");
     }
-    println!("cargo:rerun-if-changed=facade/segment_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/segment_cxx.h");
     println!("cargo:rerun-if-changed=facade/cfg2_cxx.cc");
     println!("cargo:rerun-if-changed=facade/cfg2_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_cfg2.rs");
@@ -290,7 +281,6 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/probe_ext_cxx.cc");
     println!("cargo:rerun-if-changed=facade/probe_ext_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_probe_ext.rs");
-    println!("cargo:rerun-if-changed=src/bridge.rs");
     println!("cargo:rerun-if-changed=src/bridge_probe.rs");
     println!("cargo:rerun-if-changed=src/bridge_gen.rs");
     println!("cargo:rerun-if-changed=build_support/gen.rs");

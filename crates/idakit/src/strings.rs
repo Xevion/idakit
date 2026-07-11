@@ -8,7 +8,6 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::ffi::read_string;
 
 impl Database {
     /// Iterate every string literal IDA located in the database.
@@ -90,10 +89,8 @@ impl<'db> StringLiteral<'db> {
     #[must_use]
     #[doc(alias("get_strlit_contents"))]
     pub fn text(&self) -> Option<String> {
-        read_string(|buf, cap| {
-            self.db
-                .strlit_contents(self.address, self.length, self.raw_type, buf, cap)
-        })
+        self.db
+            .strlit_contents(self.address, self.length, self.raw_type)
     }
 }
 
@@ -157,15 +154,12 @@ impl<'db> Strings<'db> {
 
     /// Read list entry `n` into a view, or `None` if it is out of range or has no valid address.
     fn item(&self, n: usize) -> Option<StringLiteral<'db>> {
-        let (mut ea, mut length, mut ty) = (0u64, 0i32, 0i32);
-        if self.db.strlist_item(n, &mut ea, &mut length, &mut ty) == 0 {
-            return None;
-        }
-        let address = Address::try_new(ea)?;
+        let item = self.db.strlist_item(n)?;
+        let address = Address::try_new(item.ea)?;
         Some(StringLiteral::new(
             address,
-            length.max(0) as usize,
-            ty,
+            item.length.max(0) as usize,
+            item.type_,
             self.db,
         ))
     }

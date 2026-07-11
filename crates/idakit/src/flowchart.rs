@@ -14,7 +14,7 @@
 //! blocks (`start == end`, decided purely by index past `nproper`), which idakit lifts to typed
 //! edges so the arena stays real code and out-of-function targets stay addressable.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::c_int;
 use std::ops::Range;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -245,23 +245,13 @@ impl Database {
     /// The shared build path behind [`flowchart`](Self::flowchart) and the `flowchart_with`
     /// builder.
     ///
-    /// Constructs the flow chart, extracts every block and edge into an owned arena, and frees
-    /// the kernel object before returning, so the result is a detached `Send` snapshot.
+    /// Constructs the flow chart and extracts every block and edge into an owned arena; the cxx
+    /// `UniquePtr` frees the kernel object on drop, so the result is a detached `Send` snapshot.
     pub(crate) fn build_flowchart(&self, address: Address, flags: c_int) -> Result<FlowChart> {
-        // SAFETY: the kernel is claimed for the lifetime of `&self`. The returned handle is
-        // owned by this call and freed once, below.
-        let handle = unsafe { sys::idakit_cfg_build(address.get(), flags) };
-        if handle.is_null() {
-            return Err(Error::NoFunction {
-                address: address.get(),
-            });
-        }
-        let blocks = extract(handle);
-        // SAFETY: `handle` came from `idakit_cfg_build`, is non-null, and is freed exactly
-        // once here; nothing borrows it afterwards. Freed before propagating an extract error
-        // so the handle never leaks on the unmodeled-kind path.
-        unsafe { sys::idakit_cfg_free(handle) };
-        let blocks = blocks?;
+        let chart = sys::cfg_build(address.get(), flags).map_err(|_| Error::NoFunction {
+            address: address.get(),
+        })?;
+        let blocks = extract(&chart)?;
 
         let function = blocks.iter().next().map_or(address, |(_, b)| b.start());
         Ok(FlowChart {
@@ -298,23 +288,23 @@ const FCB_ENORET: u8 = 5;
 /// `i` is `BasicBlockId::from_raw(i)`, matching the raw edge indices. The rest are zero-length
 /// external stubs: never allocated, only read (their `start` is a jump target) when a proper
 /// block's edge points at one.
-fn extract(handle: *const c_void) -> Result<Arena<BasicBlock>> {
-    // SAFETY (every call below): `handle` is a live flow chart; indices are kept in range by
-    // the loop bounds and the facade's own checks; out-params are valid locals.
-    let nproper = unsafe { sys::idakit_cfg_nproper(handle) };
+fn extract(chart: &sys::FlowChart) -> Result<Arena<BasicBlock>> {
+    let nproper = sys::cfg_nproper(chart);
     let mut blocks = Arena::new();
     for i in 0..nproper {
-        let (mut start, mut end, mut kind) = (0u64, 0u64, 0i32);
-        unsafe { sys::idakit_cfg_block(handle, i, &mut start, &mut end, &mut kind) };
-        let raw = kind as u8;
-        let kind = BasicBlockKind::try_from(raw)
-            .map_err(|_| Error::UnknownBlockKind { block: start, raw })?;
-        let (succ, exits) = successors(handle, i, nproper);
+        // In range since `i < nproper <= nblocks`; a corrupt chart is the only failure.
+        let info = sys::cfg_block(chart, i).expect("cfg_block within nproper");
+        let raw = info.kind as u8;
+        let kind = BasicBlockKind::try_from(raw).map_err(|_| Error::UnknownBlockKind {
+            block: info.start,
+            raw,
+        })?;
+        let (succ, exits) = successors(chart, i, nproper);
         blocks.alloc(BasicBlock {
-            range: block_range(start, end),
+            range: block_range(info.start, info.end),
             kind,
             succ,
-            pred: predecessors(handle, i, nproper),
+            pred: predecessors(chart, i, nproper),
             exits,
         });
     }
@@ -325,30 +315,21 @@ fn extract(handle: *const c_void) -> Result<Arena<BasicBlock>> {
 /// the rest are external stubs read into [`ExternalExit`]s (target = stub start, `noreturn`
 /// from the stub's terminator kind).
 fn successors(
-    handle: *const c_void,
-    n: c_int,
-    nproper: c_int,
+    chart: &sys::FlowChart,
+    n: usize,
+    nproper: usize,
 ) -> (Vec<BasicBlockId>, Vec<ExternalExit>) {
-    // SAFETY (every call): `handle` live, `n` in `[0, nproper)`, `i` in `[0, count)`, `j`
-    // returned in range by the facade.
-    let count = unsafe { sys::idakit_cfg_nsucc(handle, n) };
     let mut succ = Vec::new();
     let mut exits = Vec::new();
-    for i in 0..count {
-        let j = unsafe { sys::idakit_cfg_succ(handle, n, i) };
-        if j < 0 {
-            continue;
-        }
-        if j < nproper {
-            if let Ok(id) = u32::try_from(j) {
-                succ.push(BasicBlockId::from_raw(id));
-            }
+    for j in sys::cfg_succs(chart, n).expect("cfg_succs within nproper") {
+        if (j as usize) < nproper {
+            succ.push(BasicBlockId::from_raw(j));
         } else {
-            let (mut start, mut end, mut kind) = (0u64, 0u64, 0i32);
-            unsafe { sys::idakit_cfg_block(handle, j, &mut start, &mut end, &mut kind) };
+            // An external stub: its index is a real block slot (`< nblocks`), so this resolves.
+            let info = sys::cfg_block(chart, j as usize).expect("cfg_block for external stub");
             exits.push(ExternalExit {
-                target: Address::try_new(start).expect("external stub start is BADADDR"),
-                noreturn: kind as u8 == FCB_ENORET,
+                target: Address::try_new(info.start).expect("external stub start is BADADDR"),
+                noreturn: info.kind as u8 == FCB_ENORET,
             });
         }
     }
@@ -358,17 +339,12 @@ fn successors(
 /// The block at index `n`'s predecessor handles. All are internal, since external stubs are
 /// pure sinks and no proper block has one as a predecessor; an out-of-range index is dropped
 /// defensively.
-fn predecessors(handle: *const c_void, n: c_int, nproper: c_int) -> Vec<BasicBlockId> {
-    // SAFETY: as in `successors`.
-    let count = unsafe { sys::idakit_cfg_npred(handle, n) };
-    (0..count)
-        .filter_map(|i| {
-            let j = unsafe { sys::idakit_cfg_pred(handle, n, i) };
-            (0..nproper)
-                .contains(&j)
-                .then(|| u32::try_from(j).ok().map(BasicBlockId::from_raw))
-                .flatten()
-        })
+fn predecessors(chart: &sys::FlowChart, n: usize, nproper: usize) -> Vec<BasicBlockId> {
+    sys::cfg_preds(chart, n)
+        .expect("cfg_preds within nproper")
+        .into_iter()
+        .filter(|&j| (j as usize) < nproper)
+        .map(BasicBlockId::from_raw)
         .collect()
 }
 

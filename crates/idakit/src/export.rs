@@ -2,7 +2,6 @@
 
 use crate::Database;
 use crate::address::Address;
-use crate::ffi::read_string;
 
 impl Database {
     /// Iterate every export (entry point) in the database, in kernel order.
@@ -58,14 +57,14 @@ impl<'db> Export<'db> {
     #[must_use]
     #[doc(alias("get_entry_name"))]
     pub fn name(&self) -> Option<String> {
-        read_string(|buf, cap| self.db.export_name(self.index, buf, cap))
+        self.db.export_name(self.index)
     }
 
     /// The forward target (e.g. `"OTHERLIB.func"`), or `None` when the export is defined here.
     #[must_use]
     #[doc(alias("get_entry_forwarder"))]
     pub fn forwarder(&self) -> Option<String> {
-        read_string(|buf, cap| self.db.export_forwarder(self.index, buf, cap))
+        self.db.export_forwarder(self.index)
     }
 }
 

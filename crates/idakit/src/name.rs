@@ -3,7 +3,6 @@
 
 use crate::Database;
 use crate::address::Address;
-use crate::ffi::{read_string, with_cstr};
 
 impl Database {
     /// The name at `address` (a label, function, or data name), or `None` if the address is
@@ -15,7 +14,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_ea_name"))]
     pub fn name(&self, address: Address) -> Option<String> {
-        read_string(|buf, cap| self.get_ea_name(address, buf, cap))
+        self.get_ea_name(address)
     }
 
     /// The address a name resolves to, or `None` if no such name exists.
@@ -25,11 +24,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_name_ea"))]
     pub fn address_of(&self, name: impl AsRef<str>) -> Option<Address> {
-        with_cstr(name.as_ref(), "name", |p| {
-            Address::try_new(self.get_name_ea(p))
-        })
-        .ok()
-        .flatten()
+        Address::try_new(self.get_name_ea(name.as_ref()))
     }
 
     /// Demangle a mangled symbol into readable form, or `None` if `name` is not a mangled name
@@ -40,11 +35,7 @@ impl Database {
     #[must_use]
     #[doc(alias("demangle_name"))]
     pub fn demangle(&self, name: impl AsRef<str>) -> Option<String> {
-        with_cstr(name.as_ref(), "name", |p| {
-            read_string(|buf, cap| self.demangle_name(p, buf, cap))
-        })
-        .ok()
-        .flatten()
+        self.demangle_name(name.as_ref())
     }
 
     /// Lazily iterate every named address in the database, in the kernel's name-list order.
@@ -92,8 +83,7 @@ impl Iterator for Names<'_> {
             let idx = self.next;
             self.next += 1;
             if let Some(address) = Address::try_new(self.db.nlist_ea(idx)) {
-                let name =
-                    read_string(|buf, cap| self.db.nlist_name(idx, buf, cap)).unwrap_or_default();
+                let name = self.db.nlist_name(idx).unwrap_or_default();
                 return Some(Name { address, name });
             }
         }

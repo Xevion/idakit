@@ -101,34 +101,37 @@ impl Database {
         unsafe { sys::idakit_was_trapped() != 0 }
     }
 
+    /// Zero-alloc read into `buf`; the generated `get_bytes` returns an owned `Vec`, so it can't
+    /// back this buffer-fill twin, which stays on the raw facade. [`get_bytes_owned`] is the
+    /// owning generated path.
+    ///
+    /// [`get_bytes_owned`]: Self::get_bytes_owned
     pub(crate) fn get_bytes(&self, address: Address, buf: *mut c_void, size: usize) -> i64 {
         unsafe { sys::idakit_get_bytes(address.get(), buf, size) }
     }
 
-    pub(crate) fn get_u8(&self, address: Address, out: *mut u8) -> c_int {
-        unsafe { sys::idakit_get_u8(address.get(), out) }
+    pub(crate) fn get_bytes_owned(&self, address: Address, size: usize) -> Option<Vec<u8>> {
+        sys::get_bytes(address.get(), size).ok()
     }
 
-    pub(crate) fn get_u16(&self, address: Address, out: *mut u16) -> c_int {
-        unsafe { sys::idakit_get_u16(address.get(), out) }
+    pub(crate) fn get_u8(&self, address: Address) -> Option<u8> {
+        sys::get_u8(address.get()).ok()
     }
 
-    pub(crate) fn get_u32(&self, address: Address, out: *mut u32) -> c_int {
-        unsafe { sys::idakit_get_u32(address.get(), out) }
+    pub(crate) fn get_u16(&self, address: Address) -> Option<u16> {
+        sys::get_u16(address.get()).ok()
     }
 
-    pub(crate) fn get_u64(&self, address: Address, out: *mut u64) -> c_int {
-        unsafe { sys::idakit_get_u64(address.get(), out) }
+    pub(crate) fn get_u32(&self, address: Address) -> Option<u32> {
+        sys::get_u32(address.get()).ok()
     }
 
-    pub(crate) fn get_strlit(
-        &self,
-        address: Address,
-        strtype: c_int,
-        buf: *mut c_char,
-        cap: usize,
-    ) -> i64 {
-        unsafe { sys::idakit_get_strlit(address.get(), strtype, buf, cap) }
+    pub(crate) fn get_u64(&self, address: Address) -> Option<u64> {
+        sys::get_u64(address.get()).ok()
+    }
+
+    pub(crate) fn get_strlit(&self, address: Address, strtype: c_int) -> Option<String> {
+        sys::get_strlit(address.get(), strtype).ok()
     }
 
     pub(crate) fn decode_insn(&self, address: Address, out: *mut sys::InstructionRaw) -> c_int {
@@ -136,89 +139,89 @@ impl Database {
     }
 
     pub(crate) fn get_flags(&self, address: Address) -> u64 {
-        unsafe { sys::idakit_get_flags(address.get()) }
+        sys::get_flags(address.get())
     }
 
     pub(crate) fn get_item_head(&self, address: Address) -> sys::Address {
-        unsafe { sys::idakit_get_item_head(address.get()) }
+        sys::get_item_head(address.get())
     }
 
     pub(crate) fn get_item_end(&self, address: Address) -> sys::Address {
-        unsafe { sys::idakit_get_item_end(address.get()) }
+        sys::get_item_end(address.get())
     }
 
     pub(crate) fn get_next_head(&self, address: Address, maxea: Address) -> sys::Address {
-        unsafe { sys::idakit_get_next_head(address.get(), maxea.get()) }
+        sys::get_next_head(address.get(), maxea.get())
     }
 
     pub(crate) fn get_prev_head(&self, address: Address, minea: Address) -> sys::Address {
-        unsafe { sys::idakit_get_prev_head(address.get(), minea.get()) }
+        sys::get_prev_head(address.get(), minea.get())
     }
 
     pub(crate) fn bitness_bits(&self) -> c_int {
-        unsafe { sys::idakit_bitness() }
+        sys::bitness()
     }
 
     pub(crate) fn image_base(&self) -> sys::Address {
-        unsafe { sys::idakit_image_base() }
+        sys::image_base()
     }
 
     pub(crate) fn min_ea(&self) -> sys::Address {
-        unsafe { sys::idakit_min_ea() }
+        sys::min_ea()
     }
 
     pub(crate) fn max_ea(&self) -> sys::Address {
-        unsafe { sys::idakit_max_ea() }
+        sys::max_ea()
     }
 
-    pub(crate) fn proc_name(&self, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_proc_name(buf, cap) }
+    pub(crate) fn proc_name(&self) -> Option<String> {
+        sys::proc_name().ok()
     }
 
-    pub(crate) fn file_type_name(&self, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_file_type_name(buf, cap) }
+    pub(crate) fn file_type_name(&self) -> Option<String> {
+        sys::file_type_name().ok()
     }
 
-    pub(crate) fn input_path(&self, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_input_path(buf, cap) }
+    pub(crate) fn input_path(&self) -> Option<String> {
+        sys::input_path().ok()
     }
 
-    pub(crate) fn root_filename(&self, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_root_filename(buf, cap) }
+    pub(crate) fn root_filename(&self) -> Option<String> {
+        sys::root_filename().ok()
     }
 
-    pub(crate) fn get_ea_name(&self, address: Address, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_get_ea_name(address.get(), buf, cap) }
+    pub(crate) fn get_ea_name(&self, address: Address) -> Option<String> {
+        sys::get_ea_name(address.get()).ok()
     }
 
-    pub(crate) fn get_name_ea(&self, name: *const c_char) -> sys::Address {
-        unsafe { sys::idakit_get_name_ea(name) }
+    pub(crate) fn get_name_ea(&self, name: &str) -> sys::Address {
+        sys::get_name_ea(name)
     }
 
-    pub(crate) fn demangle_name(&self, name: *const c_char, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_demangle_name(name, buf, cap) }
+    pub(crate) fn demangle_name(&self, name: &str) -> Option<String> {
+        sys::demangle_name(name).ok()
     }
 
     pub(crate) fn nlist_size(&self) -> usize {
-        unsafe { sys::idakit_nlist_size() }
+        sys::nlist_size()
     }
 
     pub(crate) fn nlist_ea(&self, idx: usize) -> sys::Address {
-        unsafe { sys::idakit_nlist_ea(idx) }
+        sys::nlist_ea(idx)
     }
 
-    pub(crate) fn nlist_name(&self, idx: usize, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_nlist_name(idx, buf, cap) }
+    pub(crate) fn nlist_name(&self, idx: usize) -> Option<String> {
+        sys::nlist_name(idx).ok()
     }
 
-    /// Opens a reference cursor over the current database.
+    /// Every cross-reference edge at `address`, as an owned snapshot.
     ///
-    /// `is_to` selects xrefs targeting `address` vs originating at it. The returned handle
-    /// is owned by the [`Xrefs`] iterator, which closes it on drop.
+    /// `is_to` selects xrefs targeting `address` vs originating at it. The [`Xrefs`] iterator owns
+    /// the returned `Vec` and needs no kernel access to walk it.
     ///
     /// [`Xrefs`]: crate::Xrefs
-    pub(crate) fn xref_open(&self, address: Address, is_to: bool) -> *mut c_void {
-        unsafe { sys::idakit_xref_open(address.get(), is_to as u8) }
+    pub(crate) fn xrefs_build(&self, address: Address, is_to: bool) -> Vec<sys::XrefRec> {
+        sys::xrefs_build(address.get(), is_to)
     }
 
     pub(crate) fn hexrays_init(&self) -> c_int {
@@ -253,14 +256,8 @@ impl Database {
         unsafe { sys::set_cmt(address.get(), comment, repeatable) }
     }
 
-    pub(crate) fn get_cmt(
-        &self,
-        address: Address,
-        repeatable: bool,
-        buf: *mut c_char,
-        cap: usize,
-    ) -> i64 {
-        unsafe { sys::idakit_get_cmt(address.get(), repeatable as u8, buf, cap) }
+    pub(crate) fn get_cmt(&self, address: Address, repeatable: bool) -> Option<String> {
+        sys::get_cmt(address.get(), repeatable).ok()
     }
 
     pub(crate) fn patch_bytes(
@@ -273,29 +270,21 @@ impl Database {
     }
 
     pub(crate) fn func_qty(&self) -> usize {
-        unsafe { sys::idakit_func_qty() }
+        sys::func_qty()
     }
 
     pub(crate) fn func_ea(&self, n: usize) -> sys::Address {
-        unsafe { sys::idakit_func_ea(n) }
+        sys::func_ea(n)
     }
 
-    pub(crate) fn func_name(&self, address: Address, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_func_name(address.get(), buf, cap) }
+    pub(crate) fn func_name(&self, address: Address) -> Option<String> {
+        sys::func_name(address.get()).ok()
     }
 
-    pub(crate) fn func_chunk_qty(&self, address: Address) -> c_int {
-        unsafe { sys::idakit_func_chunk_qty(address.get()) }
-    }
-
-    pub(crate) fn func_chunk(
-        &self,
-        address: Address,
-        idx: c_int,
-        start: *mut sys::Address,
-        end: *mut sys::Address,
-    ) -> c_int {
-        unsafe { sys::idakit_func_chunk(address.get(), idx, start, end) }
+    /// Every chunk of the function at `address` (entry chunk first), as an owned range snapshot;
+    /// empty when no function lives there.
+    pub(crate) fn range_all_chunks(&self, address: Address) -> Vec<sys::RangeT> {
+        sys::range_all_chunks(address.get()).unwrap_or_default()
     }
 
     pub(crate) fn func_type(&self, address: Address, buf: *mut c_char, cap: usize) -> i64 {
@@ -311,11 +300,11 @@ impl Database {
     }
 
     pub(crate) fn func_start(&self, address: Address) -> sys::Address {
-        unsafe { sys::idakit_func_start(address.get()) }
+        sys::func_start(address.get())
     }
 
     pub(crate) fn func_end(&self, address: Address) -> sys::Address {
-        unsafe { sys::idakit_func_end(address.get()) }
+        sys::func_end(address.get())
     }
 
     /// Parses `decl` and applies the resulting type at `address`; the reason is copied out of the
@@ -684,83 +673,77 @@ impl Database {
     }
 
     pub(crate) fn func_flags(&self, address: Address) -> u64 {
-        unsafe { sys::idakit_func_flags(address.get()) }
+        sys::func_flags(address.get())
     }
 
     pub(crate) fn seg_qty(&self) -> c_int {
-        unsafe { sys::idakit_seg_qty() }
+        sys::gen_seg_qty() as c_int
     }
 
-    pub(crate) fn seg_name(&self, n: c_int, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_seg_name(n, buf, cap) }
+    pub(crate) fn seg_name(&self, n: c_int) -> Option<String> {
+        sys::gen_seg_name(n).ok()
     }
 
     pub(crate) fn seg_start(&self, n: c_int) -> sys::Address {
-        unsafe { sys::idakit_seg_start(n) }
+        sys::gen_seg_start(n)
     }
 
     pub(crate) fn seg_end(&self, n: c_int) -> sys::Address {
-        unsafe { sys::idakit_seg_end(n) }
+        sys::gen_seg_end(n)
     }
 
     pub(crate) fn seg_perm(&self, n: c_int) -> c_int {
-        unsafe { sys::idakit_seg_perm(n) }
+        sys::gen_seg_perm(n)
     }
 
     pub(crate) fn seg_bitness(&self, n: c_int) -> c_int {
-        unsafe { sys::idakit_seg_bitness(n) }
+        sys::gen_seg_bitness(n)
     }
 
-    pub(crate) fn seg_class(&self, n: c_int, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_seg_class(n, buf, cap) }
+    pub(crate) fn seg_class(&self, n: c_int) -> Option<String> {
+        sys::gen_seg_class(n).ok()
     }
 
     pub(crate) fn export_qty(&self) -> usize {
-        unsafe { sys::idakit_export_qty() }
+        sys::export_qty()
     }
 
     pub(crate) fn export_ea(&self, idx: usize) -> sys::Address {
-        unsafe { sys::idakit_export_ea(idx) }
+        sys::export_ea(idx)
     }
 
     pub(crate) fn export_ordinal(&self, idx: usize) -> u64 {
-        unsafe { sys::idakit_export_ordinal(idx) }
+        sys::export_ordinal(idx)
     }
 
-    pub(crate) fn export_name(&self, idx: usize, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_export_name(idx, buf, cap) }
+    pub(crate) fn export_name(&self, idx: usize) -> Option<String> {
+        sys::export_name(idx).ok()
     }
 
-    pub(crate) fn export_forwarder(&self, idx: usize, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_export_forwarder(idx, buf, cap) }
+    pub(crate) fn export_forwarder(&self, idx: usize) -> Option<String> {
+        sys::export_forwarder(idx).ok()
     }
 
-    /// Materializes the import table into an owned snapshot handle.
+    /// The whole import table as an owned snapshot.
     ///
-    /// The [`Imports`] iterator owns it and frees it on drop.
+    /// The [`Imports`] iterator owns the returned `Vec` and needs no kernel access to walk it.
     ///
     /// [`Imports`]: crate::Imports
-    pub(crate) fn imports_build(&self) -> *mut c_void {
-        unsafe { sys::idakit_imports_build() }
+    pub(crate) fn imports_build(&self) -> Vec<sys::ImportRec> {
+        sys::imports_build()
     }
 
     /// (Re)builds IDA's global string list, a query-time scan, not a database mutation.
     pub(crate) fn strlist_build(&self) {
-        unsafe { sys::idakit_strlist_build() };
+        sys::strlist_build();
     }
 
     pub(crate) fn strlist_qty(&self) -> usize {
-        unsafe { sys::idakit_strlist_qty() }
+        sys::strlist_qty()
     }
 
-    pub(crate) fn strlist_item(
-        &self,
-        n: usize,
-        ea: *mut sys::Address,
-        length: *mut c_int,
-        ty: *mut c_int,
-    ) -> c_int {
-        unsafe { sys::idakit_strlist_item(n, ea, length, ty) }
+    pub(crate) fn strlist_item(&self, n: usize) -> Option<sys::StrlistItem> {
+        sys::strlist_item(n).ok()
     }
 
     pub(crate) fn strlit_contents(
@@ -768,9 +751,7 @@ impl Database {
         address: Address,
         len: usize,
         ty: c_int,
-        buf: *mut c_char,
-        cap: usize,
-    ) -> i64 {
-        unsafe { sys::idakit_strlit_contents(address.get(), len, ty, buf, cap) }
+    ) -> Option<String> {
+        sys::strlit_contents(address.get(), len, ty).ok()
     }
 }

@@ -15,8 +15,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_byte"))]
     pub fn read_u8(&self, address: Address) -> Option<u8> {
-        let mut out = 0u8;
-        (self.get_u8(address, &mut out) != 0).then_some(out)
+        self.get_u8(address)
     }
 
     /// Read a 16-bit unsigned value at `address` (database byte order), or `None` if the two
@@ -24,8 +23,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_word"))]
     pub fn read_u16(&self, address: Address) -> Option<u16> {
-        let mut out = 0u16;
-        (self.get_u16(address, &mut out) != 0).then_some(out)
+        self.get_u16(address)
     }
 
     /// Read a 32-bit unsigned value at `address` (database byte order), or `None` if the four
@@ -33,8 +31,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_dword"))]
     pub fn read_u32(&self, address: Address) -> Option<u32> {
-        let mut out = 0u32;
-        (self.get_u32(address, &mut out) != 0).then_some(out)
+        self.get_u32(address)
     }
 
     /// Read a 64-bit unsigned value at `address` (database byte order), or `None` if the eight
@@ -42,8 +39,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_qword"))]
     pub fn read_u64(&self, address: Address) -> Option<u64> {
-        let mut out = 0u64;
-        (self.get_u64(address, &mut out) != 0).then_some(out)
+        self.get_u64(address)
     }
 
     /// Read a pointer at `address` as an [`Address`].
@@ -70,8 +66,6 @@ impl Database {
     #[must_use]
     #[doc(alias("get_strlit"))]
     pub fn read_string(&self, address: Address) -> Option<String> {
-        // Fully qualified: `Database::read_string` (this method) and the `ffi::read_string` buffer
-        // helper share a name; the path keeps them apart.
-        crate::ffi::read_string(|buf, cap| self.get_strlit(address, 0, buf, cap))
+        self.get_strlit(address, 0)
     }
 }

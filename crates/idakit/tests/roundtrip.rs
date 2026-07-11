@@ -21,82 +21,79 @@ fn run(idb: &mut idakit::Database) {
     assert!(func_count > 0, "expected at least one function");
     assert!(seg_count > 0, "expected at least one segment");
 
-    // cxx signature-bridge cross-check: the cxx-bridged `idakit_cxx::seg_*` must agree with the
-    // raw facade path on the same open database. idakit's `Segment` view is a thin wrapper over
-    // the raw `idakit_seg_*` functions, so comparing the cxx return against it is a genuine
-    // cxx-vs-raw check -- and for the string accessors it proves owned `String`/`Result<String>`
-    // returns match the raw snprintf-buffer path byte for byte.
+    // Spec-generated segment bridge (idakit_gen::gen_seg_*): built entirely from the declarative
+    // SEGMENT_SPEC via cxx-gen, cross-checked against the raw idakit_seg_* facade over every
+    // segment. idakit's `Segment` view now rides this generated bridge, so the genuine cxx-vs-raw
+    // comparison is gen against the raw facade directly: passthrough scalars, lookup+scalar, and
+    // the owned Result<String> getters, which must match the raw snprintf buffer byte for byte.
     {
+        use std::os::raw::c_char;
+
         use idakit_sys as sys;
 
+        // SAFETY: read-only raw facade calls on the open database, used throughout this block.
+        let raw_qty = unsafe { sys::idakit_seg_qty() };
         assert_eq!(
-            sys::seg_qty(),
-            seg_count,
-            "cxx seg_qty disagrees with the raw segment count"
+            sys::gen_seg_qty(),
+            raw_qty as usize,
+            "generated gen_seg_qty disagrees with the raw facade"
         );
-        for seg in idb.segments() {
-            let n = seg.index();
-            assert_eq!(
-                Address::try_new(sys::seg_start(n)),
-                seg.start(),
-                "cxx seg_start disagrees with raw at segment {n}"
-            );
-            assert_eq!(
-                Address::try_new(sys::seg_end(n)),
-                seg.end(),
-                "cxx seg_end disagrees with raw at segment {n}"
-            );
-            assert_eq!(
-                sys::seg_name(n).ok(),
-                seg.name(),
-                "cxx seg_name disagrees with raw at segment {n}"
-            );
-            // Absent class: cxx throws (mapped to Err -> None here); raw returns None. Both agree.
-            assert_eq!(
-                sys::seg_class(n).ok(),
-                seg.class_name(),
-                "cxx seg_class disagrees with raw at segment {n}"
-            );
-
-            // Spec-generated bridge (idakit_gen::gen_seg_*): built entirely from the declarative
-            // SEGMENT_SPEC via cxx-gen, it must agree with the hand-written cxx bridge byte for
-            // byte on every accessor shape (passthrough, lookup+scalar, Result<String>).
+        for n in 0..raw_qty {
             assert_eq!(
                 sys::gen_seg_start(n),
-                sys::seg_start(n),
-                "generated gen_seg_start disagrees with hand-written at segment {n}"
+                unsafe { sys::idakit_seg_start(n) },
+                "generated gen_seg_start disagrees with raw at segment {n}"
             );
             assert_eq!(
                 sys::gen_seg_end(n),
-                sys::seg_end(n),
-                "generated gen_seg_end disagrees with hand-written at segment {n}"
+                unsafe { sys::idakit_seg_end(n) },
+                "generated gen_seg_end disagrees with raw at segment {n}"
             );
             assert_eq!(
                 sys::gen_seg_perm(n),
-                sys::seg_perm(n),
-                "generated gen_seg_perm disagrees with hand-written at segment {n}"
+                unsafe { sys::idakit_seg_perm(n) },
+                "generated gen_seg_perm disagrees with raw at segment {n}"
             );
             assert_eq!(
                 sys::gen_seg_bitness(n),
-                sys::seg_bitness(n),
-                "generated gen_seg_bitness disagrees with hand-written at segment {n}"
+                unsafe { sys::idakit_seg_bitness(n) },
+                "generated gen_seg_bitness disagrees with raw at segment {n}"
             );
+
+            let mut buf = [0u8; 4096];
+            let raw_len =
+                unsafe { sys::idakit_seg_name(n, buf.as_mut_ptr() as *mut c_char, buf.len()) };
+            let raw_name = (raw_len > 0).then(|| {
+                assert!(
+                    (raw_len as usize) < buf.len(),
+                    "seg_name buffer too small at segment {n}"
+                );
+                String::from_utf8_lossy(&buf[..raw_len as usize]).into_owned()
+            });
             assert_eq!(
                 sys::gen_seg_name(n).ok(),
-                sys::seg_name(n).ok(),
-                "generated gen_seg_name disagrees with hand-written at segment {n}"
+                raw_name,
+                "generated gen_seg_name disagrees with raw at segment {n}"
             );
+
+            // Absent class: gen throws (mapped to Err -> None here); the raw buffer path reports a
+            // non-positive length (also None). Both agree.
+            let mut cbuf = [0u8; 4096];
+            let craw_len =
+                unsafe { sys::idakit_seg_class(n, cbuf.as_mut_ptr() as *mut c_char, cbuf.len()) };
+            let raw_class = (craw_len > 0).then(|| {
+                assert!(
+                    (craw_len as usize) < cbuf.len(),
+                    "seg_class buffer too small at segment {n}"
+                );
+                String::from_utf8_lossy(&cbuf[..craw_len as usize]).into_owned()
+            });
             assert_eq!(
                 sys::gen_seg_class(n).ok(),
-                sys::seg_class(n).ok(),
-                "generated gen_seg_class disagrees with hand-written at segment {n}"
+                raw_class,
+                "generated gen_seg_class disagrees with raw at segment {n}"
             );
         }
-        assert_eq!(
-            sys::gen_seg_qty(),
-            sys::seg_qty(),
-            "generated gen_seg_qty disagrees with hand-written seg_qty"
-        );
         // The Custom escape-hatch body (hand-written in facade/gen_custom.cc, declared by the
         // spec) must equal the byte span summed over the raw facade path.
         let raw_span_total: u64 = idb
@@ -109,7 +106,7 @@ fn run(idb: &mut idakit::Database) {
             "generated custom gen_seg_span_total disagrees with summed raw spans"
         );
         println!(
-            "cxx bridge cross-check OK: {seg_count} segments agree across raw, hand-written, and spec-generated facades"
+            "cxx generated segment cross-check OK: {seg_count} segments agree with the raw facade"
         );
     }
 

@@ -244,14 +244,14 @@ impl<'db> Location<'db> {
     /// Lazily iterates cross-references targeting this address.
     #[inline]
     #[must_use]
-    pub fn xrefs_to(&self) -> Xrefs<'db> {
+    pub fn xrefs_to(&self) -> Xrefs {
         self.db.xrefs_to(self.address)
     }
 
     /// Lazily iterates cross-references originating at this address.
     #[inline]
     #[must_use]
-    pub fn xrefs_from(&self) -> Xrefs<'db> {
+    pub fn xrefs_from(&self) -> Xrefs {
         self.db.xrefs_from(self.address)
     }
 }
