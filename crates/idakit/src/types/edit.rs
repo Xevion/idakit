@@ -135,7 +135,7 @@ impl TypeEdit<'_> {
     }
 
     fn add_member_impl(&mut self, name: &str, ty: TypeExpr, member_bit: u64) -> Result<()> {
-        let recipe = ty.serialize();
+        let recipe = ty.checked_serialize()?;
         let type_name = self.name.clone();
         let result = self.db.udt_add_member(
             nul_checked(&type_name, "type name")?,
@@ -347,10 +347,10 @@ impl MemberEdit<'_> {
     /// # Errors
     /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], [`TypeWriteError::BuildFailed`]
     /// if `ty` cannot be built, or [`TypeWriteError::Rejected`] if the kernel rejects the type; or
-    /// [`Error::InteriorNul`] for a NUL byte in a name.
+    /// [`Error::InteriorNul`] for a NUL byte in a name or type.
     #[doc(alias("set_udm_type"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
-        let recipe = ty.into().serialize();
+        let recipe = ty.into().checked_serialize()?;
         let result =
             self.dispatch(|db, tp, mp, bit| db.udt_set_member_type(tp, mp, bit, &recipe))?;
         edit_result(result.code, result.reason, &self.type_name, Some(&self.key))

@@ -292,7 +292,7 @@ InstructionData decode_insn(uint64_t ea) {
   bool stops = (feature & CF_STOP) != 0;
   bool has_tgt = tgt != BADADDR;
   // A direct unconditional jump has a static code target, stops sequential flow, and is neither a
-  // call nor a ret -- this catches `jmp` (incl. tail calls) without hardcoding its itype.
+  // call nor a ret; this catches `jmp` (incl. tail calls) without hardcoding its itype.
   bool is_jump = jcc || ijmp || (has_tgt && stops && !call && !ret);
   bool indirect = (call || is_jump) && !has_tgt;
 

@@ -1,7 +1,8 @@
 //! Constructs [`TypeExpr`], the owned recipe a type write applies.
 //!
 //! A `TypeExpr` is the *constructor intent* for a type: what to apply, built off the kernel thread
-//! and infallibly, with every parse or resolution deferred to the one apply call. It is a small
+//! and infallibly, with every parse or resolution deferred to the one apply call (or pre-validated
+//! off the kernel with [`check`](TypeExpr::check)). It is a small
 //! recursive algebra: scalar leaves ([`int32`], [`void`], and so on), a named-type reference
 //! ([`named`]), a raw C declaration ([`decl`]), a function prototype ([`function`]), and the
 //! transforms that wrap an inner recipe ([`pointer`](TypeExpr::pointer),
@@ -33,6 +34,8 @@ use std::fmt;
 
 use idakit_sys as sys;
 
+use crate::error::Result;
+use crate::ffi::nul_checked;
 use crate::function::CallingConvention;
 
 /// An owned, `Send`, table-free recipe for a type to apply.
@@ -520,6 +523,45 @@ impl TypeExpr {
         buf
     }
 
+    /// Checks, without touching the kernel, that the recipe is well-formed to apply.
+    ///
+    /// A recipe defers every kernel-dependent failure (a missing named type, an unparseable
+    /// declaration) to the apply call. This validates only what is decidable off the kernel: that
+    /// no [`named`] reference, [`decl`] string, or parameter name carries an interior NUL byte,
+    /// which would otherwise truncate the type at the FFI boundary. The apply verbs
+    /// ([`set_type`](crate::LocationMut::set_type) and friends) run it themselves; call it to
+    /// reject a malformed recipe up front, before a batch of applies.
+    ///
+    /// # Errors
+    /// [`Error::InteriorNul`](crate::Error::InteriorNul) if a name, declaration, or parameter name
+    /// contains a NUL byte.
+    pub fn check(&self) -> Result<()> {
+        match self {
+            Self::Void | Self::Bool | Self::Int { .. } | Self::Float { .. } => Ok(()),
+            Self::Named(name) => nul_checked(name, "name").map(drop),
+            Self::Decl(text) => nul_checked(text, "decl").map(drop),
+            Self::Pointer(inner) | Self::Const(inner) | Self::Volatile(inner) => inner.check(),
+            Self::Array { elem, .. } => elem.check(),
+            Self::Function { ret, params, .. } => {
+                ret.check()?;
+                for p in params {
+                    if let Some(name) = &p.name {
+                        nul_checked(name, "parameter name").map(drop)?;
+                    }
+                    p.ty.check()?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// [`serialize`](Self::serialize) gated by [`check`](Self::check): the fallible lowering the
+    /// apply verbs use, so a recipe that would truncate at the FFI boundary never reaches the facade.
+    pub(crate) fn checked_serialize(&self) -> Result<Vec<u8>> {
+        self.check()?;
+        Ok(self.serialize())
+    }
+
     fn encode(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Void => buf.push(sys::IDAKIT_RECIPE_VOID),
@@ -849,6 +891,34 @@ mod tests {
         let p = named("Foo").pointer();
         assert!(p.as_pointer() == Some(&named("Foo")));
         assert!(p.as_array().is_none());
+    }
+
+    #[test]
+    fn check_rejects_interior_nul_anywhere() {
+        use crate::Error;
+
+        // A top-level name or declaration.
+        assert!(let Err(Error::InteriorNul { arg: "name" }) = named("a\0b").check());
+        assert!(let Err(Error::InteriorNul { arg: "decl" }) = decl("int\0x").check());
+
+        // A name nested inside composites: the case the FFI boundary would have truncated.
+        assert!(
+            let Err(Error::InteriorNul { arg: "name" }) = named("a\0b").pointer().array(2).check()
+        );
+
+        // A function parameter name.
+        let f = function(int32()).named_arg("p\0q", int32()).build();
+        assert!(let Err(Error::InteriorNul { arg: "parameter name" }) = f.check());
+
+        // Clean recipes pass.
+        assert!(named("Foo").pointer().check().is_ok());
+        assert!(
+            function(int32())
+                .named_arg("ok", int32())
+                .build()
+                .check()
+                .is_ok()
+        );
     }
 
     #[test]

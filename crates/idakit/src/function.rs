@@ -402,11 +402,12 @@ impl FunctionEdit<'_> {
     ///
     /// # Errors
     /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype,
-    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `ret` cannot be built, or
-    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `ret` cannot be built,
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature, or
+    /// [`Error::InteriorNul`] if `ret` names a type containing a NUL byte.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_return_type(&mut self, ret: impl Into<TypeExpr>) -> Result<()> {
-        let recipe = ret.into().serialize();
+        let recipe = ret.into().checked_serialize()?;
         let result = self.db.func_set_rettype(self.entry, &recipe);
         sig_result(result.code, self.entry, None, result.reason)
     }
@@ -416,11 +417,12 @@ impl FunctionEdit<'_> {
     /// # Errors
     /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype,
     /// [`TypeWriteError::ArgIndexOutOfRange`](crate::types::TypeWriteError::ArgIndexOutOfRange) if `index` is past the last parameter,
-    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `ty` cannot be built, or
-    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `ty` cannot be built,
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature, or
+    /// [`Error::InteriorNul`] if `ty` names a type containing a NUL byte.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn set_arg_type(&mut self, index: usize, ty: impl Into<TypeExpr>) -> Result<()> {
-        let recipe = ty.into().serialize();
+        let recipe = ty.into().checked_serialize()?;
         let result = self.db.func_set_argtype(self.entry, index, &recipe);
         sig_result(
             result.code,
@@ -470,11 +472,12 @@ impl FunctionEdit<'_> {
     ///
     /// # Errors
     /// [`TypeWriteError::NoPrototype`](crate::types::TypeWriteError::NoPrototype) if the entry has no editable prototype,
-    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `this` cannot be built, or
-    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature.
+    /// [`TypeWriteError::BuildFailed`](crate::types::TypeWriteError::BuildFailed) if `this` cannot be built,
+    /// [`TypeWriteError::ApplyRejected`](crate::types::TypeWriteError::ApplyRejected) if the kernel rejects the rebuilt signature, or
+    /// [`Error::InteriorNul`] if `this` names a type containing a NUL byte.
     #[doc(alias("get_func_details", "create_func"))]
     pub fn prepend_this(&mut self, this: impl Into<TypeExpr>) -> Result<()> {
-        let recipe = this.into().serialize();
+        let recipe = this.into().checked_serialize()?;
         let result = self.db.func_prepend_this(self.entry, &recipe);
         sig_result(result.code, self.entry, None, result.reason)
     }

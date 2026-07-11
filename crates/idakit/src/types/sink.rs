@@ -192,6 +192,9 @@ unsafe extern "C" fn cb_fill_typedef<T: TypeSink>(ctx: *mut c_void, id: u32, und
     unsafe { reborrow::<T>(&ctx) }.fill_typedef(id, underlying);
 }
 
+// TODO: retire the raw TypeVtbl -- `idakit_sys::bridge_typewalk` already actuates the cxx
+// `extern "Rust"` visitor replacing these ten shims, and its cross-check test proves the two walks
+// emit the same stream; graduate it to production and drop this table.
 /// The facade type vtbl whose callbacks target a `ctx` of type `T`. `const`, so a consumer can
 /// embed it in a `static` vtbl or build one on the stack per walk.
 pub(crate) const fn type_vtbl<T: TypeSink>() -> TypeVtbl {

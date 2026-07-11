@@ -37,6 +37,8 @@
 //! The visitor methods here are panic-free in the normal path regardless; this is the contract if
 //! one ever did.
 
+// TODO: graduate this visitor to production -- retire the coexisting raw `idakit_type_walk*` +
+// TypeVtbl path once every consumer (type sink, frame, ctree) is flipped onto the cxx visitor.
 use std::ffi::{c_char, c_void};
 
 use crate::hexrays::{EnumConstDesc, MemberDesc, TypeVtbl};

@@ -13,6 +13,8 @@
 //! Gated behind `test-shims` (it reads `cfunc_t::refcnt` for the refcount probes), like
 //! [`bridge_probe`](crate::bridge_probe).
 
+// TODO: decide the CfuncVal path's fate -- either productionize the inline moveit value type as a
+// heap-free alternative to the UniquePtr<CFunc> decompiler handle, or drop it; proven but unused.
 use std::ffi::{c_int, c_void};
 use std::marker::PhantomPinned;
 use std::mem::MaybeUninit;

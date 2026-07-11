@@ -202,7 +202,8 @@ impl Database {
             // A scalar leaf or a pointer/array/qualifier composite lowers through the recipe
             // interpreter: serialize to postfix bytecode, build the tinfo bottom-up, then apply.
             other => {
-                let result = self.apply_type_recipe(address, &other.serialize(), 0);
+                let recipe = other.checked_serialize()?;
+                let result = self.apply_type_recipe(address, &recipe, 0);
                 match result.code {
                     sys::IDAKIT_TYPE_OK => Ok(()),
                     sys::IDAKIT_TYPE_ERR_INPUT => Err(TypeWriteError::BuildFailed {

@@ -630,6 +630,9 @@ unsafe extern "C" fn cb_lvar(
     unsafe { builder(&ctx) }.push_lvar(lvar);
 }
 
+// TODO: cxx opaque-visitor for the ctree walk -- swap this hand-maintained EmitVtbl for a cxx
+// `extern "Rust"` visitor like `idakit_sys::bridge_typewalk` proved for the type walk, dropping the
+// offset-indexed table kept in lockstep with the facade header by hand.
 /// The callback table handed to the facade. Field order matches `idakit_emit_vtbl_t`.
 static VTBL: EmitVtbl = EmitVtbl {
     e_num: cb_num,

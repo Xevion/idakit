@@ -21,6 +21,7 @@ fn run(idb: &mut idakit::Database) {
     leaf_handles_apply(idb, entry);
     leaf_width_validation(idb);
     composite_handles_apply(idb, entry);
+    composite_over_awkward_base_never_panics(idb);
     named_ref_resolves_and_applies(idb, entry);
     named_ref_missing_is_no_type(idb);
     parse_type_roundtrips(idb, entry);
@@ -66,7 +67,9 @@ fn leaf_handles_apply(idb: &mut idakit::Database, entry: Address) {
 fn leaf_width_validation(idb: &mut idakit::Database) {
     assert!(idb.type_int(4, true).is_ok());
     assert!(idb.type_int(16, false).is_ok());
-    for bad in [0u32, 3, 5, 12, 32] {
+    // Include widths that alias a valid one under a u8 truncation (257 & 0xff == 1, 260 == 4): the
+    // facade must reject on the full width, not the low byte.
+    for bad in [0u32, 3, 5, 12, 32, 256, 257, 260, u32::MAX] {
         assert!(matches!(
             idb.type_int(bad, true),
             Err(Error::TypeWrite {
@@ -77,7 +80,7 @@ fn leaf_width_validation(idb: &mut idakit::Database) {
 
     assert!(idb.type_float(4).is_ok());
     assert!(idb.type_float(8).is_ok());
-    for bad in [0u32, 1, 2, 3, 16] {
+    for bad in [0u32, 1, 2, 3, 16, 260, u32::MAX] {
         assert!(matches!(
             idb.type_float(bad),
             Err(Error::TypeWrite {
@@ -102,10 +105,30 @@ fn composite_handles_apply(idb: &mut idakit::Database, entry: Address) {
     }
 
     let base = idb.type_int(4, true).expect("build int32 base");
-    parity(idb, entry, &base.pointer(), expr::int32().pointer());
-    parity(idb, entry, &base.array(8), expr::int32().array(8));
+    parity(
+        idb,
+        entry,
+        &base.pointer().expect("pointer"),
+        expr::int32().pointer(),
+    );
+    parity(
+        idb,
+        entry,
+        &base.array(8).expect("array"),
+        expr::int32().array(8),
+    );
     parity(idb, entry, &base.const_(), expr::int32().const_());
     parity(idb, entry, &base.volatile_(), expr::int32().volatile_());
+}
+
+/// A composite over an awkward base returns cleanly, never panics: whichever way IDA rules on a
+/// pointer to / array of a bare function type, the fallible signature contains it as a `Result`.
+fn composite_over_awkward_base_never_panics(idb: &mut idakit::Database) {
+    let func = idb.parse_type("int f(int)").expect("parse a function type");
+    // The verdict is version-dependent (IDA's leniency on array-of-function varies), so it is not
+    // asserted; reaching the next line at all proves neither call panicked.
+    let _ = func.array(4);
+    let _ = func.pointer();
 }
 
 /// A defined struct resolves through [`type_ref`](idakit::Database::type_ref), and a pointer to it
@@ -120,7 +143,9 @@ fn named_ref_resolves_and_applies(idb: &mut idakit::Database, entry: Address) {
     let handle = idb
         .type_ref("idakit_h_pt")
         .expect("resolve the defined struct");
-    let built = idb.at_mut(entry).apply_type(&handle.pointer());
+    let built = idb
+        .at_mut(entry)
+        .apply_type(&handle.pointer().expect("pointer to struct"));
     let recipe = idb
         .at_mut(entry)
         .set_type(expr::named("idakit_h_pt").pointer());
@@ -187,8 +212,8 @@ fn parse_type_resolves_local_til(idb: &mut idakit::Database) {
 /// consume: both the pointer and the array apply.
 fn handle_reuse(idb: &mut idakit::Database, entry: Address) {
     let base = idb.type_int(4, true).expect("build int32 base");
-    let ptr = base.pointer();
-    let arr = base.array(4);
+    let ptr = base.pointer().expect("pointer");
+    let arr = base.array(4).expect("array");
     // `base` is still usable here; if `pointer` had consumed it, this line would not compile.
     let _ = base.const_();
 

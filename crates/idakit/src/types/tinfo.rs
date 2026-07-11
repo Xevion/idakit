@@ -163,10 +163,21 @@ impl Database {
 /// let entry = db.functions().next().unwrap().address();
 /// // Build `int *` node-at-a-time; the apply returns a `Result` (a code entry may reject a data
 /// // type), while a function prototype below applies cleanly at the entry.
-/// let ptr = db.type_int(4, true)?.pointer();
+/// let ptr = db.type_int(4, true)?.pointer()?;
 /// let _ = db.at_mut(entry).apply_type(&ptr);
 /// let proto = db.parse_type("int handler(int code)")?;
 /// db.function_mut(entry).unwrap().apply_type(&proto)?;
+/// # Ok(())
+/// # }).unwrap();
+/// ```
+///
+/// The `!Send` confinement is load-bearing, so it is pinned: a handle passed to a `Send` bound
+/// must not compile.
+///
+/// ```compile_fail
+/// # idakit::doctest::with_db(|db| {
+/// fn require_send<T: Send>(_: T) {}
+/// require_send(db.type_int(4, true)?); // TypeInfo is !Send; this must fail to compile.
 /// # Ok(())
 /// # }).unwrap();
 /// ```
@@ -188,7 +199,7 @@ impl TypeInfo {
     }
 
     /// Take ownership of a builder handle that may be null, `None` when the builder rejected its
-    /// input (an out-of-set leaf width, an over-large array count).
+    /// input (a leaf width outside the set, a base type that cannot be pointed at or arrayed).
     #[inline]
     fn from_nullable(handle: cxx::UniquePtr<sys::TInfo>) -> Option<Self> {
         (!handle.is_null()).then_some(Self {
@@ -205,19 +216,36 @@ impl TypeInfo {
 
     /// A pointer to this type: `T` becomes `T *`.
     ///
-    /// Copies the base rather than consuming it, so `let p = base.pointer();` leaves `base`
-    /// usable, and pointers stack (`base.pointer().pointer()` is `T **`).
-    #[must_use]
+    /// Copies the base rather than consuming it, so `let p = base.pointer()?;` leaves `base`
+    /// usable, and pointers stack (`base.pointer()?.pointer()` is `T **`).
+    ///
+    /// # Errors
+    /// [`TypeWriteError::BuildFailed`] if the kernel could not build the pointer type.
     #[doc(alias("BT_PTR"))]
-    pub fn pointer(&self) -> TypeInfo {
-        TypeInfo::from_handle(sys::tinfo_ptr(self.tinfo()))
+    pub fn pointer(&self) -> Result<TypeInfo> {
+        TypeInfo::from_nullable(sys::tinfo_ptr(self.tinfo())).ok_or_else(|| {
+            TypeWriteError::BuildFailed {
+                reason: "could not build a pointer to the type".to_owned(),
+            }
+            .into()
+        })
     }
 
     /// An array of `nelems` elements of this type: `T` becomes `T[nelems]`.
-    #[must_use]
+    ///
+    /// # Errors
+    /// [`TypeWriteError::BuildFailed`] if the base type cannot be arrayed (an array of a bare
+    /// function type, for instance).
     #[doc(alias("BT_ARRAY"))]
-    pub fn array(&self, nelems: u64) -> TypeInfo {
-        TypeInfo::from_handle(sys::tinfo_array(self.tinfo(), nelems))
+    pub fn array(&self, nelems: u32) -> Result<TypeInfo> {
+        TypeInfo::from_nullable(sys::tinfo_array(self.tinfo(), u64::from(nelems))).ok_or_else(
+            || {
+                TypeWriteError::BuildFailed {
+                    reason: format!("could not build a {nelems}-element array of the type"),
+                }
+                .into()
+            },
+        )
     }
 
     /// A `const`-qualified copy of this type.

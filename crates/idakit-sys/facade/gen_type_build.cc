@@ -39,7 +39,7 @@ rust::String captured_reason() {
 
 // Map a scalar integer leaf (width in bytes, signedness) onto the SDK's sized int types. False for
 // a width IDA has no integer type for.
-bool build_int(tinfo_t &out, uint8_t bytes, bool is_signed) {
+bool build_int(tinfo_t &out, uint32_t bytes, bool is_signed) {
   type_t base;
   switch (bytes) {
   case 1:
@@ -64,7 +64,7 @@ bool build_int(tinfo_t &out, uint8_t bytes, bool is_signed) {
 }
 
 // Map a float leaf (4 -> float, 8 -> double) onto BT_FLOAT. False for any other width.
-bool build_float(tinfo_t &out, uint8_t bytes) {
+bool build_float(tinfo_t &out, uint32_t bytes) {
   type_t mt;
   switch (bytes) {
   case 4:
@@ -80,7 +80,8 @@ bool build_float(tinfo_t &out, uint8_t bytes) {
 }
 
 // Resolve `name` to a typedef ref (resolve=false keeps the name in the applied type rather than
-// its expansion, so `Foo *` stays `Foo *`). False if the local til has no such type.
+// its expansion, so `Foo *` stays `Foo *`). With resolve=false this returns true even for a name
+// absent from the local til, building a forward reference the caller must existence-check itself.
 bool build_named(tinfo_t &out, const char *name) {
   return out.get_named_type(get_idati(), name, BTF_TYPEDEF, false);
 }
@@ -731,7 +732,7 @@ std::unique_ptr<::tinfo_t> tinfo_bool() {
 std::unique_ptr<::tinfo_t> tinfo_int(uint32_t bytes, bool is_signed) {
   try {
     auto t = std::make_unique<::tinfo_t>();
-    if (!build_int(*t, (uint8_t)bytes, is_signed))
+    if (!build_int(*t, bytes, is_signed))
       return nullptr;
     return t;
   } catch (...) {
@@ -742,7 +743,7 @@ std::unique_ptr<::tinfo_t> tinfo_int(uint32_t bytes, bool is_signed) {
 std::unique_ptr<::tinfo_t> tinfo_float(uint32_t bytes) {
   try {
     auto t = std::make_unique<::tinfo_t>();
-    if (!build_float(*t, (uint8_t)bytes))
+    if (!build_float(*t, bytes))
       return nullptr;
     return t;
   } catch (...) {

@@ -15,11 +15,11 @@
 //!
 //! Files written to `$OUT_DIR`:
 //!
-//! * `gen_bridge.rs` -- the `#[cxx::bridge] mod` Rust source, `include!`d by `src/bridge_gen.rs`.
-//! * `gen_bridge.cc` / `gen_bridge.h` -- the `cxx` shim glue from `cxx-gen`.
-//! * `gen_<name>.h` -- one per domain: the real C++ declarations the bodies define.
-//! * `gen_<name>_bodies.cc` -- one per domain with any templated bodies (omitted when all Custom).
-//! * `rust/cxx.h` -- the `cxx` support header (`cxx_gen::HEADER`) for the body TUs.
+//! * `gen_bridge.rs`: the `#[cxx::bridge] mod` Rust source, `include!`d by `src/bridge_gen.rs`.
+//! * `gen_bridge.cc` / `gen_bridge.h`: the `cxx` shim glue from `cxx-gen`.
+//! * `gen_<name>.h`: one per domain, the real C++ declarations the bodies define.
+//! * `gen_<name>_bodies.cc`: one per domain with any templated bodies (omitted when all Custom).
+//! * `rust/cxx.h`: the `cxx` support header (`cxx_gen::HEADER`) for the body TUs.
 
 use std::path::{Path, PathBuf};
 
@@ -61,8 +61,6 @@ impl Domain {
 
 /// An SDK type bound as a `cxx` [`ExternType`](cxx::ExternType), so `cxx` glue can pass it without
 /// redeclaring it: the impl names the real C++ symbol by `type_id!`.
-// TODO: unused until a structural domain (range/cfg/import) is folded in -- allow until then.
-#[allow(dead_code)]
 pub struct ExternTy {
     /// The Rust-side name (e.g. `"RangeT"`).
     pub rust_name: &'static str,
@@ -108,7 +106,7 @@ pub struct Field {
 }
 
 /// The field types a shared struct or POD mirror may carry.
-// TODO: some variants land as structural/write domains are folded in (Stage 2) -- allow until then.
+// The allow covers taxonomy slots no current spec constructs.
 #[allow(dead_code)]
 pub enum FieldTy {
     U8,
@@ -148,7 +146,7 @@ pub struct Arg {
 }
 
 /// The argument shapes the spec can express. Each is a (Rust type, C++ type) pair.
-// TODO: non-scalar variants land as their domains are folded in (Stage 2) -- allow until then.
+// The allow covers taxonomy slots no current spec constructs.
 #[allow(dead_code)]
 pub enum ArgTy {
     I32,
@@ -168,7 +166,7 @@ pub enum ArgTy {
 
 /// The return shapes the spec can express. `Result<T>` variants surface a thrown C++ exception as
 /// a Rust `Err`; the non-`Result` twins are for infallible calls.
-// TODO: structural/vec variants land as their domains are folded in (Stage 2) -- allow until then.
+// The allow covers taxonomy slots no current spec constructs.
 #[allow(dead_code)]
 pub enum RetKind {
     Unit,
@@ -1788,8 +1786,9 @@ pub const TYPE_BUILD: Domain = Domain {
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Build the `tinfo` the postfix recipe encodes and apply it at `ea`. Same codes as \
-                  [`apply_type_decl`]; `_ERR_INPUT` is a malformed buffer, an unresolved named \
-                  leaf, or an unparseable embedded decl.",
+                  [`apply_type_decl`]; `_ERR_INPUT` is a malformed buffer or an unparseable \
+                  embedded decl. An unknown named leaf builds a forward reference that fails later \
+                  at apply, not here.",
         },
         FnSpec {
             name: "define_type",
@@ -2141,8 +2140,9 @@ pub const TYPE_BUILD: Domain = Domain {
             }],
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
-            doc: "The existing named type `name` resolved as a typedef ref, as a fresh handle; a \
-                  null handle when the local til has no such type.",
+            doc: "The named type `name` as a fresh handle, an unresolved typedef ref. Builds a \
+                  non-null forward reference even for a name absent from the local til, so the \
+                  caller checks existence separately.",
         },
         FnSpec {
             name: "tinfo_decl",
@@ -2710,7 +2710,7 @@ pub fn custom_tus() -> Vec<&'static str> {
 /// # Panics
 ///
 /// Panics if `cxx-gen` rejects the generated tokens, a spec references an unknown `ExternType`, or
-/// any file write fails -- all are build bugs, not recoverable conditions.
+/// any file write fails. All are build bugs, not recoverable conditions.
 pub fn generate(out_dir: &Path) {
     let tokens = bridge_tokens();
 

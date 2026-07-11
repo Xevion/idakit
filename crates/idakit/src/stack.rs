@@ -255,6 +255,8 @@ impl Database {
             types: TypeBuilder::new(),
             slots: Vec::new(),
         };
+        // TODO: cxx opaque-visitor for the frame walk -- the frame walk rides the same TypeVtbl
+        // shims as the type walk (see `idakit_sys::bridge_typewalk`); migrate it alongside them.
         let vtbl = sys::FrameVtbl {
             types: type_vtbl::<FrameBuilder>(),
             f_var: cb_f_var,
