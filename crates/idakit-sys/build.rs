@@ -55,6 +55,29 @@ const FACADE_SOURCES: &[&str] = &[
     "facade/decode.cpp",
 ];
 
+// Compile one cxx bridge into its own static archive. cxx_build seeds a cc::Build with the
+// generated glue; this mirrors the facade's flags (c++17, SDK as -isystem, __EA64__, platform
+// macro), adds any bridge-specific `defines`, and appends the hand-written body TUs. No
+// whole-archive is needed (no load-time constructor) and the C++ runtime link rides on the cxx
+// crate's link-cplusplus dependency, so each bridge emits its own link directive.
+fn cxx_bridge(rs: &str, bodies: &[&str], archive: &str, sdk_include: &str, defines: &[&str]) {
+    let mut b = cxx_build::bridge(rs);
+    b.std("c++17").include("facade");
+    if b.get_compiler().is_like_msvc() {
+        b.include(sdk_include);
+    } else {
+        b.flag("-isystem").flag(sdk_include);
+    }
+    b.define("__EA64__", None).define(PLATFORM_DEFINE, None);
+    for d in defines {
+        b.define(d, None);
+    }
+    for f in bodies {
+        b.file(f);
+    }
+    b.compile(archive);
+}
+
 fn main() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR unset");
 
@@ -135,122 +158,64 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib={stdlib}");
     }
 
-    // The cxx signature-bridge spine: a `#[cxx::bridge]` in src/bridge.rs plus the hand-written
-    // bodies in facade/segment_cxx.cc, compiled into their own archive alongside (not replacing)
-    // the raw facade above. cxx_build returns a pre-seeded cc::Build carrying the generated glue;
-    // mirror the facade's flags (c++17, SDK as -isystem, __EA64__, platform macro) and add the
-    // impl TU. Unlike the facade this needs no whole-archive (no load-time constructor) and its
-    // C++ runtime link rides on the `cxx` crate's link-cplusplus dependency, so cargo_metadata
-    // stays on and it emits its own link directive.
-    let mut bridge = cxx_build::bridge("src/bridge.rs");
-    bridge.std("c++17").include("facade");
-    if bridge.get_compiler().is_like_msvc() {
-        bridge.include(sdk_include_str);
-    } else {
-        bridge.flag("-isystem").flag(sdk_include_str);
-    }
-    bridge
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
-    bridge.file("facade/segment_cxx.cc");
-    bridge.compile("idakit_cxx_bridge");
+    // The cxx signature-bridge spine coexists with the raw facade rather than replacing it; each
+    // bridge is its own static archive (see `cxx_bridge`).
+    cxx_bridge(
+        "src/bridge.rs",
+        &["facade/segment_cxx.cc"],
+        "idakit_cxx_bridge",
+        sdk_include_str,
+        &[],
+    );
 
-    // The cxx opaque-handle bridge: qflow_chart_t modeled as a cxx opaque type owned by
-    // UniquePtr (src/bridge_cfg.rs, facade/cfg_cxx.cc). Its own archive, same flags as above.
-    let mut cfg_bridge = cxx_build::bridge("src/bridge_cfg.rs");
-    cfg_bridge.std("c++17").include("facade");
-    if cfg_bridge.get_compiler().is_like_msvc() {
-        cfg_bridge.include(sdk_include_str);
-    } else {
-        cfg_bridge.flag("-isystem").flag(sdk_include_str);
-    }
-    cfg_bridge
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
-    cfg_bridge.file("facade/cfg_cxx.cc");
-    cfg_bridge.compile("idakit_cxx_cfg_bridge");
-
-    // The cxx snapshot bridge: the whole import table returned by value as Vec<ImportRec>, a cxx
-    // shared struct with String fields (src/bridge_import.rs, facade/import_cxx.cc). Its own
-    // archive, same flags as above.
-    let mut import_bridge = cxx_build::bridge("src/bridge_import.rs");
-    import_bridge.std("c++17").include("facade");
-    if import_bridge.get_compiler().is_like_msvc() {
-        import_bridge.include(sdk_include_str);
-    } else {
-        import_bridge.flag("-isystem").flag(sdk_include_str);
-    }
-    import_bridge
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
-    import_bridge.file("facade/import_cxx.cc");
-    import_bridge.compile("idakit_cxx_import_bridge");
-
-    // The cxx ExternType bridge: the SDK POD range_t bound as a Trivial ExternType, crossing the
-    // bridge by value (src/bridge_range.rs, facade/range_cxx.cc). Its own archive, same flags.
-    let mut range_bridge = cxx_build::bridge("src/bridge_range.rs");
-    range_bridge.std("c++17").include("facade");
-    if range_bridge.get_compiler().is_like_msvc() {
-        range_bridge.include(sdk_include_str);
-    } else {
-        range_bridge.flag("-isystem").flag(sdk_include_str);
-    }
-    range_bridge
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
-    range_bridge.file("facade/range_cxx.cc");
-    range_bridge.compile("idakit_cxx_range_bridge");
-
-    // A second cxx bridge over the SAME qflow_chart_t ExternType (src/bridge_cfg2.rs,
-    // facade/cfg2_cxx.cc), proving cross-bridge type sharing the C++ `using` alias couldn't give.
-    let mut cfg2_bridge = cxx_build::bridge("src/bridge_cfg2.rs");
-    cfg2_bridge.std("c++17").include("facade");
-    if cfg2_bridge.get_compiler().is_like_msvc() {
-        cfg2_bridge.include(sdk_include_str);
-    } else {
-        cfg2_bridge.flag("-isystem").flag(sdk_include_str);
-    }
-    cfg2_bridge
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
-    cfg2_bridge.file("facade/cfg2_cxx.cc");
-    cfg2_bridge.compile("idakit_cxx_cfg2_bridge");
-
-    // The cxx qvector<T> bridge: IDA's own generic container bound per-instantiation via the
-    // KDAB recipe -- intvec_t (qvector<int>) and rangevec_t (qvector<range_t>) each an Opaque
-    // ExternType, read by copy (Vec) and zero-copy (&[T]) (src/bridge_qvec.rs,
-    // facade/qvec_cxx.cc). Reuses the range_t and qflow_chart_t ExternTypes from the sibling
-    // bridges. Its own archive, same flags as above.
-    let mut qvec_bridge = cxx_build::bridge("src/bridge_qvec.rs");
-    qvec_bridge.std("c++17").include("facade");
-    if qvec_bridge.get_compiler().is_like_msvc() {
-        qvec_bridge.include(sdk_include_str);
-    } else {
-        qvec_bridge.flag("-isystem").flag(sdk_include_str);
-    }
-    qvec_bridge
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
-    qvec_bridge.file("facade/qvec_cxx.cc");
-    qvec_bridge.compile("idakit_cxx_qvec_bridge");
-
-    // The cxx extern "Rust" opaque-visitor bridge: the tinfo type walk driven by a Rust opaque
-    // TypeWalkVisitor whose &mut self methods cxx exposes to C++, replacing the raw TypeVtbl
-    // function-pointer table + void* ctx. Names cross as rust::Str, arrays/members as
-    // rust::Slice (MemberInfo/EnumConstInfo are lifetime-generic shared structs with a borrowed
-    // &str name). src/bridge_typewalk.rs, facade/typewalk_cxx.cc; its own archive, same flags.
-    let mut typewalk_bridge = cxx_build::bridge("src/bridge_typewalk.rs");
-    typewalk_bridge.std("c++17").include("facade");
-    if typewalk_bridge.get_compiler().is_like_msvc() {
-        typewalk_bridge.include(sdk_include_str);
-    } else {
-        typewalk_bridge.flag("-isystem").flag(sdk_include_str);
-    }
-    typewalk_bridge
-        .define("__EA64__", None)
-        .define(PLATFORM_DEFINE, None);
-    typewalk_bridge.file("facade/typewalk_cxx.cc");
-    typewalk_bridge.compile("idakit_cxx_typewalk_bridge");
+    // qflow_chart_t as a UniquePtr-owned opaque type (retires the manual _free + Rust Drop).
+    cxx_bridge(
+        "src/bridge_cfg.rs",
+        &["facade/cfg_cxx.cc"],
+        "idakit_cxx_cfg_bridge",
+        sdk_include_str,
+        &[],
+    );
+    // The whole import table returned by value as one owned Vec<ImportRec> snapshot.
+    cxx_bridge(
+        "src/bridge_import.rs",
+        &["facade/import_cxx.cc"],
+        "idakit_cxx_import_bridge",
+        sdk_include_str,
+        &[],
+    );
+    // The SDK POD range_t bound as a Trivial ExternType, crossing by value.
+    cxx_bridge(
+        "src/bridge_range.rs",
+        &["facade/range_cxx.cc"],
+        "idakit_cxx_range_bridge",
+        sdk_include_str,
+        &[],
+    );
+    // A second bridge over the same qflow_chart_t ExternType, proving cross-bridge type sharing.
+    cxx_bridge(
+        "src/bridge_cfg2.rs",
+        &["facade/cfg2_cxx.cc"],
+        "idakit_cxx_cfg2_bridge",
+        sdk_include_str,
+        &[],
+    );
+    // qvector<T> bound per-instantiation (the KDAB recipe), read by copy and zero-copy.
+    cxx_bridge(
+        "src/bridge_qvec.rs",
+        &["facade/qvec_cxx.cc"],
+        "idakit_cxx_qvec_bridge",
+        sdk_include_str,
+        &[],
+    );
+    // The tinfo type walk driven by an extern "Rust" opaque visitor (retires the raw fn-ptr vtbl).
+    cxx_bridge(
+        "src/bridge_typewalk.rs",
+        &["facade/typewalk_cxx.cc"],
+        "idakit_cxx_typewalk_bridge",
+        sdk_include_str,
+        &[],
+    );
 
     // The spec-driven cxx-gen bridge (namespace idakit_gen). Unlike every bridge above, this one
     // is not hand-written: codegen::generate builds the `#[cxx::bridge] mod` tokens from a declarative
@@ -282,59 +247,33 @@ fn main() {
     }
     gen_bridge.compile("idakit_cxx_gen_bridge");
 
-    // A second, test-shims-only cxx bridge (src/bridge_probe.rs) carrying the fault-injection
-    // probes: a longjmp-across-a-cxx-shim probe and a throwing probe. Kept out of the production
-    // bridge because a per-function `#[cfg]` there would not reach cxx-build's C++ generation --
-    // its cfg evaluator won't match the hyphenated `test-shims`, so the shim would go missing and
-    // the symbol undefined at link. A whole separate bridge, only built under the feature, avoids
-    // that. Mirrors the main bridge's flags and adds IDAKIT_TEST_SHIMS so probe_cxx.cc sees the
-    // facade's test-only declarations (`idakit_trigger_fatal`, `IDAKIT_FATAL_*`).
+    // Test-only bridges, gated on `test-shims`. A per-fn `#[cfg]` inside a production bridge would
+    // not reach cxx-build's C++ generation (its cfg evaluator won't match the hyphenated feature),
+    // so the shim would go missing and the symbol undefined at link; a whole separate bridge built
+    // only under the feature avoids that. probe_cxx.cc needs IDAKIT_TEST_SHIMS to see the facade's
+    // test-only declarations; cfunc/probe_ext do not.
     if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
-        let mut probe = cxx_build::bridge("src/bridge_probe.rs");
-        probe.std("c++17").include("facade");
-        if probe.get_compiler().is_like_msvc() {
-            probe.include(sdk_include_str);
-        } else {
-            probe.flag("-isystem").flag(sdk_include_str);
-        }
-        probe
-            .define("__EA64__", None)
-            .define(PLATFORM_DEFINE, None)
-            .define("IDAKIT_TEST_SHIMS", None);
-        probe.file("facade/probe_cxx.cc");
-        probe.compile("idakit_cxx_probe");
-
-        // The cxx + moveit bridge over cfuncptr_t (src/bridge_cfunc.rs, facade/cfunc_cxx.cc):
-        // Opaque ExternType + UniquePtr, moveit MakeCppStorage/CopyNew composition, and the inline
-        // CfuncVal value type. test-shims-only because it reads cfunc_t::refcnt for the refcount
-        // probes; its own archive, same flags as the sibling bridges.
-        let mut cfunc = cxx_build::bridge("src/bridge_cfunc.rs");
-        cfunc.std("c++17").include("facade");
-        if cfunc.get_compiler().is_like_msvc() {
-            cfunc.include(sdk_include_str);
-        } else {
-            cfunc.flag("-isystem").flag(sdk_include_str);
-        }
-        cfunc.define("__EA64__", None).define(PLATFORM_DEFINE, None);
-        cfunc.file("facade/cfunc_cxx.cc");
-        cfunc.compile("idakit_cxx_cfunc_bridge");
-
-        // The Round-10 spike bridge (src/bridge_probe_ext.rs, facade/probe_ext_cxx.cc): a custom
-        // rust::behavior::trycatch (defined in the header so cxx's default is SFINAE'd out), a
-        // Pin<&mut Self> cursor, real-DB writes, and a shared enum. test-shims-only; its own
-        // archive, same flags as the sibling bridges.
-        let mut probe_ext = cxx_build::bridge("src/bridge_probe_ext.rs");
-        probe_ext.std("c++17").include("facade");
-        if probe_ext.get_compiler().is_like_msvc() {
-            probe_ext.include(sdk_include_str);
-        } else {
-            probe_ext.flag("-isystem").flag(sdk_include_str);
-        }
-        probe_ext
-            .define("__EA64__", None)
-            .define(PLATFORM_DEFINE, None);
-        probe_ext.file("facade/probe_ext_cxx.cc");
-        probe_ext.compile("idakit_cxx_probe_ext_bridge");
+        cxx_bridge(
+            "src/bridge_probe.rs",
+            &["facade/probe_cxx.cc"],
+            "idakit_cxx_probe",
+            sdk_include_str,
+            &["IDAKIT_TEST_SHIMS"],
+        );
+        cxx_bridge(
+            "src/bridge_cfunc.rs",
+            &["facade/cfunc_cxx.cc"],
+            "idakit_cxx_cfunc_bridge",
+            sdk_include_str,
+            &[],
+        );
+        cxx_bridge(
+            "src/bridge_probe_ext.rs",
+            &["facade/probe_ext_cxx.cc"],
+            "idakit_cxx_probe_ext_bridge",
+            sdk_include_str,
+            &[],
+        );
     }
 
     if env::var_os("IDAKIT_EMIT_COMPILE_COMMANDS").is_some() {
