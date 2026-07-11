@@ -18,6 +18,7 @@ targets = []
 
 [dependencies]
 bon = "3.9.3"
+cxx = "1.0.197"
 dotenvy = "0.15.7"
 idakit-sys = { path = "../idakit-sys" }
 num_enum = "0.7.6"

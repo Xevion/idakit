@@ -15,7 +15,6 @@ use crate::Database;
 use crate::address::Address;
 use crate::decompiler::ctree::{Ctree, ExtractError, walk};
 use crate::error::{Error, Result};
-use crate::ffi::read_string;
 
 impl Database {
     /// Decompiles the function at `address` and materializes its ctree.
@@ -44,19 +43,20 @@ impl Database {
             }
             self.hexrays_ready.set(true);
         }
-        let (handle, reason) = self.decompile_at(address);
-        if handle.is_null() {
-            // A trapped fatal exit() during decompilation is a dead kernel, not an ordinary
-            // decompile miss, so surface it as such.
-            if self.was_trapped() {
-                return Err(self.kernel_exit_error());
+        match sys::decompile(address.get()) {
+            Ok(handle) => Ok(DecompiledFunction::from_handle(handle, self)),
+            Err(e) => {
+                // A trapped fatal exit() during decompilation is a dead kernel, not an ordinary
+                // decompile miss, so surface it as such.
+                if self.was_trapped() {
+                    return Err(self.kernel_exit_error());
+                }
+                Err(Error::Decompile {
+                    address: address.get(),
+                    reason: e.what().to_owned(),
+                })
             }
-            return Err(Error::Decompile {
-                address: address.get(),
-                reason,
-            });
         }
-        Ok(DecompiledFunction::from_handle(handle, self))
     }
 }
 
@@ -74,50 +74,49 @@ pub struct CtreeCounts {
 
 /// A decompiled function that frees its Hex-Rays result on [`Drop`].
 ///
-/// `handle` is the safety invariant for every call below:
-/// non-null (checked at construction), from `idakit_decompile`, disposed exactly once on
-/// [`Drop`]. The raw pointer makes `DecompiledFunction` `!Send`, so it lives only on the kernel
-/// thread.
+/// `handle` is a [`UniquePtr`](cxx::UniquePtr)`<`[`CFunc`](sys::CFunc)`>`, non-null by construction;
+/// cxx's deleter runs `~cfuncptr_t` (`release()`) on drop. A `PhantomData<*const ()>` keeps
+/// `DecompiledFunction` `!Send`, so it lives only on the kernel thread.
 #[doc(alias("cfuncptr_t", "cfunc_t"))]
 pub struct DecompiledFunction<'db> {
-    handle: *mut c_void,
+    handle: cxx::UniquePtr<sys::CFunc>,
     _db: PhantomData<&'db Database>,
+    _not_send: PhantomData<*const ()>,
 }
 
 impl<'db> DecompiledFunction<'db> {
-    /// Take ownership of a non-null `idakit_decompile` handle.
+    /// Take ownership of a non-null decompilation handle.
     #[inline]
-    pub(crate) fn from_handle(handle: *mut c_void, _db: &'db Database) -> Self {
-        debug_assert!(
-            !handle.is_null(),
-            "DecompiledFunction handle must be non-null"
-        );
+    pub(crate) fn from_handle(handle: cxx::UniquePtr<sys::CFunc>, _db: &'db Database) -> Self {
+        debug_assert!(!handle.is_null());
         Self {
             handle,
             _db: PhantomData,
+            _not_send: PhantomData,
         }
+    }
+
+    /// The live `cfuncptr_t` behind the handle, non-null by construction (see the type docs).
+    #[inline]
+    fn cfunc(&self) -> &sys::CFunc {
+        self.handle.as_ref().expect("live handle")
     }
 
     /// The rendered pseudocode, tags stripped.
     #[must_use]
     #[doc(alias("get_pseudocode"))]
     pub fn pseudocode(&self) -> Option<String> {
-        // SAFETY: live handle (see type docs).
-        read_string(|buf, cap| unsafe { sys::idakit_cfunc_pseudocode(self.handle, buf, cap) })
+        sys::cfunc_pseudocode(self.cfunc()).ok()
     }
 
     /// Counts of statements, expressions, and call sites in the ctree.
     #[must_use]
     pub fn counts(&self) -> CtreeCounts {
-        let (mut insns, mut expressions, mut calls) = (0, 0, 0);
-        // SAFETY: live handle (see type docs); out-params are valid locals.
-        unsafe {
-            sys::idakit_cfunc_ctree_counts(self.handle, &mut insns, &mut expressions, &mut calls);
-        }
+        let c = sys::cfunc_counts(self.cfunc());
         CtreeCounts {
-            insns,
-            expressions,
-            calls,
+            insns: c.insns,
+            expressions: c.expressions,
+            calls: c.calls,
         }
     }
 
@@ -131,12 +130,8 @@ impl<'db> DecompiledFunction<'db> {
     /// surplus is a real drop or invention.
     #[must_use]
     pub fn expr_extraction_expectation(&self) -> (i32, i32) {
-        let (mut v, mut w) = ([0i32; 256], [0i32; 256]);
-        // SAFETY: live handle (see type docs); both out-params are 256-int buffers.
-        unsafe {
-            sys::idakit_cfunc_ctree_expr_gap(self.handle, v.as_mut_ptr(), w.as_mut_ptr());
-        }
-        (v.iter().sum(), w.iter().sum())
+        let g = sys::cfunc_expr_gap(self.cfunc());
+        (g.visitor_total, g.expected)
     }
 
     /// Materializes the whole ctree as an owned, `Send` [`Ctree`]: the facade streams a
@@ -146,17 +141,11 @@ impl<'db> DecompiledFunction<'db> {
     /// # Errors
     /// [`ExtractError`] if the ctree fails to materialize.
     pub fn ctree(&self) -> Result<Ctree, ExtractError> {
-        // SAFETY: live handle (see type docs); `walk` copies everything it needs out of
-        // the SDK objects, so the result outlives this `cfunc`.
-        walk(self.handle)
-    }
-}
-
-impl Drop for DecompiledFunction<'_> {
-    #[inline]
-    fn drop(&mut self) {
-        // SAFETY: live handle (see type docs); disposed exactly once, here.
-        unsafe { sys::idakit_cfunc_dispose(self.handle) };
+        // The UniquePtr holds the cfuncptr_t the raw walk expects (the generated `decompile` made
+        // the same `new cfuncptr_t`), and keeps it alive across the walk. `walk` copies everything
+        // it needs out of the SDK objects, so the result outlives this `cfunc`.
+        let cfunc = self.cfunc() as *const sys::CFunc as *mut c_void;
+        walk(cfunc)
     }
 }
 

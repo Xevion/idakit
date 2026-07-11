@@ -1163,6 +1163,51 @@ fn run(idb: &mut idakit::Database) {
         );
     }
 
+    // cxx opaque-handle cross-check: the generated decompile -> UniquePtr<CFunc> + cfunc_*
+    // accessors must agree with the raw idakit_decompile handle path on the same function.
+    {
+        use idakit_sys as sys;
+        if let Ok(cf) = sys::decompile(address.get()) {
+            let mut errbuf = [0u8; 512];
+            // SAFETY: read-only raw facade call on the open db; the handle is disposed below.
+            let raw = unsafe {
+                sys::idakit_decompile(address.get(), errbuf.as_mut_ptr().cast(), errbuf.len())
+            };
+            assert!(
+                !raw.is_null(),
+                "raw decompile disagreed with cxx on the first function"
+            );
+            let cref = cf.as_ref().expect("non-null cxx handle");
+            let gc = sys::cfunc_counts(cref);
+            let (mut ri, mut re, mut rc) = (0i32, 0i32, 0i32);
+            // SAFETY: `raw` is a live handle; out-params are valid locals.
+            unsafe { sys::idakit_cfunc_ctree_counts(raw, &mut ri, &mut re, &mut rc) };
+            assert_eq!(gc.insns, ri, "cxx/raw insn count disagree");
+            assert_eq!(gc.expressions, re, "cxx/raw expr count disagree");
+            assert_eq!(gc.calls, rc, "cxx/raw call count disagree");
+
+            let gp = sys::cfunc_pseudocode(cref).expect("cxx pseudocode");
+            let mut pbuf = vec![0u8; 1 << 20];
+            // SAFETY: `raw` live; buffer valid. The raw call returns the full source length; the
+            // 1 MiB buffer holds any realistic pseudocode, and the assert below rejects truncation.
+            let n =
+                unsafe { sys::idakit_cfunc_pseudocode(raw, pbuf.as_mut_ptr().cast(), pbuf.len()) };
+            assert!(n >= 0, "raw pseudocode failed");
+            assert!(
+                (n as usize) < pbuf.len(),
+                "raw pseudocode exceeded the cross-check buffer"
+            );
+            let rp = String::from_utf8_lossy(&pbuf[..n as usize]).into_owned();
+            assert_eq!(gp, rp, "cxx/raw pseudocode disagree");
+            // SAFETY: `raw` came from idakit_decompile and is disposed exactly once here.
+            unsafe { sys::idakit_cfunc_dispose(raw) };
+            // `cf` (UniquePtr<CFunc>) drops here, running the cxx deleter (~cfuncptr_t / release()).
+            println!(
+                "cxx hexrays bridge cross-check OK: counts + pseudocode agree with the raw facade"
+            );
+        }
+    }
+
     // Exercise the RAII owned-handle path (best-effort).
     match first.decompile() {
         Ok(cf) => {

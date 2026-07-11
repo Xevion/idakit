@@ -6,6 +6,8 @@
 #include <pro.h>
 #include <ida.hpp>
 
+#include <nalt.hpp> // must precede xref.hpp: casevec_t (used by hexrays.hpp via gen_bridge.h) is
+                    // guarded on NALT_HPP
 #include <xref.hpp> // xrefblk_t, XREF_NOFLOW
 
 #include "gen_reference.h"

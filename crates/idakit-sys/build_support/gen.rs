@@ -1535,6 +1535,126 @@ pub const INSTRUCTION: Domain = Domain {
     ],
 };
 
+/// The Hex-Rays decompiler domain: the SDK's `cfuncptr_t` (`qrefcnt_t<cfunc_t>`) bound as an
+/// `Opaque` `ExternType` ([`CFunc`]) owned by [`UniquePtr`](cxx::UniquePtr), so its cxx deleter runs
+/// `~cfuncptr_t` (`release()`) on drop, retiring the raw `new`/`delete` handle dance. `decompile`
+/// wraps the microcode pipeline in the facade's `guarded<>` trap and throws on failure; the read
+/// accessors take a borrowed `&CFunc` and return pseudocode, ctree counts, and the extraction-gap
+/// diagnostic. The ctree walk itself (the raw `EmitVtbl` fn-pointer table) stays hand-written and is
+/// fed a `cfuncptr_t*` extracted from the `UniquePtr`. Bodies are in `facade/gen_hexrays.cc`.
+pub const HEXRAYS: Domain = Domain {
+    name: "hexrays",
+    // funcs.hpp (pulling bytes.hpp/xref.hpp) precedes hexrays.hpp so the generated header is
+    // self-sufficient: hexrays.hpp names casevec_t from xref.hpp, and gen_bridge.h pulls this
+    // header into every domain TU.
+    sdk_includes: &["<funcs.hpp>", "<hexrays.hpp>"],
+    externs: &[ExternTy {
+        rust_name: "CFunc",
+        cxx_name: "cfuncptr_t",
+        kind: ExternKind::Opaque,
+        doc: "The SDK's `cfuncptr_t` (`qrefcnt_t<cfunc_t>`), an opaque decompilation result \
+              handled only behind indirection (`&CFunc` or `UniquePtr<CFunc>`).",
+        safety: "The type id names the real SDK typedef cfuncptr_t; Opaque is correct because \
+                 qrefcnt_t<cfunc_t> has a nontrivial copy-ctor and destructor, so it may only cross \
+                 the bridge behind a reference or UniquePtr, never by value.",
+    }],
+    structs: &[
+        SharedStruct {
+            name: "CtreeCounts",
+            doc: "Statement, expression, and call-site counts of a decompiled function's ctree, \
+                  returned by value from [`cfunc_counts`].",
+            fields: &[
+                Field {
+                    name: "insns",
+                    ty: FieldTy::I32,
+                    doc: "Number of statement nodes.",
+                },
+                Field {
+                    name: "expressions",
+                    ty: FieldTy::I32,
+                    doc: "Number of expression nodes.",
+                },
+                Field {
+                    name: "calls",
+                    ty: FieldTy::I32,
+                    doc: "Number of call sites.",
+                },
+            ],
+        },
+        SharedStruct {
+            name: "ExprGap",
+            doc: "The ctree extraction-fidelity diagnostic, returned by value from \
+                  [`cfunc_expr_gap`].",
+            fields: &[
+                Field {
+                    name: "visitor_total",
+                    ty: FieldTy::I32,
+                    doc: "Every expression the SDK's own ctree visitor sees.",
+                },
+                Field {
+                    name: "expected",
+                    ty: FieldTy::I32,
+                    doc: "How many the extraction walker should materialize (visitor total minus \
+                          elided empty-expression placeholders in optional slots).",
+                },
+            ],
+        },
+    ],
+    custom_tu: Some("facade/gen_hexrays.cc"),
+    fns: &[
+        FnSpec {
+            name: "decompile",
+            receiver: None,
+            args: &[Arg {
+                name: "ea",
+                ty: ArgTy::U64,
+            }],
+            ret: RetKind::ResultUniquePtr("CFunc"),
+            body: BodyKind::Custom,
+            doc: "Decompile the function at `ea` into a heap `cfuncptr_t` owned by a \
+                  [`UniquePtr`](cxx::UniquePtr) (one owned ref); `Err` on any decompile failure. \
+                  Wrapped in the facade trap, so a fatal `exit()` surfaces as a trapped `Err` the \
+                  caller distinguishes via its own trap query. The `UniquePtr`'s cxx deleter runs \
+                  `~cfuncptr_t` (`release()`) on drop.",
+        },
+        FnSpec {
+            name: "cfunc_pseudocode",
+            receiver: None,
+            args: &[Arg {
+                name: "cf",
+                ty: ArgTy::ExternRef("CFunc"),
+            }],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "The rendered pseudocode of `cf`, tags stripped; `Err` if the SDK cannot produce \
+                  it.",
+        },
+        FnSpec {
+            name: "cfunc_counts",
+            receiver: None,
+            args: &[Arg {
+                name: "cf",
+                ty: ArgTy::ExternRef("CFunc"),
+            }],
+            ret: RetKind::Shared("CtreeCounts"),
+            body: BodyKind::Custom,
+            doc: "Statement, expression, and call-site counts of `cf`'s ctree.",
+        },
+        FnSpec {
+            name: "cfunc_expr_gap",
+            receiver: None,
+            args: &[Arg {
+                name: "cf",
+                ty: ArgTy::ExternRef("CFunc"),
+            }],
+            ret: RetKind::Shared("ExprGap"),
+            body: BodyKind::Custom,
+            doc: "The extraction-fidelity diagnostic for `cf`: total expressions the SDK visitor \
+                  sees vs how many the extraction walker should materialize.",
+        },
+    ],
+};
+
 /// Every domain fed into the unified bridge, in emission order.
 pub const DOMAINS: &[&Domain] = &[
     &SEGMENT,
@@ -1549,6 +1669,7 @@ pub const DOMAINS: &[&Domain] = &[
     &REFERENCE,
     &BYTES,
     &INSTRUCTION,
+    &HEXRAYS,
 ];
 
 impl FieldTy {

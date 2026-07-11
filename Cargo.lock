@@ -499,6 +499,7 @@ version = "0.0.0"
 dependencies = [
  "assert2",
  "bon",
+ "cxx",
  "dotenvy",
  "idakit-sys",
  "libc",

@@ -232,6 +232,9 @@ impl Database {
     ///
     /// On failure the handle is null and the second element carries the Hex-Rays failure
     /// reason copied out of the facade buffer.
+    // TODO: retained for the roundtrip gen-vs-raw cross-check -- production rides sys::decompile,
+    // retire with the raw idakit_decompile path in Stage 4.
+    #[allow(dead_code)]
     pub(crate) fn decompile_at(&self, address: Address) -> (*mut c_void, String) {
         let mut err = [0u8; 256];
         // SAFETY: `err` is a writable buffer of `len`; the facade NUL-terminates
