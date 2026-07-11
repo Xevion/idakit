@@ -134,8 +134,8 @@ impl Database {
         sys::get_strlit(address.get(), strtype).ok()
     }
 
-    pub(crate) fn decode_insn(&self, address: Address, out: *mut sys::InstructionRaw) -> c_int {
-        unsafe { sys::idakit_decode_insn(address.get(), out) }
+    pub(crate) fn decode_insn(&self, address: Address) -> sys::InstructionData {
+        sys::decode_insn(address.get())
     }
 
     pub(crate) fn get_flags(&self, address: Address) -> u64 {

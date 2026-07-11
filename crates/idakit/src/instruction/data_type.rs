@@ -137,10 +137,8 @@ mod tests {
     // Pure constant source, no kernel, so it runs as a unit test.
     #[test]
     fn dtype_ids_align_with_the_facade() {
-        assert!(OperandDataType::VARIANTS.len() == sys::IDAKIT_OP_DTYPE_COUNT);
-        let mut ids = [0u8; sys::IDAKIT_OP_DTYPE_COUNT];
-        // SAFETY: the facade writes exactly IDAKIT_OP_DTYPE_COUNT bytes.
-        unsafe { sys::idakit_op_dtype_ids(ids.as_mut_ptr()) };
+        let ids = sys::op_dtype_ids();
+        assert!(ids.len() == OperandDataType::VARIANTS.len());
         for (i, &d) in OperandDataType::VARIANTS.iter().enumerate() {
             assert!(
                 ids[i] == u8::from(d),

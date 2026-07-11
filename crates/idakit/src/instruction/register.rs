@@ -178,12 +178,10 @@ mod tests {
             RegisterClass::Ip,
             RegisterClass::Bnd,
         ];
-        assert!(expected.len() == sys::IDAKIT_REG_CLASS_COUNT);
         assert!(RegisterClass::VARIANTS.len() == expected.len());
 
-        let mut ids = [0u8; sys::IDAKIT_REG_CLASS_COUNT];
-        // SAFETY: the facade writes exactly IDAKIT_REG_CLASS_COUNT bytes.
-        unsafe { sys::idakit_reg_class_ids(ids.as_mut_ptr()) };
+        let ids = sys::reg_class_ids();
+        assert!(ids.len() == expected.len());
         for (i, cls) in expected.iter().enumerate() {
             assert!(
                 ids[i] == u8::from(*cls),

@@ -1,11 +1,9 @@
-//! Mapping from the facade's flat `InstructionRaw` POD into the owned [`Instruction`] ADT.
+//! Mapping from the facade's owned `InstructionData` shared struct into the [`Instruction`] ADT.
 //!
-//! The facade has already done the processor-specific work on the kernel thread (folding
-//! raw operand types into semantic kinds, resolving register names and control flow). This
-//! is the pure, kernel-free rebuild into idakit types, so it is exercised directly by unit
-//! tests over hand-built PODs.
-
-use std::ffi::{CStr, c_char};
+//! The facade has already done the processor-specific work on the kernel thread (folding raw
+//! operand types into semantic kinds, resolving register names and control flow) and returned it
+//! by value. This is the pure, kernel-free rebuild into idakit types, so it is exercised directly
+//! by unit tests over hand-built structs.
 
 use idakit_sys as sys;
 
@@ -15,24 +13,13 @@ use super::{
 };
 use crate::address::Address;
 
-/// Copies a NUL-terminated facade name buffer into an owned string.
+/// Rebuilds a register slot, or `None` for the absent-register sentinel (a memory operand with no
+/// base/index).
 ///
-/// Register names and mnemonics are ASCII, so a malformed byte degrades lossily rather than
-/// failing.
-fn name(buf: &[c_char]) -> Box<str> {
-    // SAFETY: the facade fills these fixed buffers with `qstrncpy`, which always
-    // NUL-terminates within the buffer, so a terminator exists in range.
-    let s = unsafe { CStr::from_ptr(buf.as_ptr()) };
-    s.to_string_lossy().into_owned().into_boxed_str()
-}
-
-/// Rebuilds a register slot, or `None` for the absent-register sentinel (a memory operand
-/// with no base/index).
-///
-/// The facade only emits a modelled `RegClass` code. An unmodelled register is rejected at
-/// the facade with `-4` and never reaches here, so a code outside the enum is pure ABI
-/// drift, not runtime data.
-fn register(r: &sys::InstructionRegister) -> Option<Register> {
+/// The facade only emits a modelled `RegClass` code. An unmodelled register is rejected at the
+/// facade with `-4` and never reaches here, so a code outside the enum is pure ABI drift, not
+/// runtime data.
+fn register(r: &sys::RegisterData) -> Option<Register> {
     if r.num == sys::IDAKIT_REG_NONE {
         return None;
     }
@@ -42,14 +29,14 @@ fn register(r: &sys::InstructionRegister) -> Option<Register> {
         num: r.num,
         class,
         width: r.width,
-        name: name(&r.name),
+        name: r.name.as_str().into(),
     })
 }
 
-fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, DecodeError> {
+fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeError> {
     let kind = match o.kind {
         sys::IDAKIT_OP_REG => {
-            OperandKind::Register(register(&o.register).ok_or(DecodeError::MalformedOperand {
+            OperandKind::Register(register(&o.reg).ok_or(DecodeError::MalformedOperand {
                 address: address.get(),
                 op: o.idx,
                 reason: "register operand carries no register",
@@ -96,33 +83,34 @@ fn operand(o: &sys::InstructionOperand, address: Address) -> Result<Operand, Dec
     })
 }
 
-/// Rebuilds an owned [`Instruction`] from a successfully-decoded (`rc == 0`) raw POD.
+/// Rebuilds an owned [`Instruction`] from a successfully-decoded (`status == 0`) [`InstructionData`].
 ///
-/// `address` is the decode site, filled into `raw.address` by the facade and passed through
-/// so operand errors carry it without re-parsing the sentinel-carrying raw field.
-pub(crate) fn insn_from_raw(
-    raw: &sys::InstructionRaw,
+/// `address` is the decode site, filled into `data.address` by the facade and passed through so
+/// operand errors carry it without re-parsing the sentinel-carrying raw field. `data.ops` is
+/// already right-sized to the populated operands, so it maps one-to-one with no trailing slots.
+pub(crate) fn insn_from_data(
+    data: &sys::InstructionData,
     address: Address,
 ) -> Result<Instruction, DecodeError> {
-    let n = (raw.nops as usize).min(sys::IDAKIT_MAX_OPS);
-    let ops = raw.ops[..n]
+    let ops = data
+        .ops
         .iter()
         .map(|o| operand(o, address))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Instruction {
         address,
-        len: raw.len,
-        isa: if raw.isa == 1 { Isa::X64 } else { Isa::X86 },
-        itype: raw.itype,
-        mnemonic: name(&raw.mnemonic),
+        len: data.len,
+        isa: if data.isa == 1 { Isa::X64 } else { Isa::X86 },
+        itype: data.itype,
+        mnemonic: data.mnemonic.as_str().into(),
         ops,
         flow: Flow {
-            is_call: raw.flow & sys::IDAKIT_FLOW_CALL != 0,
-            is_ret: raw.flow & sys::IDAKIT_FLOW_RET != 0,
-            is_jump: raw.flow & sys::IDAKIT_FLOW_JUMP != 0,
-            is_indirect: raw.flow & sys::IDAKIT_FLOW_INDIRECT != 0,
-            stops: raw.flow & sys::IDAKIT_FLOW_STOPS != 0,
-            target: Address::try_new(raw.target),
+            is_call: data.flow & sys::IDAKIT_FLOW_CALL != 0,
+            is_ret: data.flow & sys::IDAKIT_FLOW_RET != 0,
+            is_jump: data.flow & sys::IDAKIT_FLOW_JUMP != 0,
+            is_indirect: data.flow & sys::IDAKIT_FLOW_INDIRECT != 0,
+            stops: data.flow & sys::IDAKIT_FLOW_STOPS != 0,
+            target: Address::try_new(data.target),
         },
     })
 }
@@ -133,54 +121,38 @@ mod tests {
 
     use super::*;
 
-    fn name16(s: &str) -> [c_char; 16] {
-        let mut a = [0 as c_char; 16];
-        for (i, b) in s.bytes().take(15).enumerate() {
-            a[i] = b as c_char;
-        }
-        a
-    }
-
-    fn name24(s: &str) -> [c_char; 24] {
-        let mut a = [0 as c_char; 24];
-        for (i, b) in s.bytes().take(23).enumerate() {
-            a[i] = b as c_char;
-        }
-        a
-    }
-
-    // A fixed decode site for the operand-level tests; the facade would fill `raw.address`
-    // with this, and `insn_from_raw` takes it directly.
+    // A fixed decode site for the operand-level tests; the facade would fill `data.address` with
+    // this, and `insn_from_data` takes it directly.
     fn at() -> Address {
         Address::try_new(0x1000).expect("0x1000 is a valid address")
     }
 
-    fn none_reg() -> sys::InstructionRegister {
-        sys::InstructionRegister {
+    fn none_reg() -> sys::RegisterData {
+        sys::RegisterData {
             num: sys::IDAKIT_REG_NONE,
             cls: 0,
             width: 0,
-            name: name16(""),
+            name: String::new(),
         }
     }
 
-    fn gpr(num: u16, width: u8, nm: &str) -> sys::InstructionRegister {
-        sys::InstructionRegister {
+    fn gpr(num: u16, width: u8, nm: &str) -> sys::RegisterData {
+        sys::RegisterData {
             num,
             cls: u8::from(RegisterClass::GeneralPurpose),
             width,
-            name: name16(nm),
+            name: nm.to_owned(),
         }
     }
 
-    fn blank_op() -> sys::InstructionOperand {
-        sys::InstructionOperand {
+    fn blank_op() -> sys::OperandData {
+        sys::OperandData {
             kind: 0,
             idx: 0,
             data_type: 0,
             access: 0,
             scale: 0,
-            register: none_reg(),
+            reg: none_reg(),
             base: none_reg(),
             index: none_reg(),
             disp: 0,
@@ -190,8 +162,11 @@ mod tests {
         }
     }
 
-    fn blank_insn() -> sys::InstructionRaw {
-        sys::InstructionRaw {
+    fn blank_insn() -> sys::InstructionData {
+        sys::InstructionData {
+            status: 0,
+            err_op: 0,
+            err_optype: 0,
             address: 0x1000,
             target: sys::BADADDR,
             itype: 0,
@@ -199,10 +174,8 @@ mod tests {
             isa: 1,
             nops: 0,
             flow: 0,
-            err_optype: 0,
-            err_op: 0,
-            mnemonic: name24(""),
-            ops: [blank_op(); sys::IDAKIT_MAX_OPS],
+            mnemonic: String::new(),
+            ops: Vec::new(),
         }
     }
 
@@ -212,7 +185,7 @@ mod tests {
         op.kind = sys::IDAKIT_OP_REG;
         op.data_type = u8::from(OperandDataType::Qword);
         op.access = 0b11; // read + written
-        op.register = gpr(0, 8, "rax");
+        op.reg = gpr(0, 8, "rax");
 
         let mapped = operand(&op, at()).expect("valid reg operand");
         assert!(let OperandKind::Register(r) = &mapped.kind);
@@ -282,8 +255,8 @@ mod tests {
 
     #[test]
     fn far_operand_carries_selector_and_offset() {
-        // A far pointer splits across two facade fields: `sel` the selector, `value` the
-        // offset, distinct from NEAR, which lands in `addr`.
+        // A far pointer splits across two facade fields: `sel` the selector, `value` the offset,
+        // distinct from NEAR, which lands in `addr`.
         let mut far = blank_op();
         far.kind = sys::IDAKIT_OP_FAR;
         far.sel = 0x07;
@@ -294,19 +267,23 @@ mod tests {
     }
 
     #[test]
-    fn insn_drops_trailing_operand_slots() {
+    fn insn_maps_every_present_operand() {
+        // `ops` arrives right-sized from the facade, so each entry maps one-to-one with no
+        // trailing blank slots to drop.
         let mut raw = blank_insn();
         raw.len = 3;
         raw.itype = 42;
-        raw.mnemonic = name24("lea");
+        raw.mnemonic = "lea".to_owned();
         raw.nops = 2;
-        raw.ops[0].kind = sys::IDAKIT_OP_REG;
-        raw.ops[0].register = gpr(0, 8, "rax");
-        raw.ops[1].kind = sys::IDAKIT_OP_MEM;
-        raw.ops[1].base = gpr(5, 8, "rbp");
-        // ops[2..] stay blank and must not be included.
+        let mut op0 = blank_op();
+        op0.kind = sys::IDAKIT_OP_REG;
+        op0.reg = gpr(0, 8, "rax");
+        let mut op1 = blank_op();
+        op1.kind = sys::IDAKIT_OP_MEM;
+        op1.base = gpr(5, 8, "rbp");
+        raw.ops = vec![op0, op1];
 
-        let instruction = insn_from_raw(&raw, at()).expect("valid instruction");
+        let instruction = insn_from_data(&raw, at()).expect("valid instruction");
         assert!(instruction.address.get() == 0x1000);
         assert!(instruction.len == 3);
         assert!(instruction.isa == Isa::X64);
@@ -319,7 +296,7 @@ mod tests {
         let mut raw = blank_insn();
         raw.flow = sys::IDAKIT_FLOW_CALL | sys::IDAKIT_FLOW_STOPS;
         raw.target = 0x2000;
-        let instruction = insn_from_raw(&raw, at()).expect("valid instruction");
+        let instruction = insn_from_data(&raw, at()).expect("valid instruction");
         assert!(instruction.flow.is_call);
         assert!(instruction.flow.stops);
         assert!(!instruction.flow.is_ret);
@@ -330,16 +307,16 @@ mod tests {
         // A branch with no static target reports None.
         let mut ind = blank_insn();
         ind.flow = sys::IDAKIT_FLOW_JUMP | sys::IDAKIT_FLOW_INDIRECT | sys::IDAKIT_FLOW_STOPS;
-        let instruction = insn_from_raw(&ind, at()).expect("valid instruction");
+        let instruction = insn_from_data(&ind, at()).expect("valid instruction");
         assert!(instruction.flow.is_jump);
         assert!(instruction.flow.is_indirect);
         assert!(instruction.flow.target.is_none());
     }
 
-    // The escape hatches are gone: each malformed field the facade could theoretically emit
-    // now yields a typed error instead of a panic or a silent fallback. Empirically these
-    // never occur across millions of real operands, but the decoder rejects them loudly
-    // rather than fabricating a value.
+    // The escape hatches are gone: each malformed field the facade could theoretically emit now
+    // yields a typed error instead of a panic or a silent fallback. Empirically these never occur
+    // across millions of real operands, but the decoder rejects them loudly rather than
+    // fabricating a value.
 
     #[test]
     fn reg_operand_without_register_is_rejected() {

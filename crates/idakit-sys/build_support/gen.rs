@@ -111,15 +111,22 @@ pub struct Field {
 // TODO: some variants land as structural/write domains are folded in (Stage 2) -- allow until then.
 #[allow(dead_code)]
 pub enum FieldTy {
-    U64,
-    Usize,
-    I32,
+    U8,
+    U16,
     U32,
+    U64,
+    I32,
+    I64,
+    Usize,
     Bool,
     /// An owned string (`String` in Rust, `rust::String` in C++).
     Str,
     /// A by-value `Trivial` `ExternType`, named by its Rust name (e.g. `"RangeT"`).
     Extern(&'static str),
+    /// A nested shared struct by value, by name (e.g. `"RegisterData"`); `cxx` lays it inline.
+    Struct(&'static str),
+    /// An owned `Vec` of a shared struct, by name (e.g. `"OperandData"`).
+    VecStruct(&'static str),
 }
 
 /// One facade function: its shared name, optional `self:` receiver, arguments, return shape, and
@@ -192,7 +199,8 @@ pub enum RetKind {
     /// An owned `Vec` of a scalar (`u32`).
     VecU32,
     ResultVecU32,
-    /// An owned `Vec<u8>` (a raw byte-range snapshot).
+    /// An owned `Vec<u8>` (a raw byte-range snapshot, or an alignment-id list).
+    VecU8,
     ResultVecU8,
 }
 
@@ -1315,23 +1323,253 @@ pub const BYTES: Domain = Domain {
     ],
 };
 
+/// The instruction-decode domain: x86/x64 `decode_insn` folded into an owned, by-value
+/// [`InstructionData`] shared struct instead of a flat out-param POD. The struct nests
+/// [`OperandData`] (a `Vec`, right-sized to the populated operands) and [`RegisterData`] by value,
+/// and carries a `status` field standing in for the raw facade's return code, so the whole decode
+/// crosses as one value with no `Result` (the five outcomes, ok plus `-1..-4`, are structured
+/// payloads a string-only `cxx` exception could not carry). `reg_class_ids`/`op_dtype_ids` expose
+/// the facade's own discriminants as `Vec<u8>` alignment sources for idakit's mirror tests. The
+/// whole body is hand-written in `facade/gen_instruction.cc`.
+pub const INSTRUCTION: Domain = Domain {
+    name: "instruction",
+    sdk_includes: &[],
+    externs: &[],
+    structs: &[
+        SharedStruct {
+            name: "RegisterData",
+            doc: "One register reference in a decoded operand, nested by value in an \
+                  [`OperandData`].",
+            fields: &[
+                Field {
+                    name: "num",
+                    ty: FieldTy::U16,
+                    doc: "Register number, or `0xFFFF` for an absent base/index slot.",
+                },
+                Field {
+                    name: "cls",
+                    ty: FieldTy::U8,
+                    doc: "idakit `RegisterClass` code.",
+                },
+                Field {
+                    name: "width",
+                    ty: FieldTy::U8,
+                    doc: "Byte width selecting the name alias.",
+                },
+                Field {
+                    name: "name",
+                    ty: FieldTy::Str,
+                    doc: "IDA's resolved register name, empty if unresolved.",
+                },
+            ],
+        },
+        SharedStruct {
+            name: "OperandData",
+            doc: "One decoded operand; which fields are meaningful depends on `kind`.",
+            fields: &[
+                Field {
+                    name: "kind",
+                    ty: FieldTy::U8,
+                    doc: "Semantic kind (0 reg, 1 mem, 2 imm, 3 near, 4 far).",
+                },
+                Field {
+                    name: "idx",
+                    ty: FieldTy::U8,
+                    doc: "Original operand slot index (feature bits are keyed by it).",
+                },
+                Field {
+                    name: "data_type",
+                    ty: FieldTy::U8,
+                    doc: "Raw `op_dtype_t`.",
+                },
+                Field {
+                    name: "access",
+                    ty: FieldTy::U8,
+                    doc: "Access bits: bit0 read, bit1 written.",
+                },
+                Field {
+                    name: "scale",
+                    ty: FieldTy::U8,
+                    doc: "Memory index scale multiplier (1/2/4/8).",
+                },
+                Field {
+                    name: "reg",
+                    ty: FieldTy::Struct("RegisterData"),
+                    doc: "Register (kind = reg). Named `reg`, not `register` (a C++ keyword).",
+                },
+                Field {
+                    name: "base",
+                    ty: FieldTy::Struct("RegisterData"),
+                    doc: "Memory base register (kind = mem).",
+                },
+                Field {
+                    name: "index",
+                    ty: FieldTy::Struct("RegisterData"),
+                    doc: "Memory index register (kind = mem).",
+                },
+                Field {
+                    name: "disp",
+                    ty: FieldTy::I64,
+                    doc: "Memory displacement (kind = mem).",
+                },
+                Field {
+                    name: "value",
+                    ty: FieldTy::U64,
+                    doc: "Immediate value (kind = imm) or far offset (kind = far).",
+                },
+                Field {
+                    name: "addr",
+                    ty: FieldTy::U64,
+                    doc: "Near target, or memory static target / `BADADDR` (kind = near/mem).",
+                },
+                Field {
+                    name: "sel",
+                    ty: FieldTy::U16,
+                    doc: "Far selector (kind = far).",
+                },
+            ],
+        },
+        SharedStruct {
+            name: "InstructionData",
+            doc: "A decoded instruction, returned by value from [`decode_insn`]; `status` carries \
+                  the raw result code and `ops` is right-sized to the populated operands.",
+            fields: &[
+                Field {
+                    name: "status",
+                    ty: FieldTy::I32,
+                    doc: "Result code: 0 ok, -1 no instruction, -2 unsupported processor, \
+                          -3 unmodeled operand, -4 unmodeled register.",
+                },
+                Field {
+                    name: "err_op",
+                    ty: FieldTy::U8,
+                    doc: "On the -3/-4 status, the offending operand index.",
+                },
+                Field {
+                    name: "err_optype",
+                    ty: FieldTy::U8,
+                    doc: "On -3 the offending raw operand type; on -4 the register number.",
+                },
+                Field {
+                    name: "address",
+                    ty: FieldTy::U64,
+                    doc: "Instruction address.",
+                },
+                Field {
+                    name: "target",
+                    ty: FieldTy::U64,
+                    doc: "Direct branch/call target, or `BADADDR`.",
+                },
+                Field {
+                    name: "itype",
+                    ty: FieldTy::U16,
+                    doc: "Processor-local canonical instruction id.",
+                },
+                Field {
+                    name: "len",
+                    ty: FieldTy::U8,
+                    doc: "Encoded length in bytes.",
+                },
+                Field {
+                    name: "isa",
+                    ty: FieldTy::U8,
+                    doc: "0 = x86, 1 = x64.",
+                },
+                Field {
+                    name: "nops",
+                    ty: FieldTy::U8,
+                    doc: "Number of populated operands (matches `ops.len()`).",
+                },
+                Field {
+                    name: "flow",
+                    ty: FieldTy::U8,
+                    doc: "`IDAKIT_FLOW_*` bit flags.",
+                },
+                Field {
+                    name: "mnemonic",
+                    ty: FieldTy::Str,
+                    doc: "Canonical mnemonic.",
+                },
+                Field {
+                    name: "ops",
+                    ty: FieldTy::VecStruct("OperandData"),
+                    doc: "Decoded operands; only meaningful when `status == 0`.",
+                },
+            ],
+        },
+    ],
+    custom_tu: Some("facade/gen_instruction.cc"),
+    fns: &[
+        FnSpec {
+            name: "decode_insn",
+            receiver: None,
+            args: &[Arg {
+                name: "ea",
+                ty: ArgTy::U64,
+            }],
+            ret: RetKind::Shared("InstructionData"),
+            body: BodyKind::Custom,
+            doc: "Decode the instruction at `ea`, folding raw operands into semantic kinds with \
+                  resolved register names and control-flow facts. Infallible at the boundary: the \
+                  result code lands in [`InstructionData::status`] rather than throwing, since the \
+                  -3/-4 failures carry structured payloads.",
+        },
+        FnSpec {
+            name: "reg_class_ids",
+            receiver: None,
+            args: &[],
+            ret: RetKind::VecU8,
+            body: BodyKind::Custom,
+            doc: "The facade's `RegisterClass` codes in idakit's discriminant order, an alignment \
+                  source pinning the Rust mirror to this SDK build in a test.",
+        },
+        FnSpec {
+            name: "op_dtype_ids",
+            receiver: None,
+            args: &[],
+            ret: RetKind::VecU8,
+            body: BodyKind::Custom,
+            doc: "This SDK's `op_dtype_t` (`dt_*`) values in idakit `DataType`'s discriminant \
+                  order, an alignment source for a mirror test.",
+        },
+    ],
+};
+
 /// Every domain fed into the unified bridge, in emission order.
 pub const DOMAINS: &[&Domain] = &[
-    &SEGMENT, &IMPORT, &RANGE, &FUNCTION, &EXPORT, &META, &NAME, &STRINGS, &CFG, &REFERENCE, &BYTES,
+    &SEGMENT,
+    &IMPORT,
+    &RANGE,
+    &FUNCTION,
+    &EXPORT,
+    &META,
+    &NAME,
+    &STRINGS,
+    &CFG,
+    &REFERENCE,
+    &BYTES,
+    &INSTRUCTION,
 ];
 
 impl FieldTy {
     fn rust(&self) -> TokenStream {
         match self {
-            FieldTy::U64 => quote!(u64),
-            FieldTy::Usize => quote!(usize),
-            FieldTy::I32 => quote!(i32),
+            FieldTy::U8 => quote!(u8),
+            FieldTy::U16 => quote!(u16),
             FieldTy::U32 => quote!(u32),
+            FieldTy::U64 => quote!(u64),
+            FieldTy::I32 => quote!(i32),
+            FieldTy::I64 => quote!(i64),
+            FieldTy::Usize => quote!(usize),
             FieldTy::Bool => quote!(bool),
             FieldTy::Str => quote!(String),
-            FieldTy::Extern(name) => {
+            FieldTy::Extern(name) | FieldTy::Struct(name) => {
                 let id = format_ident!("{name}");
                 quote!(#id)
+            }
+            FieldTy::VecStruct(name) => {
+                let id = format_ident!("{name}");
+                quote!(Vec<#id>)
             }
         }
     }
@@ -1427,6 +1665,7 @@ impl RetKind {
             }
             RetKind::VecU32 => quote!(-> Vec<u32>),
             RetKind::ResultVecU32 => quote!(-> Result<Vec<u32>>),
+            RetKind::VecU8 => quote!(-> Vec<u8>),
             RetKind::ResultVecU8 => quote!(-> Result<Vec<u8>>),
         }
     }
@@ -1450,7 +1689,7 @@ impl RetKind {
             }
             RetKind::Vec(n) | RetKind::ResultVec(n) => format!("rust::Vec<{}>", vec_elem_cxx(n)),
             RetKind::VecU32 | RetKind::ResultVecU32 => "rust::Vec<uint32_t>".into(),
-            RetKind::ResultVecU8 => "rust::Vec<uint8_t>".into(),
+            RetKind::VecU8 | RetKind::ResultVecU8 => "rust::Vec<uint8_t>".into(),
         }
     }
 }

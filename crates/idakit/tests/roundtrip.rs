@@ -614,6 +614,97 @@ fn run(idb: &mut idakit::Database) {
         println!("cxx cfg bridge cross-check OK: {n} blocks agree with the raw facade");
     }
 
+    // cxx nested-struct cross-check: the generated `decode_insn` returns an owned InstructionData
+    // (a right-sized Vec<OperandData> nesting RegisterData by value, `status` standing in for the
+    // raw return code) that must agree field-for-field with the raw flat-POD `idakit_decode_insn`
+    // on real instructions. Skips gracefully off x86 (status -2), since the decoder is x86-only.
+    {
+        use std::ffi::CStr;
+
+        use idakit_sys as sys;
+
+        fn cstr_name(buf: &[std::ffi::c_char]) -> String {
+            // SAFETY: the facade NUL-terminates these fixed buffers within range.
+            unsafe { CStr::from_ptr(buf.as_ptr()) }
+                .to_string_lossy()
+                .into_owned()
+        }
+
+        if sys::decode_insn(address.get()).status == -2 {
+            println!("skipping instruction cross-check: non-x86 processor (status -2)");
+        } else {
+            let mut ea = address.get();
+            let mut decoded = 0u32;
+            while decoded < 64 {
+                let data = sys::decode_insn(ea);
+                // SAFETY: InstructionRaw is an all-integer POD, so zeroed is a valid init value.
+                let mut raw: sys::InstructionRaw = unsafe { std::mem::zeroed() };
+                // SAFETY: `out` is a valid local; the facade fills it.
+                let rc = unsafe { sys::idakit_decode_insn(ea, &mut raw) };
+                assert_eq!(data.status, rc, "decode status disagrees at {ea:#x}");
+                if rc != 0 {
+                    break;
+                }
+                assert_eq!(data.len, raw.len, "insn len disagrees at {ea:#x}");
+                assert_eq!(data.itype, raw.itype, "itype disagrees at {ea:#x}");
+                assert_eq!(data.isa, raw.isa, "isa disagrees at {ea:#x}");
+                assert_eq!(data.flow, raw.flow, "flow disagrees at {ea:#x}");
+                assert_eq!(data.target, raw.target, "target disagrees at {ea:#x}");
+                assert_eq!(data.nops, raw.nops, "nops disagrees at {ea:#x}");
+                assert_eq!(
+                    data.nops as usize,
+                    data.ops.len(),
+                    "nops vs ops.len() disagree at {ea:#x}"
+                );
+                assert_eq!(
+                    data.mnemonic,
+                    cstr_name(&raw.mnemonic),
+                    "mnemonic disagrees at {ea:#x}"
+                );
+                for (i, op) in data.ops.iter().enumerate() {
+                    let ro = &raw.ops[i];
+                    assert_eq!(op.kind, ro.kind, "op {i} kind disagrees at {ea:#x}");
+                    assert_eq!(op.idx, ro.idx, "op {i} idx disagrees at {ea:#x}");
+                    assert_eq!(
+                        op.data_type, ro.data_type,
+                        "op {i} dtype disagrees at {ea:#x}"
+                    );
+                    assert_eq!(op.access, ro.access, "op {i} access disagrees at {ea:#x}");
+                    assert_eq!(op.scale, ro.scale, "op {i} scale disagrees at {ea:#x}");
+                    assert_eq!(op.disp, ro.disp, "op {i} disp disagrees at {ea:#x}");
+                    assert_eq!(op.value, ro.value, "op {i} value disagrees at {ea:#x}");
+                    assert_eq!(op.addr, ro.addr, "op {i} addr disagrees at {ea:#x}");
+                    assert_eq!(op.sel, ro.sel, "op {i} sel disagrees at {ea:#x}");
+                    assert_eq!(
+                        op.reg.num, ro.register.num,
+                        "op {i} reg num disagrees at {ea:#x}"
+                    );
+                    assert_eq!(
+                        op.reg.name,
+                        cstr_name(&ro.register.name),
+                        "op {i} reg name disagrees at {ea:#x}"
+                    );
+                    assert_eq!(
+                        op.base.name,
+                        cstr_name(&ro.base.name),
+                        "op {i} base name disagrees at {ea:#x}"
+                    );
+                    assert_eq!(
+                        op.index.name,
+                        cstr_name(&ro.index.name),
+                        "op {i} index name disagrees at {ea:#x}"
+                    );
+                }
+                ea += raw.len as u64;
+                decoded += 1;
+            }
+            assert!(decoded > 0, "decoded no instructions in the first function");
+            println!(
+                "cxx instruction bridge cross-check OK: {decoded} instructions agree with the raw facade"
+            );
+        }
+    }
+
     // cxx ExternType cross-check (Goal A): the `range_t` Trivial ExternType crosses by value four
     // ways -- returned bare (range_entry_chunk), taken by value (range_size), a by-value shared-
     // struct field (ChunkInfo.range), and a Vec element (range_all_chunks). Each must agree with

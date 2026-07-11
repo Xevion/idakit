@@ -24,11 +24,9 @@ pub use data_type::OperandDataType;
 pub use iter::{Instructions, InstructionsIn};
 pub use register::{Register, RegisterClass};
 
-pub(crate) use decode::insn_from_raw;
+pub(crate) use decode::insn_from_data;
 
 use snafu::Snafu;
-
-use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
@@ -47,24 +45,22 @@ impl Database {
     /// x86/x64 are modelled).
     #[doc(alias("decode_insn"))]
     pub fn decode(&self, address: Address) -> Result<Instruction, DecodeError> {
-        // SAFETY: `InstructionRaw` is an all-integer POD, so an all-zero bit pattern is a valid
-        // value; the facade overwrites it before it reports success.
-        let mut raw: sys::InstructionRaw = unsafe { std::mem::zeroed() };
-        match self.decode_insn(address, &mut raw) {
-            0 => insn_from_raw(&raw, address),
+        let data = self.decode_insn(address);
+        match data.status {
+            0 => insn_from_data(&data, address),
             -2 => Err(DecodeError::UnsupportedProcessor),
             -3 => Err(DecodeError::UnsupportedOperand {
                 address: address.get(),
-                op: raw.err_op,
-                optype: raw.err_optype,
+                op: data.err_op,
+                optype: data.err_optype,
             }),
             -4 => Err(DecodeError::UnsupportedRegister {
                 address: address.get(),
-                op: raw.err_op,
+                op: data.err_op,
                 // for -4 the facade repurposes err_optype to carry the register number.
-                regnum: raw.err_optype,
+                regnum: data.err_optype,
             }),
-            // -1 (no instruction) and any other negative rc.
+            // -1 (no instruction) and any other negative status.
             _ => Err(DecodeError::NotCode {
                 address: address.get(),
             }),
