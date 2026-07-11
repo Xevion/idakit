@@ -16,7 +16,9 @@ jobs:
   publish:
     name: Publish to crates.io
     # secrets can't gate a job-level `if`; the runtime var lets forks without it skip cleanly.
-    if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
+    # Both crates share one linked version but cut separate releases, so `published` fires
+    # twice; gate on the idakit-sys tag so the paired publish runs exactly once.
+    if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' && startsWith(github.event.release.tag_name, 'idakit-sys-v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
