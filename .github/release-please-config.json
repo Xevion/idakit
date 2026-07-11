@@ -23,33 +23,15 @@
 			"type": "linked-versions",
 			"groupName": "idakit",
 			"components": ["idakit", "idakit-sys"]
-		}
+		},
+		{ "type": "cargo-workspace", "merge": false }
 	],
 	"packages": {
 		"crates/idakit-sys": {
-			"release-type": "rust",
-			"extra-files": [
-				{
-					"type": "toml",
-					"path": "/Cargo.lock",
-					"jsonpath": "$.package[?(@.name=='idakit-sys')].version"
-				}
-			]
+			"release-type": "rust"
 		},
 		"crates/idakit": {
-			"release-type": "rust",
-			"extra-files": [
-				{
-					"type": "toml",
-					"path": "/Cargo.lock",
-					"jsonpath": "$.package[?(@.name=='idakit')].version"
-				},
-				{
-					"type": "toml",
-					"path": "/crates/idakit/Cargo.toml",
-					"jsonpath": "$.dependencies['idakit-sys'].version"
-				}
-			]
+			"release-type": "rust"
 		}
 	}
 }
