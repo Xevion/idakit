@@ -1239,43 +1239,15 @@ fn run(idb: &mut idakit::Database) {
                 println!("round-trip: IDA pseudocode unavailable; rendered:\n{rendered}");
             }
 
-            // Round 8 spike: cfuncptr_t (qrefcnt_t<cfunc_t>, the decompiler's intrusive-
-            // refcounted smart pointer) modeled through cxx + moveit. (a) Goal A -- an Opaque
-            // ExternType owned by UniquePtr, whose cxx deleter runs ~cfuncptr_t on drop. (b)
-            // Goal B -- moveit's construction traits over that SAME cxx type (the UniquePtr
-            // composition) and over a pure-moveit inline stack value type, each proving the C++
-            // copy-ctor bumps the intrusive refcount and the C++ destructor releases it.
+            // The still-experimental inline moveit value type CfuncVal mirrors cfuncptr_t
+            // (qrefcnt_t<cfunc_t>, the decompiler's intrusive-refcounted smart pointer) as a
+            // pure-moveit stack value (no cxx): the C++ copy-ctor bumps the intrusive refcount and
+            // the C++ destructor releases it. Deltas, not absolutes, since the cfunc_t may be
+            // shared/cached.
             {
                 use idakit_sys as sys;
                 let ea = address.get();
 
-                // Goal A: decompile through the cxx Opaque + UniquePtr path; a live cfuncptr_t
-                // holds at least one ref.
-                let cptr =
-                    sys::cfunc_decompile(ea).expect("cxx cfunc_decompile on the first function");
-                let base = cptr.as_ref().expect("cfuncptr UniquePtr is non-null");
-                let r = sys::cfunc_refcnt(base);
-                assert!(r >= 1, "a live cfuncptr_t must hold >= 1 ref, got {r}");
-                println!("cxx cfunc_decompile OK: UniquePtr<CfuncPtr>, refcnt = {r}");
-
-                // Goal B (composition): clone via moveit copy-ctor into a second UniquePtr, then
-                // drop it. Deltas, not absolutes, since the cfunc_t may be shared/cached.
-                let [c0, c1, c2] = sys::cfunc_moveit_uniqueptr_probe(ea)
-                    .expect("moveit UniquePtr probe (decompile succeeded above)");
-                assert_eq!(
-                    c1,
-                    c0 + 1,
-                    "moveit copy-ctor must bump refcount ({c0} -> {c1})"
-                );
-                assert_eq!(
-                    c2, c0,
-                    "dropping the moveit clone must release ({c1} -> {c2})"
-                );
-                println!(
-                    "moveit + cxx UniquePtr composition OK: refcnt {c0} -> {c1} (clone) -> {c2} (drop)"
-                );
-
-                // Goal B (inline): the same semantics on a pure-moveit stack value type (no cxx).
                 let [i0, i1, i2] = sys::cfunc_moveit_inline_probe(ea)
                     .expect("moveit inline probe (decompile succeeded above)");
                 assert_eq!(
@@ -1288,7 +1260,6 @@ fn run(idb: &mut idakit::Database) {
                     "dropping the inline moveit clone must release ({i1} -> {i2})"
                 );
                 println!("moveit inline CfuncVal OK: refcnt {i0} -> {i1} (clone) -> {i2} (drop)");
-                // `cptr` (UniquePtr<CfuncPtr>) drops here, running ~cfuncptr_t (release()).
             }
         }
         Err(e) => println!("decompile unavailable ({e})"),

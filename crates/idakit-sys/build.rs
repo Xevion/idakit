@@ -117,6 +117,9 @@ fn main() {
     // env when the feature is on; it gates `idakit_test_fatal` in the facade.
     if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
         build.define("IDAKIT_TEST_SHIMS", None);
+        // The cfunc placement shims (moveit inline CfuncVal path) are a plain facade TU, not a cxx
+        // bridge, so they ride in the whole-archived facade under the feature.
+        build.file("facade/cfunc_cxx.cc");
     }
     // Mirror the caller's `-Zsanitizer=<name>` onto the facade TUs so bugs inside facade/*.cpp
     // are caught too, not just at the FFI boundary. Comma-separated like rustc's flag. `undefined`
@@ -230,13 +233,6 @@ fn main() {
             "idakit_cxx_probe",
             sdk_include_str,
             &["IDAKIT_TEST_SHIMS"],
-        );
-        cxx_bridge(
-            "src/bridge_cfunc.rs",
-            &["facade/cfunc_cxx.cc"],
-            "idakit_cxx_cfunc_bridge",
-            sdk_include_str,
-            &[],
         );
         cxx_bridge(
             "src/bridge_probe_ext.rs",

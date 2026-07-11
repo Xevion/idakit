@@ -1,13 +1,12 @@
-// cxx + moveit facade over the decompiler's intrusive-refcounted smart pointer cfuncptr_t
-// (typedef qrefcnt_t<cfunc_t>). Round 8 spike: model that C++ value type in Rust.
+// Placement shims backing moveit's construction traits over the decompiler's intrusive-refcounted
+// smart pointer cfuncptr_t (typedef qrefcnt_t<cfunc_t>), for the still-experimental inline CfuncVal
+// value type (test-shims only). Plain facade TU, no cxx.
 //
 // qrefcnt_t is NOT std::shared_ptr -- it holds a bare cfunc_t* whose copy-ctor increments an
-// intrusive cfunc_t::refcnt and whose destructor calls release() (decrement, delete at zero).
-// cxx's SharedPtr/UniquePtr are std-only and Trivial is impossible (nontrivial copy-ctor+dtor),
-// so the two paths proven here are: (a) an Opaque ExternType owned by UniquePtr (cxx's deleter
-// runs ~cfuncptr_t); (b) moveit's construction traits (copy-ctor on clone, dtor on drop) backed
-// by the placement shims below, either inline on the Rust stack or composed with UniquePtr via
-// MakeCppStorage.
+// intrusive cfunc_t::refcnt and whose destructor calls release() (decrement, delete at zero). The
+// shims placement-construct / copy-construct / destruct a cfuncptr_t at a caller-owned address (a
+// repr(C) Rust mirror on the stack), which moveit drives to give the inline value type C++
+// construction semantics.
 
 #include <pro.h>
 
@@ -18,7 +17,6 @@
 #include <loader.hpp> // load_plugin
 
 #include <new>
-#include <stdexcept>
 
 #include "cfunc_cxx.h"
 
@@ -53,32 +51,12 @@ bool ensure_hexrays() {
 
 } // namespace
 
-namespace idakit_cxx {
-
-std::unique_ptr<::cfuncptr_t> cfunc_decompile(std::uint64_t ea) {
-  ::cfuncptr_t *p = decompile_heap(ea);
-  if (p == nullptr)
-    throw std::runtime_error("decompilation failed");
-  return std::unique_ptr<::cfuncptr_t>(p);
-}
-
-std::int32_t cfunc_refcnt(const ::cfuncptr_t &cf) {
-  const cfunc_t *p = cf;
-  return p != nullptr ? (std::int32_t)p->refcnt : -1;
-}
-
-} // namespace idakit_cxx
-
 // cfuncptr_t is a single cfunc_t* with no vtable, so it is pointer-sized; the Rust-side inline
-// CfuncVal mirror and the MakeCppStorage allocation both rely on this.
+// CfuncVal mirror relies on this.
 static_assert(sizeof(::cfuncptr_t) == sizeof(void *), "cfuncptr_t is not pointer-sized");
 static_assert(alignof(::cfuncptr_t) == alignof(void *), "cfuncptr_t alignment unexpected");
 
 extern "C" {
-
-void *idakit_cfuncptr_alloc(void) { return ::operator new(sizeof(::cfuncptr_t)); }
-
-void idakit_cfuncptr_free(void *p) { ::operator delete(p); }
 
 void idakit_cfuncptr_copy_ctor(void *dst, const void *src) {
   new (dst)::cfuncptr_t(*reinterpret_cast<const ::cfuncptr_t *>(src));
