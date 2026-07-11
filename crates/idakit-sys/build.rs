@@ -240,10 +240,11 @@ fn main() {
     gen_bridge
         .define("__EA64__", None)
         .define(PLATFORM_DEFINE, None);
-    gen_bridge.file(out_path.join("gen_bridge.cc"));
-    gen_bridge.file(out_path.join("gen_seg_bodies.cc"));
-    if codegen::has_custom(codegen::SEGMENT_SPEC) {
-        gen_bridge.file("facade/gen_custom.cc");
+    for tu in codegen::body_tus(&out_path) {
+        gen_bridge.file(tu);
+    }
+    for tu in codegen::custom_tus() {
+        gen_bridge.file(tu);
     }
     gen_bridge.compile("idakit_cxx_gen_bridge");
 
