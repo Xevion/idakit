@@ -21,7 +21,7 @@ use idakit_sys as sys;
 use crate::Database;
 use crate::error::{Error, Result};
 use crate::ffi::{nul_checked, reason_or};
-use crate::types::TypeExpr;
+use crate::types::{MemberRepr, TypeExpr};
 
 /// The SDK's `DEFMASK64` (`bmask64_t(-1)`, `typeinf.hpp`): passed as `enum_add_member`'s `bmask`
 /// so a bitmask enum falls back to using the constant's own value as its group mask; ignored by
@@ -521,6 +521,52 @@ impl MemberEdit<'_> {
         let text = nul_checked(text.as_ref(), "comment")?;
         let result =
             self.dispatch(|db, tp, mp, bit| db.udt_set_member_comment(tp, mp, bit, text))?;
+        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
+    }
+
+    /// Set this member's value representation: radix or char format, forced sign, and leading
+    /// zeros.
+    ///
+    /// Limited to the numeric subset [`MemberRepr`] models; setting an info-carrying
+    /// representation (enum-linked, offset, string literal, struct offset, custom) is out of
+    /// scope.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// use idakit::types::{MemberRepr, NumberFormat};
+    ///
+    /// db.types_mut().define("struct Widget { int hp; };")?;
+    /// let repr = MemberRepr {
+    ///     format: NumberFormat::Hexadecimal,
+    ///     signed: true,
+    ///     leading_zeros: false,
+    /// };
+    /// db.types_mut().edit("Widget").member("hp").set_repr(repr)?;
+    /// let ty = db.type_named("Widget")?;
+    /// let idakit::types::TypeShape::Struct { members, .. } = ty.shape() else {
+    ///     unreachable!()
+    /// };
+    /// assert!(members[0].repr == Some(repr));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`]
+    /// (e.g. [`TypeEditCode::BadRepr`] if the kernel rejects the combination); or
+    /// [`Error::InteriorNul`] for a NUL byte in the type name.
+    #[doc(alias("set_udm_repr"))]
+    pub fn set_repr(&mut self, repr: MemberRepr) -> Result<()> {
+        let result = self.dispatch(|db, tp, mp, bit| {
+            db.udt_set_member_repr(
+                tp,
+                mp,
+                bit,
+                repr.format.to_frb(),
+                repr.signed,
+                repr.leading_zeros,
+            )
+        })?;
         edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
     }
 

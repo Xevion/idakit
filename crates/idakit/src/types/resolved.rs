@@ -224,6 +224,7 @@ mod tests {
                     bit_offset: 0,
                     ty: field,
                     bitfield_width: None,
+                    repr: None,
                 }],
             },
             size: Some(4),

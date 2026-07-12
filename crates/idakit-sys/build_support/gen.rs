@@ -2170,6 +2170,42 @@ pub const TYPE_BUILD: Domain = Domain {
                   (`is_regcmt=false`).",
         },
         FnSpec {
+            name: "udt_set_member_repr",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_bit",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "vtype",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "is_signed",
+                    ty: ArgTy::Bool,
+                },
+                Arg {
+                    name: "leading_zeros",
+                    ty: ArgTy::Bool,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Set the value representation on the member selected by `member_name` (or, when \
+                  it is empty, by bit offset `member_bit`) in `type_name`. `vtype` is a \
+                  `value_repr_t` FRB_* value-type nibble; `is_signed`/`leading_zeros` set \
+                  FRB_SIGNED/FRB_LZERO.",
+        },
+        FnSpec {
             name: "udt_del_member",
             receiver: None,
             args: &[

@@ -172,6 +172,13 @@ mod ffi {
         ty: u32,
         /// Bit width for a bitfield member (0 for an ordinary field).
         bitfield_width: u32,
+        /// `value_repr_t` FRB_* value-type nibble, or 0 (`FRB_UNK`) when unset or outside the
+        /// numeric subset idakit models (an info-carrying, float, or segment representation).
+        repr_vtype: u32,
+        /// `FRB_SIGNED`; meaningless when `repr_vtype` is 0.
+        repr_signed: bool,
+        /// `FRB_LZERO`; meaningless when `repr_vtype` is 0.
+        repr_leading_zeros: bool,
     }
 
     /// One enum constant, a lifetime-generic shared struct with a borrowed `name`, the enum twin

@@ -27,6 +27,7 @@ fn run(idb: &mut idakit::Database) {
     type_member_edit(idb);
     type_member_comment_edit(idb);
     type_member_bitfield(idb);
+    type_member_repr_edit(idb);
     type_enum_member_edit(idb);
     type_enum_bitmask_edit(idb);
     type_member_ref(idb);
@@ -37,7 +38,7 @@ fn run(idb: &mut idakit::Database) {
     type_build_failed(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + member-repr-edit + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
     );
 }
 
@@ -609,6 +610,63 @@ fn type_member_bitfield(idb: &mut idakit::Database) {
                 ..
             }
         }) = rejected
+    );
+}
+
+/// `MemberEdit::set_repr` builds a `value_repr_t` for the numeric subset (radix/char, forced
+/// sign, leading zeros); `TypeMember::repr` reads it back. An unresolved member still surfaces as
+/// `TypeWriteError::NoMember`, mirroring the comment/bitfield tests.
+fn type_member_repr_edit(idb: &mut idakit::Database) {
+    use idakit::types::{MemberRepr, NumberFormat, TypeWriteError};
+
+    fn repr(idb: &idakit::Database, ty: &str, member: &str) -> Option<MemberRepr> {
+        idb.type_named(ty)
+            .expect("resolve the type")
+            .members()
+            .expect("a struct has members")
+            .iter()
+            .find(|m| m.name == member)
+            .expect("the member")
+            .repr
+    }
+
+    idb.types_mut()
+        .define("struct idakit_repr_probe { int hex_field; int dec_field; };")
+        .expect("define a struct to set repr on");
+
+    let hex_repr = MemberRepr {
+        format: NumberFormat::Hexadecimal,
+        signed: true,
+        leading_zeros: false,
+    };
+    idb.types_mut()
+        .edit("idakit_repr_probe")
+        .member("hex_field")
+        .set_repr(hex_repr)
+        .expect("set hex_field's repr");
+    assert!(repr(idb, "idakit_repr_probe", "hex_field") == Some(hex_repr));
+
+    let dec_repr = MemberRepr {
+        format: NumberFormat::Decimal,
+        signed: false,
+        leading_zeros: true,
+    };
+    idb.types_mut()
+        .edit("idakit_repr_probe")
+        .member("dec_field")
+        .set_repr(dec_repr)
+        .expect("set dec_field's repr");
+    assert!(repr(idb, "idakit_repr_probe", "dec_field") == Some(dec_repr));
+
+    let ghost = idb
+        .types_mut()
+        .edit("idakit_repr_probe")
+        .member("ghost")
+        .set_repr(hex_repr);
+    assert!(
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoMember { .. }
+        }) = ghost
     );
 }
 

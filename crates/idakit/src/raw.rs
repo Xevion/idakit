@@ -416,6 +416,25 @@ impl Database {
         sys::udt_set_member_comment(type_name, member_name, member_bit, comment)
     }
 
+    pub(crate) fn udt_set_member_repr(
+        &mut self,
+        type_name: &str,
+        member_name: &str,
+        member_bit: u64,
+        vtype: u32,
+        is_signed: bool,
+        leading_zeros: bool,
+    ) -> sys::TypeWriteResult {
+        sys::udt_set_member_repr(
+            type_name,
+            member_name,
+            member_bit,
+            vtype,
+            is_signed,
+            leading_zeros,
+        )
+    }
+
     pub(crate) fn udt_del_member(
         &mut self,
         type_name: &str,

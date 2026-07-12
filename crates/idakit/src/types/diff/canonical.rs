@@ -1352,6 +1352,7 @@ mod tests {
             bit_offset,
             ty,
             bitfield_width: None,
+            repr: None,
         }
     }
 
@@ -1549,6 +1550,7 @@ mod tests {
                     bit_offset: 0,
                     ty: u32t,
                     bitfield_width: Some(3),
+                    repr: None,
                 }],
             },
             size: Some(4),
@@ -1825,6 +1827,7 @@ mod tests {
                 bit_offset: 0,
                 ty: if n == "i" { i } else { f },
                 bitfield_width: None,
+                repr: None,
             };
             let root = t.intern(TypeValue {
                 shape: TypeShape::Union {

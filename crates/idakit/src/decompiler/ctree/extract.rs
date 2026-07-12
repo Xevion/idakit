@@ -877,6 +877,7 @@ mod tests {
             bit_offset: 0,
             ty: tid(ptr),
             bitfield_width: None,
+            repr: None,
         }];
         cb.fill_struct(node, false, members, 8, 1);
 

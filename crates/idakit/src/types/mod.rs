@@ -22,6 +22,7 @@ pub mod diff;
 mod edit;
 pub mod expr;
 mod named;
+mod repr;
 mod resolved;
 mod sink;
 mod tinfo;
@@ -32,6 +33,7 @@ pub use edit::{
 };
 pub use expr::TypeExpr;
 pub use named::{NamedType, NamedTypes};
+pub use repr::{MemberRepr, NumberFormat};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;
 pub(crate) use sink::{SinkAdapter, TypeSink, raw, tid};
@@ -61,6 +63,9 @@ pub struct TypeMember {
     pub ty: TypeId,
     /// Width in bits for a bitfield member; `None` for an ordinary field.
     pub bitfield_width: Option<u32>,
+    /// The field's value representation (radix/char, sign, leading zeros); `None` when unset or
+    /// outside the numeric subset [`MemberRepr`] models.
+    pub repr: Option<MemberRepr>,
 }
 
 /// One member of an enum.
@@ -328,6 +333,7 @@ mod tests {
                         bit_offset: 0,
                         ty: ptr,
                         bitfield_width: None,
+                        repr: None,
                     }],
                 },
                 size: Some(8),

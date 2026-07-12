@@ -8,7 +8,7 @@
 
 use idakit_sys::{EnumConstInfo, MemberInfo, TypeWalkSink};
 
-use super::{EnumMember, TypeBuilder, TypeId, TypeMember};
+use super::{EnumMember, MemberRepr, NumberFormat, TypeBuilder, TypeId, TypeMember};
 use crate::arena::Idx;
 
 /// A walk context the shared type callbacks push interned types into. The u32-handle methods
@@ -121,6 +121,11 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
                 bit_offset: m.bit_offset,
                 ty: tid(m.ty),
                 bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
+                repr: NumberFormat::from_frb(m.repr_vtype).map(|format| MemberRepr {
+                    format,
+                    signed: m.repr_signed,
+                    leading_zeros: m.repr_leading_zeros,
+                }),
             })
             .collect();
         self.0.fill_struct(id, is_union, members, size, has_size);

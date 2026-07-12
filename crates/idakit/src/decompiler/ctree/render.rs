@@ -538,6 +538,7 @@ mod tests {
                     bit_offset: 0,
                     ty: base,
                     bitfield_width: None,
+                    repr: None,
                 }],
             },
             size: Some(8),

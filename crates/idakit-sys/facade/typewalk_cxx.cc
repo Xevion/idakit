@@ -36,6 +36,21 @@ rust::Str borrow(const qstring &s) { return rust::Str(s.c_str(), s.length()); }
 
 rust::Str borrow(const char *p, size_t n) { return rust::Str(p, n); }
 
+// Whether a value_repr_t FRB_* nibble falls in idakit's modeled numeric subset (binary, octal,
+// hex, decimal, char); false for FRB_UNK and every info-carrying/float/segment nibble.
+bool is_modeled_frb_vtype(uint64 vtype) {
+  switch (vtype) {
+  case FRB_NUMB:
+  case FRB_NUMO:
+  case FRB_NUMH:
+  case FRB_NUMD:
+  case FRB_CHAR:
+    return true;
+  default:
+    return false;
+  }
+}
+
 } // namespace
 
 // Full definition of the walker the opaque handle in typewalk_walker.hpp fronts. Holds the visitor
@@ -138,6 +153,11 @@ uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_si
         md.bit_offset = m.offset;
         md.ty = ty(m.type);
         md.bitfield_width = m.is_bitfield() ? (uint32_t)m.size : 0;
+        uint64 vtype = m.repr.get_vtype();
+        bool modeled = is_modeled_frb_vtype(vtype);
+        md.repr_vtype = modeled ? (uint32_t)vtype : 0;
+        md.repr_signed = modeled && m.repr.is_signed();
+        md.repr_leading_zeros = modeled && m.repr.has_lzeroes();
         ms.push_back(md);
       }
     }

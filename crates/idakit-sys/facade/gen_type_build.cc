@@ -700,6 +700,36 @@ TypeWriteResult udt_set_member_comment(rust::Str type_name, rust::Str member_nam
   }
 }
 
+// vtype is a value_repr_t FRB_* value-type nibble (FRB_NUMB/NUMO/NUMH/NUMD/CHAR); idakit maps its
+// own NumberFormat enum onto it and never forwards an info-carrying nibble (FRB_ENUM, FRB_OFFSET,
+// ...) here.
+TypeWriteResult udt_set_member_repr(rust::Str type_name, rust::Str member_name, uint64_t member_bit,
+                                    uint32_t vtype, bool is_signed, bool leading_zeros) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    std::string mn(member_name.data(), member_name.size());
+    const char *mnp = member_name.empty() ? nullptr : mn.c_str();
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      int idx = resolve_member(tif, mnp, member_bit);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      value_repr_t repr;
+      repr.set_vtype(vtype);
+      repr.set_signed(is_signed);
+      repr.set_lzeroes(leading_zeros);
+      return (int)tif.set_udm_repr((size_t)idx, repr);
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
 TypeWriteResult udt_del_member(rust::Str type_name, rust::Str member_name, uint64_t member_bit) {
   try {
     TypeWriteResult out{};
