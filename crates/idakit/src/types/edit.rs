@@ -500,6 +500,30 @@ impl MemberEdit<'_> {
         edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
     }
 
+    /// Set this member's comment.
+    ///
+    /// A plain member comment (`is_regcmt=false`), not a repeatable one; idakit does not expose
+    /// the repeatable flag.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("struct Widget { int hp; };")?;
+    /// db.types_mut().edit("Widget").member("hp").comment("current health")?;
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`];
+    /// or [`Error::InteriorNul`] for a NUL byte in `text`.
+    #[doc(alias("set_udm_cmt"))]
+    pub fn comment(&mut self, text: impl AsRef<str>) -> Result<()> {
+        let text = nul_checked(text.as_ref(), "comment")?;
+        let result =
+            self.dispatch(|db, tp, mp, bit| db.udt_set_member_comment(tp, mp, bit, text))?;
+        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
+    }
+
     /// Delete this member from its aggregate.
     ///
     /// Deleting a non-tail member leaves a `TAFLD_GAP` padding member in its place (IDA names it

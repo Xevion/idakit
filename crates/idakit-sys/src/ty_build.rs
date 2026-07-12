@@ -59,3 +59,7 @@ pub const IDAKIT_RECIPE_VOLATILE: u8 = 9;
 /// a `u16` calling convention (0 = default), then that many `u32`-length-prefixed parameter names;
 /// pops the parameter types then the return type (return pushed first) and pushes the function.
 pub const IDAKIT_RECIPE_FUNCTION: u8 = 10;
+/// Recipe opcode: build a bitfield member type, followed by a `u8` container width in bytes, a
+/// `u8` field width in bits, and a `u8` signedness flag. Valid only as a struct member; the kernel
+/// rejects a bitfield in a union.
+pub const IDAKIT_RECIPE_BITFIELD: u8 = 11;

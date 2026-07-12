@@ -406,6 +406,16 @@ impl Database {
         sys::udt_rename_member(type_name, member_name, member_bit, new_name)
     }
 
+    pub(crate) fn udt_set_member_comment(
+        &mut self,
+        type_name: &str,
+        member_name: &str,
+        member_bit: u64,
+        comment: &str,
+    ) -> sys::TypeWriteResult {
+        sys::udt_set_member_comment(type_name, member_name, member_bit, comment)
+    }
+
     pub(crate) fn udt_del_member(
         &mut self,
         type_name: &str,

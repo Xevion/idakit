@@ -25,6 +25,8 @@ fn run(idb: &mut idakit::Database) {
     type_surgery(idb, address);
     type_clear(idb, address);
     type_member_edit(idb);
+    type_member_comment_edit(idb);
+    type_member_bitfield(idb);
     type_enum_member_edit(idb);
     type_enum_bitmask_edit(idb);
     type_member_ref(idb);
@@ -35,7 +37,7 @@ fn run(idb: &mut idakit::Database) {
     type_build_failed(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
     );
 }
 
@@ -509,6 +511,104 @@ fn type_member_edit(idb: &mut idakit::Database) {
     assert!(
         probe.get(a.ty).size == Some(1),
         "member a should now be a one-byte char"
+    );
+}
+
+/// `MemberEdit::comment` sets a member's comment. `TypeMember` does not yet surface a comment on
+/// the read side, so this asserts the write succeeds and a re-comment is stable, rather than
+/// reading the comment back; an unresolved member is still the same typed `NoMember` other member
+/// edits give it.
+fn type_member_comment_edit(idb: &mut idakit::Database) {
+    use idakit::types::TypeWriteError;
+
+    idb.types_mut()
+        .define("struct idakit_comment_probe { int hp; };")
+        .expect("define a struct to comment");
+
+    idb.types_mut()
+        .edit("idakit_comment_probe")
+        .member("hp")
+        .comment("current health")
+        .expect("set the member comment");
+
+    idb.types_mut()
+        .edit("idakit_comment_probe")
+        .member("hp")
+        .comment("current health, again")
+        .expect("re-set the member comment");
+
+    let ghost = idb
+        .types_mut()
+        .edit("idakit_comment_probe")
+        .member("ghost")
+        .comment("nope");
+    assert!(
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::NoMember { .. }
+        }) = ghost
+    );
+}
+
+/// `expr::bitfield` builds a bitfield member through both `add_member` and `MemberEdit::set_type`;
+/// `TypeMember::bitfield_width` already reads it back. A bitfield in a union is rejected by the
+/// kernel (`TERR_UNION_BF`), flowing through the existing `TypeEditCode` decode with no special
+/// handling.
+fn type_member_bitfield(idb: &mut idakit::Database) {
+    use idakit::types::{TypeEditCode, TypeWriteError, expr};
+
+    fn bitfield_width(idb: &idakit::Database, ty: &str, member: &str) -> Option<u32> {
+        idb.type_named(ty)
+            .expect("resolve the type")
+            .members()
+            .expect("a struct has members")
+            .iter()
+            .find(|m| m.name == member)
+            .expect("the member")
+            .bitfield_width
+    }
+
+    idb.types_mut()
+        .define("struct idakit_bitfield_probe { int pad; };")
+        .expect("define a struct to add a bitfield to");
+
+    idb.types_mut()
+        .edit("idakit_bitfield_probe")
+        .add_member("flag", expr::bitfield(4, 3, false))
+        .expect("add a bitfield member");
+    assert!(
+        bitfield_width(idb, "idakit_bitfield_probe", "flag") == Some(3),
+        "flag should be a 3-bit bitfield"
+    );
+
+    // Retyping an ordinary member to a bitfield goes through the same recipe leaf.
+    idb.types_mut()
+        .edit("idakit_bitfield_probe")
+        .add_member("plain", expr::int32())
+        .expect("append an ordinary member");
+    idb.types_mut()
+        .edit("idakit_bitfield_probe")
+        .member("plain")
+        .set_type(expr::bitfield(2, 5, true))
+        .expect("retype plain to a bitfield");
+    assert!(
+        bitfield_width(idb, "idakit_bitfield_probe", "plain") == Some(5),
+        "plain should now be a 5-bit bitfield"
+    );
+
+    idb.types_mut()
+        .define("union idakit_bitfield_union_probe { int pad; };")
+        .expect("define a union to reject a bitfield");
+    let rejected = idb
+        .types_mut()
+        .edit("idakit_bitfield_union_probe")
+        .add_member("flag", expr::bitfield(4, 3, false));
+    assert!(
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::Rejected {
+                code: TypeEditCode::UnionBitfield,
+                ..
+            }
+        }) = rejected
     );
 }
 

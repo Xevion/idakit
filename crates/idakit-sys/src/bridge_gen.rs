@@ -28,8 +28,8 @@ pub use ffi::{
     range_size, reg_class_ids, rename_type, root_filename, strlist_build, strlist_item,
     strlist_qty, strlit_contents, tinfo_apply, tinfo_array, tinfo_bool, tinfo_const, tinfo_decl,
     tinfo_float, tinfo_int, tinfo_named, tinfo_ptr, tinfo_void, tinfo_volatile, type_name_at,
-    type_ordinal_limit, udt_add_member, udt_del_member, udt_rename_member, udt_set_member_type,
-    xrefs_build,
+    type_ordinal_limit, udt_add_member, udt_del_member, udt_rename_member, udt_set_member_comment,
+    udt_set_member_type, xrefs_build,
 };
 // RangeT, FlowChart, CFunc, CompiledBinpat, and TInfo are module-level `pub` types (from the
 // generated ExternType impls, outside `mod ffi`), so they re-export through the crate-root glob

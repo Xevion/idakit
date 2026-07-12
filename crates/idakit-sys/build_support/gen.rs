@@ -2143,6 +2143,33 @@ pub const TYPE_BUILD: Domain = Domain {
                   `member_bit`) in `type_name` to `new_name`.",
         },
         FnSpec {
+            name: "udt_set_member_comment",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "member_bit",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "comment",
+                    ty: ArgTy::Str,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Set the comment on the member selected by `member_name` (or, when it is empty, \
+                  by bit offset `member_bit`) in `type_name` to `comment`, a plain member comment \
+                  (`is_regcmt=false`).",
+        },
+        FnSpec {
             name: "udt_del_member",
             receiver: None,
             args: &[

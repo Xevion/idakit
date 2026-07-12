@@ -86,6 +86,12 @@ bool build_named(tinfo_t &out, const char *name) {
   return out.get_named_type(get_idati(), name, BTF_TYPEDEF, false);
 }
 
+// Build a bitfield leaf (create_bitfield): nbytes is the container width in bytes, width the
+// field's bit width. False if the kernel rejects the combination (e.g. width exceeding nbytes*8).
+bool build_bitfield(tinfo_t &out, uint8_t nbytes, uint8_t width, bool is_unsigned) {
+  return out.create_bitfield(nbytes, width, is_unsigned);
+}
+
 // A bounds-checked cursor over a recipe buffer: every read verifies it stays within the buffer,
 // leaving `ok` false (and yielding zeros) on an over-read so the interpreter bails to ERR_INPUT.
 struct recipe_reader {
@@ -257,6 +263,16 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       stack.push_back(t);
       break;
     }
+    case IDAKIT_RECIPE_BITFIELD: {
+      uint8_t nbytes = r.u8();
+      uint8_t width = r.u8();
+      uint8_t is_signed = r.u8();
+      tinfo_t t;
+      if (!r.ok || !build_bitfield(t, nbytes, width, is_signed == 0))
+        return IDAKIT_TYPE_ERR_INPUT;
+      stack.push_back(t);
+      break;
+    }
     default:
       return IDAKIT_TYPE_ERR_INPUT;
     }
@@ -314,6 +330,21 @@ int resolve_member(const tinfo_t &tif, const char *member_name, uint64_t member_
 ssize_t resolve_edm(const tinfo_t &tif, const char *name) {
   edm_t edm;
   return tif.get_edm(&edm, name);
+}
+
+// A bitfield member's declared field width in bits, or false for an ordinary type. add_udm's
+// auto-size path (the name/type/offset overload) derives a member's size from the type's byte
+// size, which for a bitfield tinfo_t is its container width, not the narrower field it actually
+// occupies; callers that add or retype a member must set udm_t::size to this width explicitly
+// instead of relying on that auto-size path.
+bool bitfield_width_bits(const tinfo_t &mt, uint16 &width) {
+  if (!mt.is_bitfield())
+    return false;
+  bitfield_type_data_t bi;
+  if (!mt.get_bitfield_details(&bi))
+    return false;
+  width = bi.width;
+  return true;
 }
 
 } // namespace
@@ -577,6 +608,15 @@ TypeWriteResult udt_add_member(rust::Str type_name, rust::Str member_name,
         asize_t sz = tif.is_union() ? 0 : tif.get_size();
         offset = (sz == BADSIZE ? 0 : (uint64_t)sz) * 8;
       }
+      uint16 width;
+      if (bitfield_width_bits(mt, width)) {
+        udm_t udm;
+        udm.name = mnp != nullptr ? mnp : "";
+        udm.type = mt;
+        udm.offset = offset;
+        udm.size = width;
+        return (int)tif.add_udm(udm);
+      }
       return (int)tif.add_udm(mnp, mt, offset);
     });
     out.reason = captured_reason();
@@ -628,6 +668,30 @@ TypeWriteResult udt_rename_member(rust::Str type_name, rust::Str member_name, ui
       if (idx < 0)
         return IDAKIT_TEDIT_NO_MEMBER;
       return (int)tif.rename_udm((size_t)idx, nn.c_str());
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+TypeWriteResult udt_set_member_comment(rust::Str type_name, rust::Str member_name,
+                                       uint64_t member_bit, rust::Str comment) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    std::string mn(member_name.data(), member_name.size());
+    std::string cn(comment.data(), comment.size());
+    const char *mnp = member_name.empty() ? nullptr : mn.c_str();
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      int idx = resolve_member(tif, mnp, member_bit);
+      if (idx < 0)
+        return IDAKIT_TEDIT_NO_MEMBER;
+      return (int)tif.set_udm_cmt((size_t)idx, cn.c_str());
     });
     out.reason = captured_reason();
     return out;

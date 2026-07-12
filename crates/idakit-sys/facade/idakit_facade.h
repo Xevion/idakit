@@ -84,6 +84,8 @@ int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size);
   10 /* + u32 nparams, u8 varargs, u16 cc, then nparams u32-len-prefixed names; pops nparams param \
         types then the return type (return pushed first, params in order), push the function type. \
       */
+#define IDAKIT_RECIPE_BITFIELD                                                                     \
+  11 /* + u8 nbytes, u8 width, u8 signed; struct-member-only, a union rejects it */
 
 /* Prototype-surgery result codes (IDAKIT_SIG_*), shared with the generated type-build bridge and
  * decoded by idakit against TypeWriteResult.code. */

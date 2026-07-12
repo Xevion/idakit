@@ -65,6 +65,16 @@ pub enum TypeExpr {
         /// Width in bytes.
         bytes: u8,
     },
+    /// A bitfield member: `width` bits packed into an `nbytes`-byte container. Valid only as a
+    /// struct member, not for a standalone apply.
+    Bitfield {
+        /// Container width in bytes.
+        nbytes: u8,
+        /// Field width in bits.
+        width: u8,
+        /// Signed rather than unsigned.
+        signed: bool,
+    },
     /// A C declaration, parsed against the database's type library at apply time.
     Decl(String),
     /// A reference to an existing named type, resolved at apply time.
@@ -328,6 +338,22 @@ pub fn float64() -> TypeExpr {
     TypeExpr::Float { bytes: 8 }
 }
 
+/// A bitfield leaf: `width` bits packed into an `nbytes`-byte container.
+///
+/// Valid only as a struct member, through
+/// [`TypeEdit::add_member`](crate::types::TypeEdit::add_member) or
+/// [`MemberEdit::set_type`](crate::types::MemberEdit::set_type); a union rejects it
+/// ([`TypeEditCode::UnionBitfield`](crate::types::TypeEditCode::UnionBitfield)), and it is not
+/// meant to be applied standalone at an address.
+#[must_use]
+pub fn bitfield(nbytes: u8, width: u8, signed: bool) -> TypeExpr {
+    TypeExpr::Bitfield {
+        nbytes,
+        width,
+        signed,
+    }
+}
+
 impl TypeExpr {
     /// Wraps this recipe in a pointer: `T` becomes `T *`.
     ///
@@ -537,7 +563,11 @@ impl TypeExpr {
     /// contains a NUL byte.
     pub fn check(&self) -> Result<()> {
         match self {
-            Self::Void | Self::Bool | Self::Int { .. } | Self::Float { .. } => Ok(()),
+            Self::Void
+            | Self::Bool
+            | Self::Int { .. }
+            | Self::Float { .. }
+            | Self::Bitfield { .. } => Ok(()),
             Self::Named(name) => nul_checked(name, "name").map(drop),
             Self::Decl(text) => nul_checked(text, "decl").map(drop),
             Self::Pointer(inner) | Self::Const(inner) | Self::Volatile(inner) => inner.check(),
@@ -574,6 +604,16 @@ impl TypeExpr {
             Self::Float { bytes } => {
                 buf.push(sys::IDAKIT_RECIPE_FLOAT);
                 buf.push(*bytes);
+            }
+            Self::Bitfield {
+                nbytes,
+                width,
+                signed,
+            } => {
+                buf.push(sys::IDAKIT_RECIPE_BITFIELD);
+                buf.push(*nbytes);
+                buf.push(*width);
+                buf.push(u8::from(*signed));
             }
             Self::Named(name) => encode_str(buf, sys::IDAKIT_RECIPE_NAMED, name),
             Self::Decl(text) => encode_str(buf, sys::IDAKIT_RECIPE_DECL, text),
@@ -679,6 +719,16 @@ impl fmt::Display for TypeExpr {
                 )
             }
             Self::Float { bytes } => write!(f, "float{}", u32::from(*bytes) * 8),
+            Self::Bitfield {
+                nbytes,
+                width,
+                signed,
+            } => write!(
+                f,
+                "{}int{}:{width}",
+                if *signed { "" } else { "u" },
+                u32::from(*nbytes) * 8
+            ),
             Self::Named(s) | Self::Decl(s) => f.write_str(s),
             Self::Pointer(inner) => write!(f, "{inner} *"),
             Self::Array { elem, len } => write!(f, "{elem}[{len}]"),
@@ -853,6 +903,18 @@ mod tests {
     }
 
     #[test]
+    fn bitfield_root_constructs_a_leaf() {
+        assert!(
+            bitfield(4, 3, false)
+                == TypeExpr::Bitfield {
+                    nbytes: 4,
+                    width: 3,
+                    signed: false
+                }
+        );
+    }
+
+    #[test]
     fn pointer_and_array_stack_and_deref_peels() {
         // pointers stack (not a toggle)
         let pp = named("Foo").pointer().pointer();
@@ -935,6 +997,7 @@ mod tests {
         assert!(sys::IDAKIT_RECIPE_ARRAY == 7);
         assert!(sys::IDAKIT_RECIPE_CONST == 8);
         assert!(sys::IDAKIT_RECIPE_VOLATILE == 9);
+        assert!(sys::IDAKIT_RECIPE_BITFIELD == 11);
     }
 
     // A leaf emits its op then inline operands; a composite is postfix (inner before its wrap op); a
@@ -947,6 +1010,7 @@ mod tests {
     #[case(int32(), vec![2, 4, 1])]
     #[case(uint8(), vec![2, 1, 0])]
     #[case(float64(), vec![3, 8])]
+    #[case(bitfield(4, 3, false), vec![11, 4, 3, 0])]
     #[case(named("Foo"), vec![4, 3, 0, 0, 0, b'F', b'o', b'o'])]
     #[case(decl("T"), vec![5, 1, 0, 0, 0, b'T'])]
     #[case(named("Foo").pointer(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 6])]
@@ -976,6 +1040,7 @@ mod tests {
     #[case(uint8(), "uint8")]
     #[case(uint32(), "uint32")]
     #[case(float64(), "float64")]
+    #[case(bitfield(4, 3, false), "uint32:3")]
     #[case(named("Foo"), "Foo")]
     #[case(decl("Widget *"), "Widget *")]
     #[case(named("Foo").pointer(), "Foo *")]
