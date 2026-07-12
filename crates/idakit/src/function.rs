@@ -19,7 +19,7 @@ use crate::address::Address;
 use crate::decompiler::DecompiledFunction;
 use crate::decompiler::ctree::Ctree;
 use crate::error::{Error, Result};
-use crate::ffi::{nul_checked, read_string};
+use crate::ffi::nul_checked;
 use crate::flowchart::{FlowChart, flowchart_flags};
 use crate::instruction::Instructions;
 use crate::location::tinfo_apply_result;
@@ -152,7 +152,7 @@ impl<'db> Function<'db> {
     #[must_use]
     #[doc(alias("print_type"))]
     pub fn prototype(&self) -> Option<String> {
-        read_string(|buf, cap| self.db.func_type(self.address, buf, cap))
+        self.db.func_type(self.address)
     }
 
     /// Walks this function's stored prototype into an owned [`Type`].

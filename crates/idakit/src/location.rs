@@ -334,11 +334,7 @@ impl LocationMut<'_> {
         if bytes.is_empty() {
             return Ok(());
         }
-        if self
-            .db
-            .patch_bytes(self.address, bytes.as_ptr().cast(), bytes.len())
-            != 0
-        {
+        if self.db.patch_bytes(self.address, bytes) {
             return Ok(());
         }
         // patch_bytes has no kernel error channel; the facade rejects an unmapped range, so there

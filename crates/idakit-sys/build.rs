@@ -45,12 +45,7 @@ mod platform {
 }
 use platform::{CPP_STDLIB, EMIT_RPATH, IDALIB_LIB, PLATFORM_DEFINE, RUNTIME_LIB};
 
-const FACADE_SOURCES: &[&str] = &[
-    "facade/runtime.cpp",
-    "facade/db.cpp",
-    "facade/types.cpp",
-    "facade/hexrays.cpp",
-];
+const FACADE_SOURCES: &[&str] = &["facade/runtime.cpp", "facade/db.cpp", "facade/hexrays.cpp"];
 
 // Compile one cxx bridge into its own static archive. cxx_build seeds a cc::Build with the
 // generated glue; this mirrors the facade's flags (c++17, SDK as -isystem, __EA64__, platform
@@ -282,6 +277,7 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/gen_instruction.cc");
     println!("cargo:rerun-if-changed=facade/gen_hexrays.cc");
     println!("cargo:rerun-if-changed=facade/gen_type_build.cc");
+    println!("cargo:rerun-if-changed=facade/gen_ty.cc");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
     println!("cargo:rerun-if-changed=facade/type_walk.hpp");

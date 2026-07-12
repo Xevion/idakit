@@ -16,9 +16,9 @@
 //!
 //! # Owned handles
 //!
-//! `idakit_binpat_compile` returns an opaque `*mut c_void` handle owned by the caller,
-//! released with its matching `idakit_binpat_free`. Passing a handle to any other function
-//! after release is undefined behaviour.
+//! Opaque owned handles cross as cxx `UniquePtr<T>` (`CompiledBinpat`, `CFunc`, `TInfo`), freed by
+//! cxx's deleter on drop. Any handle still passed as a raw `*mut c_void` is paired with an explicit
+//! dispose call; using one after disposal is undefined behaviour.
 #![deny(
     rustdoc::broken_intra_doc_links,
     rustdoc::private_intra_doc_links,
@@ -53,7 +53,6 @@ mod name;
 mod runtime;
 mod segment;
 mod strings;
-mod ty;
 mod ty_build;
 
 pub use bridge_cfg2::*;
@@ -76,5 +75,4 @@ pub use name::*;
 pub use runtime::*;
 pub use segment::*;
 pub use strings::*;
-pub use ty::*;
 pub use ty_build::*;

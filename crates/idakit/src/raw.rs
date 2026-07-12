@@ -257,13 +257,8 @@ impl Database {
         sys::get_cmt(address.get(), repeatable).ok()
     }
 
-    pub(crate) fn patch_bytes(
-        &mut self,
-        address: Address,
-        buf: *const c_void,
-        size: usize,
-    ) -> c_int {
-        unsafe { sys::idakit_patch_bytes(address.get(), buf, size) }
+    pub(crate) fn patch_bytes(&mut self, address: Address, bytes: &[u8]) -> bool {
+        sys::patch_bytes(address.get(), bytes)
     }
 
     pub(crate) fn func_qty(&self) -> usize {
@@ -284,16 +279,16 @@ impl Database {
         sys::range_all_chunks(address.get()).unwrap_or_default()
     }
 
-    pub(crate) fn func_type(&self, address: Address, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_func_type(address.get(), buf, cap) }
+    pub(crate) fn func_type(&self, address: Address) -> Option<String> {
+        sys::func_type(address.get()).ok()
     }
 
     pub(crate) fn type_ordinal_limit(&self) -> u32 {
-        unsafe { sys::idakit_type_ordinal_limit() }
+        sys::type_ordinal_limit()
     }
 
-    pub(crate) fn type_name_at(&self, ordinal: u32, buf: *mut c_char, cap: usize) -> i64 {
-        unsafe { sys::idakit_type_name_at(ordinal, buf, cap) }
+    pub(crate) fn type_name_at(&self, ordinal: u32) -> String {
+        sys::type_name_at(ordinal).unwrap_or_default()
     }
 
     pub(crate) fn func_start(&self, address: Address) -> sys::Address {

@@ -10,27 +10,6 @@ unsafe extern "C" {
     pub fn idakit_get_bytes(address: Address, buf: *mut c_void, size: usize) -> i64;
 }
 
-// binary pattern search (bytes.hpp). A compiled pattern is an opaque handle; `binpat_free`
-// releases it. `bin_search` returns BADADDR when the pattern is absent from [start, end).
-unsafe extern "C" {
-    pub fn idakit_binpat_compile(
-        address: Address,
-        pattern: *const c_char,
-        radix: c_int,
-        errbuf: *mut c_char,
-        errcap: usize,
-    ) -> *mut c_void;
-    pub fn idakit_binpat_from_bytes(bytes: *const u8, mask: *const u8, len: usize) -> *mut c_void;
-    pub fn idakit_binpat_free(pat: *mut c_void);
-    pub fn idakit_binpat_stats(pat: *const c_void, total: *mut usize, anchors: *mut usize);
-    pub fn idakit_bin_search(
-        start: Address,
-        end: Address,
-        pat: *const c_void,
-        flags: c_int,
-    ) -> Address;
-}
-
 /// `BIN_SEARCH_CASE` from `bytes.hpp` (IDA 9.3): match `"..."` string literals
 /// case-sensitively (the default is case-insensitive).
 pub const BIN_SEARCH_CASE: c_int = 0x01;
@@ -45,12 +24,6 @@ pub const MS_CLS: u64 = 0x0000_0600;
 pub const FF_CODE: u64 = 0x0000_0600;
 /// [`MS_CLS`]-masked flag value marking an address as the head of a data item.
 pub const FF_DATA: u64 = 0x0000_0400;
-
-// byte patching (bytes.hpp patch_bytes). Returns 0 without writing if any target byte is
-// unmapped, 1 on success.
-unsafe extern "C" {
-    pub fn idakit_patch_bytes(address: Address, buf: *const c_void, size: usize) -> c_int;
-}
 
 // comment write (plain libida `set_cmt`).
 unsafe extern "C" {

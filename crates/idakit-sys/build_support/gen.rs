@@ -1146,8 +1146,33 @@ pub const REFERENCE: Domain = Domain {
 pub const BYTES: Domain = Domain {
     name: "bytes",
     sdk_includes: &["<bytes.hpp>", "<stdexcept>"],
-    externs: &[],
-    structs: &[],
+    externs: &[ExternTy {
+        rust_name: "CompiledBinpat",
+        cxx_name: "compiled_binpat_vec_t",
+        kind: ExternKind::Opaque,
+        doc: "A compiled binary-search pattern (`compiled_binpat_vec_t`), owned behind a \
+              [`UniquePtr`](cxx::UniquePtr) and passed by `&` to a search.",
+        safety: "The type id names the real SDK typedef compiled_binpat_vec_t; Opaque is correct \
+                 because it is a qvector with a nontrivial destructor, so it may only cross the \
+                 bridge behind a reference or UniquePtr, never by value.",
+    }],
+    structs: &[SharedStruct {
+        name: "BinpatStats",
+        doc: "The compiled length and anchor count of a pattern, returned by value from \
+              [`binpat_stats`].",
+        fields: &[
+            Field {
+                name: "total",
+                ty: FieldTy::Usize,
+                doc: "Compiled byte length of the pattern.",
+            },
+            Field {
+                name: "anchors",
+                ty: FieldTy::Usize,
+                doc: "Count of concrete (non-wildcard) bytes; `0` means nothing to match on.",
+            },
+        ],
+    }],
     custom_tu: Some("facade/gen_bytes.cc"),
     fns: &[
         FnSpec {
@@ -1314,6 +1339,101 @@ pub const BYTES: Domain = Domain {
             body: BodyKind::Custom,
             doc: "The regular (or repeatable, when `rptble`) comment at `ea`; `Err` when there is \
                   none.",
+        },
+        FnSpec {
+            name: "binpat_compile",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "pattern",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "radix",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::ResultUniquePtr("CompiledBinpat"),
+            body: BodyKind::Custom,
+            doc: "Compile `pattern` via IDA's own parser (byte width taken from `ea`); `Err` \
+                  carries the parser's rejection message.",
+        },
+        FnSpec {
+            name: "binpat_from_bytes",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "bytes",
+                    ty: ArgTy::Bytes,
+                },
+                Arg {
+                    name: "mask",
+                    ty: ArgTy::Bytes,
+                },
+            ],
+            ret: RetKind::UniquePtr("CompiledBinpat"),
+            body: BodyKind::Custom,
+            doc: "Compile a pattern from raw `bytes` and a per-byte bit `mask`; an empty `mask` \
+                  means every byte is concrete.",
+        },
+        FnSpec {
+            name: "binpat_stats",
+            receiver: None,
+            args: &[Arg {
+                name: "pat",
+                ty: ArgTy::ExternRef("CompiledBinpat"),
+            }],
+            ret: RetKind::Shared("BinpatStats"),
+            body: BodyKind::Custom,
+            doc: "The compiled length and anchor count of `pat`.",
+        },
+        FnSpec {
+            name: "bin_search",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "start",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "end",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "pat",
+                    ty: ArgTy::ExternRef("CompiledBinpat"),
+                },
+                Arg {
+                    name: "flags",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "First address in `[start, end)` matching `pat`, or `BADADDR` when absent \
+                  (headless: `NOBREAK | NOSHOW` forced).",
+        },
+        FnSpec {
+            name: "patch_bytes",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "bytes",
+                    ty: ArgTy::Bytes,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Patch `bytes` over `ea`, or `false` without writing when any target byte is \
+                  unmapped.",
         },
     ],
 };
@@ -2232,6 +2352,53 @@ pub const TYPE_BUILD: Domain = Domain {
 };
 
 /// Every domain fed into the unified bridge, in emission order.
+/// The local-type read domain: render a function's prototype and enumerate the local type library.
+/// The mirror of the write side (`type_build`); the string bodies are hand-written in
+/// `facade/gen_ty.cc`, the ordinal-limit passthrough templated.
+pub const TY: Domain = Domain {
+    name: "ty",
+    sdk_includes: &["<typeinf.hpp>", "<stdexcept>"],
+    externs: &[],
+    structs: &[],
+    custom_tu: Some("facade/gen_ty.cc"),
+    fns: &[
+        FnSpec {
+            name: "func_type",
+            receiver: None,
+            args: &[Arg {
+                name: "ea",
+                ty: ArgTy::U64,
+            }],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it \
+                  has no type.",
+        },
+        FnSpec {
+            name: "type_ordinal_limit",
+            receiver: None,
+            args: &[],
+            ret: RetKind::U32,
+            body: BodyKind::ScalarCall {
+                call: "get_ordinal_limit(get_idati())",
+            },
+            doc: "Exclusive upper bound on local-type ordinals: valid ordinals run `1..limit`.",
+        },
+        FnSpec {
+            name: "type_name_at",
+            receiver: None,
+            args: &[Arg {
+                name: "ordinal",
+                ty: ArgTy::U32,
+            }],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Name of the local type at `ordinal` (empty for an anonymous type); `Err` when \
+                  the ordinal holds no type.",
+        },
+    ],
+};
+
 pub const DOMAINS: &[&Domain] = &[
     &SEGMENT,
     &IMPORT,
@@ -2247,6 +2414,7 @@ pub const DOMAINS: &[&Domain] = &[
     &INSTRUCTION,
     &HEXRAYS,
     &TYPE_BUILD,
+    &TY,
 ];
 
 impl FieldTy {

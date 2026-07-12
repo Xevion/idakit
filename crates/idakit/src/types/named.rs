@@ -13,7 +13,6 @@ use super::diff::{CanonicalOptions, CanonicalType};
 use super::{Type, walk_type};
 use crate::Database;
 use crate::error::{Error, Result};
-use crate::ffi::read_string;
 
 impl Database {
     /// Enumerates the database's local named types, in ordinal order.
@@ -64,7 +63,7 @@ impl<'db> NamedType<'db> {
     #[must_use]
     #[doc(alias("get_numbered_type_name"))]
     pub fn name(&self) -> String {
-        read_string(|buf, cap| self.db.type_name_at(self.ordinal, buf, cap)).unwrap_or_default()
+        self.db.type_name_at(self.ordinal)
     }
 
     /// Walks this type into an owned, `Send` [`Type`] snapshot.

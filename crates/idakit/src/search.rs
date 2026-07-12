@@ -9,17 +9,15 @@
 //! parser, opt-in). The first three are matched under a per-byte bit mask, so a `0xF0`/`0x0F`
 //! mask nibble is a genuine half-byte wildcard.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::c_int;
 use std::marker::PhantomData;
 use std::ops::Range;
-use std::ptr;
 
 use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
 use crate::error::{Error, PatternRejection, Result};
-use crate::ffi::{cstr, with_cstr};
 
 impl Database {
     /// Search the whole image ([`address_range`](Self::address_range)) for `pattern`,
@@ -54,13 +52,13 @@ impl Database {
 
 /// A compiled binary search pattern that frees its kernel handle on [`Drop`].
 ///
-/// `handle` is the safety invariant for the searches below: non-null (checked at
-/// construction), from a facade `idakit_binpat_*` builder, freed exactly once on [`Drop`].
-/// The raw pointer makes `Pattern` `!Send`, so it lives only on the kernel thread. It borrows
-/// `&Database`, so it can't coexist with a write.
+/// `handle` is a [`UniquePtr`](cxx::UniquePtr)`<`[`CompiledBinpat`](sys::CompiledBinpat)`>`, non-null
+/// by construction; cxx's deleter frees the `compiled_binpat_vec_t` on drop. `UniquePtr` over an
+/// opaque type is `!Send`, so `Pattern` lives only on the kernel thread. It borrows `&Database`, so
+/// it can't coexist with a write.
 #[doc(alias("compiled_binpat_t"))]
 pub struct Pattern<'db> {
-    handle: *mut c_void,
+    handle: cxx::UniquePtr<sys::CompiledBinpat>,
     /// Per-search match flags: bitmask matching for the byte/mask forms (so mask nibbles
     /// work), or plain case-sensitivity for [`ida`](Pattern::ida).
     flags: c_int,
@@ -136,11 +134,8 @@ impl<'db> Pattern<'db> {
                 kind: PatternRejection::NoAnchor { total: bytes.len() },
             });
         }
-        let mask_ptr = mask.map_or(ptr::null(), <[u8]>::as_ptr);
-        // SAFETY: `bytes` and (when present) `mask` are valid for `bytes.len()`; the facade
-        // copies them out and never returns null (it aborts on allocation failure).
-        let handle =
-            unsafe { sys::idakit_binpat_from_bytes(bytes.as_ptr(), mask_ptr, bytes.len()) };
+        // An empty mask slice tells the facade every byte is concrete.
+        let handle = sys::binpat_from_bytes(bytes, mask.unwrap_or(&[]));
         Ok(Self {
             handle,
             flags: sys::BIN_SEARCH_BITMASK,
@@ -203,33 +198,22 @@ impl<'db> Pattern<'db> {
         // IDA's pattern compiler needs an address for byte-width context; the image floor is
         // valid, and every processor idakit targets is a flat 8-bit byte anyway.
         let ctx = db.min_ea();
-        let mut err = [0u8; 256];
-        // SAFETY: `err` is a writable buffer of `err.len()`; the facade NUL-terminates within
-        // it and writes the parse reason there when it returns null.
-        let handle = with_cstr(pattern, "pattern", |p| unsafe {
-            sys::idakit_binpat_compile(ctx, p, radix as c_int, err.as_mut_ptr().cast(), err.len())
-        })?;
-        if handle.is_null() {
-            // SAFETY: `err` holds a NUL-terminated string written by the facade.
-            let detail = unsafe { cstr(err.as_ptr().cast()) };
-            return Err(Error::PatternRejected {
+        let handle = sys::binpat_compile(ctx, pattern, radix as i32).map_err(|e| {
+            let detail = e.what().to_owned();
+            Error::PatternRejected {
                 pattern: pattern.to_owned(),
                 kind: PatternRejection::Unparseable {
                     detail: (!detail.is_empty()).then_some(detail),
                 },
-            });
-        }
+            }
+        })?;
         // IDA's parser reports success even when it dropped tokens to nothing; a pattern with
         // no concrete byte can only ever match nothing, so reject it here too.
-        let (mut total, mut anchors) = (0usize, 0usize);
-        // SAFETY: `handle` is the live pattern just compiled; the out-params are valid locals.
-        unsafe { sys::idakit_binpat_stats(handle, &mut total, &mut anchors) };
-        if anchors == 0 {
-            // SAFETY: live handle; freed exactly once here, since we do not return it.
-            unsafe { sys::idakit_binpat_free(handle) };
+        let stats = sys::binpat_stats(handle.as_ref().expect("live pattern"));
+        if stats.anchors == 0 {
             return Err(Error::PatternRejected {
                 pattern: pattern.to_owned(),
-                kind: PatternRejection::NoAnchor { total },
+                kind: PatternRejection::NoAnchor { total: stats.total },
             });
         }
         Ok(Self {
@@ -237,14 +221,6 @@ impl<'db> Pattern<'db> {
             flags,
             _db: PhantomData,
         })
-    }
-}
-
-impl Drop for Pattern<'_> {
-    #[inline]
-    fn drop(&mut self) {
-        // SAFETY: live handle (see type docs); freed exactly once, here.
-        unsafe { sys::idakit_binpat_free(self.handle) };
     }
 }
 
@@ -356,11 +332,14 @@ impl Iterator for Matches<'_, '_> {
             self.cur = None;
             return None;
         }
-        // SAFETY: live pattern handle (see `Pattern` docs); `!Send` keeps us on the kernel
-        // thread, and the borrowed pattern holds the compiled-against database open.
-        let hit = unsafe {
-            sys::idakit_bin_search(start.get(), self.end.get(), self.pat.handle, self.pat.flags)
-        };
+        // The borrowed pattern holds the compiled-against database open, and `!Send` keeps us
+        // on the kernel thread.
+        let hit = sys::bin_search(
+            start.get(),
+            self.end.get(),
+            self.pat.handle.as_ref().expect("live pattern"),
+            self.pat.flags,
+        );
         match Address::try_new(hit) {
             Some(address) => {
                 self.cur = Some(address + 1);
