@@ -462,6 +462,7 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
         consts: &[EnumConstInfo],
         size: u64,
         has_size: u32,
+        is_bitmask: bool,
     ) {
         idakit_sys::TypeWalkSink::fill_enum(
             &mut SinkAdapter(self),
@@ -470,6 +471,7 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             consts,
             size,
             has_size,
+            is_bitmask,
         );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {

@@ -26,6 +26,7 @@ fn run(idb: &mut idakit::Database) {
     type_clear(idb, address);
     type_member_edit(idb);
     type_enum_member_edit(idb);
+    type_enum_bitmask_edit(idb);
     type_member_ref(idb);
     type_member_add_at_offset(idb);
     type_member_offset_edit(idb);
@@ -34,7 +35,7 @@ fn run(idb: &mut idakit::Database) {
     type_build_failed(idb, address);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
     );
 }
 
@@ -607,6 +608,65 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
         let Err(Error::TypeWrite {
             source: TypeWriteError::Rejected { .. }
         }) = dup
+    );
+}
+
+/// `set_bitmask` flips `TypeShape::Enum::is_bitmask` and back, and `add_flag`'s explicit group
+/// mask lands the same way `add_constant`'s implicit one does.
+fn type_enum_bitmask_edit(idb: &mut idakit::Database) {
+    use idakit::types::TypeShape;
+
+    fn shape(idb: &idakit::Database, ty: &str) -> (bool, Vec<(String, u64)>) {
+        let t = idb.type_named(ty).expect("resolve the enum");
+        match t.shape() {
+            TypeShape::Enum {
+                is_bitmask,
+                members,
+                ..
+            } => (
+                *is_bitmask,
+                members.iter().map(|m| (m.name.clone(), m.value)).collect(),
+            ),
+            other => panic!("expected an enum, got {other:?}"),
+        }
+    }
+
+    idb.types_mut()
+        .define("enum idakit_flags_probe { PROBE_RESERVED = 8 };")
+        .expect("define an enum to edit");
+    assert!(
+        !shape(idb, "idakit_flags_probe").0,
+        "starts as an ordinary enum"
+    );
+
+    idb.types_mut()
+        .edit("idakit_flags_probe")
+        .set_bitmask(true)
+        .expect("mark as a bitmask enum");
+    assert!(
+        shape(idb, "idakit_flags_probe").0,
+        "should now be a bitmask enum"
+    );
+
+    idb.types_mut()
+        .edit("idakit_flags_probe")
+        .add_flag("PROBE_READ", 1, 1)
+        .expect("add a masked flag");
+    idb.types_mut()
+        .edit("idakit_flags_probe")
+        .add_flag("PROBE_WRITE", 2, 2)
+        .expect("add a second masked flag");
+    let (_, members) = shape(idb, "idakit_flags_probe");
+    assert!(members.contains(&("PROBE_READ".to_owned(), 1)));
+    assert!(members.contains(&("PROBE_WRITE".to_owned(), 2)));
+
+    idb.types_mut()
+        .edit("idakit_flags_probe")
+        .set_bitmask(false)
+        .expect("clear the bitmask marking");
+    assert!(
+        !shape(idb, "idakit_flags_probe").0,
+        "should be an ordinary enum again"
     );
 }
 

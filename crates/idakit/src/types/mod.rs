@@ -125,7 +125,7 @@ pub enum TypeShape {
         members: Vec<TypeMember>,
     },
     /// an enum and its underlying integer type
-    #[doc(alias("is_enum", "get_enum_details"))]
+    #[doc(alias("is_enum", "get_enum_details", "is_bitmask_enum"))]
     Enum {
         /// The tag name, or `None` if anonymous.
         name: Option<String>,
@@ -133,6 +133,8 @@ pub enum TypeShape {
         underlying: TypeId,
         /// The enumerated constants.
         members: Vec<EnumMember>,
+        /// Whether this is a bitmask (flag) enum.
+        is_bitmask: bool,
     },
     /// a function prototype
     #[doc(alias("is_func", "get_func_details"))]

@@ -23,6 +23,11 @@ use crate::error::{Error, Result};
 use crate::ffi::{nul_checked, reason_or};
 use crate::types::TypeExpr;
 
+/// The SDK's `DEFMASK64` (`bmask64_t(-1)`, `typeinf.hpp`): passed as `enum_add_member`'s `bmask`
+/// so a bitmask enum falls back to using the constant's own value as its group mask; ignored by
+/// an ordinary enum.
+const DEFMASK64: u64 = u64::MAX;
+
 impl Database {
     /// A write cursor over the database's local type library.
     ///
@@ -238,7 +243,79 @@ impl TypeEdit<'_> {
             nul_checked(&type_name, "type name")?,
             nul_checked(name.as_ref(), "constant name")?,
             value,
+            DEFMASK64,
         );
+        edit_result(result.code, result.reason, &type_name, None)
+    }
+
+    /// Add an enum constant named `name` with `value`, in the explicit bitmask group `mask`.
+    ///
+    /// The masked sibling of [`add_constant`](Self::add_constant): where `add_constant` lets a
+    /// bitmask enum fall back to using `value` itself as its group mask, `add_flag` names the
+    /// group explicitly, so several constants can share one bit range. `mask` is ignored on an
+    /// enum that is not a bitmask enum (see [`set_bitmask`](Self::set_bitmask)).
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("enum Flags { RESERVED = 8 };")?;
+    /// let mut types = db.types_mut();
+    /// let mut edit = types.edit("Flags");
+    /// edit.set_bitmask(true)?;
+    /// edit.add_flag("READ", 1, 1)?;
+    /// edit.add_flag("WRITE", 2, 2)?;
+    /// let ty = db.type_named("Flags")?;
+    /// let idakit::types::TypeShape::Enum { members, .. } = ty.shape() else {
+    ///     unreachable!()
+    /// };
+    /// assert!(members.iter().any(|m| m.name == "READ" && m.value == 1));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// As [`add_constant`](Self::add_constant); [`TypeWriteError::Rejected`] additionally covers
+    /// a mask the kernel will not accept (e.g. [`TypeEditCode::BadBitmask`] or
+    /// [`TypeEditCode::BadMaskValue`]).
+    #[doc(alias("add_edm"))]
+    pub fn add_flag(&mut self, name: impl AsRef<str>, value: u64, mask: u64) -> Result<()> {
+        let type_name = self.name.clone();
+        let result = self.db.enum_add_member(
+            nul_checked(&type_name, "type name")?,
+            nul_checked(name.as_ref(), "constant name")?,
+            value,
+            mask,
+        );
+        edit_result(result.code, result.reason, &type_name, None)
+    }
+
+    /// Mark this enum as a bitmask (flag) enum, or clear that marking.
+    ///
+    /// A bitmask enum groups its constants by shared bit ranges; [`add_flag`](Self::add_flag)
+    /// then takes an explicit group mask instead of falling back to the constant's own value.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("enum Flags { RESERVED = 8 };")?;
+    /// db.types_mut().edit("Flags").set_bitmask(true)?;
+    /// let ty = db.type_named("Flags")?;
+    /// let idakit::types::TypeShape::Enum { is_bitmask, .. } = ty.shape() else {
+    ///     unreachable!()
+    /// };
+    /// assert!(*is_bitmask);
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`] if the enum does not exist, or [`TypeWriteError::Rejected`] if
+    /// the kernel rejects the conversion; or [`Error::InteriorNul`] for a NUL byte in the type
+    /// name.
+    #[doc(alias("set_enum_is_bitmask"))]
+    pub fn set_bitmask(&mut self, on: bool) -> Result<()> {
+        let type_name = self.name.clone();
+        let result = self
+            .db
+            .enum_set_bitmask(nul_checked(&type_name, "type name")?, on);
         edit_result(result.code, result.reason, &type_name, None)
     }
 

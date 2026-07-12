@@ -2180,11 +2180,36 @@ pub const TYPE_BUILD: Domain = Domain {
                     name: "value",
                     ty: ArgTy::U64,
                 },
+                Arg {
+                    name: "bmask",
+                    ty: ArgTy::U64,
+                },
             ],
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Add an enum constant named `member_name` with `value` to the named enum \
-                  `type_name`. Same `IDAKIT_TEDIT_*` codes as the `udt_*` fns.",
+                  `type_name`, in the explicit bitmask group `bmask` (`DEFMASK64` lets a bitmask \
+                  enum use `value` itself as the group mask; ignored by an ordinary enum). Same \
+                  `IDAKIT_TEDIT_*` codes as the `udt_*` fns.",
+        },
+        FnSpec {
+            name: "enum_set_bitmask",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "on",
+                    ty: ArgTy::Bool,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Set whether the named enum `type_name` is a bitmask (flag) enum \
+                  (`tinfo_t::set_enum_is_bitmask`). Same `IDAKIT_TEDIT_*` codes as the \
+                  `udt_*`/`enum_*` fns.",
         },
         FnSpec {
             name: "enum_set_member_value",

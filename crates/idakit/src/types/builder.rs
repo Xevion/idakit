@@ -184,6 +184,7 @@ impl TypeBuilder {
         members: Vec<EnumMember>,
         size: u64,
         has_size: u32,
+        is_bitmask: bool,
     ) {
         let name = self.take_name(id);
         self.fill(
@@ -193,6 +194,7 @@ impl TypeBuilder {
                     name,
                     underlying,
                     members,
+                    is_bitmask,
                 },
                 size: opt_size(size, has_size),
             },

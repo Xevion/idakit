@@ -420,8 +420,13 @@ impl Database {
         type_name: &str,
         member_name: &str,
         value: u64,
+        bmask: u64,
     ) -> sys::TypeWriteResult {
-        sys::enum_add_member(type_name, member_name, value)
+        sys::enum_add_member(type_name, member_name, value, bmask)
+    }
+
+    pub(crate) fn enum_set_bitmask(&mut self, type_name: &str, on: bool) -> sys::TypeWriteResult {
+        sys::enum_set_bitmask(type_name, on)
     }
 
     pub(crate) fn enum_set_member_value(

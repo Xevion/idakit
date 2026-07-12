@@ -658,7 +658,8 @@ TypeWriteResult udt_del_member(rust::Str type_name, rust::Str member_name, uint6
   }
 }
 
-TypeWriteResult enum_add_member(rust::Str type_name, rust::Str member_name, uint64_t value) {
+TypeWriteResult enum_add_member(rust::Str type_name, rust::Str member_name, uint64_t value,
+                                uint64_t bmask) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
@@ -667,7 +668,24 @@ TypeWriteResult enum_add_member(rust::Str type_name, rust::Str member_name, uint
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return IDAKIT_TEDIT_NO_TYPE;
-      return (int)tif.add_edm(mn.c_str(), value);
+      return (int)tif.add_edm(mn.c_str(), value, (bmask64_t)bmask);
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+TypeWriteResult enum_set_bitmask(rust::Str type_name, bool on) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      return (int)tif.set_enum_is_bitmask(on ? tinfo_t::ENUMBM_ON : tinfo_t::ENUMBM_OFF);
     });
     out.reason = captured_reason();
     return out;

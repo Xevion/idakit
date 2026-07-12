@@ -61,9 +61,16 @@ pub(crate) trait TypeSink {
         members: Vec<EnumMember>,
         size: u64,
         has_size: u32,
+        is_bitmask: bool,
     ) {
-        self.type_builder()
-            .fill_enum(tid(id), tid(underlying), members, size, has_size);
+        self.type_builder().fill_enum(
+            tid(id),
+            tid(underlying),
+            members,
+            size,
+            has_size,
+            is_bitmask,
+        );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
         self.type_builder().fill_typedef(tid(id), tid(underlying));
@@ -125,6 +132,7 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
         consts: &[EnumConstInfo],
         size: u64,
         has_size: u32,
+        is_bitmask: bool,
     ) {
         let members = consts
             .iter()
@@ -133,7 +141,8 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
                 value: c.value,
             })
             .collect();
-        self.0.fill_enum(id, underlying, members, size, has_size);
+        self.0
+            .fill_enum(id, underlying, members, size, has_size, is_bitmask);
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
         self.0.fill_typedef(id, underlying);

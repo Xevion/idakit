@@ -388,6 +388,9 @@ fn canon(
             name,
             underlying,
             members,
+            // Not part of canonical structural identity: only the tag, underlying type, and
+            // constants distinguish two enums for diffing.
+            is_bitmask: _,
         } => {
             if let Some(cut) = nominal_cut(name.as_deref(), AggregateKind::Enum, spell_named) {
                 return cut;
@@ -1576,6 +1579,7 @@ mod tests {
                         value: 1,
                     },
                 ],
+                is_bitmask: false,
             },
             size: Some(4),
         });
@@ -1788,6 +1792,7 @@ mod tests {
                         value: *v,
                     })
                     .collect(),
+                is_bitmask: false,
             },
             size: Some(4),
         })

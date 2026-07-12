@@ -67,6 +67,7 @@ pub trait TypeWalkSink {
         consts: &[ffi::EnumConstInfo],
         size: u64,
         has_size: u32,
+        is_bitmask: bool,
     );
     /// Fills the typedef placeholder `id` with its already-visited `underlying`.
     fn fill_typedef(&mut self, id: u32, underlying: u32);
@@ -145,9 +146,10 @@ impl TypeWalkVisitor {
         consts: &[ffi::EnumConstInfo],
         size: u64,
         has_size: u32,
+        is_bitmask: bool,
     ) {
         self.sink()
-            .fill_enum(id, underlying, consts, size, has_size);
+            .fill_enum(id, underlying, consts, size, has_size, is_bitmask);
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
         self.sink().fill_typedef(id, underlying);
@@ -245,6 +247,7 @@ mod ffi {
             consts: &[EnumConstInfo],
             size: u64,
             has_size: u32,
+            is_bitmask: bool,
         );
         fn fill_typedef(self: &mut TypeWalkVisitor, id: u32, underlying: u32);
     }

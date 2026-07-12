@@ -171,7 +171,7 @@ uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_s
     rust::Slice<const EnumConstInfo> slice =
         cs.empty() ? rust::Slice<const EnumConstInfo>()
                    : rust::Slice<const EnumConstInfo>(cs.data(), cs.size());
-    vis->fill_enum(id, underlying, slice, size, has_size);
+    vis->fill_enum(id, underlying, slice, size, has_size, t.is_bitmask_enum());
   }
   return id;
 }
