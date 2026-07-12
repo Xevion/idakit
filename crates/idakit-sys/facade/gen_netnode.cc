@@ -333,4 +333,230 @@ int32_t netnode_delblob(uint64_t node, uint64_t start, uint32_t tag) {
   return (int32_t)n.delblob((nodeidx_t)start, (uchar)tag);
 }
 
+// Address-keyed conveniences (the class methods fold in NETMAP_IDX).
+
+uint64_t netnode_altval_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.altval_ea((ea_t)ea, (uchar)tag);
+}
+
+bool netnode_altset_ea(uint64_t node, uint64_t ea, uint64_t value, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.altset_ea((ea_t)ea, (nodeidx_t)value, (uchar)tag);
+}
+
+bool netnode_altdel_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.altdel_ea((ea_t)ea, (uchar)tag);
+}
+
+rust::Vec<uint8_t> netnode_supval_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  uint8_t buf[MAXSPECSIZE];
+  ssize_t r = n.supval_ea((ea_t)ea, buf, sizeof(buf), (uchar)tag);
+  if (r < 0)
+    throw std::runtime_error("sup value is unset");
+  return to_rust_bytes(buf, (size_t)r);
+}
+
+rust::String netnode_supstr_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  qstring out;
+  if (n.supstr_ea(&out, (ea_t)ea, (uchar)tag) < 0)
+    throw std::runtime_error("sup value is unset");
+  return to_rust_string(out);
+}
+
+bool netnode_supset_ea(uint64_t node, uint64_t ea, rust::Slice<const uint8_t> value, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.supset_ea((ea_t)ea, value.data(), value.size(), (uchar)tag);
+}
+
+bool netnode_supdel_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.supdel_ea((ea_t)ea, (uchar)tag);
+}
+
+uint32_t netnode_charval_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint32_t)n.charval_ea((ea_t)ea, (uchar)tag);
+}
+
+bool netnode_charset_ea(uint64_t node, uint64_t ea, uint32_t value, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.charset_ea((ea_t)ea, (uchar)value, (uchar)tag);
+}
+
+bool netnode_chardel_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.chardel_ea((ea_t)ea, (uchar)tag);
+}
+
+size_t netnode_blobsize_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.blobsize_ea((ea_t)ea, (uchar)tag);
+}
+
+rust::Vec<uint8_t> netnode_getblob_ea(uint64_t node, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  bytevec_t blob;
+  ssize_t r = n.getblob_ea(&blob, (ea_t)ea, (uchar)tag);
+  if (r < 0)
+    throw std::runtime_error("blob does not exist");
+  return to_rust_bytes(blob.begin(), blob.size());
+}
+
+bool netnode_setblob_ea(uint64_t node, rust::Slice<const uint8_t> value, uint64_t ea, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.setblob_ea(value.data(), value.size(), (ea_t)ea, (uchar)tag);
+}
+
+// 8-bit-indexed sub-arrays (a separate index space; indices narrow to uchar).
+
+uint64_t netnode_altval_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.altval_idx8((uchar)idx, (uchar)tag);
+}
+
+bool netnode_altset_idx8(uint64_t node, uint32_t idx, uint64_t value, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.altset_idx8((uchar)idx, (nodeidx_t)value, (uchar)tag);
+}
+
+bool netnode_altdel_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.altdel_idx8((uchar)idx, (uchar)tag);
+}
+
+uint64_t netnode_altfirst_idx8(uint64_t node, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.altfirst_idx8((uchar)tag);
+}
+
+uint64_t netnode_altnext_idx8(uint64_t node, uint32_t cur, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.altnext_idx8((uchar)cur, (uchar)tag);
+}
+
+uint64_t netnode_altlast_idx8(uint64_t node, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.altlast_idx8((uchar)tag);
+}
+
+uint64_t netnode_altprev_idx8(uint64_t node, uint32_t cur, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.altprev_idx8((uchar)cur, (uchar)tag);
+}
+
+rust::Vec<uint8_t> netnode_supval_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  uint8_t buf[MAXSPECSIZE];
+  ssize_t r = n.supval_idx8((uchar)idx, buf, sizeof(buf), (uchar)tag);
+  if (r < 0)
+    throw std::runtime_error("sup value is unset");
+  return to_rust_bytes(buf, (size_t)r);
+}
+
+rust::String netnode_supstr_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  qstring out;
+  if (n.supstr_idx8(&out, (uchar)idx, (uchar)tag) < 0)
+    throw std::runtime_error("sup value is unset");
+  return to_rust_string(out);
+}
+
+bool netnode_supset_idx8(uint64_t node, uint32_t idx, rust::Slice<const uint8_t> value, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.supset_idx8((uchar)idx, value.data(), value.size(), (uchar)tag);
+}
+
+bool netnode_supdel_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.supdel_idx8((uchar)idx, (uchar)tag);
+}
+
+uint64_t netnode_supfirst_idx8(uint64_t node, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.supfirst_idx8((uchar)tag);
+}
+
+uint64_t netnode_supnext_idx8(uint64_t node, uint32_t cur, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.supnext_idx8((uchar)cur, (uchar)tag);
+}
+
+uint64_t netnode_suplast_idx8(uint64_t node, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.suplast_idx8((uchar)tag);
+}
+
+uint64_t netnode_supprev_idx8(uint64_t node, uint32_t cur, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.supprev_idx8((uchar)cur, (uchar)tag);
+}
+
+uint64_t netnode_lower_bound_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint64_t)n.lower_bound_idx8((uchar)idx, (uchar)tag);
+}
+
+uint32_t netnode_charval_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (uint32_t)n.charval_idx8((uchar)idx, (uchar)tag);
+}
+
+bool netnode_charset_idx8(uint64_t node, uint32_t idx, uint32_t value, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.charset_idx8((uchar)idx, (uchar)value, (uchar)tag);
+}
+
+bool netnode_chardel_idx8(uint64_t node, uint32_t idx, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.chardel_idx8((uchar)idx, (uchar)tag);
+}
+
+// Array shifts (move elements at from..from+size to to..to+size).
+
+size_t netnode_altshift(uint64_t node, uint64_t from, uint64_t to, uint64_t size, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.altshift((nodeidx_t)from, (nodeidx_t)to, (nodeidx_t)size, (uchar)tag);
+}
+
+size_t netnode_supshift(uint64_t node, uint64_t from, uint64_t to, uint64_t size, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.supshift((nodeidx_t)from, (nodeidx_t)to, (nodeidx_t)size, (uchar)tag);
+}
+
+size_t netnode_charshift(uint64_t node, uint64_t from, uint64_t to, uint64_t size, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.charshift((nodeidx_t)from, (nodeidx_t)to, (nodeidx_t)size, (uchar)tag);
+}
+
+size_t netnode_blobshift(uint64_t node, uint64_t from, uint64_t to, uint64_t size, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.blobshift((nodeidx_t)from, (nodeidx_t)to, (nodeidx_t)size, (uchar)tag);
+}
+
+// Ranged and bulk deletes.
+
+int32_t netnode_supdel_range(uint64_t node, uint64_t idx1, uint64_t idx2, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return (int32_t)n.supdel_range((nodeidx_t)idx1, (nodeidx_t)idx2, (uchar)tag);
+}
+
+bool netnode_supdel_all(uint64_t node, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.supdel_all((uchar)tag);
+}
+
+bool netnode_altdel_all(uint64_t node, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.altdel_all((uchar)tag);
+}
+
+bool netnode_hashdel_all(uint64_t node, uint32_t tag) {
+  netnode n((nodeidx_t)node);
+  return n.hashdel_all((uchar)tag);
+}
+
 } // namespace idakit_gen

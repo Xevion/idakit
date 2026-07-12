@@ -2639,9 +2639,10 @@ pub const TY: Domain = Domain {
 /// type over a single `nodeidx_t` id, so every function is keyed by a bare `node: u64` (the id) with
 /// no opaque handle; the bodies reconstruct a `netnode` on the C++ side and call its inline methods.
 /// Tags are the SDK's 8-bit array selectors (`atag`/`stag`/`htag`/`vtag`, or a user tag), passed as
-/// `u32` and narrowed. Covers node lifecycle, the node value, and the alt/sup/hash/char/blob arrays;
-/// the `_idx8`/`_ea` conveniences, the shift/adjust ops, and ranged deletes are deferred. All bodies
-/// are hand-written in `facade/gen_netnode.cc`.
+/// `u32` and narrowed. Covers node lifecycle, the node value, the alt/sup/hash/char/blob arrays,
+/// their `_ea`/`_idx8` conveniences, the array shifts, and the ranged/bulk deletes; only `altadjust`
+/// is deferred. All bodies are hand-written in `facade/gen_netnode.cc`.
+// TODO: netnode_altadjust -- needs a cxx extern "Rust" visitor sink, not a raw C callback
 pub const NETNODE: Domain = Domain {
     name: "netnode",
     sdk_includes: &["<netnode.hpp>", "<stdexcept>"],
@@ -3541,6 +3542,886 @@ pub const NETNODE: Domain = Domain {
             ret: RetKind::I32,
             body: BodyKind::Custom,
             doc: "Delete the blob based at index `start` under `tag`; the number of slots freed.",
+        },
+        // Address-keyed conveniences (the class methods fold in `NETMAP_IDX`).
+        FnSpec {
+            name: "netnode_altval_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Alt value keyed by address `ea` under `tag`, or `0` when unset.",
+        },
+        FnSpec {
+            name: "netnode_altset_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Set the alt value keyed by address `ea` under `tag` to `value`.",
+        },
+        FnSpec {
+            name: "netnode_altdel_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the alt value keyed by address `ea` under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_supval_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::ResultVecU8,
+            body: BodyKind::Custom,
+            doc: "Sup value keyed by address `ea` under `tag` as raw bytes; `Err` when unset.",
+        },
+        FnSpec {
+            name: "netnode_supstr_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Sup value keyed by address `ea` under `tag` as a string; `Err` when unset.",
+        },
+        FnSpec {
+            name: "netnode_supset_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::Bytes,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Set the sup value keyed by address `ea` under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_supdel_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the sup value keyed by address `ea` under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_charval_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U32,
+            body: BodyKind::Custom,
+            doc: "Char value keyed by address `ea` under `tag` (0..255), or `0` when unset.",
+        },
+        FnSpec {
+            name: "netnode_charset_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Set the char value keyed by address `ea` under `tag` (low 8 bits of `value`).",
+        },
+        FnSpec {
+            name: "netnode_chardel_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the char value keyed by address `ea` under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_blobsize_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Byte length of the blob based at address `ea` under `tag`, or `0` when absent.",
+        },
+        FnSpec {
+            name: "netnode_getblob_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::ResultVecU8,
+            body: BodyKind::Custom,
+            doc: "The blob based at address `ea` under `tag` as owned bytes; `Err` when absent.",
+        },
+        FnSpec {
+            name: "netnode_setblob_ea",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::Bytes,
+                },
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Store `value` as the blob based at address `ea` under `tag`.",
+        },
+        // 8-bit-indexed sub-arrays (a separate index space; indices narrow to `uchar`).
+        FnSpec {
+            name: "netnode_altval_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Alt value at 8-bit index `idx` under `tag`, or `0` when unset.",
+        },
+        FnSpec {
+            name: "netnode_altset_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Set the alt value at 8-bit index `idx` under `tag` to `value`.",
+        },
+        FnSpec {
+            name: "netnode_altdel_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the alt value at 8-bit index `idx` under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_altfirst_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Lowest populated 8-bit alt index under `tag`, or `BADNODE` when empty.",
+        },
+        FnSpec {
+            name: "netnode_altnext_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "cur",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Next populated 8-bit alt index after `cur` under `tag`, or `BADNODE` when none.",
+        },
+        FnSpec {
+            name: "netnode_altlast_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Highest populated 8-bit alt index under `tag`, or `BADNODE` when empty.",
+        },
+        FnSpec {
+            name: "netnode_altprev_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "cur",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Previous populated 8-bit alt index before `cur` under `tag`, or `BADNODE` when none.",
+        },
+        FnSpec {
+            name: "netnode_supval_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::ResultVecU8,
+            body: BodyKind::Custom,
+            doc: "Sup value at 8-bit index `idx` under `tag` as raw bytes; `Err` when unset.",
+        },
+        FnSpec {
+            name: "netnode_supstr_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Sup value at 8-bit index `idx` under `tag` as a string; `Err` when unset.",
+        },
+        FnSpec {
+            name: "netnode_supset_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::Bytes,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Set the sup value at 8-bit index `idx` under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_supdel_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the sup value at 8-bit index `idx` under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_supfirst_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Lowest populated 8-bit sup index under `tag`, or `BADNODE` when empty.",
+        },
+        FnSpec {
+            name: "netnode_supnext_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "cur",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Next populated 8-bit sup index after `cur` under `tag`, or `BADNODE` when none.",
+        },
+        FnSpec {
+            name: "netnode_suplast_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Highest populated 8-bit sup index under `tag`, or `BADNODE` when empty.",
+        },
+        FnSpec {
+            name: "netnode_supprev_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "cur",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Previous populated 8-bit sup index before `cur` under `tag`, or `BADNODE` when none.",
+        },
+        FnSpec {
+            name: "netnode_lower_bound_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U64,
+            body: BodyKind::Custom,
+            doc: "Lowest populated 8-bit sup index at or after `idx` under `tag`, or `BADNODE`.",
+        },
+        FnSpec {
+            name: "netnode_charval_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::U32,
+            body: BodyKind::Custom,
+            doc: "Char value at 8-bit index `idx` under `tag` (0..255), or `0` when unset.",
+        },
+        FnSpec {
+            name: "netnode_charset_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Set the char value at 8-bit index `idx` under `tag` (low 8 bits of `value`).",
+        },
+        FnSpec {
+            name: "netnode_chardel_idx8",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the char value at 8-bit index `idx` under `tag`.",
+        },
+        // Array shifts (move elements at `from..from+size` to `to..to+size`).
+        FnSpec {
+            name: "netnode_altshift",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "from",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "to",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "size",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Shift the alt array under `tag`; the number of elements moved.",
+        },
+        FnSpec {
+            name: "netnode_supshift",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "from",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "to",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "size",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Shift the sup array under `tag`; the number of elements moved.",
+        },
+        FnSpec {
+            name: "netnode_charshift",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "from",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "to",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "size",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Shift the char array under `tag`; the number of elements moved.",
+        },
+        FnSpec {
+            name: "netnode_blobshift",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "from",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "to",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "size",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Usize,
+            body: BodyKind::Custom,
+            doc: "Shift the blob array under `tag`; the number of elements moved.",
+        },
+        // Ranged and bulk deletes.
+        FnSpec {
+            name: "netnode_supdel_range",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx1",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "idx2",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::I32,
+            body: BodyKind::Custom,
+            doc: "Delete sup elements in `[idx1, idx2)` under `tag`; the number deleted.",
+        },
+        FnSpec {
+            name: "netnode_supdel_all",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the entire sup array under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_altdel_all",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the entire alt array under `tag`.",
+        },
+        FnSpec {
+            name: "netnode_hashdel_all",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "node",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "tag",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Delete the entire hash array under `tag`.",
         },
     ],
 };
