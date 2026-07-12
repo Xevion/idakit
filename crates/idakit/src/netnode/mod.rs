@@ -21,6 +21,8 @@
 
 mod arrays;
 mod persist;
+mod tag;
+mod tagged;
 
 use std::num::NonZeroU64;
 
@@ -29,6 +31,8 @@ use crate::error::{Error, Result};
 
 pub use self::arrays::{Alts, HashEntries, Sups};
 pub use self::persist::Persist;
+pub use self::tag::Tag;
+pub use self::tagged::{TaggedNetnode, TaggedNetnodeMut};
 
 /// The reserved tag of the alt array (`atag`).
 const ATAG: u32 = b'A' as u32;
@@ -42,6 +46,17 @@ const BTAG: u32 = b'B' as u32;
 
 /// The bad-node sentinel (`BADNODE`), the niche of [`NodeId`].
 const BADNODE: u64 = u64::MAX;
+
+/// Build an [`Error::WriteRejected`] for `op` from the kernel's error channel after a failed write.
+fn rejected(db: &Database, address: u64, op: &'static str) -> Error {
+    let (qerrno, reason) = db.last_reason();
+    Error::WriteRejected {
+        op,
+        address,
+        qerrno,
+        reason,
+    }
+}
 
 impl Database {
     /// The netnode named `name`, or `None` if no such node exists.
@@ -266,7 +281,7 @@ macro_rules! netnode_reads {
         #[must_use]
         #[doc(alias("netnode::altfirst", "netnode_altfirst"))]
         pub fn alts(&self) -> $crate::netnode::Alts<'_> {
-            $crate::netnode::Alts::new(&*self.db, self.id)
+            $crate::netnode::Alts::new(&*self.db, self.id, $crate::netnode::ATAG)
         }
 
         /// Lazily iterate the sup array as `(index, bytes)` pairs, in ascending index order.
@@ -274,7 +289,7 @@ macro_rules! netnode_reads {
         #[must_use]
         #[doc(alias("netnode::supfirst", "netnode_supfirst"))]
         pub fn sups(&self) -> $crate::netnode::Sups<'_> {
-            $crate::netnode::Sups::new(&*self.db, self.id)
+            $crate::netnode::Sups::new(&*self.db, self.id, $crate::netnode::STAG)
         }
 
         /// Lazily iterate the hash as `(key, bytes)` pairs, in lexical key order.
@@ -282,7 +297,7 @@ macro_rules! netnode_reads {
         #[must_use]
         #[doc(alias("netnode::hashfirst", "netnode_hashfirst"))]
         pub fn hash_entries(&self) -> $crate::netnode::HashEntries<'_> {
-            $crate::netnode::HashEntries::new(&*self.db, self.id)
+            $crate::netnode::HashEntries::new(&*self.db, self.id, $crate::netnode::HTAG)
         }
 
         /// Read a typed value stored under hash `key`, or `None` if the key is absent or its bytes
@@ -335,8 +350,15 @@ pub struct Netnode<'db> {
     id: NodeId,
 }
 
-impl Netnode<'_> {
+impl<'db> Netnode<'db> {
     netnode_reads!();
+
+    /// A read view of this node's arrays under `tag`, for reaching non-default tags.
+    #[inline]
+    #[must_use]
+    pub fn tag(self, tag: Tag) -> TaggedNetnode<'db> {
+        TaggedNetnode::new(self.db, self.id, tag)
+    }
 }
 
 impl std::fmt::Debug for Netnode<'_> {
@@ -385,6 +407,12 @@ pub struct NetnodeMut<'db> {
 
 impl NetnodeMut<'_> {
     netnode_reads!();
+
+    /// A read-write view of this node's arrays under `tag`, for reaching non-default tags.
+    #[inline]
+    pub fn tag(&mut self, tag: Tag) -> TaggedNetnodeMut<'_> {
+        TaggedNetnodeMut::new(&mut *self.db, self.id, tag)
+    }
 
     /// Set the node value (max 1024 bytes).
     ///
@@ -596,15 +624,10 @@ impl NetnodeMut<'_> {
     /// kernel's error channel on failure.
     fn checked(&self, ok: bool, op: &'static str) -> Result<()> {
         if ok {
-            return Ok(());
+            Ok(())
+        } else {
+            Err(rejected(&*self.db, self.id.get(), op))
         }
-        let (qerrno, reason) = self.db.last_reason();
-        Err(Error::WriteRejected {
-            op,
-            address: self.id.get(),
-            qerrno,
-            reason,
-        })
     }
 }
 

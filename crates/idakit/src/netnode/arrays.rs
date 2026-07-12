@@ -2,11 +2,11 @@
 //!
 //! Each retires IDA's `*first`/`*next` cursor dance into a Rust [`Iterator`], re-querying the
 //! kernel per step and borrowing `&Database` so it can't coexist with a write. None knows its
-//! length up front, so none is an [`ExactSizeIterator`].
+//! length up front, so none is an [`ExactSizeIterator`]. Each is scoped to one tag.
 
 use crate::Database;
 
-use super::{ATAG, BADNODE, HTAG, NodeId, STAG};
+use super::{BADNODE, NodeId};
 
 /// Map a raw enumeration result to `Some(index)`, or `None` at the `BADNODE` end sentinel.
 #[inline]
@@ -19,13 +19,14 @@ fn index_or_end(raw: u64) -> Option<u64> {
 pub struct Alts<'db> {
     db: &'db Database,
     id: NodeId,
+    tag: u32,
     next: Option<u64>,
 }
 
 impl<'db> Alts<'db> {
-    pub(crate) fn new(db: &'db Database, id: NodeId) -> Self {
-        let next = index_or_end(db.netnode_altfirst(id.get(), ATAG));
-        Self { db, id, next }
+    pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
+        let next = index_or_end(db.netnode_altfirst(id.get(), tag));
+        Self { db, id, tag, next }
     }
 }
 
@@ -34,8 +35,8 @@ impl Iterator for Alts<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.next?;
-        let value = self.db.netnode_altval(self.id.get(), index, ATAG);
-        self.next = index_or_end(self.db.netnode_altnext(self.id.get(), index, ATAG));
+        let value = self.db.netnode_altval(self.id.get(), index, self.tag);
+        self.next = index_or_end(self.db.netnode_altnext(self.id.get(), index, self.tag));
         Some((index, value))
     }
 }
@@ -45,13 +46,14 @@ impl Iterator for Alts<'_> {
 pub struct Sups<'db> {
     db: &'db Database,
     id: NodeId,
+    tag: u32,
     next: Option<u64>,
 }
 
 impl<'db> Sups<'db> {
-    pub(crate) fn new(db: &'db Database, id: NodeId) -> Self {
-        let next = index_or_end(db.netnode_supfirst(id.get(), STAG));
-        Self { db, id, next }
+    pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
+        let next = index_or_end(db.netnode_supfirst(id.get(), tag));
+        Self { db, id, tag, next }
     }
 }
 
@@ -62,9 +64,9 @@ impl Iterator for Sups<'_> {
         let index = self.next?;
         let value = self
             .db
-            .netnode_supval(self.id.get(), index, STAG)
+            .netnode_supval(self.id.get(), index, self.tag)
             .unwrap_or_default();
-        self.next = index_or_end(self.db.netnode_supnext(self.id.get(), index, STAG));
+        self.next = index_or_end(self.db.netnode_supnext(self.id.get(), index, self.tag));
         Some((index, value))
     }
 }
@@ -74,13 +76,14 @@ impl Iterator for Sups<'_> {
 pub struct HashEntries<'db> {
     db: &'db Database,
     id: NodeId,
+    tag: u32,
     next: Option<String>,
 }
 
 impl<'db> HashEntries<'db> {
-    pub(crate) fn new(db: &'db Database, id: NodeId) -> Self {
-        let next = db.netnode_hashfirst(id.get(), HTAG);
-        Self { db, id, next }
+    pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
+        let next = db.netnode_hashfirst(id.get(), tag);
+        Self { db, id, tag, next }
     }
 }
 
@@ -91,9 +94,9 @@ impl Iterator for HashEntries<'_> {
         let key = self.next.take()?;
         let value = self
             .db
-            .netnode_hashval(self.id.get(), &key, HTAG)
+            .netnode_hashval(self.id.get(), &key, self.tag)
             .unwrap_or_default();
-        self.next = self.db.netnode_hashnext(self.id.get(), &key, HTAG);
+        self.next = self.db.netnode_hashnext(self.id.get(), &key, self.tag);
         Some((key, value))
     }
 }

@@ -40,6 +40,44 @@ fn serde_run(idb: &mut idakit::Database) {
     idb.netnode_mut(name).kill();
 }
 
+#[test]
+fn netnode_tag_view() {
+    common::with_canonical_db(tag_run);
+}
+
+fn tag_run(idb: &mut idakit::Database) {
+    use idakit::Tag;
+    let name = "$ idakit.netnode.tag";
+    let user = Tag::new(b'X');
+
+    let id = {
+        let mut node = idb.netnode_mut(name);
+        let mut t = node.tag(user);
+        t.set_int(1, 111).expect("set_int");
+        t.set_value(2, b"data").expect("set_value");
+        t.set_hash("k", b"v").expect("set_hash");
+        node.id()
+    };
+
+    let node = idb.netnode_at(id);
+    let t = node.tag(user);
+    assert!(t.int(1) == 111);
+    assert!(t.value(2).as_deref() == Some(b"data".as_slice()));
+    assert!(t.hash("k").as_deref() == Some(b"v".as_slice()));
+
+    // int and value are two views of one numeric array, so both slots enumerate together.
+    let indices: Vec<u64> = t.values().map(|(i, _)| i).collect();
+    assert!(indices == vec![1, 2]);
+
+    // A different tag is a separate array: the default-tag slot at index 2 is untouched.
+    assert!(
+        node.sup(2).is_none(),
+        "tag 'X' is isolated from the default tag"
+    );
+
+    idb.netnode_mut(name).kill();
+}
+
 fn run(idb: &mut idakit::Database) {
     let name = "$ idakit.netnode.roundtrip";
 

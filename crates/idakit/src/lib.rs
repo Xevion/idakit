@@ -212,7 +212,10 @@ pub use crate::import::{Import, Imports};
 pub use crate::location::{Location, LocationMut};
 pub use crate::meta::DatabaseInfo;
 pub use crate::name::{Name, Names};
-pub use crate::netnode::{Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups};
+pub use crate::netnode::{
+    Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups, Tag, TaggedNetnode,
+    TaggedNetnodeMut,
+};
 pub use crate::search::{Matches, Pattern};
 pub use crate::segment::{Segment, SegmentClass, Segments};
 pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
@@ -244,7 +247,8 @@ pub mod prelude {
     pub use crate::meta::DatabaseInfo;
     pub use crate::name::{Name, Names};
     pub use crate::netnode::{
-        Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups,
+        Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups, Tag,
+        TaggedNetnode, TaggedNetnodeMut,
     };
     pub use crate::search::{Matches, Pattern};
     pub use crate::segment::{Segment, SegmentClass, Segments};
