@@ -79,18 +79,7 @@ impl std::fmt::Debug for Export<'_> {
     }
 }
 
-// Identity is the kernel index alone; the `db` borrow is incidental and must not participate.
-impl PartialEq for Export<'_> {
-    fn eq(&self, o: &Self) -> bool {
-        self.index == o.index
-    }
-}
-impl Eq for Export<'_> {}
-impl std::hash::Hash for Export<'_> {
-    fn hash<H: std::hash::Hasher>(&self, s: &mut H) {
-        self.index.hash(s);
-    }
-}
+key_identity!(Export, index);
 
 /// A lazy iterator over every export in the database, in kernel order, from
 /// [`Database::exports`].

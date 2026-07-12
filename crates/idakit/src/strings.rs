@@ -105,18 +105,7 @@ impl std::fmt::Debug for StringLiteral<'_> {
     }
 }
 
-// Identity is the address alone; the `db` borrow is incidental and must not participate.
-impl PartialEq for StringLiteral<'_> {
-    fn eq(&self, o: &Self) -> bool {
-        self.address == o.address
-    }
-}
-impl Eq for StringLiteral<'_> {}
-impl std::hash::Hash for StringLiteral<'_> {
-    fn hash<H: std::hash::Hasher>(&self, s: &mut H) {
-        self.address.hash(s);
-    }
-}
+key_identity!(StringLiteral, address);
 
 /// Bytes per character encoded in the raw string-type code: 1, 2, or 4.
 ///

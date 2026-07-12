@@ -110,136 +110,6 @@ impl Database {
         unsafe { sys::idakit_get_bytes(address.get(), buf, size) }
     }
 
-    pub(crate) fn get_bytes_owned(&self, address: Address, size: usize) -> Option<Vec<u8>> {
-        sys::get_bytes(address.get(), size).ok()
-    }
-
-    pub(crate) fn get_u8(&self, address: Address) -> Option<u8> {
-        sys::get_u8(address.get()).ok()
-    }
-
-    pub(crate) fn get_u16(&self, address: Address) -> Option<u16> {
-        sys::get_u16(address.get()).ok()
-    }
-
-    pub(crate) fn get_u32(&self, address: Address) -> Option<u32> {
-        sys::get_u32(address.get()).ok()
-    }
-
-    pub(crate) fn get_u64(&self, address: Address) -> Option<u64> {
-        sys::get_u64(address.get()).ok()
-    }
-
-    pub(crate) fn get_strlit(&self, address: Address, strtype: c_int) -> Option<String> {
-        sys::get_strlit(address.get(), strtype).ok()
-    }
-
-    pub(crate) fn decode_insn(&self, address: Address) -> sys::InstructionData {
-        sys::decode_insn(address.get())
-    }
-
-    pub(crate) fn get_flags(&self, address: Address) -> u64 {
-        sys::get_flags(address.get())
-    }
-
-    pub(crate) fn get_item_head(&self, address: Address) -> sys::Address {
-        sys::get_item_head(address.get())
-    }
-
-    pub(crate) fn get_item_end(&self, address: Address) -> sys::Address {
-        sys::get_item_end(address.get())
-    }
-
-    pub(crate) fn get_next_head(&self, address: Address, maxea: Address) -> sys::Address {
-        sys::get_next_head(address.get(), maxea.get())
-    }
-
-    pub(crate) fn get_prev_head(&self, address: Address, minea: Address) -> sys::Address {
-        sys::get_prev_head(address.get(), minea.get())
-    }
-
-    pub(crate) fn bitness_bits(&self) -> c_int {
-        sys::bitness()
-    }
-
-    pub(crate) fn image_base(&self) -> sys::Address {
-        sys::image_base()
-    }
-
-    pub(crate) fn min_ea(&self) -> sys::Address {
-        sys::min_ea()
-    }
-
-    pub(crate) fn max_ea(&self) -> sys::Address {
-        sys::max_ea()
-    }
-
-    pub(crate) fn proc_name(&self) -> Option<String> {
-        sys::proc_name().ok()
-    }
-
-    pub(crate) fn file_type_name(&self) -> Option<String> {
-        sys::file_type_name().ok()
-    }
-
-    pub(crate) fn input_path(&self) -> Option<String> {
-        sys::input_path().ok()
-    }
-
-    pub(crate) fn root_filename(&self) -> Option<String> {
-        sys::root_filename().ok()
-    }
-
-    pub(crate) fn get_ea_name(&self, address: Address) -> Option<String> {
-        sys::get_ea_name(address.get()).ok()
-    }
-
-    pub(crate) fn get_name_ea(&self, name: &str) -> sys::Address {
-        sys::get_name_ea(name)
-    }
-
-    pub(crate) fn demangle_name(&self, name: &str) -> Option<String> {
-        sys::demangle_name(name).ok()
-    }
-
-    pub(crate) fn nlist_size(&self) -> usize {
-        sys::nlist_size()
-    }
-
-    pub(crate) fn nlist_ea(&self, idx: usize) -> sys::Address {
-        sys::nlist_ea(idx)
-    }
-
-    pub(crate) fn nlist_name(&self, idx: usize) -> Option<String> {
-        sys::nlist_name(idx).ok()
-    }
-
-    /// Every cross-reference edge at `address`, as an owned snapshot.
-    ///
-    /// `is_to` selects xrefs targeting `address` vs originating at it. The [`Xrefs`] iterator owns
-    /// the returned `Vec` and needs no kernel access to walk it.
-    ///
-    /// [`Xrefs`]: crate::Xrefs
-    pub(crate) fn xrefs_build(&self, address: Address, is_to: bool) -> Vec<sys::XrefRec> {
-        sys::xrefs_build(address.get(), is_to)
-    }
-
-    pub(crate) fn hexrays_init(&self) -> bool {
-        sys::hexrays_init()
-    }
-
-    pub(crate) fn mark_cfunc_dirty(&mut self, address: Address, close_views: bool) -> bool {
-        sys::mark_cfunc_dirty(address.get(), close_views)
-    }
-
-    pub(crate) fn clear_cached_cfuncs(&mut self) {
-        sys::clear_cached_cfuncs();
-    }
-
-    pub(crate) fn has_cached_cfunc(&self, address: Address) -> bool {
-        sys::has_cached_cfunc(address.get())
-    }
-
     pub(crate) fn set_name(&mut self, address: Address, name: *const c_char) -> bool {
         unsafe { sys::set_name(address.get(), name, 0) }
     }
@@ -253,24 +123,81 @@ impl Database {
         unsafe { sys::set_cmt(address.get(), comment, repeatable) }
     }
 
-    pub(crate) fn get_cmt(&self, address: Address, repeatable: bool) -> Option<String> {
-        sys::get_cmt(address.get(), repeatable).ok()
+    // The remaining forwarders carry no logic beyond argument coercion (`address.get()`,
+    // `.ok()`, casts) and a possibly-renamed `sys` symbol, so they collapse into `forward!`.
+    forward! {
+        fn get_bytes_owned(&self, address: Address, size: usize) -> Option<Vec<u8>>
+            = sys::get_bytes(address.get(), size).ok();
+        fn get_u8(&self, address: Address) -> Option<u8> = sys::get_u8(address.get()).ok();
+        fn get_u16(&self, address: Address) -> Option<u16> = sys::get_u16(address.get()).ok();
+        fn get_u32(&self, address: Address) -> Option<u32> = sys::get_u32(address.get()).ok();
+        fn get_u64(&self, address: Address) -> Option<u64> = sys::get_u64(address.get()).ok();
+        fn get_strlit(&self, address: Address, strtype: c_int) -> Option<String>
+            = sys::get_strlit(address.get(), strtype).ok();
+        fn decode_insn(&self, address: Address) -> sys::InstructionData
+            = sys::decode_insn(address.get());
+        fn get_flags(&self, address: Address) -> u64 = sys::get_flags(address.get());
+        fn get_item_head(&self, address: Address) -> sys::Address
+            = sys::get_item_head(address.get());
+        fn get_item_end(&self, address: Address) -> sys::Address
+            = sys::get_item_end(address.get());
+        fn get_next_head(&self, address: Address, maxea: Address) -> sys::Address
+            = sys::get_next_head(address.get(), maxea.get());
+        fn get_prev_head(&self, address: Address, minea: Address) -> sys::Address
+            = sys::get_prev_head(address.get(), minea.get());
     }
 
-    pub(crate) fn patch_bytes(&mut self, address: Address, bytes: &[u8]) -> bool {
-        sys::patch_bytes(address.get(), bytes)
+    forward! {
+        fn bitness_bits(&self) -> c_int = sys::bitness();
+        fn image_base(&self) -> sys::Address = sys::image_base();
+        fn min_ea(&self) -> sys::Address = sys::min_ea();
+        fn max_ea(&self) -> sys::Address = sys::max_ea();
+        fn proc_name(&self) -> Option<String> = sys::proc_name().ok();
+        fn file_type_name(&self) -> Option<String> = sys::file_type_name().ok();
+        fn input_path(&self) -> Option<String> = sys::input_path().ok();
+        fn root_filename(&self) -> Option<String> = sys::root_filename().ok();
+        fn get_ea_name(&self, address: Address) -> Option<String>
+            = sys::get_ea_name(address.get()).ok();
+        fn get_name_ea(&self, name: &str) -> sys::Address = sys::get_name_ea(name);
+        fn demangle_name(&self, name: &str) -> Option<String> = sys::demangle_name(name).ok();
+        fn nlist_size(&self) -> usize = sys::nlist_size();
+        fn nlist_ea(&self, idx: usize) -> sys::Address = sys::nlist_ea(idx);
+        fn nlist_name(&self, idx: usize) -> Option<String> = sys::nlist_name(idx).ok();
     }
 
-    pub(crate) fn func_qty(&self) -> usize {
-        sys::func_qty()
+    /// Every cross-reference edge at `address`, as an owned snapshot.
+    ///
+    /// `is_to` selects xrefs targeting `address` vs originating at it. The [`Xrefs`] iterator owns
+    /// the returned `Vec` and needs no kernel access to walk it.
+    ///
+    /// [`Xrefs`]: crate::Xrefs
+    pub(crate) fn xrefs_build(&self, address: Address, is_to: bool) -> Vec<sys::XrefRec> {
+        sys::xrefs_build(address.get(), is_to)
     }
 
-    pub(crate) fn func_ea(&self, n: usize) -> sys::Address {
-        sys::func_ea(n)
+    forward! {
+        fn hexrays_init(&self) -> bool = sys::hexrays_init();
+        fn mark_cfunc_dirty(&mut self, address: Address, close_views: bool) -> bool
+            = sys::mark_cfunc_dirty(address.get(), close_views);
+        fn clear_cached_cfuncs(&mut self) = sys::clear_cached_cfuncs();
+        fn has_cached_cfunc(&self, address: Address) -> bool
+            = sys::has_cached_cfunc(address.get());
+        fn get_cmt(&self, address: Address, repeatable: bool) -> Option<String>
+            = sys::get_cmt(address.get(), repeatable).ok();
+        fn patch_bytes(&mut self, address: Address, bytes: &[u8]) -> bool
+            = sys::patch_bytes(address.get(), bytes);
     }
 
-    pub(crate) fn func_name(&self, address: Address) -> Option<String> {
-        sys::func_name(address.get()).ok()
+    forward! {
+        fn func_qty(&self) -> usize = sys::func_qty();
+        fn func_ea(&self, n: usize) -> sys::Address = sys::func_ea(n);
+        fn func_name(&self, address: Address) -> Option<String> = sys::func_name(address.get()).ok();
+        fn func_type(&self, address: Address) -> Option<String> = sys::func_type(address.get()).ok();
+        fn func_start(&self, address: Address) -> sys::Address = sys::func_start(address.get());
+        fn func_end(&self, address: Address) -> sys::Address = sys::func_end(address.get());
+        fn func_flags(&self, address: Address) -> u64 = sys::func_flags(address.get());
+        fn type_ordinal_limit(&self) -> u32 = sys::type_ordinal_limit();
+        fn type_name_at(&self, ordinal: u32) -> String = sys::type_name_at(ordinal).unwrap_or_default();
     }
 
     /// Every chunk of the function at `address` (entry chunk first), as an owned range snapshot;
@@ -279,306 +206,82 @@ impl Database {
         sys::range_all_chunks(address.get()).unwrap_or_default()
     }
 
-    pub(crate) fn func_type(&self, address: Address) -> Option<String> {
-        sys::func_type(address.get()).ok()
+    forward! {
+        fn apply_type_decl(&mut self, address: Address, decl: &str, flags: c_int) -> sys::TypeWriteResult
+            = sys::apply_type_decl(address.get(), decl, flags);
+        fn apply_named_type(&mut self, address: Address, name: &str) -> sys::TypeWriteResult
+            = sys::apply_named_type(address.get(), name);
+        fn clear_type(&mut self, address: Address) -> sys::TypeWriteResult
+            = sys::clear_type(address.get());
+        fn apply_type_recipe(&mut self, address: Address, buf: &[u8], flags: c_int) -> sys::TypeWriteResult
+            = sys::apply_type_recipe(address.get(), buf, flags);
+        fn apply_tinfo(&mut self, address: Address, handle: &sys::TInfo, flags: c_int) -> sys::TypeWriteResult
+            = sys::tinfo_apply(address.get(), handle, flags);
+        fn func_set_rettype(&mut self, address: Address, buf: &[u8]) -> sys::TypeWriteResult
+            = sys::func_set_rettype(address.get(), buf);
+        fn func_set_argtype(&mut self, address: Address, idx: usize, buf: &[u8]) -> sys::SigWriteResult
+            = sys::func_set_argtype(address.get(), idx, buf);
+        fn func_rename_arg(&mut self, address: Address, idx: usize, name: &str) -> sys::SigWriteResult
+            = sys::func_rename_arg(address.get(), idx, name);
+        fn func_set_cc(&mut self, address: Address, cc: c_int) -> sys::TypeWriteResult
+            = sys::func_set_cc(address.get(), cc);
+        fn func_prepend_this(&mut self, address: Address, buf: &[u8]) -> sys::TypeWriteResult
+            = sys::func_prepend_this(address.get(), buf);
     }
 
-    pub(crate) fn type_ordinal_limit(&self) -> u32 {
-        sys::type_ordinal_limit()
+    forward! {
+        fn udt_add_member(&mut self, type_name: &str, member_name: &str, buf: &[u8], member_bit: u64) -> sys::TypeWriteResult
+            = sys::udt_add_member(type_name, member_name, buf, member_bit);
+        fn udt_set_member_type(&mut self, type_name: &str, member_name: &str, member_bit: u64, buf: &[u8], etf_flags: u32) -> sys::TypeWriteResult
+            = sys::udt_set_member_type(type_name, member_name, member_bit, buf, etf_flags);
+        fn udt_rename_member(&mut self, type_name: &str, member_name: &str, member_bit: u64, new_name: &str) -> sys::TypeWriteResult
+            = sys::udt_rename_member(type_name, member_name, member_bit, new_name);
+        fn udt_set_member_comment(&mut self, type_name: &str, member_name: &str, member_bit: u64, comment: &str) -> sys::TypeWriteResult
+            = sys::udt_set_member_comment(type_name, member_name, member_bit, comment);
+        fn udt_set_member_repr(&mut self, type_name: &str, member_name: &str, member_bit: u64, vtype: u32, is_signed: bool, leading_zeros: bool) -> sys::TypeWriteResult
+            = sys::udt_set_member_repr(type_name, member_name, member_bit, vtype, is_signed, leading_zeros);
+        fn udt_del_member(&mut self, type_name: &str, member_name: &str, member_bit: u64) -> sys::TypeWriteResult
+            = sys::udt_del_member(type_name, member_name, member_bit);
     }
 
-    pub(crate) fn type_name_at(&self, ordinal: u32) -> String {
-        sys::type_name_at(ordinal).unwrap_or_default()
+    forward! {
+        fn enum_add_member(&mut self, type_name: &str, member_name: &str, value: u64, bmask: u64, etf_flags: u32) -> sys::TypeWriteResult
+            = sys::enum_add_member(type_name, member_name, value, bmask, etf_flags);
+        fn enum_set_bitmask(&mut self, type_name: &str, on: bool) -> sys::TypeWriteResult
+            = sys::enum_set_bitmask(type_name, on);
+        fn enum_set_repr(&mut self, type_name: &str, vtype: u32, is_signed: bool, leading_zeros: bool) -> sys::TypeWriteResult
+            = sys::enum_set_repr(type_name, vtype, is_signed, leading_zeros);
+        fn enum_set_width(&mut self, type_name: &str, nbytes: i32) -> sys::TypeWriteResult
+            = sys::enum_set_width(type_name, nbytes);
+        fn enum_set_member_value(&mut self, type_name: &str, member_name: &str, value: u64) -> sys::TypeWriteResult
+            = sys::enum_set_member_value(type_name, member_name, value);
+        fn enum_rename_member(&mut self, type_name: &str, member_name: &str, new_name: &str, etf_flags: u32) -> sys::TypeWriteResult
+            = sys::enum_rename_member(type_name, member_name, new_name, etf_flags);
+        fn enum_del_member(&mut self, type_name: &str, member_name: &str) -> sys::TypeWriteResult
+            = sys::enum_del_member(type_name, member_name);
+        fn enum_del_member_by_value(&mut self, type_name: &str, value: u64) -> sys::TypeWriteResult
+            = sys::enum_del_member_by_value(type_name, value);
+        fn define_type(&mut self, input: &str) -> sys::TypeWriteResult = sys::define_type(input);
+        fn delete_type(&mut self, type_name: &str) -> sys::TypeWriteResult = sys::delete_type(type_name);
+        fn rename_type(&mut self, type_name: &str, new_name: &str) -> sys::TypeWriteResult
+            = sys::rename_type(type_name, new_name);
+        fn forward_declare_type(&mut self, type_name: &str, decl_type: u32) -> sys::TypeWriteResult
+            = sys::forward_declare_type(type_name, decl_type);
     }
 
-    pub(crate) fn func_start(&self, address: Address) -> sys::Address {
-        sys::func_start(address.get())
-    }
-
-    pub(crate) fn func_end(&self, address: Address) -> sys::Address {
-        sys::func_end(address.get())
-    }
-
-    pub(crate) fn apply_type_decl(
-        &mut self,
-        address: Address,
-        decl: &str,
-        flags: c_int,
-    ) -> sys::TypeWriteResult {
-        sys::apply_type_decl(address.get(), decl, flags)
-    }
-
-    pub(crate) fn apply_named_type(
-        &mut self,
-        address: Address,
-        name: &str,
-    ) -> sys::TypeWriteResult {
-        sys::apply_named_type(address.get(), name)
-    }
-
-    pub(crate) fn clear_type(&mut self, address: Address) -> sys::TypeWriteResult {
-        sys::clear_type(address.get())
-    }
-
-    pub(crate) fn apply_type_recipe(
-        &mut self,
-        address: Address,
-        buf: &[u8],
-        flags: c_int,
-    ) -> sys::TypeWriteResult {
-        sys::apply_type_recipe(address.get(), buf, flags)
-    }
-
-    pub(crate) fn apply_tinfo(
-        &mut self,
-        address: Address,
-        handle: &sys::TInfo,
-        flags: c_int,
-    ) -> sys::TypeWriteResult {
-        sys::tinfo_apply(address.get(), handle, flags)
-    }
-
-    pub(crate) fn func_set_rettype(
-        &mut self,
-        address: Address,
-        buf: &[u8],
-    ) -> sys::TypeWriteResult {
-        sys::func_set_rettype(address.get(), buf)
-    }
-
-    pub(crate) fn func_set_argtype(
-        &mut self,
-        address: Address,
-        idx: usize,
-        buf: &[u8],
-    ) -> sys::SigWriteResult {
-        sys::func_set_argtype(address.get(), idx, buf)
-    }
-
-    pub(crate) fn func_rename_arg(
-        &mut self,
-        address: Address,
-        idx: usize,
-        name: &str,
-    ) -> sys::SigWriteResult {
-        sys::func_rename_arg(address.get(), idx, name)
-    }
-
-    pub(crate) fn func_set_cc(&mut self, address: Address, cc: c_int) -> sys::TypeWriteResult {
-        sys::func_set_cc(address.get(), cc)
-    }
-
-    pub(crate) fn func_prepend_this(
-        &mut self,
-        address: Address,
-        buf: &[u8],
-    ) -> sys::TypeWriteResult {
-        sys::func_prepend_this(address.get(), buf)
-    }
-
-    pub(crate) fn udt_add_member(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        buf: &[u8],
-        member_bit: u64,
-    ) -> sys::TypeWriteResult {
-        sys::udt_add_member(type_name, member_name, buf, member_bit)
-    }
-
-    pub(crate) fn udt_set_member_type(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        member_bit: u64,
-        buf: &[u8],
-        etf_flags: u32,
-    ) -> sys::TypeWriteResult {
-        sys::udt_set_member_type(type_name, member_name, member_bit, buf, etf_flags)
-    }
-
-    pub(crate) fn udt_rename_member(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        member_bit: u64,
-        new_name: &str,
-    ) -> sys::TypeWriteResult {
-        sys::udt_rename_member(type_name, member_name, member_bit, new_name)
-    }
-
-    pub(crate) fn udt_set_member_comment(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        member_bit: u64,
-        comment: &str,
-    ) -> sys::TypeWriteResult {
-        sys::udt_set_member_comment(type_name, member_name, member_bit, comment)
-    }
-
-    pub(crate) fn udt_set_member_repr(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        member_bit: u64,
-        vtype: u32,
-        is_signed: bool,
-        leading_zeros: bool,
-    ) -> sys::TypeWriteResult {
-        sys::udt_set_member_repr(
-            type_name,
-            member_name,
-            member_bit,
-            vtype,
-            is_signed,
-            leading_zeros,
-        )
-    }
-
-    pub(crate) fn udt_del_member(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        member_bit: u64,
-    ) -> sys::TypeWriteResult {
-        sys::udt_del_member(type_name, member_name, member_bit)
-    }
-
-    pub(crate) fn enum_add_member(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        value: u64,
-        bmask: u64,
-        etf_flags: u32,
-    ) -> sys::TypeWriteResult {
-        sys::enum_add_member(type_name, member_name, value, bmask, etf_flags)
-    }
-
-    pub(crate) fn enum_set_bitmask(&mut self, type_name: &str, on: bool) -> sys::TypeWriteResult {
-        sys::enum_set_bitmask(type_name, on)
-    }
-
-    pub(crate) fn enum_set_repr(
-        &mut self,
-        type_name: &str,
-        vtype: u32,
-        is_signed: bool,
-        leading_zeros: bool,
-    ) -> sys::TypeWriteResult {
-        sys::enum_set_repr(type_name, vtype, is_signed, leading_zeros)
-    }
-
-    pub(crate) fn enum_set_width(&mut self, type_name: &str, nbytes: i32) -> sys::TypeWriteResult {
-        sys::enum_set_width(type_name, nbytes)
-    }
-
-    pub(crate) fn enum_set_member_value(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        value: u64,
-    ) -> sys::TypeWriteResult {
-        sys::enum_set_member_value(type_name, member_name, value)
-    }
-
-    pub(crate) fn enum_rename_member(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-        new_name: &str,
-        etf_flags: u32,
-    ) -> sys::TypeWriteResult {
-        sys::enum_rename_member(type_name, member_name, new_name, etf_flags)
-    }
-
-    pub(crate) fn enum_del_member(
-        &mut self,
-        type_name: &str,
-        member_name: &str,
-    ) -> sys::TypeWriteResult {
-        sys::enum_del_member(type_name, member_name)
-    }
-
-    pub(crate) fn enum_del_member_by_value(
-        &mut self,
-        type_name: &str,
-        value: u64,
-    ) -> sys::TypeWriteResult {
-        sys::enum_del_member_by_value(type_name, value)
-    }
-
-    pub(crate) fn define_type(&mut self, input: &str) -> sys::TypeWriteResult {
-        sys::define_type(input)
-    }
-
-    pub(crate) fn delete_type(&mut self, type_name: &str) -> sys::TypeWriteResult {
-        sys::delete_type(type_name)
-    }
-
-    pub(crate) fn rename_type(&mut self, type_name: &str, new_name: &str) -> sys::TypeWriteResult {
-        sys::rename_type(type_name, new_name)
-    }
-
-    pub(crate) fn forward_declare_type(
-        &mut self,
-        type_name: &str,
-        decl_type: u32,
-    ) -> sys::TypeWriteResult {
-        sys::forward_declare_type(type_name, decl_type)
-    }
-
-    pub(crate) fn func_flags(&self, address: Address) -> u64 {
-        sys::func_flags(address.get())
-    }
-
-    pub(crate) fn seg_qty(&self) -> c_int {
-        sys::gen_seg_qty() as c_int
-    }
-
-    pub(crate) fn seg_name(&self, n: c_int) -> Option<String> {
-        sys::gen_seg_name(n).ok()
-    }
-
-    pub(crate) fn seg_start(&self, n: c_int) -> sys::Address {
-        sys::gen_seg_start(n)
-    }
-
-    pub(crate) fn seg_end(&self, n: c_int) -> sys::Address {
-        sys::gen_seg_end(n)
-    }
-
-    pub(crate) fn seg_perm(&self, n: c_int) -> c_int {
-        sys::gen_seg_perm(n)
-    }
-
-    pub(crate) fn seg_bitness(&self, n: c_int) -> c_int {
-        sys::gen_seg_bitness(n)
-    }
-
-    pub(crate) fn seg_class(&self, n: c_int) -> Option<String> {
-        sys::gen_seg_class(n).ok()
-    }
-
-    pub(crate) fn export_qty(&self) -> usize {
-        sys::export_qty()
-    }
-
-    pub(crate) fn export_ea(&self, idx: usize) -> sys::Address {
-        sys::export_ea(idx)
-    }
-
-    pub(crate) fn export_ordinal(&self, idx: usize) -> u64 {
-        sys::export_ordinal(idx)
-    }
-
-    pub(crate) fn export_name(&self, idx: usize) -> Option<String> {
-        sys::export_name(idx).ok()
-    }
-
-    pub(crate) fn export_forwarder(&self, idx: usize) -> Option<String> {
-        sys::export_forwarder(idx).ok()
+    forward! {
+        fn seg_qty(&self) -> c_int = sys::gen_seg_qty() as c_int;
+        fn seg_name(&self, n: c_int) -> Option<String> = sys::gen_seg_name(n).ok();
+        fn seg_start(&self, n: c_int) -> sys::Address = sys::gen_seg_start(n);
+        fn seg_end(&self, n: c_int) -> sys::Address = sys::gen_seg_end(n);
+        fn seg_perm(&self, n: c_int) -> c_int = sys::gen_seg_perm(n);
+        fn seg_bitness(&self, n: c_int) -> c_int = sys::gen_seg_bitness(n);
+        fn seg_class(&self, n: c_int) -> Option<String> = sys::gen_seg_class(n).ok();
+        fn export_qty(&self) -> usize = sys::export_qty();
+        fn export_ea(&self, idx: usize) -> sys::Address = sys::export_ea(idx);
+        fn export_ordinal(&self, idx: usize) -> u64 = sys::export_ordinal(idx);
+        fn export_name(&self, idx: usize) -> Option<String> = sys::export_name(idx).ok();
+        fn export_forwarder(&self, idx: usize) -> Option<String> = sys::export_forwarder(idx).ok();
     }
 
     /// The whole import table as an owned snapshot.
@@ -595,176 +298,55 @@ impl Database {
         sys::strlist_build();
     }
 
-    pub(crate) fn strlist_qty(&self) -> usize {
-        sys::strlist_qty()
+    forward! {
+        fn strlist_qty(&self) -> usize = sys::strlist_qty();
+        fn strlist_item(&self, n: usize) -> Option<sys::StrlistItem> = sys::strlist_item(n).ok();
+        fn strlit_contents(&self, address: Address, len: usize, ty: c_int) -> Option<String>
+            = sys::strlit_contents(address.get(), len, ty).ok();
     }
 
-    pub(crate) fn strlist_item(&self, n: usize) -> Option<sys::StrlistItem> {
-        sys::strlist_item(n).ok()
+    forward! {
+        fn netnode_open(&self, name: &str) -> u64 = sys::netnode_by_name(name, false);
+        fn netnode_create(&mut self, name: &str) -> u64 = sys::netnode_by_name(name, true);
+        fn netnode_exists(&self, node: u64) -> bool = sys::netnode_exists(node);
+        fn netnode_get_name(&self, node: u64) -> Option<String> = sys::netnode_get_name(node).ok();
+        fn netnode_rename(&mut self, node: u64, name: &str) -> bool = sys::netnode_rename(node, name);
+        fn netnode_kill(&mut self, node: u64) = sys::netnode_kill(node);
+        fn netnode_first(&self) -> u64 = sys::netnode_first();
+        fn netnode_next(&self, cur: u64) -> u64 = sys::netnode_next(cur);
+        fn netnode_value(&self, node: u64) -> Option<Vec<u8>> = sys::netnode_value(node).ok();
+        fn netnode_value_str(&self, node: u64) -> Option<String> = sys::netnode_value_str(node).ok();
+        fn netnode_set_value(&mut self, node: u64, value: &[u8]) -> bool = sys::netnode_set_value(node, value);
+        fn netnode_del_value(&mut self, node: u64) -> bool = sys::netnode_del_value(node);
     }
 
-    pub(crate) fn strlit_contents(
-        &self,
-        address: Address,
-        len: usize,
-        ty: c_int,
-    ) -> Option<String> {
-        sys::strlit_contents(address.get(), len, ty).ok()
+    forward! {
+        fn netnode_altval(&self, node: u64, idx: u64, tag: u32) -> u64 = sys::netnode_altval(node, idx, tag);
+        fn netnode_altset(&mut self, node: u64, idx: u64, value: u64, tag: u32) -> bool = sys::netnode_altset(node, idx, value, tag);
+        fn netnode_altdel(&mut self, node: u64, idx: u64, tag: u32) -> bool = sys::netnode_altdel(node, idx, tag);
+        fn netnode_altdel_all(&mut self, node: u64, tag: u32) -> bool = sys::netnode_altdel_all(node, tag);
+        fn netnode_altfirst(&self, node: u64, tag: u32) -> u64 = sys::netnode_altfirst(node, tag);
+        fn netnode_altnext(&self, node: u64, cur: u64, tag: u32) -> u64 = sys::netnode_altnext(node, cur, tag);
+        fn netnode_supval(&self, node: u64, idx: u64, tag: u32) -> Option<Vec<u8>> = sys::netnode_supval(node, idx, tag).ok();
+        fn netnode_supset(&mut self, node: u64, idx: u64, value: &[u8], tag: u32) -> bool = sys::netnode_supset(node, idx, value, tag);
+        fn netnode_supdel(&mut self, node: u64, idx: u64, tag: u32) -> bool = sys::netnode_supdel(node, idx, tag);
+        fn netnode_supdel_all(&mut self, node: u64, tag: u32) -> bool = sys::netnode_supdel_all(node, tag);
+        fn netnode_supfirst(&self, node: u64, tag: u32) -> u64 = sys::netnode_supfirst(node, tag);
+        fn netnode_supnext(&self, node: u64, cur: u64, tag: u32) -> u64 = sys::netnode_supnext(node, cur, tag);
     }
 
-    pub(crate) fn netnode_open(&self, name: &str) -> u64 {
-        sys::netnode_by_name(name, false)
-    }
-
-    pub(crate) fn netnode_create(&mut self, name: &str) -> u64 {
-        sys::netnode_by_name(name, true)
-    }
-
-    pub(crate) fn netnode_exists(&self, node: u64) -> bool {
-        sys::netnode_exists(node)
-    }
-
-    pub(crate) fn netnode_get_name(&self, node: u64) -> Option<String> {
-        sys::netnode_get_name(node).ok()
-    }
-
-    pub(crate) fn netnode_rename(&mut self, node: u64, name: &str) -> bool {
-        sys::netnode_rename(node, name)
-    }
-
-    pub(crate) fn netnode_kill(&mut self, node: u64) {
-        sys::netnode_kill(node);
-    }
-
-    pub(crate) fn netnode_first(&self) -> u64 {
-        sys::netnode_first()
-    }
-
-    pub(crate) fn netnode_next(&self, cur: u64) -> u64 {
-        sys::netnode_next(cur)
-    }
-
-    pub(crate) fn netnode_value(&self, node: u64) -> Option<Vec<u8>> {
-        sys::netnode_value(node).ok()
-    }
-
-    pub(crate) fn netnode_value_str(&self, node: u64) -> Option<String> {
-        sys::netnode_value_str(node).ok()
-    }
-
-    pub(crate) fn netnode_set_value(&mut self, node: u64, value: &[u8]) -> bool {
-        sys::netnode_set_value(node, value)
-    }
-
-    pub(crate) fn netnode_del_value(&mut self, node: u64) -> bool {
-        sys::netnode_del_value(node)
-    }
-
-    pub(crate) fn netnode_altval(&self, node: u64, idx: u64, tag: u32) -> u64 {
-        sys::netnode_altval(node, idx, tag)
-    }
-
-    pub(crate) fn netnode_altset(&mut self, node: u64, idx: u64, value: u64, tag: u32) -> bool {
-        sys::netnode_altset(node, idx, value, tag)
-    }
-
-    pub(crate) fn netnode_altdel(&mut self, node: u64, idx: u64, tag: u32) -> bool {
-        sys::netnode_altdel(node, idx, tag)
-    }
-
-    pub(crate) fn netnode_altdel_all(&mut self, node: u64, tag: u32) -> bool {
-        sys::netnode_altdel_all(node, tag)
-    }
-
-    pub(crate) fn netnode_altfirst(&self, node: u64, tag: u32) -> u64 {
-        sys::netnode_altfirst(node, tag)
-    }
-
-    pub(crate) fn netnode_altnext(&self, node: u64, cur: u64, tag: u32) -> u64 {
-        sys::netnode_altnext(node, cur, tag)
-    }
-
-    pub(crate) fn netnode_supval(&self, node: u64, idx: u64, tag: u32) -> Option<Vec<u8>> {
-        sys::netnode_supval(node, idx, tag).ok()
-    }
-
-    pub(crate) fn netnode_supset(&mut self, node: u64, idx: u64, value: &[u8], tag: u32) -> bool {
-        sys::netnode_supset(node, idx, value, tag)
-    }
-
-    pub(crate) fn netnode_supdel(&mut self, node: u64, idx: u64, tag: u32) -> bool {
-        sys::netnode_supdel(node, idx, tag)
-    }
-
-    pub(crate) fn netnode_supdel_all(&mut self, node: u64, tag: u32) -> bool {
-        sys::netnode_supdel_all(node, tag)
-    }
-
-    pub(crate) fn netnode_supfirst(&self, node: u64, tag: u32) -> u64 {
-        sys::netnode_supfirst(node, tag)
-    }
-
-    pub(crate) fn netnode_supnext(&self, node: u64, cur: u64, tag: u32) -> u64 {
-        sys::netnode_supnext(node, cur, tag)
-    }
-
-    pub(crate) fn netnode_hashval(&self, node: u64, key: &str, tag: u32) -> Option<Vec<u8>> {
-        sys::netnode_hashval(node, key, tag).ok()
-    }
-
-    pub(crate) fn netnode_hashval_long(&self, node: u64, key: &str, tag: u32) -> u64 {
-        sys::netnode_hashval_long(node, key, tag)
-    }
-
-    pub(crate) fn netnode_hashset(&mut self, node: u64, key: &str, value: &[u8], tag: u32) -> bool {
-        sys::netnode_hashset(node, key, value, tag)
-    }
-
-    pub(crate) fn netnode_hashset_long(
-        &mut self,
-        node: u64,
-        key: &str,
-        value: u64,
-        tag: u32,
-    ) -> bool {
-        sys::netnode_hashset_long(node, key, value, tag)
-    }
-
-    pub(crate) fn netnode_hashdel(&mut self, node: u64, key: &str, tag: u32) -> bool {
-        sys::netnode_hashdel(node, key, tag)
-    }
-
-    pub(crate) fn netnode_hashdel_all(&mut self, node: u64, tag: u32) -> bool {
-        sys::netnode_hashdel_all(node, tag)
-    }
-
-    pub(crate) fn netnode_hashfirst(&self, node: u64, tag: u32) -> Option<String> {
-        sys::netnode_hashfirst(node, tag).ok()
-    }
-
-    pub(crate) fn netnode_hashnext(&self, node: u64, key: &str, tag: u32) -> Option<String> {
-        sys::netnode_hashnext(node, key, tag).ok()
-    }
-
-    pub(crate) fn netnode_blobsize(&self, node: u64, start: u64, tag: u32) -> usize {
-        sys::netnode_blobsize(node, start, tag)
-    }
-
-    pub(crate) fn netnode_getblob(&self, node: u64, start: u64, tag: u32) -> Option<Vec<u8>> {
-        sys::netnode_getblob(node, start, tag).ok()
-    }
-
-    pub(crate) fn netnode_setblob(
-        &mut self,
-        node: u64,
-        value: &[u8],
-        start: u64,
-        tag: u32,
-    ) -> bool {
-        sys::netnode_setblob(node, value, start, tag)
-    }
-
-    pub(crate) fn netnode_delblob(&mut self, node: u64, start: u64, tag: u32) -> i32 {
-        sys::netnode_delblob(node, start, tag)
+    forward! {
+        fn netnode_hashval(&self, node: u64, key: &str, tag: u32) -> Option<Vec<u8>> = sys::netnode_hashval(node, key, tag).ok();
+        fn netnode_hashval_long(&self, node: u64, key: &str, tag: u32) -> u64 = sys::netnode_hashval_long(node, key, tag);
+        fn netnode_hashset(&mut self, node: u64, key: &str, value: &[u8], tag: u32) -> bool = sys::netnode_hashset(node, key, value, tag);
+        fn netnode_hashset_long(&mut self, node: u64, key: &str, value: u64, tag: u32) -> bool = sys::netnode_hashset_long(node, key, value, tag);
+        fn netnode_hashdel(&mut self, node: u64, key: &str, tag: u32) -> bool = sys::netnode_hashdel(node, key, tag);
+        fn netnode_hashdel_all(&mut self, node: u64, tag: u32) -> bool = sys::netnode_hashdel_all(node, tag);
+        fn netnode_hashfirst(&self, node: u64, tag: u32) -> Option<String> = sys::netnode_hashfirst(node, tag).ok();
+        fn netnode_hashnext(&self, node: u64, key: &str, tag: u32) -> Option<String> = sys::netnode_hashnext(node, key, tag).ok();
+        fn netnode_blobsize(&self, node: u64, start: u64, tag: u32) -> usize = sys::netnode_blobsize(node, start, tag);
+        fn netnode_getblob(&self, node: u64, start: u64, tag: u32) -> Option<Vec<u8>> = sys::netnode_getblob(node, start, tag).ok();
+        fn netnode_setblob(&mut self, node: u64, value: &[u8], start: u64, tag: u32) -> bool = sys::netnode_setblob(node, value, start, tag);
+        fn netnode_delblob(&mut self, node: u64, start: u64, tag: u32) -> i32 = sys::netnode_delblob(node, start, tag);
     }
 }

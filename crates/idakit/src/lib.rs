@@ -156,6 +156,9 @@ use std::marker::PhantomData;
 
 pub use idakit_sys as sys;
 
+#[macro_use]
+mod macros;
+
 // Larger subsystems keep a public module as their navigable home.
 pub mod decompiler;
 pub mod error;

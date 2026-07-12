@@ -652,29 +652,7 @@ impl std::fmt::Debug for Function<'_> {
     }
 }
 
-// Identity is the entry address alone; the `db` borrow is incidental and must not
-// participate, so these are hand-written rather than derived.
-impl PartialEq for Function<'_> {
-    fn eq(&self, o: &Self) -> bool {
-        self.address == o.address
-    }
-}
-impl Eq for Function<'_> {}
-impl std::hash::Hash for Function<'_> {
-    fn hash<H: std::hash::Hasher>(&self, s: &mut H) {
-        self.address.hash(s);
-    }
-}
-impl Ord for Function<'_> {
-    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
-        self.address.cmp(&o.address)
-    }
-}
-impl PartialOrd for Function<'_> {
-    fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(o))
-    }
-}
+key_identity!(Function, address, ord);
 
 /// A lazy iterator over every function in the database, in kernel order, from
 /// [`Database::functions`].

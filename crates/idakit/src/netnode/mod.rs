@@ -339,6 +339,28 @@ macro_rules! netnode_reads {
     };
 }
 
+/// Emit the write-cursor methods shared in shape by [`NetnodeMut`] and [`TaggedNetnodeMut`].
+///
+/// Each entry binds the receiver (the first identifier, conventionally `this`, since macro hygiene
+/// bars a passed-in `expr` from seeing the method's own `self`) and gives a `=> expr` yielding the
+/// raw `bool` success flag; the body routes it through the cursor's own `checked`, tagging the
+/// [`Error::WriteRejected`] with the method name. That keeps it agnostic to the default-tag vs
+/// explicit-[`Tag`] split.
+macro_rules! write_ops {
+    ($(
+        $(#[$meta:meta])*
+        fn $name:ident($this:ident $(, $arg:ident: $aty:ty)* $(,)?) => $call:expr;
+    )*) => {$(
+        $(#[$meta])*
+        pub fn $name(&mut self $(, $arg: $aty)*) -> $crate::error::Result<()> {
+            let $this = self;
+            let ok = $call;
+            $this.checked(ok, stringify!($name))
+        }
+    )*};
+}
+pub(crate) use write_ops;
+
 /// A borrowed view of one netnode, keyed by [`NodeId`].
 ///
 /// A cheap `Copy` handle that borrows the [`Database`] and re-queries per accessor, from
@@ -370,29 +392,7 @@ impl std::fmt::Debug for Netnode<'_> {
     }
 }
 
-// Identity is the id alone; the `db` borrow is incidental and must not participate, so these are
-// hand-written rather than derived.
-impl PartialEq for Netnode<'_> {
-    fn eq(&self, o: &Self) -> bool {
-        self.id == o.id
-    }
-}
-impl Eq for Netnode<'_> {}
-impl std::hash::Hash for Netnode<'_> {
-    fn hash<H: std::hash::Hasher>(&self, s: &mut H) {
-        self.id.hash(s);
-    }
-}
-impl Ord for Netnode<'_> {
-    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
-        self.id.cmp(&o.id)
-    }
-}
-impl PartialOrd for Netnode<'_> {
-    fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(o))
-    }
-}
+key_identity!(Netnode, id, ord);
 
 /// A write cursor on one netnode, from [`Database::netnode_mut`].
 ///
@@ -414,146 +414,111 @@ impl NetnodeMut<'_> {
         TaggedNetnodeMut::new(&mut *self.db, self.id, tag)
     }
 
-    /// Set the node value (max 1024 bytes).
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::set", "netnode_set_value"))]
-    pub fn set_value(&mut self, value: &[u8]) -> Result<()> {
-        let ok = self.db.netnode_set_value(self.id.get(), value);
-        self.checked(ok, "set_value")
-    }
+    write_ops! {
+        /// Set the node value (max 1024 bytes).
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::set", "netnode_set_value"))]
+        fn set_value(this, value: &[u8]) => this.db.netnode_set_value(this.id.get(), value);
 
-    /// Delete the node value.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::delvalue", "netnode_del_value"))]
-    pub fn clear_value(&mut self) -> Result<()> {
-        let ok = self.db.netnode_del_value(self.id.get());
-        self.checked(ok, "clear_value")
-    }
+        /// Delete the node value.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::delvalue", "netnode_del_value"))]
+        fn clear_value(this) => this.db.netnode_del_value(this.id.get());
 
-    /// Set the alt value at `index`.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::altset", "netnode_altset"))]
-    pub fn set_alt(&mut self, index: u64, value: u64) -> Result<()> {
-        let ok = self.db.netnode_altset(self.id.get(), index, value, ATAG);
-        self.checked(ok, "set_alt")
-    }
+        /// Set the alt value at `index`.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::altset", "netnode_altset"))]
+        fn set_alt(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, ATAG);
 
-    /// Delete the alt value at `index`.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::altdel", "netnode_altdel"))]
-    pub fn remove_alt(&mut self, index: u64) -> Result<()> {
-        let ok = self.db.netnode_altdel(self.id.get(), index, ATAG);
-        self.checked(ok, "remove_alt")
-    }
+        /// Delete the alt value at `index`.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::altdel", "netnode_altdel"))]
+        fn remove_alt(this, index: u64) => this.db.netnode_altdel(this.id.get(), index, ATAG);
 
-    /// Delete every alt value.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::altdel_all", "netnode_altdel_all"))]
-    pub fn clear_alts(&mut self) -> Result<()> {
-        let ok = self.db.netnode_altdel_all(self.id.get(), ATAG);
-        self.checked(ok, "clear_alts")
-    }
+        /// Delete every alt value.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::altdel_all", "netnode_altdel_all"))]
+        fn clear_alts(this) => this.db.netnode_altdel_all(this.id.get(), ATAG);
 
-    /// Set the sup byte object at `index` (max 1024 bytes).
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::supset", "netnode_supset"))]
-    pub fn set_sup(&mut self, index: u64, value: &[u8]) -> Result<()> {
-        let ok = self.db.netnode_supset(self.id.get(), index, value, STAG);
-        self.checked(ok, "set_sup")
-    }
+        /// Set the sup byte object at `index` (max 1024 bytes).
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::supset", "netnode_supset"))]
+        fn set_sup(this, index: u64, value: &[u8]) => this.db.netnode_supset(this.id.get(), index, value, STAG);
 
-    /// Delete the sup byte object at `index`.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::supdel", "netnode_supdel"))]
-    pub fn remove_sup(&mut self, index: u64) -> Result<()> {
-        let ok = self.db.netnode_supdel(self.id.get(), index, STAG);
-        self.checked(ok, "remove_sup")
-    }
+        /// Delete the sup byte object at `index`.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::supdel", "netnode_supdel"))]
+        fn remove_sup(this, index: u64) => this.db.netnode_supdel(this.id.get(), index, STAG);
 
-    /// Delete every sup byte object.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::supdel_all", "netnode_supdel_all"))]
-    pub fn clear_sups(&mut self) -> Result<()> {
-        let ok = self.db.netnode_supdel_all(self.id.get(), STAG);
-        self.checked(ok, "clear_sups")
-    }
+        /// Delete every sup byte object.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::supdel_all", "netnode_supdel_all"))]
+        fn clear_sups(this) => this.db.netnode_supdel_all(this.id.get(), STAG);
 
-    /// Set the hash value for `key` to raw bytes (max 1024 bytes).
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::hashset", "netnode_hashset"))]
-    pub fn set_hash(&mut self, key: &str, value: &[u8]) -> Result<()> {
-        let ok = self.db.netnode_hashset(self.id.get(), key, value, HTAG);
-        self.checked(ok, "set_hash")
-    }
+        /// Set the hash value for `key` to raw bytes (max 1024 bytes).
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::hashset", "netnode_hashset"))]
+        fn set_hash(this, key: &str, value: &[u8]) => this.db.netnode_hashset(this.id.get(), key, value, HTAG);
 
-    /// Set the hash value for `key` to an integer.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::hashset", "netnode_hashset_long"))]
-    pub fn set_hash_int(&mut self, key: &str, value: u64) -> Result<()> {
-        let ok = self
-            .db
-            .netnode_hashset_long(self.id.get(), key, value, HTAG);
-        self.checked(ok, "set_hash_int")
-    }
+        /// Set the hash value for `key` to an integer.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::hashset", "netnode_hashset_long"))]
+        fn set_hash_int(this, key: &str, value: u64) => this.db.netnode_hashset_long(this.id.get(), key, value, HTAG);
 
-    /// Delete the hash value for `key`.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::hashdel", "netnode_hashdel"))]
-    pub fn remove_hash(&mut self, key: &str) -> Result<()> {
-        let ok = self.db.netnode_hashdel(self.id.get(), key, HTAG);
-        self.checked(ok, "remove_hash")
-    }
+        /// Delete the hash value for `key`.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::hashdel", "netnode_hashdel"))]
+        fn remove_hash(this, key: &str) => this.db.netnode_hashdel(this.id.get(), key, HTAG);
 
-    /// Delete every hash entry.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::hashdel_all", "netnode_hashdel_all"))]
-    pub fn clear_hash(&mut self) -> Result<()> {
-        let ok = self.db.netnode_hashdel_all(self.id.get(), HTAG);
-        self.checked(ok, "clear_hash")
-    }
+        /// Delete every hash entry.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::hashdel_all", "netnode_hashdel_all"))]
+        fn clear_hash(this) => this.db.netnode_hashdel_all(this.id.get(), HTAG);
 
-    /// Store the default blob (`start = 0`), replacing any existing one.
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
-    #[doc(alias("netnode::setblob", "netnode_setblob"))]
-    pub fn set_blob(&mut self, value: &[u8]) -> Result<()> {
-        let ok = self.db.netnode_setblob(self.id.get(), value, 0, BTAG);
-        self.checked(ok, "set_blob")
-    }
+        /// Store the default blob (`start = 0`), replacing any existing one.
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write.
+        #[doc(alias("netnode::setblob", "netnode_setblob"))]
+        fn set_blob(this, value: &[u8]) => this.db.netnode_setblob(this.id.get(), value, 0, BTAG);
 
-    /// Delete the default blob (`start = 0`).
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the kernel rejects the write (returning no freed slots).
-    #[doc(alias("netnode::delblob", "netnode_delblob"))]
-    pub fn remove_blob(&mut self) -> Result<()> {
-        let freed = self.db.netnode_delblob(self.id.get(), 0, BTAG);
-        self.checked(freed >= 0, "remove_blob")
+        /// Delete the default blob (`start = 0`).
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the kernel rejects the write (returning no freed slots).
+        #[doc(alias("netnode::delblob", "netnode_delblob"))]
+        fn remove_blob(this) => this.db.netnode_delblob(this.id.get(), 0, BTAG) >= 0;
+
+        /// Rename the node (an empty name clears it).
+        ///
+        /// # Errors
+        /// [`Error::WriteRejected`] if the name is already taken.
+        #[doc(alias("netnode::rename", "netnode_rename"))]
+        fn rename(this, name: &str) => this.db.netnode_rename(this.id.get(), name);
     }
 
     /// Store a typed value under hash `key`.
@@ -600,16 +565,6 @@ impl NetnodeMut<'_> {
         })?;
         let ok = self.db.netnode_setblob(self.id.get(), &bytes, index, BTAG);
         self.checked(ok, "put_serde_at")
-    }
-
-    /// Rename the node (an empty name clears it).
-    ///
-    /// # Errors
-    /// [`Error::WriteRejected`] if the name is already taken.
-    #[doc(alias("netnode::rename", "netnode_rename"))]
-    pub fn rename(&mut self, name: &str) -> Result<()> {
-        let ok = self.db.netnode_rename(self.id.get(), name);
-        self.checked(ok, "rename")
     }
 
     /// Delete the node and every array attached to it.
