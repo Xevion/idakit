@@ -302,6 +302,25 @@ macro_rules! netnode_reads {
         pub fn contains(&self, key: &str) -> bool {
             self.hash(key).is_some()
         }
+
+        /// The `serde` value under hash `key`, or `None` if absent or undecodable.
+        #[cfg(feature = "serde")]
+        #[inline]
+        #[must_use]
+        pub fn get_serde<T: ::serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
+            self.hash(key)
+                .and_then(|bytes| ::postcard::from_bytes(&bytes).ok())
+        }
+
+        /// The `serde` value in the blob at `index`, or `None` if absent or undecodable.
+        #[cfg(feature = "serde")]
+        #[inline]
+        #[must_use]
+        pub fn get_serde_at<T: ::serde::de::DeserializeOwned>(&self, index: u64) -> Option<T> {
+            self.db
+                .netnode_getblob(self.id.get(), index, $crate::netnode::BTAG)
+                .and_then(|bytes| ::postcard::from_bytes(&bytes).ok())
+        }
     };
 }
 
@@ -526,6 +545,33 @@ impl NetnodeMut<'_> {
     /// [`Error::WriteRejected`] if the kernel rejects the write.
     pub fn remove(&mut self, key: &str) -> Result<()> {
         self.remove_hash(key)
+    }
+
+    /// Store `value` under hash `key` via serde (postcard); capped at 1024 bytes.
+    ///
+    /// # Errors
+    /// [`Error::SerializeFailed`] on an encoding failure, or [`Error::WriteRejected`] if the kernel
+    /// rejects the write (e.g. over the cap).
+    #[cfg(feature = "serde")]
+    pub fn put_serde<T: ::serde::Serialize>(&mut self, key: &str, value: &T) -> Result<()> {
+        let bytes = ::postcard::to_allocvec(value).map_err(|e| Error::SerializeFailed {
+            reason: e.to_string(),
+        })?;
+        self.set_hash(key, &bytes)
+    }
+
+    /// Store `value` in the blob at `index` via serde (postcard); uncapped.
+    ///
+    /// # Errors
+    /// [`Error::SerializeFailed`] on an encoding failure, or [`Error::WriteRejected`] if the kernel
+    /// rejects the write.
+    #[cfg(feature = "serde")]
+    pub fn put_serde_at<T: ::serde::Serialize>(&mut self, index: u64, value: &T) -> Result<()> {
+        let bytes = ::postcard::to_allocvec(value).map_err(|e| Error::SerializeFailed {
+            reason: e.to_string(),
+        })?;
+        let ok = self.db.netnode_setblob(self.id.get(), &bytes, index, BTAG);
+        self.checked(ok, "put_serde_at")
     }
 
     /// Rename the node (an empty name clears it).

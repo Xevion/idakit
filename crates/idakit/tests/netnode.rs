@@ -14,6 +14,32 @@ fn netnode_roundtrip() {
     common::with_canonical_db(run);
 }
 
+#[cfg(feature = "serde")]
+#[test]
+fn netnode_serde_roundtrip() {
+    common::with_canonical_db(serde_run);
+}
+
+#[cfg(feature = "serde")]
+fn serde_run(idb: &mut idakit::Database) {
+    let name = "$ idakit.netnode.serde";
+    let value: (u32, Vec<String>) = (0xbeef, vec!["a".into(), "b".into()]);
+
+    let id = {
+        let mut node = idb.netnode_mut(name);
+        node.put_serde("cfg", &value).expect("put_serde"); // hash-backed
+        node.put_serde_at(1, &value).expect("put_serde_at"); // blob-backed
+        node.id()
+    };
+
+    let node = idb.netnode_at(id);
+    assert!(node.get_serde::<(u32, Vec<String>)>("cfg").as_ref() == Some(&value));
+    assert!(node.get_serde_at::<(u32, Vec<String>)>(1).as_ref() == Some(&value));
+    assert!(node.get_serde::<(u32, Vec<String>)>("missing").is_none());
+
+    idb.netnode_mut(name).kill();
+}
+
 fn run(idb: &mut idakit::Database) {
     let name = "$ idakit.netnode.roundtrip";
 

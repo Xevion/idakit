@@ -14,8 +14,8 @@ build:
 # .config/nextest.toml and skip without their preconditions. Doctests run separately --
 # nextest doesn't cover them.
 test:
-    cargo nextest run --workspace
-    cargo test --workspace --doc
+    cargo nextest run --workspace --all-features
+    cargo test --workspace --all-features --doc
 
 fmt: fmt-rust fmt-cpp
 
@@ -103,7 +103,7 @@ sanitize mode="address":
     cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu -p idakit --test roundtrip
 
 clippy:
-    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Build API docs, warnings-as-errors (broken links, bad code blocks, bare URLs, invalid HTML
 # tags in example doc comments all fail). Default scrapes example call-sites onto each item
@@ -111,7 +111,7 @@ clippy:
 # runtime -- CI and `check` use it. Both pass --examples so example `//!` doc comments are
 # linted too, not just the library crates.
 doc mode="scrape":
-    RUSTDOCFLAGS="-D warnings" {{ if mode == "hermetic" { "DOCS_RS=1 cargo doc --workspace --no-deps --examples" } else { "cargo +nightly doc --workspace --no-deps --examples -Z rustdoc-scrape-examples" } }}
+    RUSTDOCFLAGS="-D warnings" {{ if mode == "hermetic" { "DOCS_RS=1 cargo doc --workspace --all-features --no-deps --examples" } else { "cargo +nightly doc --workspace --all-features --no-deps --examples -Z rustdoc-scrape-examples" } }}
 
 # Lint the GitHub Actions workflows (auto-discovers .github/workflows/).
 actionlint:
@@ -131,5 +131,5 @@ readme-check:
 # fetch-corpus step exports IDAKIT_CORPUS_MANIFEST, so the dedicated tests source the same
 # host-independent canonical fixture the corpus matrix uses.
 ci-test:
-    cargo nextest run --workspace --no-fail-fast
-    cargo test --workspace --doc
+    cargo nextest run --workspace --all-features --no-fail-fast
+    cargo test --workspace --all-features --doc

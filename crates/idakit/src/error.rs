@@ -284,6 +284,14 @@ pub enum Error {
         arg: &'static str,
     },
 
+    /// A value could not be serialized for netnode storage (a postcard encoding failure).
+    #[cfg(feature = "serde")]
+    #[snafu(display("could not serialize value for netnode storage: {reason}"))]
+    SerializeFailed {
+        /// The encoder's failure description.
+        reason: String,
+    },
+
     /// The kernel tried to terminate the process with `exit(code)` mid-operation.
     ///
     /// IDA's reaction to an unrecoverable condition such as an unaccepted license. The
