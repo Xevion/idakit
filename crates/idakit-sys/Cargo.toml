@@ -33,8 +33,11 @@ libloading = "0.9.0"
 proc-macro2 = "1.0.106"
 quote = "1.0.46"
 
+# Self dev-dependency that turns on `test-shims` for this crate's own tests/examples. Keyed
+# under an alias (not the crate name) so release-please's cargo-workspace graph, which keys
+# edges on the dependency-table name, doesn't read it as an idakit-sys -> idakit-sys cycle.
 [dev-dependencies]
-idakit-sys = { path = ".", features = ["test-shims"] }
+idakit-sys-shims = { path = ".", package = "idakit-sys", features = ["test-shims"] }
 
 [[example]]
 name = "read"
