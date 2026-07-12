@@ -140,7 +140,12 @@ impl Database {
     #[inline]
     #[must_use]
     pub fn at_mut(&mut self, address: Address) -> LocationMut<'_> {
-        LocationMut { db: self, address }
+        LocationMut {
+            db: self,
+            address,
+            auto_invalidate: true,
+            pending: PendingInvalidation::None,
+        }
     }
 
     /// Runs `f` against a write cursor at `address`.
@@ -282,13 +287,52 @@ impl<'db> Location<'db> {
 /// accessors are inherent here, so a read-modify-write ([`comment`](Self::comment) then
 /// [`set_comment`](Self::set_comment)) stays on one cursor. Not `Copy`, and not obtainable from a
 /// borrowing [`Location`].
+///
+/// Rename and retype writes evict this address's cached decompilation and every function that
+/// directly references it, so the next [`decompile`](Database::decompile) reflects the change.
+/// Eviction is coalesced to when the cursor drops, so a read-modify-write sweeps dependents once
+/// regardless of how many writes it made; opt out with
+/// [`auto_invalidate(false)`](Self::auto_invalidate).
 pub struct LocationMut<'db> {
     db: &'db mut Database,
     address: Address,
+    auto_invalidate: bool,
+    pending: PendingInvalidation,
+}
+
+impl<'db> LocationMut<'db> {
+    /// The database this cursor holds exclusively.
+    #[inline]
+    pub(crate) fn db(&self) -> &Database {
+        self.db
+    }
+
+    /// The database this cursor holds exclusively, mutably.
+    #[inline]
+    pub(crate) fn db_mut(&mut self) -> &mut Database {
+        self.db
+    }
 }
 
 impl LocationMut<'_> {
     location_reads!();
+
+    /// Toggle automatic decompilation-cache invalidation on the writes this cursor performs.
+    ///
+    /// On by default: this cursor's rename and retype writes evict this address's cached
+    /// decompilation and every function whose pseudocode renders it when the cursor drops, so the
+    /// next [`decompile`](Database::decompile) reflects the change. Disable it for a bulk edit
+    /// where you will invalidate once at the end (see [`Database::clear_decompilation_cache`]).
+    #[must_use]
+    pub fn auto_invalidate(mut self, on: bool) -> Self {
+        self.auto_invalidate = on;
+        self
+    }
+
+    /// Widen the eviction this cursor will apply on drop to at least `level`.
+    pub(crate) fn queue_invalidation(&mut self, level: PendingInvalidation) {
+        self.pending = self.pending.max(level);
+    }
 
     /// Rename the item at this address.
     ///
@@ -298,11 +342,15 @@ impl LocationMut<'_> {
     #[doc(alias("set_name"))]
     pub fn rename(&mut self, name: impl AsRef<str>) -> Result<()> {
         let ok = with_cstr(name.as_ref(), "name", |p| self.db.set_name(self.address, p))?;
-        if ok {
+        let out = if ok {
             Ok(())
         } else {
             Err(self.rejected("rename"))
+        };
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
         }
+        out
     }
 
     /// Set the comment at this address; `repeatable` repeats it at every reference.
@@ -361,7 +409,11 @@ impl LocationMut<'_> {
     /// reshaping the item to the type, or [`Error::InteriorNul`] if the input contains a NUL byte.
     #[doc(alias("apply_tinfo", "apply_cdecl", "apply_named_type"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
-        self.db.apply_type_at(self.address, &ty.into())
+        let out = self.db.apply_type_at(self.address, &ty.into());
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Apply a pre-built [`TypeInfo`] handle to the item at this address.
@@ -385,7 +437,11 @@ impl LocationMut<'_> {
     #[doc(alias("apply_tinfo"))]
     pub fn apply_type(&mut self, ty: &TypeInfo) -> Result<()> {
         let res = self.db.apply_tinfo(self.address, ty.tinfo(), 0);
-        tinfo_apply_result(res, self.address)
+        let out = tinfo_apply_result(res, self.address);
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Clear any type applied to the item at this address, the inverse of [`set_type`](Self::set_type).
@@ -397,10 +453,14 @@ impl LocationMut<'_> {
     /// [`Error::WriteRejected`] if the kernel refuses to remove an existing type.
     #[doc(alias("del_tinfo", "set_tinfo"))]
     pub fn clear_type(&mut self) -> Result<()> {
-        match self.db.clear_type(self.address).code {
+        let out = match self.db.clear_type(self.address).code {
             sys::IDAKIT_TYPE_OK => Ok(()),
             _ => Err(self.rejected("clear_type")),
+        };
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
         }
+        out
     }
 
     /// Builds an [`Error::WriteRejected`] for `op` from the kernel's current error channel.
@@ -413,4 +473,40 @@ impl LocationMut<'_> {
             reason,
         }
     }
+}
+
+impl Drop for LocationMut<'_> {
+    /// Applies the queued decompilation-cache eviction once, after all of this cursor's writes.
+    fn drop(&mut self) {
+        if !self.auto_invalidate {
+            return;
+        }
+        match self.pending {
+            PendingInvalidation::None => {}
+            PendingInvalidation::SelfOnly => {
+                self.db.invalidate_decompilation(self.address);
+            }
+            PendingInvalidation::Dependents => {
+                self.db.invalidate_decompilation_dependents(self.address);
+            }
+        }
+    }
+}
+
+/// The strongest decompilation-cache eviction a cursor's writes have queued, applied once on
+/// [`Drop`] so a multi-write read-modify-write sweeps dependents at most once.
+///
+/// Ordered by breadth: a later write can only widen the pending eviction, never narrow it. Nothing
+/// can observe the cache between a write and the cursor's drop, since the cursor holds the database
+/// exclusively, so deferring is invisible apart from the coalescing.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum PendingInvalidation {
+    /// No write needs eviction.
+    None,
+    /// Only this address's own decompilation is stale (e.g. a parameter rename, invisible outside
+    /// the function itself).
+    SelfOnly,
+    /// This address and its dependents are stale (a rename or retype re-renders every reference
+    /// site).
+    Dependents,
 }

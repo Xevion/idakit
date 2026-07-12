@@ -54,25 +54,30 @@ fn name_and_comment(idb: &mut Database, ea: Address) -> Result<(), Error> {
     let original_name = idb.at(ea).name();
     println!("  {ea:#x} name before: {original_name:?}");
 
-    let mut loc = idb.at_mut(ea);
-    loc.rename("idakit_edit_demo")?;
-    loc.set_comment("renamed by the edits example", false)?;
-    loc.set_comment("shown at every xref", true)?;
-    // Read back through the SAME cursor: no drop-and-reborrow between the write and the read.
-    println!("  name after:      {:?}", loc.name());
-    println!("  regular    cmt:  {:?}", loc.comment());
-    println!("  repeatable cmt:  {:?}", loc.repeatable_comment());
+    {
+        // Scope the cursor: its Drop coalesces invalidation, holding the borrow until then.
+        let mut loc = idb.at_mut(ea);
+        loc.rename("idakit_edit_demo")?;
+        loc.set_comment("renamed by the edits example", false)?;
+        loc.set_comment("shown at every xref", true)?;
+        // Read back through the SAME cursor: no drop-and-reborrow between the write and the read.
+        println!("  name after:      {:?}", loc.name());
+        println!("  regular    cmt:  {:?}", loc.comment());
+        println!("  repeatable cmt:  {:?}", loc.repeatable_comment());
+    }
 
     // Patch a few bytes, confirm the read-back, then restore the originals.
     let original_bytes = idb.at(ea).bytes(4);
     let flipped: Vec<u8> = original_bytes.iter().map(|b| !b).collect();
-    let mut loc = idb.at_mut(ea);
-    loc.patch(&flipped)?;
-    println!(
-        "  patched 4 bytes, read-back matches: {}",
-        loc.bytes(4) == flipped
-    );
-    loc.patch(&original_bytes)?;
+    {
+        let mut loc = idb.at_mut(ea);
+        loc.patch(&flipped)?;
+        println!(
+            "  patched 4 bytes, read-back matches: {}",
+            loc.bytes(4) == flipped
+        );
+        loc.patch(&original_bytes)?;
+    }
 
     if let Some(name) = original_name {
         idb.at_mut(ea).rename(name)?;

@@ -78,6 +78,20 @@ struct expr_gap_visitor_t : public ctree_visitor_t {
   }
 };
 
+// Tag-stripped pseudocode text from cf's already-generated ctext (get_pseudocode generates it on
+// first use, so this is a no-op after the first call unless refresh_func_ctext invalidated it).
+rust::String render_pseudocode(cfunc_t *cf) {
+  const strvec_t &sv = cf->get_pseudocode();
+  qstring out;
+  for (size_t i = 0; i < sv.size(); ++i) {
+    qstring line;
+    tag_remove(&line, sv[i].line);
+    out.append(line);
+    out.append('\n');
+  }
+  return rust::String(out.c_str(), out.length());
+}
+
 } // namespace
 
 std::unique_ptr<::cfuncptr_t> decompile(uint64_t ea) {
@@ -110,15 +124,13 @@ std::unique_ptr<::cfuncptr_t> decompile(uint64_t ea) {
 
 rust::String cfunc_pseudocode(const ::cfuncptr_t &cf) {
   cfunc_t *p = cf;
-  const strvec_t &sv = p->get_pseudocode();
-  qstring out;
-  for (size_t i = 0; i < sv.size(); ++i) {
-    qstring line;
-    tag_remove(&line, sv[i].line);
-    out.append(line);
-    out.append('\n');
-  }
-  return rust::String(out.c_str(), out.length());
+  return render_pseudocode(p);
+}
+
+rust::String cfunc_refresh_text(const ::cfuncptr_t &cf) {
+  cfunc_t *p = cf;
+  p->refresh_func_ctext();
+  return render_pseudocode(p);
 }
 
 CtreeCounts cfunc_counts(const ::cfuncptr_t &cf) {

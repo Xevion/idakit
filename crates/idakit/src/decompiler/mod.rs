@@ -106,14 +106,18 @@ impl Database {
         self.hexrays_ready.get() && self.has_cached_cfunc(address)
     }
 
-    /// Evict the decompilation of `entry` and of every function whose pseudocode names it, so a
-    /// prototype or name change re-renders at all reference sites. A no-op if the decompiler was
-    /// never initialized.
+    /// Evict the decompilation of `entry` and of every function that directly references it, so a
+    /// rename or retype re-renders at those sites. A no-op if the decompiler was never initialized.
     ///
     /// Reference sites are found through every cross-reference to `entry`, not just calls and jumps:
     /// an address taken into a function pointer or vtable is a data reference, yet Hex-Rays still
     /// prints the name there. Any reference whose source sits inside a function marks that function;
     /// a source outside every function resolves to `BADADDR` and is skipped.
+    ///
+    /// Only direct references are marked. A type change that Hex-Rays propagates across a call, into
+    /// a function that has no cross-reference to `entry`, leaves that function's cached text stale;
+    /// reach for [`clear_decompilation_cache`](Self::clear_decompilation_cache) when an edit's
+    /// effects can travel past direct references.
     pub(crate) fn invalidate_decompilation_dependents(&mut self, entry: Address) {
         if !self.hexrays_ready.get() {
             return;
@@ -178,6 +182,20 @@ impl<'db> DecompiledFunction<'db> {
     #[doc(alias("get_pseudocode"))]
     pub fn pseudocode(&self) -> Option<String> {
         sys::cfunc_pseudocode(self.cfunc()).ok()
+    }
+
+    /// Re-print the pseudocode from this handle's current ctree, then return it.
+    ///
+    /// Roughly 70x cheaper than a fresh [`decompile`](Database::decompile), since it re-walks the
+    /// already-decompiled ctree instead of running the microcode pipeline again: a rename resolves
+    /// fresh, since ctree nodes reference callees and symbols by address, not by baked-in name. It
+    /// does not reflect a structural, type, or prototype change made after this handle was
+    /// produced, since those change the ctree itself, not just how it prints; get a fresh handle
+    /// through [`decompile`](Database::decompile) for that.
+    #[must_use]
+    #[doc(alias("refresh_func_ctext"))]
+    pub fn refresh_text(&self) -> Option<String> {
+        sys::cfunc_refresh_text(self.cfunc()).ok()
     }
 
     /// Counts of statements, expressions, and call sites in the ctree.

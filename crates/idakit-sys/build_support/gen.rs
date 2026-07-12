@@ -1756,6 +1756,21 @@ pub const HEXRAYS: Domain = Domain {
             doc: "Statement, expression, and call-site counts of `cf`'s ctree.",
         },
         FnSpec {
+            name: "cfunc_refresh_text",
+            receiver: None,
+            args: &[Arg {
+                name: "cf",
+                ty: ArgTy::ExternRef("CFunc"),
+            }],
+            ret: RetKind::ResultString,
+            body: BodyKind::Custom,
+            doc: "Re-print `cf`'s pseudocode from its current ctree (`refresh_func_ctext`), then \
+                  return it; `Err` if the SDK cannot produce it. Cheap compared to a re-decompile, \
+                  since it walks the already-decompiled ctree, but reflects only what the ctree \
+                  already encodes (a rename resolves fresh; a structural or type change needs a \
+                  fresh [`decompile`]).",
+        },
+        FnSpec {
             name: "cfunc_expr_gap",
             receiver: None,
             args: &[Arg {
