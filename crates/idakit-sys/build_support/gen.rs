@@ -1785,8 +1785,8 @@ pub const HEXRAYS: Domain = Domain {
     ],
 };
 
-/// The type-write domain: parse, resolve, build, and apply `tinfo`s, define types into the local
-/// til, and edit UDT/enum members. Every call returns a [`TypeWriteResult`] (or [`SigWriteResult`]
+/// The type-write domain: parse, resolve, build, and apply `tinfo`s, define/delete/rename types in
+/// the local til, and edit UDT/enum members. Every call returns a [`TypeWriteResult`] (or [`SigWriteResult`]
 /// for the two signature-surgery fns that also report the parameter count) in place of the raw
 /// facade's `int` code plus error-buffer out-param: the struct's `code` carries the same return
 /// value and `reason` the captured diagnostic. Bodies are hand-written in `facade/gen_type_build.cc`.
@@ -1933,6 +1933,36 @@ pub const TYPE_BUILD: Domain = Domain {
             body: BodyKind::Custom,
             doc: "Parse the C declaration(s) in `input` into the local til. `code` is the \
                   parse-error count (`0` = ok).",
+        },
+        FnSpec {
+            name: "delete_type",
+            receiver: None,
+            args: &[Arg {
+                name: "type_name",
+                ty: ArgTy::Str,
+            }],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Delete the named type `type_name` from the local til, the inverse of \
+                  [`define_type`]. See the `IDAKIT_TEDIT_*` codes.",
+        },
+        FnSpec {
+            name: "rename_type",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "new_name",
+                    ty: ArgTy::Str,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Rename the named type `type_name` to `new_name` in place, preserving its \
+                  ordinal. Same `IDAKIT_TEDIT_*` codes as the `udt_*`/`enum_*` fns.",
         },
         FnSpec {
             name: "func_set_rettype",

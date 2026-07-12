@@ -404,6 +404,44 @@ TypeWriteResult define_type(rust::Str input) {
   }
 }
 
+TypeWriteResult delete_type(rust::Str type_name) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      // NTF_TYPE selects the type namespace; without it del_named_type looks up a symbol name
+      // instead and reports the type as not found.
+      bool deleted = del_named_type(get_idati(), tn.c_str(), NTF_TYPE);
+      return deleted ? IDAKIT_TYPE_OK : (int)TERR_SAVE_ERROR;
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+TypeWriteResult rename_type(rust::Str type_name, rust::Str new_name) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    std::string nn(new_name.data(), new_name.size());
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      return (int)tif.rename_type(nn.c_str());
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
 TypeWriteResult func_set_rettype(uint64_t ea, rust::Slice<const uint8_t> recipe) {
   try {
     TypeWriteResult out{};

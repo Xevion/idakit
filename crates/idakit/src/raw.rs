@@ -454,6 +454,14 @@ impl Database {
         sys::define_type(input)
     }
 
+    pub(crate) fn delete_type(&mut self, type_name: &str) -> sys::TypeWriteResult {
+        sys::delete_type(type_name)
+    }
+
+    pub(crate) fn rename_type(&mut self, type_name: &str, new_name: &str) -> sys::TypeWriteResult {
+        sys::rename_type(type_name, new_name)
+    }
+
     pub(crate) fn func_flags(&self, address: Address) -> u64 {
         sys::func_flags(address.get())
     }

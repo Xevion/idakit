@@ -78,6 +78,60 @@ impl TypesMut<'_> {
         }
     }
 
+    /// Delete the named type `name` from the database's local type library.
+    ///
+    /// The til-level inverse of [`define`](Self::define): removes a struct, union, enum, or
+    /// typedef entry outright. Not idempotent: deleting a name that does not exist is
+    /// [`TypeWriteError::NoType`], the same treatment [`MemberEdit::delete`] gives an
+    /// unresolved member.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("struct Scratch { int x; };")?;
+    /// db.types_mut().delete("Scratch")?;
+    /// assert!(!db.named_types().any(|t| t.name() == "Scratch"));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`] if no type named `name` exists, [`TypeWriteError::Rejected`]
+    /// if the kernel refuses the deletion, or [`Error::InteriorNul`] if `name` contains a NUL
+    /// byte.
+    #[doc(alias("del_named_type"))]
+    pub fn delete(&mut self, name: impl AsRef<str>) -> Result<()> {
+        let name = name.as_ref();
+        let result = self.db.delete_type(nul_checked(name, "name")?);
+        edit_result(result.code, result.reason, name, None)
+    }
+
+    /// Rename the named type `name` to `new_name`, in place.
+    ///
+    /// Preserves the type's ordinal and every reference to it: the underlying SDK call
+    /// (`rename_type`) updates the til entry's name without reallocating it.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("struct Old { int x; };")?;
+    /// db.types_mut().rename("Old", "New")?;
+    /// assert!(db.named_types().any(|t| t.name() == "New"));
+    /// assert!(!db.named_types().any(|t| t.name() == "Old"));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`] if no type named `name` exists, [`TypeWriteError::Rejected`]
+    /// (e.g. [`TypeEditCode::DupName`] if `new_name` is already taken), or
+    /// [`Error::InteriorNul`] if either name contains a NUL byte.
+    #[doc(alias("rename_type"))]
+    pub fn rename(&mut self, name: impl AsRef<str>, new_name: impl AsRef<str>) -> Result<()> {
+        let name = name.as_ref();
+        let new_name = nul_checked(new_name.as_ref(), "new name")?;
+        let result = self.db.rename_type(nul_checked(name, "name")?, new_name);
+        edit_result(result.code, result.reason, name, None)
+    }
+
     /// Open the existing named type `name` for member surgery.
     ///
     /// Infallible to acquire: a missing type surfaces as [`TypeWriteError::NoType`] from the first
