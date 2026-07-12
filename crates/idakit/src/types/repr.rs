@@ -1,11 +1,12 @@
-//! [`MemberRepr`], a struct/union member's value representation.
+//! [`ValueRepr`], a struct/union member's or enum's value representation.
 //!
 //! An invented, closed subset of IDA's `value_repr_t` (`typeinf.hpp`): the bit-packed struct
 //! carries a value-type nibble (`FRB_*`) plus flag bits, and several of its value types (enum-
 //! linked, offset, string-literal, struct-offset, custom, float, segment) need extra union
 //! payload `value_repr_t` carries alongside the nibble. [`NumberFormat`] models only the
-//! non-info-carrying subset (binary/octal/hexadecimal/decimal/char); a member using one of the
-//! unmodeled forms reads back as `None` from `TypeMember::repr` rather than a mislabeled variant.
+//! non-info-carrying subset (binary/octal/hexadecimal/decimal/char); a member or enum using one
+//! of the unmodeled forms reads back as `None` from `TypeMember::repr`/`TypeShape::Enum::repr`
+//! rather than a mislabeled variant.
 
 /// How a struct/union member's numeric value displays.
 ///
@@ -63,17 +64,19 @@ impl NumberFormat {
     }
 }
 
-/// A struct/union member's value representation: radix or char format, forced sign, and leading
-/// zeros.
+/// A struct/union member's or enum's value representation: radix or char format, forced sign,
+/// and leading zeros.
 ///
-/// Read from `TypeMember::repr` (`crate::types::TypeMember::repr`) or written through
-/// [`MemberEdit::set_repr`](crate::types::MemberEdit::set_repr). Models only the numeric subset
-/// of `value_repr_t`; the info-carrying forms are out of scope. See the module docs.
+/// Read from `TypeMember::repr` (`crate::types::TypeMember::repr`) or `TypeShape::Enum::repr`
+/// (`crate::types::TypeShape::Enum`), and written through
+/// [`MemberEdit::set_repr`](crate::types::MemberEdit::set_repr) or
+/// [`TypeEdit::set_repr`](crate::types::TypeEdit::set_repr). Models only the numeric subset of
+/// `value_repr_t`; the info-carrying forms are out of scope. See the module docs.
 ///
 /// ```
-/// use idakit::types::{MemberRepr, NumberFormat};
+/// use idakit::types::{NumberFormat, ValueRepr};
 ///
-/// let repr = MemberRepr {
+/// let repr = ValueRepr {
 ///     format: NumberFormat::Hexadecimal,
 ///     signed: true,
 ///     leading_zeros: false,
@@ -83,7 +86,7 @@ impl NumberFormat {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[doc(alias("value_repr_t"))]
-pub struct MemberRepr {
+pub struct ValueRepr {
     /// The display format.
     pub format: NumberFormat,
     /// Force a signed display (`FRB_SIGNED`).

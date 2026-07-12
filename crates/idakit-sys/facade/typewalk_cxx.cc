@@ -191,7 +191,13 @@ uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_s
     rust::Slice<const EnumConstInfo> slice =
         cs.empty() ? rust::Slice<const EnumConstInfo>()
                    : rust::Slice<const EnumConstInfo>(cs.data(), cs.size());
-    vis->fill_enum(id, underlying, slice, size, has_size, t.is_bitmask_enum());
+    value_repr_t repr;
+    bool modeled = t.get_enum_repr(&repr) == TERR_OK && is_modeled_frb_vtype(repr.get_vtype());
+    uint32_t repr_vtype = modeled ? (uint32_t)repr.get_vtype() : 0;
+    bool repr_signed = modeled && repr.is_signed();
+    bool repr_leading_zeros = modeled && repr.has_lzeroes();
+    vis->fill_enum(id, underlying, slice, size, has_size, t.is_bitmask_enum(), repr_vtype,
+                   repr_signed, repr_leading_zeros);
   }
   return id;
 }

@@ -60,6 +60,9 @@ pub trait TypeWalkSink {
         has_size: u32,
     );
     /// Fills the enum placeholder `id` with its `consts` over the already-visited `underlying`.
+    /// `repr_vtype`/`repr_signed`/`repr_leading_zeros` are the enum's own `value_repr_t`, the
+    /// same shape [`MemberInfo`](ffi::MemberInfo) carries per-member (0 = `FRB_UNK`/unmodeled).
+    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     fn fill_enum(
         &mut self,
         id: u32,
@@ -68,6 +71,9 @@ pub trait TypeWalkSink {
         size: u64,
         has_size: u32,
         is_bitmask: bool,
+        repr_vtype: u32,
+        repr_signed: bool,
+        repr_leading_zeros: bool,
     );
     /// Fills the typedef placeholder `id` with its already-visited `underlying`.
     fn fill_typedef(&mut self, id: u32, underlying: u32);
@@ -139,6 +145,7 @@ impl TypeWalkVisitor {
         self.sink()
             .fill_struct(id, is_union, members, size, has_size);
     }
+    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     fn fill_enum(
         &mut self,
         id: u32,
@@ -147,9 +154,21 @@ impl TypeWalkVisitor {
         size: u64,
         has_size: u32,
         is_bitmask: bool,
+        repr_vtype: u32,
+        repr_signed: bool,
+        repr_leading_zeros: bool,
     ) {
-        self.sink()
-            .fill_enum(id, underlying, consts, size, has_size, is_bitmask);
+        self.sink().fill_enum(
+            id,
+            underlying,
+            consts,
+            size,
+            has_size,
+            is_bitmask,
+            repr_vtype,
+            repr_signed,
+            repr_leading_zeros,
+        );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
         self.sink().fill_typedef(id, underlying);
@@ -247,6 +266,7 @@ mod ffi {
             size: u64,
             has_size: u32,
         );
+        #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
         fn fill_enum(
             self: &mut TypeWalkVisitor,
             id: u32,
@@ -255,6 +275,9 @@ mod ffi {
             size: u64,
             has_size: u32,
             is_bitmask: bool,
+            repr_vtype: u32,
+            repr_signed: bool,
+            repr_leading_zeros: bool,
         );
         fn fill_typedef(self: &mut TypeWalkVisitor, id: u32, underlying: u32);
     }

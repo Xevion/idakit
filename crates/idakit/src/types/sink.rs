@@ -8,7 +8,7 @@
 
 use idakit_sys::{EnumConstInfo, MemberInfo, TypeWalkSink};
 
-use super::{EnumMember, MemberRepr, NumberFormat, TypeBuilder, TypeId, TypeMember};
+use super::{EnumMember, NumberFormat, TypeBuilder, TypeId, TypeMember, ValueRepr};
 use crate::arena::Idx;
 
 /// A walk context the shared type callbacks push interned types into. The u32-handle methods
@@ -54,6 +54,7 @@ pub(crate) trait TypeSink {
         self.type_builder()
             .fill_struct(tid(id), is_union, members, size, has_size);
     }
+    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     fn fill_enum(
         &mut self,
         id: u32,
@@ -62,6 +63,9 @@ pub(crate) trait TypeSink {
         size: u64,
         has_size: u32,
         is_bitmask: bool,
+        repr_vtype: u32,
+        repr_signed: bool,
+        repr_leading_zeros: bool,
     ) {
         self.type_builder().fill_enum(
             tid(id),
@@ -70,6 +74,9 @@ pub(crate) trait TypeSink {
             size,
             has_size,
             is_bitmask,
+            repr_vtype,
+            repr_signed,
+            repr_leading_zeros,
         );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
@@ -121,7 +128,7 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
                 bit_offset: m.bit_offset,
                 ty: tid(m.ty),
                 bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
-                repr: NumberFormat::from_frb(m.repr_vtype).map(|format| MemberRepr {
+                repr: NumberFormat::from_frb(m.repr_vtype).map(|format| ValueRepr {
                     format,
                     signed: m.repr_signed,
                     leading_zeros: m.repr_leading_zeros,
@@ -130,6 +137,7 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
             .collect();
         self.0.fill_struct(id, is_union, members, size, has_size);
     }
+    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     fn fill_enum(
         &mut self,
         id: u32,
@@ -138,6 +146,9 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
         size: u64,
         has_size: u32,
         is_bitmask: bool,
+        repr_vtype: u32,
+        repr_signed: bool,
+        repr_leading_zeros: bool,
     ) {
         let members = consts
             .iter()
@@ -146,8 +157,17 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
                 value: c.value,
             })
             .collect();
-        self.0
-            .fill_enum(id, underlying, members, size, has_size, is_bitmask);
+        self.0.fill_enum(
+            id,
+            underlying,
+            members,
+            size,
+            has_size,
+            is_bitmask,
+            repr_vtype,
+            repr_signed,
+            repr_leading_zeros,
+        );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
         self.0.fill_typedef(id, underlying);

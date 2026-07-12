@@ -2285,6 +2285,52 @@ pub const TYPE_BUILD: Domain = Domain {
                   `udt_*`/`enum_*` fns.",
         },
         FnSpec {
+            name: "enum_set_repr",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "vtype",
+                    ty: ArgTy::U32,
+                },
+                Arg {
+                    name: "is_signed",
+                    ty: ArgTy::Bool,
+                },
+                Arg {
+                    name: "leading_zeros",
+                    ty: ArgTy::Bool,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Set the value representation on the named enum `type_name` \
+                  (`tinfo_t::set_enum_repr`), the enum-level twin of \
+                  [`udt_set_member_repr`]. `vtype` is a `value_repr_t` FRB_* value-type nibble; \
+                  `is_signed`/`leading_zeros` set FRB_SIGNED/FRB_LZERO.",
+        },
+        FnSpec {
+            name: "enum_set_width",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "nbytes",
+                    ty: ArgTy::I32,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Set the storage width in bytes of the named enum `type_name`'s underlying type \
+                  (`tinfo_t::set_enum_width`); `0` means unspecified.",
+        },
+        FnSpec {
             name: "enum_set_member_value",
             receiver: None,
             args: &[

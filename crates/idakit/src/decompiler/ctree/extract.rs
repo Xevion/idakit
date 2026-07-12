@@ -455,6 +455,7 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             has_size,
         );
     }
+    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     fn fill_enum(
         &mut self,
         id: u32,
@@ -463,6 +464,9 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
         size: u64,
         has_size: u32,
         is_bitmask: bool,
+        repr_vtype: u32,
+        repr_signed: bool,
+        repr_leading_zeros: bool,
     ) {
         idakit_sys::TypeWalkSink::fill_enum(
             &mut SinkAdapter(self),
@@ -472,6 +476,9 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             size,
             has_size,
             is_bitmask,
+            repr_vtype,
+            repr_signed,
+            repr_leading_zeros,
         );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {

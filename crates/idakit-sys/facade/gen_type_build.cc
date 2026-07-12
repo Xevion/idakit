@@ -788,6 +788,46 @@ TypeWriteResult enum_set_bitmask(rust::Str type_name, bool on) {
   }
 }
 
+// vtype is a value_repr_t FRB_* value-type nibble, same convention as udt_set_member_repr.
+TypeWriteResult enum_set_repr(rust::Str type_name, uint32_t vtype, bool is_signed,
+                              bool leading_zeros) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      value_repr_t repr;
+      repr.set_vtype(vtype);
+      repr.set_signed(is_signed);
+      repr.set_lzeroes(leading_zeros);
+      return (int)tif.set_enum_repr(repr);
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+TypeWriteResult enum_set_width(rust::Str type_name, int32_t nbytes) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      return (int)tif.set_enum_width(nbytes);
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
 TypeWriteResult enum_set_member_value(rust::Str type_name, rust::Str member_name, uint64_t value) {
   try {
     TypeWriteResult out{};

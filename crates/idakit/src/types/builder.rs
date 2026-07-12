@@ -11,7 +11,9 @@
 
 use std::collections::HashMap;
 
-use super::{EnumMember, TypeId, TypeMember, TypeShape, TypeTable, TypeValue};
+use super::{
+    EnumMember, NumberFormat, TypeId, TypeMember, TypeShape, TypeTable, TypeValue, ValueRepr,
+};
 
 /// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeShape`]. The walker
 /// emits only these four (a non-structural type is routed to [`opaque`](TypeBuilder::opaque)
@@ -177,6 +179,7 @@ impl TypeBuilder {
         );
     }
 
+    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     pub(crate) fn fill_enum(
         &mut self,
         id: TypeId,
@@ -185,8 +188,16 @@ impl TypeBuilder {
         size: u64,
         has_size: u32,
         is_bitmask: bool,
+        repr_vtype: u32,
+        repr_signed: bool,
+        repr_leading_zeros: bool,
     ) {
         let name = self.take_name(id);
+        let repr = NumberFormat::from_frb(repr_vtype).map(|format| ValueRepr {
+            format,
+            signed: repr_signed,
+            leading_zeros: repr_leading_zeros,
+        });
         self.fill(
             id,
             TypeValue {
@@ -195,6 +206,7 @@ impl TypeBuilder {
                     underlying,
                     members,
                     is_bitmask,
+                    repr,
                 },
                 size: opt_size(size, has_size),
             },

@@ -21,7 +21,7 @@ use idakit_sys as sys;
 use crate::Database;
 use crate::error::{Error, Result};
 use crate::ffi::{nul_checked, reason_or};
-use crate::types::{MemberRepr, TypeExpr};
+use crate::types::{TypeExpr, ValueRepr};
 
 /// The SDK's `DEFMASK64` (`bmask64_t(-1)`, `typeinf.hpp`): passed as `enum_add_member`'s `bmask`
 /// so a bitmask enum falls back to using the constant's own value as its group mask; ignored by
@@ -385,6 +385,81 @@ impl TypeEdit<'_> {
         edit_result(result.code, result.reason, &type_name, None)
     }
 
+    /// Set this enum's value representation: radix or char format, forced sign, and leading
+    /// zeros.
+    ///
+    /// The enum-level sibling of [`MemberEdit::set_repr`]: `MemberEdit` edits one struct/union
+    /// field, `set_repr` here edits the whole enum's own representation. Limited to the numeric
+    /// subset [`ValueRepr`] models; see [`MemberEdit::set_repr`] for the info-carrying forms out
+    /// of scope.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// use idakit::types::{NumberFormat, ValueRepr};
+    ///
+    /// db.types_mut().define("enum idakit_enum_repr_probe { PROBE_A = 1 };")?;
+    /// let repr = ValueRepr {
+    ///     format: NumberFormat::Hexadecimal,
+    ///     signed: true,
+    ///     leading_zeros: false,
+    /// };
+    /// db.types_mut()
+    ///     .edit("idakit_enum_repr_probe")
+    ///     .set_repr(repr)?;
+    /// let ty = db.type_named("idakit_enum_repr_probe")?;
+    /// let idakit::types::TypeShape::Enum { repr: got, .. } = ty.shape() else {
+    ///     unreachable!()
+    /// };
+    /// assert!(*got == Some(repr));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`] if the enum does not exist, or [`TypeWriteError::Rejected`]
+    /// (e.g. [`TypeEditCode::BadRepr`] if the kernel rejects the combination); or
+    /// [`Error::InteriorNul`] for a NUL byte in the type name.
+    #[doc(alias("set_enum_repr"))]
+    pub fn set_repr(&mut self, repr: ValueRepr) -> Result<()> {
+        let type_name = self.name.clone();
+        let result = self.db.enum_set_repr(
+            nul_checked(&type_name, "type name")?,
+            repr.format.to_frb(),
+            repr.signed,
+            repr.leading_zeros,
+        );
+        edit_result(result.code, result.reason, &type_name, None)
+    }
+
+    /// Set the storage width, in bytes, of this enum's underlying integer type.
+    ///
+    /// `nbytes` is `0` (unspecified) or one of `1`/`2`/`4`/`8`/`16`/`32`/`64`; the width shows
+    /// through the enum's own byte size and its underlying type on the read side.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("enum idakit_enum_width_probe { PROBE_A = 1 };")?;
+    /// db.types_mut()
+    ///     .edit("idakit_enum_width_probe")
+    ///     .set_enum_width(8)?;
+    /// let ty = db.type_named("idakit_enum_width_probe")?;
+    /// assert!(ty.size() == Some(8));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`] if the enum does not exist, or [`TypeWriteError::Rejected`]
+    /// (e.g. [`TypeEditCode::EnumSize`] if the kernel rejects the width); or
+    /// [`Error::InteriorNul`] for a NUL byte in the type name.
+    pub fn set_enum_width(&mut self, nbytes: i32) -> Result<()> {
+        let type_name = self.name.clone();
+        let result = self
+            .db
+            .enum_set_width(nul_checked(&type_name, "type name")?, nbytes);
+        edit_result(result.code, result.reason, &type_name, None)
+    }
+
     /// Select the enum constant named `name` for editing.
     #[inline]
     #[must_use]
@@ -630,16 +705,16 @@ impl MemberEdit<'_> {
     /// Set this member's value representation: radix or char format, forced sign, and leading
     /// zeros.
     ///
-    /// Limited to the numeric subset [`MemberRepr`] models; setting an info-carrying
+    /// Limited to the numeric subset [`ValueRepr`] models; setting an info-carrying
     /// representation (enum-linked, offset, string literal, struct offset, custom) is out of
     /// scope.
     ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
-    /// use idakit::types::{MemberRepr, NumberFormat};
+    /// use idakit::types::{NumberFormat, ValueRepr};
     ///
     /// db.types_mut().define("struct Widget { int hp; };")?;
-    /// let repr = MemberRepr {
+    /// let repr = ValueRepr {
     ///     format: NumberFormat::Hexadecimal,
     ///     signed: true,
     ///     leading_zeros: false,
@@ -659,7 +734,7 @@ impl MemberEdit<'_> {
     /// (e.g. [`TypeEditCode::BadRepr`] if the kernel rejects the combination); or
     /// [`Error::InteriorNul`] for a NUL byte in the type name.
     #[doc(alias("set_udm_repr"))]
-    pub fn set_repr(&mut self, repr: MemberRepr) -> Result<()> {
+    pub fn set_repr(&mut self, repr: ValueRepr) -> Result<()> {
         let result = self.dispatch(|db, tp, mp, bit| {
             db.udt_set_member_repr(
                 tp,

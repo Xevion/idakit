@@ -33,7 +33,7 @@ pub use edit::{
 };
 pub use expr::TypeExpr;
 pub use named::{NamedType, NamedTypes};
-pub use repr::{MemberRepr, NumberFormat};
+pub use repr::{NumberFormat, ValueRepr};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;
 pub(crate) use sink::{SinkAdapter, TypeSink, raw, tid};
@@ -64,8 +64,8 @@ pub struct TypeMember {
     /// Width in bits for a bitfield member; `None` for an ordinary field.
     pub bitfield_width: Option<u32>,
     /// The field's value representation (radix/char, sign, leading zeros); `None` when unset or
-    /// outside the numeric subset [`MemberRepr`] models.
-    pub repr: Option<MemberRepr>,
+    /// outside the numeric subset [`ValueRepr`] models.
+    pub repr: Option<ValueRepr>,
 }
 
 /// One member of an enum.
@@ -130,7 +130,7 @@ pub enum TypeShape {
         members: Vec<TypeMember>,
     },
     /// an enum and its underlying integer type
-    #[doc(alias("is_enum", "get_enum_details", "is_bitmask_enum"))]
+    #[doc(alias("is_enum", "get_enum_details", "is_bitmask_enum", "get_enum_repr"))]
     Enum {
         /// The tag name, or `None` if anonymous.
         name: Option<String>,
@@ -140,6 +140,9 @@ pub enum TypeShape {
         members: Vec<EnumMember>,
         /// Whether this is a bitmask (flag) enum.
         is_bitmask: bool,
+        /// The enum's value representation (radix/char, sign, leading zeros); `None` when unset
+        /// or outside the numeric subset [`ValueRepr`] models.
+        repr: Option<ValueRepr>,
     },
     /// a function prototype
     #[doc(alias("is_func", "get_func_details"))]

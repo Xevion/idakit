@@ -30,6 +30,8 @@ fn run(idb: &mut idakit::Database) {
     type_member_repr_edit(idb);
     type_enum_member_edit(idb);
     type_enum_bitmask_edit(idb);
+    type_enum_repr_edit(idb);
+    type_enum_width_edit(idb);
     type_member_ref(idb);
     type_member_add_at_offset(idb);
     type_member_offset_edit(idb);
@@ -40,7 +42,7 @@ fn run(idb: &mut idakit::Database) {
     type_enum_forcename(idb);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + member-repr-edit + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed + member-set-type-compatible + enum-forcename"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + member-repr-edit + enum-member-edit + enum-bitmask-edit + enum-repr-edit + enum-width-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed + member-set-type-compatible + enum-forcename"
     );
 }
 
@@ -619,9 +621,9 @@ fn type_member_bitfield(idb: &mut idakit::Database) {
 /// sign, leading zeros); `TypeMember::repr` reads it back. An unresolved member still surfaces as
 /// `TypeWriteError::NoMember`, mirroring the comment/bitfield tests.
 fn type_member_repr_edit(idb: &mut idakit::Database) {
-    use idakit::types::{MemberRepr, NumberFormat, TypeWriteError};
+    use idakit::types::{NumberFormat, TypeWriteError, ValueRepr};
 
-    fn repr(idb: &idakit::Database, ty: &str, member: &str) -> Option<MemberRepr> {
+    fn repr(idb: &idakit::Database, ty: &str, member: &str) -> Option<ValueRepr> {
         idb.type_named(ty)
             .expect("resolve the type")
             .members()
@@ -636,7 +638,7 @@ fn type_member_repr_edit(idb: &mut idakit::Database) {
         .define("struct idakit_repr_probe { int hex_field; int dec_field; };")
         .expect("define a struct to set repr on");
 
-    let hex_repr = MemberRepr {
+    let hex_repr = ValueRepr {
         format: NumberFormat::Hexadecimal,
         signed: true,
         leading_zeros: false,
@@ -648,7 +650,7 @@ fn type_member_repr_edit(idb: &mut idakit::Database) {
         .expect("set hex_field's repr");
     assert!(repr(idb, "idakit_repr_probe", "hex_field") == Some(hex_repr));
 
-    let dec_repr = MemberRepr {
+    let dec_repr = ValueRepr {
         format: NumberFormat::Decimal,
         signed: false,
         leading_zeros: true,
@@ -827,6 +829,80 @@ fn type_enum_bitmask_edit(idb: &mut idakit::Database) {
     assert!(
         !shape(idb, "idakit_flags_probe").0,
         "should be an ordinary enum again"
+    );
+}
+
+/// `TypeEdit::set_repr` builds the same `value_repr_t` as `MemberEdit::set_repr`, but at the
+/// whole-enum level (`tinfo_t::set_enum_repr`); `TypeShape::Enum::repr` reads it back.
+fn type_enum_repr_edit(idb: &mut idakit::Database) {
+    use idakit::types::{NumberFormat, TypeShape, ValueRepr};
+
+    fn repr(idb: &idakit::Database, ty: &str) -> Option<ValueRepr> {
+        let t = idb.type_named(ty).expect("resolve the enum");
+        match t.shape() {
+            TypeShape::Enum { repr, .. } => *repr,
+            other => panic!("expected an enum, got {other:?}"),
+        }
+    }
+
+    idb.types_mut()
+        .define("enum idakit_enum_repr_probe { PROBE_A = 1 };")
+        .expect("define an enum to set repr on");
+
+    let hex_repr = ValueRepr {
+        format: NumberFormat::Hexadecimal,
+        signed: true,
+        leading_zeros: false,
+    };
+    idb.types_mut()
+        .edit("idakit_enum_repr_probe")
+        .set_repr(hex_repr)
+        .expect("set the enum's repr");
+    assert!(repr(idb, "idakit_enum_repr_probe") == Some(hex_repr));
+
+    let dec_repr = ValueRepr {
+        format: NumberFormat::Decimal,
+        signed: false,
+        leading_zeros: true,
+    };
+    idb.types_mut()
+        .edit("idakit_enum_repr_probe")
+        .set_repr(dec_repr)
+        .expect("change the enum's repr");
+    assert!(repr(idb, "idakit_enum_repr_probe") == Some(dec_repr));
+}
+
+/// `TypeEdit::set_enum_width` sets the enum's storage width (`tinfo_t::set_enum_width`); the new
+/// width shows through the resolved `Type`'s own byte size.
+fn type_enum_width_edit(idb: &mut idakit::Database) {
+    idb.types_mut()
+        .define("enum idakit_enum_width_probe { PROBE_A = 1 };")
+        .expect("define an enum to resize");
+
+    idb.types_mut()
+        .edit("idakit_enum_width_probe")
+        .set_enum_width(8)
+        .expect("widen the enum to 8 bytes");
+    let widened = idb
+        .type_named("idakit_enum_width_probe")
+        .expect("resolve the widened enum");
+    assert!(
+        widened.size() == Some(8),
+        "the enum's size should reflect the new width, got {:?}",
+        widened.size()
+    );
+
+    idb.types_mut()
+        .edit("idakit_enum_width_probe")
+        .set_enum_width(1)
+        .expect("narrow the enum to 1 byte");
+    let narrowed = idb
+        .type_named("idakit_enum_width_probe")
+        .expect("resolve the narrowed enum");
+    assert!(
+        narrowed.size() == Some(1),
+        "the enum's size should reflect the narrower width, got {:?}",
+        narrowed.size()
     );
 }
 

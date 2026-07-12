@@ -460,6 +460,20 @@ impl Database {
         sys::enum_set_bitmask(type_name, on)
     }
 
+    pub(crate) fn enum_set_repr(
+        &mut self,
+        type_name: &str,
+        vtype: u32,
+        is_signed: bool,
+        leading_zeros: bool,
+    ) -> sys::TypeWriteResult {
+        sys::enum_set_repr(type_name, vtype, is_signed, leading_zeros)
+    }
+
+    pub(crate) fn enum_set_width(&mut self, type_name: &str, nbytes: i32) -> sys::TypeWriteResult {
+        sys::enum_set_width(type_name, nbytes)
+    }
+
     pub(crate) fn enum_set_member_value(
         &mut self,
         type_name: &str,
