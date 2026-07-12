@@ -4771,46 +4771,6 @@ fn bridge_tokens() -> TokenStream {
     }
 }
 
-/// The `netnode::<member>` SDK identifier a raw `netnode_*` binding maps to, for a `#[doc(alias)]`
-/// that lets a reader of the IDA SDK find the flat binding. `None` where the binding backs a free
-/// function or existence probe with no matching member (its own name is already the SDK symbol).
-/// Most names strip the `netnode_` prefix to the member verbatim; the arms hold the divergences.
-fn netnode_sdk_alias(fn_name: &str) -> Option<String> {
-    let member: &str = match fn_name {
-        "netnode_exists" | "netnode_exists_name" => return None,
-        "netnode_value" => "valobj",
-        "netnode_value_str" => "valstr",
-        "netnode_set_value" => "set",
-        "netnode_del_value" => "delvalue",
-        "netnode_hashset_long" => "hashset",
-        "netnode_first" => "start",
-        "netnode_last" => "end",
-        "netnode_by_name" => "netnode",
-        other => other.strip_prefix("netnode_")?,
-    };
-    Some(format!("netnode::{member}"))
-}
-
-/// The crate-root re-exports for netnode, each carrying a `#[doc(alias)]` naming its SDK member.
-/// cxx rejects `#[doc(alias)]` inside the bridge (only `#[doc = ...]` and `#[doc(hidden)]` pass), so
-/// the alias rides the re-export instead; it survives the crate's glob re-export into rustdoc search.
-/// The generator owns these names, so they are dropped from `bridge_gen.rs`'s hand-written group.
-fn netnode_reexport_tokens() -> TokenStream {
-    let uses = NETNODE.fns.iter().map(|f| {
-        let name = format_ident!("{}", f.name);
-        match netnode_sdk_alias(f.name) {
-            Some(alias) => quote! {
-                #[doc(alias = #alias)]
-                pub use ffi::#name;
-            },
-            None => quote! {
-                pub use ffi::#name;
-            },
-        }
-    });
-    quote! { #(#uses)* }
-}
-
 /// The C++ signature `RET name(ARGS)` shared by a domain header decl and a templated body.
 fn cxx_signature(f: &FnSpec) -> String {
     let mut args: Vec<String> = Vec::new();
@@ -4952,12 +4912,8 @@ pub fn generate(out_dir: &Path) {
     let tokens = bridge_tokens();
 
     // Rust side: the proc-macro expands this on `include!`. `TokenStream`'s Display is valid (if
-    // unformatted) Rust; OUT_DIR files are never formatted, so that is fine. The aliased netnode
-    // re-exports are appended here only, outside the bridge module, so cxx-gen never sees them.
-    let mut rust = tokens.to_string();
-    rust.push('\n');
-    rust.push_str(&netnode_reexport_tokens().to_string());
-    std::fs::write(out_dir.join("gen_bridge.rs"), rust).expect("write gen_bridge.rs");
+    // unformatted) Rust; OUT_DIR files are never formatted, so that is fine.
+    std::fs::write(out_dir.join("gen_bridge.rs"), tokens.to_string()).expect("write gen_bridge.rs");
 
     // C++ side: same tokens => matching shim symbol names on both sides.
     let opt = cxx_gen::Opt::default();
