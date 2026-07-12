@@ -501,6 +501,14 @@ impl Database {
         sys::enum_del_member(type_name, member_name)
     }
 
+    pub(crate) fn enum_del_member_by_value(
+        &mut self,
+        type_name: &str,
+        value: u64,
+    ) -> sys::TypeWriteResult {
+        sys::enum_del_member_by_value(type_name, value)
+    }
+
     pub(crate) fn define_type(&mut self, input: &str) -> sys::TypeWriteResult {
         sys::define_type(input)
     }
@@ -511,6 +519,14 @@ impl Database {
 
     pub(crate) fn rename_type(&mut self, type_name: &str, new_name: &str) -> sys::TypeWriteResult {
         sys::rename_type(type_name, new_name)
+    }
+
+    pub(crate) fn forward_declare_type(
+        &mut self,
+        type_name: &str,
+        decl_type: u32,
+    ) -> sys::TypeWriteResult {
+        sys::forward_declare_type(type_name, decl_type)
     }
 
     pub(crate) fn func_flags(&self, address: Address) -> u64 {

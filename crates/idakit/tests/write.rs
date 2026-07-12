@@ -40,9 +40,11 @@ fn run(idb: &mut idakit::Database) {
     type_build_failed(idb, address);
     type_member_set_type_compatible(idb);
     type_enum_forcename(idb);
+    type_forward_declare(idb);
+    type_enum_delete_by_value(idb);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + member-repr-edit + enum-member-edit + enum-bitmask-edit + enum-repr-edit + enum-width-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed + member-set-type-compatible + enum-forcename"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + member-repr-edit + enum-member-edit + enum-bitmask-edit + enum-repr-edit + enum-width-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed + member-set-type-compatible + enum-forcename + forward-declare + enum-delete-by-value"
     );
 }
 
@@ -1245,4 +1247,89 @@ fn type_enum_forcename(idb: &mut idakit::Database) {
         .constant("IDAKIT_FORCENAME_MINE")
         .rename_forced("IDAKIT_FORCENAME_TAKEN")
         .expect("rename_forced should force the name through the collision");
+}
+
+/// `TypesMut::forward_declare` reserves a named struct with no body: it appears in `named_types`
+/// and reads back as an opaque, bodyless type, and a later `define` over the same name completes
+/// it into a full struct.
+fn type_forward_declare(idb: &mut idakit::Database) {
+    use idakit::types::TypeShape;
+    use idakit::types::diff::AggregateKind;
+
+    idb.types_mut()
+        .forward_declare("idakit_fwd_probe", AggregateKind::Struct)
+        .expect("forward-declare a struct");
+    assert!(
+        idb.named_types().any(|t| t.name() == "idakit_fwd_probe"),
+        "the forward-declared type should appear in named_types"
+    );
+
+    let opaque = idb
+        .type_named("idakit_fwd_probe")
+        .expect("resolve the forward-declared type");
+    match opaque.shape() {
+        TypeShape::Opaque(name) => assert!(name == "idakit_fwd_probe"),
+        other => panic!("expected an opaque forward decl, got {other:?}"),
+    }
+
+    // define() over the same name completes the forward decl into a full struct.
+    idb.types_mut()
+        .define("struct idakit_fwd_probe { int x; };")
+        .expect("complete the forward-declared struct");
+    let completed = idb
+        .type_named("idakit_fwd_probe")
+        .expect("resolve the completed struct");
+    assert!(
+        let TypeShape::Struct { .. } = completed.shape(),
+        "the forward decl should be completed into a full struct, got {:?}",
+        completed.shape()
+    );
+}
+
+/// `TypeEdit::delete_constant_by_value` deletes an enum constant keyed by its value rather than
+/// its name; deleting a value no constant carries surfaces the typed `TypeEditCode::NotFound`.
+fn type_enum_delete_by_value(idb: &mut idakit::Database) {
+    use idakit::types::{TypeEditCode, TypeShape, TypeWriteError};
+
+    fn constants(idb: &idakit::Database, ty: &str) -> Vec<(String, u64)> {
+        let t = idb.type_named(ty).expect("resolve the enum");
+        match t.shape() {
+            TypeShape::Enum { members, .. } => {
+                members.iter().map(|m| (m.name.clone(), m.value)).collect()
+            }
+            other => panic!("expected an enum, got {other:?}"),
+        }
+    }
+
+    idb.types_mut()
+        .define("enum idakit_del_value_probe { PROBE_A = 1, PROBE_B = 2 };")
+        .expect("define an enum to delete by value");
+
+    idb.types_mut()
+        .edit("idakit_del_value_probe")
+        .delete_constant_by_value(1)
+        .expect("delete the constant carrying value 1");
+    let remaining = constants(idb, "idakit_del_value_probe");
+    assert!(
+        !remaining.iter().any(|(n, _)| n == "PROBE_A"),
+        "PROBE_A should be gone, got {remaining:?}"
+    );
+    assert!(
+        remaining.iter().any(|(n, v)| n == "PROBE_B" && *v == 2),
+        "PROBE_B should remain, got {remaining:?}"
+    );
+
+    // A value no constant carries is a typed NotFound rejection, not a silent no-op.
+    let ghost = idb
+        .types_mut()
+        .edit("idakit_del_value_probe")
+        .delete_constant_by_value(999);
+    assert!(
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::Rejected {
+                code: TypeEditCode::NotFound,
+                ..
+            }
+        }) = ghost
+    );
 }

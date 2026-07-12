@@ -473,6 +473,21 @@ TypeWriteResult rename_type(rust::Str type_name, rust::Str new_name) {
   }
 }
 
+TypeWriteResult forward_declare_type(rust::Str type_name, uint32_t decl_type) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      return (int)tif.create_forward_decl(get_idati(), (type_t)decl_type, tn.c_str());
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
 TypeWriteResult func_set_rettype(uint64_t ea, rust::Slice<const uint8_t> recipe) {
   try {
     TypeWriteResult out{};
@@ -885,6 +900,23 @@ TypeWriteResult enum_del_member(rust::Str type_name, rust::Str member_name) {
       if (idx < 0)
         return IDAKIT_TEDIT_NO_MEMBER;
       return (int)tif.del_edm((size_t)idx);
+    });
+    out.reason = captured_reason();
+    return out;
+  } catch (...) {
+    std::abort();
+  }
+}
+
+TypeWriteResult enum_del_member_by_value(rust::Str type_name, uint64_t value) {
+  try {
+    TypeWriteResult out{};
+    std::string tn(type_name.data(), type_name.size());
+    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+      tinfo_t tif;
+      if (!load_named_type(tn.c_str(), tif))
+        return IDAKIT_TEDIT_NO_TYPE;
+      return (int)tif.del_edm_by_value(value, 0, DEFMASK64, 0);
     });
     out.reason = captured_reason();
     return out;

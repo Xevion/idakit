@@ -21,6 +21,7 @@ use idakit_sys as sys;
 use crate::Database;
 use crate::error::{Error, Result};
 use crate::ffi::{nul_checked, reason_or};
+use crate::types::diff::AggregateKind;
 use crate::types::{TypeExpr, ValueRepr};
 
 /// The SDK's `DEFMASK64` (`bmask64_t(-1)`, `typeinf.hpp`): passed as `enum_add_member`'s `bmask`
@@ -37,6 +38,23 @@ const ETF_COMPATIBLE: u32 = 0x0000_0008;
 /// force an enum constant name through a [`TypeEditCode::AlienName`] collision (the name is
 /// already used by another enum).
 const ETF_FORCENAME: u32 = 0x0000_0020;
+
+/// The SDK's `BTF_STRUCT`/`BTF_UNION`/`BTF_ENUM` (`type_t`, `typeinf.hpp`): the aggregate-kind
+/// byte `create_forward_decl` takes to select what a forward declaration reserves.
+const BTF_STRUCT: u32 = 0x0D;
+/// The SDK's `BTF_UNION` (`type_t`, `typeinf.hpp`).
+const BTF_UNION: u32 = 0x1D;
+/// The SDK's `BTF_ENUM` (`type_t`, `typeinf.hpp`).
+const BTF_ENUM: u32 = 0x2D;
+
+/// Maps an [`AggregateKind`] to the raw `type_t` `create_forward_decl` expects.
+const fn decl_type_of(kind: AggregateKind) -> u32 {
+    match kind {
+        AggregateKind::Struct => BTF_STRUCT,
+        AggregateKind::Union => BTF_UNION,
+        AggregateKind::Enum => BTF_ENUM,
+    }
+}
 
 impl Database {
     /// A write cursor over the database's local type library.
@@ -144,6 +162,37 @@ impl TypesMut<'_> {
         let name = name.as_ref();
         let new_name = nul_checked(new_name.as_ref(), "new name")?;
         let result = self.db.rename_type(nul_checked(name, "name")?, new_name);
+        edit_result(result.code, result.reason, name, None)
+    }
+
+    /// Reserve `name` in the local type library as an incomplete `kind` aggregate, with no body.
+    ///
+    /// The explicit counterpart to the `"struct Foo;"` idiom through [`define`](Self::define):
+    /// reserves the tag without describing its members, so a later [`define`](Self::define) with
+    /// a full body over the same name completes it. Until then, the type reads back as
+    /// [`TypeShape::Opaque`](crate::types::TypeShape::Opaque), the same shape any other unresolved
+    /// or bodyless named type takes.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// use idakit::types::diff::AggregateKind;
+    ///
+    /// db.types_mut()
+    ///     .forward_declare("idakit_fwd_probe", AggregateKind::Struct)?;
+    /// assert!(db.named_types().any(|t| t.name() == "idakit_fwd_probe"));
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::Rejected`] if the kernel refuses the declaration (e.g. `name` is already
+    /// taken by an incompatible type), or [`Error::InteriorNul`] if `name` contains a NUL byte.
+    #[doc(alias("create_forward_decl"))]
+    pub fn forward_declare(&mut self, name: impl AsRef<str>, kind: AggregateKind) -> Result<()> {
+        let name = name.as_ref();
+        let result = self
+            .db
+            .forward_declare_type(nul_checked(name, "name")?, decl_type_of(kind));
         edit_result(result.code, result.reason, name, None)
     }
 
@@ -457,6 +506,36 @@ impl TypeEdit<'_> {
         let result = self
             .db
             .enum_set_width(nul_checked(&type_name, "type name")?, nbytes);
+        edit_result(result.code, result.reason, &type_name, None)
+    }
+
+    /// Delete the enum constant carrying `value` from this enum.
+    ///
+    /// The value-keyed sibling of [`ConstantEdit::delete`]: where that selects a constant by
+    /// name, this selects whichever constant carries `value` directly, for a value-aliased
+    /// serial with no name a caller already knows.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut()
+    ///     .define("enum idakit_del_by_value_probe { PROBE_A = 1, PROBE_B = 2 };")?;
+    /// db.types_mut()
+    ///     .edit("idakit_del_by_value_probe")
+    ///     .delete_constant_by_value(1)?;
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`TypeWriteError::NoType`] if the enum does not exist, or [`TypeWriteError::Rejected`]
+    /// with [`TypeEditCode::NotFound`] if no constant carries `value`; or
+    /// [`Error::InteriorNul`] for a NUL byte in the type name.
+    #[doc(alias("del_edm_by_value"))]
+    pub fn delete_constant_by_value(&mut self, value: u64) -> Result<()> {
+        let type_name = self.name.clone();
+        let result = self
+            .db
+            .enum_del_member_by_value(nul_checked(&type_name, "type name")?, value);
         edit_result(result.code, result.reason, &type_name, None)
     }
 

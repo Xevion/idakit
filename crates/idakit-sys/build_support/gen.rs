@@ -1965,6 +1965,27 @@ pub const TYPE_BUILD: Domain = Domain {
                   ordinal. Same `IDAKIT_TEDIT_*` codes as the `udt_*`/`enum_*` fns.",
         },
         FnSpec {
+            name: "forward_declare_type",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "decl_type",
+                    ty: ArgTy::U32,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Reserve `type_name` in the local til as an incomplete aggregate \
+                  (`tinfo_t::create_forward_decl`), without a body. `decl_type` is a `type_t` \
+                  (`BTF_STRUCT`/`BTF_UNION`/`BTF_ENUM`) selecting the aggregate kind. `code` is the \
+                  raw `tinfo_code_t` (`0` = ok); no `IDAKIT_TEDIT_*` pre-failure, since there is no \
+                  existing type to load first.",
+        },
+        FnSpec {
             name: "func_set_rettype",
             receiver: None,
             args: &[
@@ -2394,6 +2415,27 @@ pub const TYPE_BUILD: Domain = Domain {
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Delete the enum constant `member_name` from the named enum `type_name`.",
+        },
+        FnSpec {
+            name: "enum_del_member_by_value",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "type_name",
+                    ty: ArgTy::Str,
+                },
+                Arg {
+                    name: "value",
+                    ty: ArgTy::U64,
+                },
+            ],
+            ret: RetKind::Shared("TypeWriteResult"),
+            body: BodyKind::Custom,
+            doc: "Delete the enum constant carrying `value` from the named enum `type_name` \
+                  (`tinfo_t::del_edm_by_value`), the value-keyed sibling of [`enum_del_member`]. \
+                  Uses the default bitmask (`DEFMASK64`) and serial (`0`), so it targets the plain \
+                  value match, not a specific bitmask group or serial. `TERR_NOT_FOUND` \
+                  (`TypeEditCode::NotFound`) when no constant carries `value`.",
         },
         FnSpec {
             name: "tinfo_void",
