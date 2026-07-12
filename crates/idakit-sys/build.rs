@@ -154,9 +154,9 @@ fn main() {
     // A hand-written bridge over the *generated* qflow_chart_t ExternType, proving a hand bridge
     // can share a spec-generated ExternType with the CFG domain.
     cxx_bridge(
-        "src/bridge_cfg2.rs",
-        &["facade/cfg2_cxx.cc"],
-        "idakit_cxx_cfg2_bridge",
+        "src/bridge_cfg_check.rs",
+        &["facade/cfg_check_cxx.cc"],
+        "idakit_cxx_cfg_check_bridge",
         sdk_include_str,
         &[],
     );
@@ -253,9 +253,9 @@ fn main() {
     for src in FACADE_SOURCES {
         println!("cargo:rerun-if-changed={src}");
     }
-    println!("cargo:rerun-if-changed=facade/cfg2_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/cfg2_cxx.h");
-    println!("cargo:rerun-if-changed=src/bridge_cfg2.rs");
+    println!("cargo:rerun-if-changed=facade/cfg_check_cxx.cc");
+    println!("cargo:rerun-if-changed=facade/cfg_check_cxx.h");
+    println!("cargo:rerun-if-changed=src/bridge_cfg_check.rs");
     println!("cargo:rerun-if-changed=facade/qvec_cxx.cc");
     println!("cargo:rerun-if-changed=facade/qvec_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_qvec.rs");
@@ -276,24 +276,25 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bridge_probe.rs");
     println!("cargo:rerun-if-changed=src/bridge_gen.rs");
     println!("cargo:rerun-if-changed=build_support/gen.rs");
-    println!("cargo:rerun-if-changed=facade/gen_custom.cc");
-    println!("cargo:rerun-if-changed=facade/gen_import.cc");
-    println!("cargo:rerun-if-changed=facade/gen_range.cc");
-    println!("cargo:rerun-if-changed=facade/gen_function.cc");
-    println!("cargo:rerun-if-changed=facade/gen_export.cc");
-    println!("cargo:rerun-if-changed=facade/gen_meta.cc");
-    println!("cargo:rerun-if-changed=facade/gen_name.cc");
-    println!("cargo:rerun-if-changed=facade/gen_strings.cc");
-    println!("cargo:rerun-if-changed=facade/gen_cfg.cc");
-    println!("cargo:rerun-if-changed=facade/gen_reference.cc");
-    println!("cargo:rerun-if-changed=facade/gen_bytes.cc");
-    println!("cargo:rerun-if-changed=facade/gen_instruction.cc");
-    println!("cargo:rerun-if-changed=facade/gen_hexrays.cc");
-    println!("cargo:rerun-if-changed=facade/gen_type_build.cc");
-    println!("cargo:rerun-if-changed=facade/gen_ty.cc");
+    println!("cargo:rerun-if-changed=facade/custom_escape_hatch.cc");
+    println!("cargo:rerun-if-changed=facade/import_custom.cc");
+    println!("cargo:rerun-if-changed=facade/range_custom.cc");
+    println!("cargo:rerun-if-changed=facade/function_custom.cc");
+    println!("cargo:rerun-if-changed=facade/export_custom.cc");
+    println!("cargo:rerun-if-changed=facade/meta_custom.cc");
+    println!("cargo:rerun-if-changed=facade/name_custom.cc");
+    println!("cargo:rerun-if-changed=facade/strings_custom.cc");
+    println!("cargo:rerun-if-changed=facade/cfg_custom.cc");
+    println!("cargo:rerun-if-changed=facade/reference_custom.cc");
+    println!("cargo:rerun-if-changed=facade/bytes_custom.cc");
+    println!("cargo:rerun-if-changed=facade/instruction_custom.cc");
+    println!("cargo:rerun-if-changed=facade/hexrays_custom.cc");
+    println!("cargo:rerun-if-changed=facade/type_build_custom.cc");
+    println!("cargo:rerun-if-changed=facade/ty_custom.cc");
+    println!("cargo:rerun-if-changed=facade/netnode_custom.cc");
     println!("cargo:rerun-if-changed=facade/idakit_facade.h");
     println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
-    println!("cargo:rerun-if-changed=facade/type_walk.hpp");
+    println!("cargo:rerun-if-changed=facade/typewalk_walker.hpp");
     println!("cargo:rerun-if-env-changed=IDADIR");
     println!("cargo:rerun-if-env-changed=IDAKIT_EMIT_COMPILE_COMMANDS");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");

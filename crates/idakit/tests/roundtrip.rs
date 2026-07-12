@@ -23,7 +23,7 @@ fn run(idb: &mut idakit::Database) {
 
     // Segment domain: idakit's `Segment` view rides the generated seg bridge, so the generated qty
     // must equal the iterator's count, and the `Custom` escape-hatch body (`gen_seg_span_total`,
-    // hand-written in facade/gen_custom.cc) must equal the byte span summed over the same iterator.
+    // hand-written in facade/custom_escape_hatch.cc) must equal the byte span summed over the same iterator.
     {
         use idakit_sys as sys;
 
@@ -179,7 +179,7 @@ fn run(idb: &mut idakit::Database) {
     // cxx opaque-handle bridge: the cxx `FlowChart` path (opaque type owned by UniquePtr, BlockInfo
     // shared struct, Result-shaped bounds) walked through the generated bridge. The per-index
     // accessors are cross-checked against the whole-edge-list copy and the Opaque intvec_t
-    // container, the sibling cfg2 bridge, and the `self:`-member `size()`. The
+    // container, the sibling cfg_check bridge, and the `self:`-member `size()`. The
     // `UniquePtr<FlowChart>` frees the qflow_chart_t via cxx's generated deleter glue on drop.
     {
         use idakit_sys as sys;
@@ -274,14 +274,14 @@ fn run(idb: &mut idakit::Database) {
             "member-fn size() disagrees with free-fn cfg_nblocks()"
         );
 
-        // The sibling `bridge_cfg2` bridge accepts the *same* `&FlowChart` built here (one
+        // The sibling `bridge_cfg_check` bridge accepts the *same* `&FlowChart` built here (one
         // shared ExternType across two bridges) and sums every block's successor count. Cross-
         // check it against the per-block `cfg_nsucc` totals from this bridge.
         let edge_total: usize = (0..n).map(|b| sys::cfg_nsucc(&fc, b)).sum();
         assert_eq!(
-            sys::cfg2_total_edges(&fc),
+            sys::cfg_total_edges_check(&fc),
             edge_total,
-            "cross-bridge cfg2_total_edges disagrees with summed cfg_nsucc"
+            "cross-bridge cfg_total_edges_check disagrees with summed cfg_nsucc"
         );
 
         // `fc` drops here: cxx's UniquePtr glue runs qflow_chart_t's destructor, no manual free.

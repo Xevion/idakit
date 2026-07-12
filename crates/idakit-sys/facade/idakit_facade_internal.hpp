@@ -1,5 +1,5 @@
 // Shared facade internals: the fatal-trap state and the guarded<> wrapper. The trap machinery
-// is defined in runtime.cpp; only runtime.cpp and hexrays.cpp (decompile) need it.
+// is defined in runtime.cpp; only runtime.cpp and hexrays_custom.cc (decompile) need it.
 #ifndef IDAKIT_FACADE_INTERNAL_HPP
 #define IDAKIT_FACADE_INTERNAL_HPP
 

@@ -27,6 +27,8 @@
 //!   lifetime is tied to the borrowed container (`&'a V -> &'a [T]`), the access is read-only
 //!   (`alloc`/`qalloc`/`qfree` are never touched), and the `{array, n}` layout is fixed by the
 //!   ABI-per-minor pin. The bodies are hand-written in `facade/qvec_cxx.cc`.
+//!
+//! This is a recipe demonstration, not yet consumed by the `idakit` library.
 
 /// Emit the per-instantiation `Opaque` handle for one `qvector<T>`: a zero-sized `!Unpin`
 /// mirror struct plus its [`cxx::ExternType`] impl bound to the SDK type named by `$cxx`.

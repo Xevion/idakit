@@ -227,13 +227,13 @@ const N: &[Arg] = &[Arg {
 
 /// The segment domain: mirrors the hand-written `idakit_cxx::seg_*` bridge one-for-one, plus a
 /// `Custom` proof. Templated bodies live in the generated `gen_seg_bodies.cc`; the one `Custom`
-/// body is hand-written in `facade/gen_custom.cc`.
+/// body is hand-written in `facade/custom_escape_hatch.cc`.
 pub const SEGMENT: Domain = Domain {
     name: "seg",
     sdk_includes: &["<segment.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
-    custom_tu: Some("facade/gen_custom.cc"),
+    custom_tu: Some("facade/custom_escape_hatch.cc"),
     fns: &[
         FnSpec {
             name: "gen_seg_qty",
@@ -312,7 +312,7 @@ pub const SEGMENT: Domain = Domain {
             doc: "Class of segment `n`; `Err` when `n` is out of range or has no class.",
         },
         // Escape hatch: sum of every segment's byte span. Too bespoke to template (it iterates the
-        // whole table), so the spec declares only the signature; facade/gen_custom.cc defines it.
+        // whole table), so the spec declares only the signature; facade/custom_escape_hatch.cc defines it.
         FnSpec {
             name: "gen_seg_span_total",
             receiver: None,
@@ -326,7 +326,7 @@ pub const SEGMENT: Domain = Domain {
 
 /// The import-table domain: the whole table returned as one owned `Vec<ImportRec>` snapshot,
 /// retiring the raw handle/index/free dance. The single body is hand-written in
-/// `facade/gen_import.cc` (a callback walk over every module's `enum_import_names`).
+/// `facade/import_custom.cc` (a callback walk over every module's `enum_import_names`).
 pub const IMPORT: Domain = Domain {
     name: "import",
     sdk_includes: &["<nalt.hpp>"],
@@ -357,7 +357,7 @@ pub const IMPORT: Domain = Domain {
             },
         ],
     }],
-    custom_tu: Some("facade/gen_import.cc"),
+    custom_tu: Some("facade/import_custom.cc"),
     fns: &[FnSpec {
         name: "imports_build",
         receiver: None,
@@ -371,7 +371,7 @@ pub const IMPORT: Domain = Domain {
 
 /// The function-range domain: the SDK POD `range_t` bound as a `Trivial` `ExternType` that crosses
 /// by value four ways (bare return, by-value argument, shared-struct field, and `Vec` element). All
-/// bodies are hand-written in `facade/gen_range.cc` (they iterate a `func_tail_iterator_t`).
+/// bodies are hand-written in `facade/range_custom.cc` (they iterate a `func_tail_iterator_t`).
 pub const RANGE: Domain = Domain {
     name: "range",
     sdk_includes: &["<funcs.hpp>", "<range.hpp>", "<stdexcept>"],
@@ -412,7 +412,7 @@ pub const RANGE: Domain = Domain {
             },
         ],
     }],
-    custom_tu: Some("facade/gen_range.cc"),
+    custom_tu: Some("facade/range_custom.cc"),
     fns: &[
         FnSpec {
             name: "range_entry_chunk",
@@ -477,13 +477,13 @@ const EA: &[Arg] = &[Arg {
 
 /// The function domain: per-function scalar accessors and the name string. Function *chunks* are
 /// the `range` domain (`range_all_chunks`), so no chunk accessor lives here. `func_qty` is a
-/// templated passthrough; the lookup accessors are hand-written in `facade/gen_function.cc`.
+/// templated passthrough; the lookup accessors are hand-written in `facade/function_custom.cc`.
 pub const FUNCTION: Domain = Domain {
     name: "function",
     sdk_includes: &["<funcs.hpp>", "<name.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
-    custom_tu: Some("facade/gen_function.cc"),
+    custom_tu: Some("facade/function_custom.cc"),
     fns: &[
         FnSpec {
             name: "func_qty",
@@ -556,13 +556,13 @@ const IDX: &[Arg] = &[Arg {
 
 /// The export (entry-point) domain: per-export scalar accessors plus the name and forwarder
 /// strings, indexed `[0, export_qty)`. `export_qty` is a templated passthrough; the lookups are
-/// hand-written in `facade/gen_export.cc` (a forwarder-less export legitimately `Err`s).
+/// hand-written in `facade/export_custom.cc` (a forwarder-less export legitimately `Err`s).
 pub const EXPORT: Domain = Domain {
     name: "export",
     sdk_includes: &["<entry.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
-    custom_tu: Some("facade/gen_export.cc"),
+    custom_tu: Some("facade/export_custom.cc"),
     fns: &[
         FnSpec {
             name: "export_qty",
@@ -611,13 +611,13 @@ pub const EXPORT: Domain = Domain {
 
 /// The meta domain: database-wide metadata (bitness, image base) and four identity strings
 /// (processor, file-type text, input path, root filename). All bodies are hand-written in
-/// `facade/gen_meta.cc`; the string getters throw when the SDK has no value.
+/// `facade/meta_custom.cc`; the string getters throw when the SDK has no value.
 pub const META: Domain = Domain {
     name: "meta",
     sdk_includes: &["<nalt.hpp>", "<loader.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
-    custom_tu: Some("facade/gen_meta.cc"),
+    custom_tu: Some("facade/meta_custom.cc"),
     fns: &[
         FnSpec {
             name: "bitness",
@@ -671,7 +671,7 @@ pub const META: Domain = Domain {
 };
 
 /// The name domain: name lookups (address<->name, demangle), the name-list accessors, and the
-/// three flags-word name classifiers. Every body is hand-written in `facade/gen_name.cc` (the
+/// three flags-word name classifiers. Every body is hand-written in `facade/name_custom.cc` (the
 /// getters throw on no-name, and SDK calls are `::`-qualified to avoid recursing on the shared
 /// symbol spellings).
 pub const NAME: Domain = Domain {
@@ -679,7 +679,7 @@ pub const NAME: Domain = Domain {
     sdk_includes: &["<name.hpp>", "<bytes.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
-    custom_tu: Some("facade/gen_name.cc"),
+    custom_tu: Some("facade/name_custom.cc"),
     fns: &[
         FnSpec {
             name: "get_ea_name",
@@ -774,7 +774,7 @@ pub const NAME: Domain = Domain {
 /// The strings domain: IDA's string list plus per-literal decoding. `strlist_build` runs an
 /// O(database) scan to (re)build the list; `strlist_item` returns the nth entry as a `StrlistItem`
 /// (throws when out of range), and `strlit_contents` decodes one literal to UTF-8 (throws when
-/// undecodable). All bodies are hand-written in `facade/gen_strings.cc`.
+/// undecodable). All bodies are hand-written in `facade/strings_custom.cc`.
 pub const STRINGS: Domain = Domain {
     name: "strings",
     sdk_includes: &["<strlist.hpp>", "<bytes.hpp>", "<stdexcept>"],
@@ -800,7 +800,7 @@ pub const STRINGS: Domain = Domain {
             },
         ],
     }],
-    custom_tu: Some("facade/gen_strings.cc"),
+    custom_tu: Some("facade/strings_custom.cc"),
     fns: &[
         FnSpec {
             name: "strlist_build",
@@ -858,7 +858,7 @@ pub const STRINGS: Domain = Domain {
 /// (`FlowChart`) owned by [`UniquePtr`](cxx::UniquePtr), so its C++ deleter handles cleanup without
 /// a manual free function or a hand-written `Drop` impl. `size` is a `self:`-member call bound straight to
 /// `qflow_chart_t::size()` (no facade body); every other accessor is a free function over a
-/// `&FlowChart`, hand-written in `facade/gen_cfg.cc`. Block bounds return by value as a `BlockInfo`
+/// `&FlowChart`, hand-written in `facade/cfg_custom.cc`. Block bounds return by value as a `BlockInfo`
 /// shared struct, and the successor/predecessor edge lists copy into owned `Vec<u32>`.
 pub const CFG: Domain = Domain {
     name: "cfg",
@@ -894,7 +894,7 @@ pub const CFG: Domain = Domain {
             },
         ],
     }],
-    custom_tu: Some("facade/gen_cfg.cc"),
+    custom_tu: Some("facade/cfg_custom.cc"),
     fns: &[
         FnSpec {
             name: "cfg_build",
@@ -1080,7 +1080,7 @@ pub const CFG: Domain = Domain {
 
 /// The cross-reference domain: every xref edge at an address returned as one owned `Vec<XrefRec>`
 /// snapshot, retiring the raw open-cursor/next/close dance. The single body is hand-written in
-/// `facade/gen_reference.cc` (one walk of an `xrefblk_t`).
+/// `facade/reference_custom.cc` (one walk of an `xrefblk_t`).
 pub const REFERENCE: Domain = Domain {
     name: "reference",
     sdk_includes: &["<xref.hpp>"],
@@ -1116,7 +1116,7 @@ pub const REFERENCE: Domain = Domain {
             },
         ],
     }],
-    custom_tu: Some("facade/gen_reference.cc"),
+    custom_tu: Some("facade/reference_custom.cc"),
     fns: &[FnSpec {
         name: "xrefs_build",
         receiver: None,
@@ -1140,7 +1140,7 @@ pub const REFERENCE: Domain = Domain {
 
 /// The bytes domain: raw byte-range reads, typed scalar reads (each `Err`s when a covered byte is
 /// uninitialized), string-literal decode, item classification, and linear navigation. `min_ea`/
-/// `max_ea` are templated passthroughs; every other body is hand-written in `facade/gen_bytes.cc`.
+/// `max_ea` are templated passthroughs; every other body is hand-written in `facade/bytes_custom.cc`.
 /// Writes (`patch_bytes`, `set_cmt`) and the binary-pattern search handle stay on the raw facade,
 /// deferred to the write-side spine.
 pub const BYTES: Domain = Domain {
@@ -1173,7 +1173,7 @@ pub const BYTES: Domain = Domain {
             },
         ],
     }],
-    custom_tu: Some("facade/gen_bytes.cc"),
+    custom_tu: Some("facade/bytes_custom.cc"),
     fns: &[
         FnSpec {
             name: "get_bytes",
@@ -1445,7 +1445,7 @@ pub const BYTES: Domain = Domain {
 /// crosses as one value with no `Result` (the five outcomes, ok plus `-1..-4`, are structured
 /// payloads a string-only `cxx` exception could not carry). `reg_class_ids`/`op_dtype_ids` expose
 /// the facade's own discriminants as `Vec<u8>` alignment sources for idakit's mirror tests. The
-/// whole body is hand-written in `facade/gen_instruction.cc`.
+/// whole body is hand-written in `facade/instruction_custom.cc`.
 pub const INSTRUCTION: Domain = Domain {
     name: "instruction",
     sdk_includes: &[],
@@ -1613,7 +1613,7 @@ pub const INSTRUCTION: Domain = Domain {
             ],
         },
     ],
-    custom_tu: Some("facade/gen_instruction.cc"),
+    custom_tu: Some("facade/instruction_custom.cc"),
     fns: &[
         FnSpec {
             name: "decode_insn",
@@ -1656,7 +1656,7 @@ pub const INSTRUCTION: Domain = Domain {
 /// wraps the microcode pipeline in the facade's `guarded<>` trap and throws on failure; the read
 /// accessors take a borrowed `&CFunc` and return pseudocode, ctree counts, and the extraction-gap
 /// diagnostic. The ctree walk itself is a separate hand-written `cxx` bridge (`bridge_ctree`) fed
-/// the same `&CFunc`. Bodies are in `facade/gen_hexrays.cc`.
+/// the same `&CFunc`. Bodies are in `facade/hexrays_custom.cc`.
 pub const HEXRAYS: Domain = Domain {
     name: "hexrays",
     // funcs.hpp (pulling bytes.hpp/xref.hpp) precedes hexrays.hpp so the generated header is
@@ -1715,7 +1715,7 @@ pub const HEXRAYS: Domain = Domain {
             ],
         },
     ],
-    custom_tu: Some("facade/gen_hexrays.cc"),
+    custom_tu: Some("facade/hexrays_custom.cc"),
     fns: &[
         FnSpec {
             name: "decompile",
@@ -1789,7 +1789,7 @@ pub const HEXRAYS: Domain = Domain {
 /// the local til, and edit UDT/enum members. Every call returns a [`TypeWriteResult`] (or [`SigWriteResult`]
 /// for the two signature-surgery fns that also report the parameter count) in place of the raw
 /// facade's `int` code plus error-buffer out-param: the struct's `code` carries the same return
-/// value and `reason` the captured diagnostic. Bodies are hand-written in `facade/gen_type_build.cc`.
+/// value and `reason` the captured diagnostic. Bodies are hand-written in `facade/type_build_custom.cc`.
 pub const TYPE_BUILD: Domain = Domain {
     name: "type_build",
     sdk_includes: &["<kernwin.hpp>", "<nalt.hpp>", "<typeinf.hpp>"],
@@ -1846,7 +1846,7 @@ pub const TYPE_BUILD: Domain = Domain {
             ],
         },
     ],
-    custom_tu: Some("facade/gen_type_build.cc"),
+    custom_tu: Some("facade/type_build_custom.cc"),
     fns: &[
         FnSpec {
             name: "apply_type_decl",
@@ -2590,13 +2590,13 @@ pub const TYPE_BUILD: Domain = Domain {
 /// The local-type read domain: render a function's prototype and enumerate the local type library.
 ///
 /// The mirror of the write side (`type_build`); the string bodies are hand-written in
-/// `facade/gen_ty.cc`, the ordinal-limit passthrough templated.
+/// `facade/ty_custom.cc`, the ordinal-limit passthrough templated.
 pub const TY: Domain = Domain {
     name: "ty",
     sdk_includes: &["<typeinf.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
-    custom_tu: Some("facade/gen_ty.cc"),
+    custom_tu: Some("facade/ty_custom.cc"),
     fns: &[
         FnSpec {
             name: "func_type",
@@ -2641,14 +2641,14 @@ pub const TY: Domain = Domain {
 /// Tags are the SDK's 8-bit array selectors (`atag`/`stag`/`htag`/`vtag`, or a user tag), passed as
 /// `u32` and narrowed. Covers node lifecycle, the node value, the alt/sup/hash/char/blob arrays,
 /// their `_ea`/`_idx8` conveniences, the array shifts, and the ranged/bulk deletes; only `altadjust`
-/// is deferred. All bodies are hand-written in `facade/gen_netnode.cc`.
+/// is deferred. All bodies are hand-written in `facade/netnode_custom.cc`.
 // TODO: netnode_altadjust -- needs a cxx extern "Rust" visitor sink, not a raw C callback
 pub const NETNODE: Domain = Domain {
     name: "netnode",
     sdk_includes: &["<netnode.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
-    custom_tu: Some("facade/gen_netnode.cc"),
+    custom_tu: Some("facade/netnode_custom.cc"),
     fns: &[
         // Lifecycle.
         FnSpec {

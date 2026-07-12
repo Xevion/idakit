@@ -3,7 +3,7 @@
 // self-referential type (e.g. a struct pointing at itself) resolves instead of looping; emitting
 // happens through the cxx opaque visitor's member functions. Its full definition lives in
 // typewalk_cxx.cc, which is compiled in the cxx bridge (with the generated visitor header on its
-// include path); the ctree walk (hexrays.cpp) is a plain facade TU without that path, so it drives
+// include path); the ctree walk (ctree_cxx.cc) is a plain facade TU without that path, so it drives
 // the walker only through this opaque handle. One walker per type source (a named type, a
 // prototype, a whole ctree), so shared named types dedup across it.
 #ifndef IDAKIT_TYPEWALK_WALKER_HPP

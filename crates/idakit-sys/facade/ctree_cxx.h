@@ -8,7 +8,7 @@
 #include <cstdint>
 
 // Full SDK definition of cfuncptr_t (qrefcnt_t<cfunc_t>): this bridge's own CFunc alias re-emits
-// cxx's layout check against ::cfuncptr_t (see bridge_cfg2's FlowChart precedent), so the type
+// cxx's layout check against ::cfuncptr_t (see bridge_cfg_check's FlowChart precedent), so the type
 // must be complete here, not just forward declared.
 #include <pro.h>
 

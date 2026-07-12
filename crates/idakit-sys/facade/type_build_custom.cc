@@ -987,7 +987,7 @@ std::unique_ptr<::tinfo_t> tinfo_named(rust::Str name) {
 }
 
 // The one builder with a parse step: throw the captured reason on failure so cxx maps it to a Rust
-// Err (hence no abort shell, matching the decompile body in gen_hexrays.cc).
+// Err (hence no abort shell, matching the decompile body in hexrays_custom.cc).
 std::unique_ptr<::tinfo_t> tinfo_decl(rust::Str decl) {
   std::string decls(decl.data(), decl.size());
   auto t = std::make_unique<::tinfo_t>();
