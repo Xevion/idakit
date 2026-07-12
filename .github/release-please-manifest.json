@@ -1,4 +1,4 @@
 {
-	"crates/idakit-sys": "0.1.0",
-	"crates/idakit": "0.1.0"
+	"crates/idakit-sys": "0.1.1",
+	"crates/idakit": "0.1.1"
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1](https://github.com/Xevion/idakit/compare/idakit-sys-v0.1.0...idakit-sys-v0.1.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **release:** Alias idakit-sys self dev-dep to avoid release-please cycle ([7d86335](https://github.com/Xevion/idakit/commit/7d86335e1172b222003bc26f63cb3721d964d886))
+
+
+### Code Refactoring
+
+* **sys:** Always compile probe bridges, drop test-shims feature and alias dep ([c618a40](https://github.com/Xevion/idakit/commit/c618a40de18dc1b6ebc3083ad260d6bf79ecf056))
+
 ## 0.1.0 (2026-07-11)
 
 
