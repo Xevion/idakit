@@ -334,6 +334,17 @@ impl LocationMut<'_> {
         self.pending = self.pending.max(level);
     }
 
+    /// Route a write's result through the queue: on success, widen the queued eviction to `level`;
+    /// an error passes through untouched. The single choke point every mutating method funnels
+    /// through (including [`FunctionEdit`](crate::function::FunctionEdit), via its inner cursor), so
+    /// a new write can't silently ship without invalidation.
+    pub(crate) fn queued<T>(&mut self, out: Result<T>, level: PendingInvalidation) -> Result<T> {
+        if out.is_ok() {
+            self.queue_invalidation(level);
+        }
+        out
+    }
+
     /// Rename the item at this address.
     ///
     /// # Errors
@@ -347,10 +358,7 @@ impl LocationMut<'_> {
         } else {
             Err(self.rejected("rename"))
         };
-        if out.is_ok() {
-            self.queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Set the comment at this address; `repeatable` repeats it at every reference.
@@ -363,6 +371,9 @@ impl LocationMut<'_> {
         let ok = with_cstr(text.as_ref(), "comment", |p| {
             self.db.set_cmt(self.address, p, repeatable)
         })?;
+        // Deliberately queues no invalidation, unlike the other writes on this cursor: disassembly
+        // comments live in a separate channel from Hex-Rays pseudocode (user_cmts, keyed by
+        // treeloc), so a set_cmt never changes cached decompiled text.
         if ok {
             Ok(())
         } else {
@@ -382,18 +393,23 @@ impl LocationMut<'_> {
         if bytes.is_empty() {
             return Ok(());
         }
-        if self.db.patch_bytes(self.address, bytes) {
-            return Ok(());
-        }
-        // patch_bytes has no kernel error channel; the facade rejects an unmapped range, so there
-        // is usually no error code set. Fall back to naming the actual failure.
-        let (qerrno, reason) = self.db.last_reason();
-        Err(Error::WriteRejected {
-            op: "patch",
-            address: self.address.get(),
-            qerrno,
-            reason: reason.or_else(|| Some("target range is not fully mapped".to_owned())),
-        })
+        let out = if self.db.patch_bytes(self.address, bytes) {
+            Ok(())
+        } else {
+            // patch_bytes has no kernel error channel; the facade rejects an unmapped range, so
+            // there is usually no error code set. Fall back to naming the actual failure.
+            let (qerrno, reason) = self.db.last_reason();
+            Err(Error::WriteRejected {
+                op: "patch",
+                address: self.address.get(),
+                qerrno,
+                reason: reason.or_else(|| Some("target range is not fully mapped".to_owned())),
+            })
+        };
+        // Dependents, not SelfOnly: patching data a function inlined (a constant, a jump table)
+        // restales every referrer, and the kernel's byte_patched hook self-evicts only a containing
+        // function, missing data addresses that have none.
+        self.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Apply a type to the item at this address (IDA's "Set type", GUI shortcut Y).
@@ -410,10 +426,7 @@ impl LocationMut<'_> {
     #[doc(alias("apply_tinfo", "apply_cdecl", "apply_named_type"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
         let out = self.db.apply_type_at(self.address, &ty.into());
-        if out.is_ok() {
-            self.queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Apply a pre-built [`TypeInfo`] handle to the item at this address.
@@ -438,10 +451,7 @@ impl LocationMut<'_> {
     pub fn apply_type(&mut self, ty: &TypeInfo) -> Result<()> {
         let res = self.db.apply_tinfo(self.address, ty.tinfo(), 0);
         let out = tinfo_apply_result(res, self.address);
-        if out.is_ok() {
-            self.queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Clear any type applied to the item at this address, the inverse of [`set_type`](Self::set_type).
@@ -457,10 +467,7 @@ impl LocationMut<'_> {
             sys::IDAKIT_TYPE_OK => Ok(()),
             _ => Err(self.rejected("clear_type")),
         };
-        if out.is_ok() {
-            self.queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Builds an [`Error::WriteRejected`] for `op` from the kernel's current error channel.

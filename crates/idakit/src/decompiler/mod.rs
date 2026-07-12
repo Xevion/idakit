@@ -38,7 +38,7 @@ impl Database {
     pub fn decompile(&self, address: Address) -> Result<DecompiledFunction<'_>> {
         if !self.hexrays_ready.get() {
             if !self.hexrays_init() {
-                return Err(Error::HexRaysInit { code: 0 });
+                return Err(Error::HexRaysInit);
             }
             self.hexrays_ready.set(true);
         }

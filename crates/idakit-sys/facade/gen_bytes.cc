@@ -147,6 +147,12 @@ uint64_t bin_search(uint64_t start, uint64_t end, const ::compiled_binpat_vec_t 
 }
 
 bool patch_bytes(uint64_t ea, rust::Slice<const uint8_t> bytes) {
+  if (bytes.empty())
+    return true;
+  // Reject a write whose last byte wraps past 2^64: unsigned `ea + i` would otherwise fold to a low
+  // address and silently patch the wrong region.
+  if (ea + (bytes.size() - 1) < ea)
+    return false;
   // Reject the whole write if any target byte is outside the address space, so a bad address fails
   // cleanly instead of silently patching a truncated prefix.
   for (size_t i = 0; i < bytes.size(); i++)

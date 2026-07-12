@@ -2366,8 +2366,8 @@ pub const TYPE_BUILD: Domain = Domain {
     ],
 };
 
-/// Every domain fed into the unified bridge, in emission order.
 /// The local-type read domain: render a function's prototype and enumerate the local type library.
+///
 /// The mirror of the write side (`type_build`); the string bodies are hand-written in
 /// `facade/gen_ty.cc`, the ordinal-limit passthrough templated.
 pub const TY: Domain = Domain {
@@ -2414,6 +2414,7 @@ pub const TY: Domain = Domain {
     ],
 };
 
+/// Every domain fed into the unified bridge, in emission order.
 pub const DOMAINS: &[&Domain] = &[
     &SEGMENT,
     &IMPORT,

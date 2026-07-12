@@ -1,5 +1,5 @@
-//! Raw byte reads, item classification and linear navigation (`bytes.hpp`), binary pattern
-//! search, byte patching, and comment read/write.
+//! The `idakit_get_bytes` read-into twin, the `set_cmt` comment write, and the
+//! item-classification / pattern-search flag constants (`bytes.hpp`).
 
 use std::ffi::{c_char, c_int, c_void};
 

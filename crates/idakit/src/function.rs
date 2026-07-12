@@ -453,11 +453,7 @@ impl FunctionEdit<'_> {
         let recipe = ret.into().checked_serialize()?;
         let result = self.inner.db_mut().func_set_rettype(entry, &recipe);
         let out = sig_result(result.code, entry, None, result.reason);
-        if out.is_ok() {
-            self.inner
-                .queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.inner.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Replace the type of parameter `index` (zero-based), keeping its name.
@@ -479,11 +475,7 @@ impl FunctionEdit<'_> {
             Some((index, result.arity)),
             result.reason,
         );
-        if out.is_ok() {
-            self.inner
-                .queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.inner.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Rename parameter `index` (zero-based), keeping its type.
@@ -505,10 +497,7 @@ impl FunctionEdit<'_> {
             result.reason,
         );
         // A parameter name never appears at call sites, so only this function's own text is stale.
-        if out.is_ok() {
-            self.inner.queue_invalidation(PendingInvalidation::SelfOnly);
-        }
-        out
+        self.inner.queued(out, PendingInvalidation::SelfOnly)
     }
 
     /// Set this function's calling convention.
@@ -525,11 +514,7 @@ impl FunctionEdit<'_> {
             .db_mut()
             .func_set_cc(entry, c_int::from(u8::from(cc)));
         let out = sig_result(result.code, entry, None, result.reason);
-        if out.is_ok() {
-            self.inner
-                .queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.inner.queued(out, PendingInvalidation::Dependents)
     }
 
     /// Insert an implicit `this` pointer as the first parameter, shifting the rest.
@@ -550,11 +535,7 @@ impl FunctionEdit<'_> {
         let recipe = this.into().checked_serialize()?;
         let result = self.inner.db_mut().func_prepend_this(entry, &recipe);
         let out = sig_result(result.code, entry, None, result.reason);
-        if out.is_ok() {
-            self.inner
-                .queue_invalidation(PendingInvalidation::Dependents);
-        }
-        out
+        self.inner.queued(out, PendingInvalidation::Dependents)
     }
 }
 

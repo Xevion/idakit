@@ -42,10 +42,6 @@ mod ct {
 /// Why a ctree walk could not be turned into a [`Ctree`].
 #[derive(Debug, Snafu, PartialEq, Eq)]
 pub enum ExtractError {
-    /// The facade returned no walkable ctree (a null `cfunc`).
-    #[snafu(display("the facade could not walk the ctree (null cfunc)"))]
-    WalkFailed,
-
     /// A node carried an expression `ctype` the walker does not model.
     #[snafu(display("unmodeled expression ctype {tag}"))]
     UnknownExpressionTag {
@@ -91,6 +87,16 @@ fn opt_e(raw: u32) -> Option<ExpressionId> {
 
 fn opt_s(raw: u32) -> Option<StatementId> {
     (raw != IDAKIT_NONE).then(|| sid(raw))
+}
+
+/// Lossily decode a facade byte string (IDA names and literals are not guaranteed UTF-8).
+fn lossy(raw: &[u8]) -> String {
+    String::from_utf8_lossy(raw).into_owned()
+}
+
+/// Like [`lossy`], but an empty slice (an absent optional string) maps to `None`.
+fn lossy_opt(raw: &[u8]) -> Option<String> {
+    (!raw.is_empty()).then(|| lossy(raw))
 }
 
 /// Accumulates the owned ctree as the facade walks. Its methods are the safe surface the
@@ -484,12 +490,7 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
     }
 
     fn e_obj(&mut self, ea: u64, target: u64, name: &[u8], ty: u32) -> u32 {
-        let name = if name.is_empty() {
-            None
-        } else {
-            Some(String::from_utf8_lossy(name).into_owned())
-        };
-        self.obj(ea, target, name, ty)
+        self.obj(ea, target, lossy_opt(name), ty)
     }
 
     fn e_var(&mut self, ea: u64, idx: u32, ty: u32) -> u32 {
@@ -497,11 +498,11 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
     }
 
     fn e_str(&mut self, ea: u64, bytes: &[u8], ty: u32) -> u32 {
-        self.string(ea, String::from_utf8_lossy(bytes).into_owned(), ty)
+        self.string(ea, lossy(bytes), ty)
     }
 
     fn e_helper(&mut self, ea: u64, bytes: &[u8], ty: u32) -> u32 {
-        self.helper(ea, String::from_utf8_lossy(bytes).into_owned(), ty)
+        self.helper(ea, lossy(bytes), ty)
     }
 
     fn e_call(&mut self, ea: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
@@ -628,13 +629,9 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
             })
             .collect();
         let location = LocalLocation::from_argloc(atype, reg1, reg2, sval, pieces);
-        let comment = if comment.is_empty() {
-            None
-        } else {
-            Some(String::from_utf8_lossy(comment).into_owned())
-        };
+        let comment = lossy_opt(comment);
         let lvar = Local {
-            name: String::from_utf8_lossy(name).into_owned(),
+            name: lossy(name),
             ty: tid(ty),
             is_arg: flags & 1 != 0,
             is_result: flags & 2 != 0,

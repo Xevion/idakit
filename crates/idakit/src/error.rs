@@ -200,11 +200,8 @@ pub enum Error {
     },
 
     /// The Hex-Rays decompiler could not be initialized.
-    #[snafu(display("hex-rays decompiler unavailable (init returned {code})"))]
-    HexRaysInit {
-        /// The initializer's return code.
-        code: i32,
-    },
+    #[snafu(display("hex-rays decompiler could not be initialized"))]
+    HexRaysInit,
 
     /// No type with the requested name exists in the database. Raised by the type-read lookups
     /// ([`Database::type_named`](crate::Database::type_named),
@@ -463,8 +460,8 @@ mod tests {
         "failed to open database \"/tmp/x.i64\": No such file or directory",
     )]
     #[case::extract(
-        Error::Extract { address: 0x1400_1000, source: ExtractError::WalkFailed },
-        "type extraction failed at 0x14001000: the facade could not walk the ctree (null cfunc)",
+        Error::Extract { address: 0x1400_1000, source: ExtractError::BadEa },
+        "type extraction failed at 0x14001000: a node carries the BADADDR sentinel as a required address",
     )]
     #[case::kernel(
         Error::Kernel { reason: "the kernel thread is gone".to_owned() },
