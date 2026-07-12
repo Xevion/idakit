@@ -45,7 +45,7 @@ mod platform {
 }
 use platform::{CPP_STDLIB, EMIT_RPATH, IDALIB_LIB, PLATFORM_DEFINE, RUNTIME_LIB};
 
-const FACADE_SOURCES: &[&str] = &["facade/runtime.cpp", "facade/db.cpp", "facade/hexrays.cpp"];
+const FACADE_SOURCES: &[&str] = &["facade/runtime.cpp", "facade/db.cpp"];
 
 // Compile one cxx bridge into its own static archive. cxx_build seeds a cc::Build with the
 // generated glue; this mirrors the facade's flags (c++17, SDK as -isystem, __EA64__, platform
@@ -177,6 +177,16 @@ fn main() {
         sdk_include_str,
         &[],
     );
+    // The ctree walk driven by an extern "Rust" opaque visitor, the same shape as the tinfo walk
+    // above: every expression/statement/local forwards straight into the sink, with no
+    // function-pointer table or void* context to marshal.
+    cxx_bridge(
+        "src/bridge_ctree.rs",
+        &["facade/ctree_cxx.cc"],
+        "idakit_cxx_ctree_bridge",
+        sdk_include_str,
+        &[],
+    );
 
     // The spec-driven cxx-gen bridge (namespace idakit_gen). Unlike every bridge above, this one
     // is not hand-written: codegen::generate builds the `#[cxx::bridge] mod` tokens from a declarative
@@ -252,6 +262,9 @@ fn main() {
     println!("cargo:rerun-if-changed=facade/typewalk_cxx.cc");
     println!("cargo:rerun-if-changed=facade/typewalk_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_typewalk.rs");
+    println!("cargo:rerun-if-changed=facade/ctree_cxx.cc");
+    println!("cargo:rerun-if-changed=facade/ctree_cxx.h");
+    println!("cargo:rerun-if-changed=src/bridge_ctree.rs");
     println!("cargo:rerun-if-changed=facade/probe_cxx.cc");
     println!("cargo:rerun-if-changed=facade/probe_cxx.h");
     println!("cargo:rerun-if-changed=facade/cfunc_cxx.cc");

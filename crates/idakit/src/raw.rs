@@ -224,20 +224,20 @@ impl Database {
         sys::xrefs_build(address.get(), is_to)
     }
 
-    pub(crate) fn hexrays_init(&self) -> c_int {
-        unsafe { sys::idakit_hexrays_init() }
+    pub(crate) fn hexrays_init(&self) -> bool {
+        sys::hexrays_init()
     }
 
     pub(crate) fn mark_cfunc_dirty(&mut self, address: Address, close_views: bool) -> bool {
-        unsafe { sys::idakit_mark_cfunc_dirty(address.get(), close_views as c_int) != 0 }
+        sys::mark_cfunc_dirty(address.get(), close_views)
     }
 
     pub(crate) fn clear_cached_cfuncs(&mut self) {
-        unsafe { sys::idakit_clear_cached_cfuncs() };
+        sys::clear_cached_cfuncs();
     }
 
     pub(crate) fn has_cached_cfunc(&self, address: Address) -> bool {
-        unsafe { sys::idakit_has_cached_cfunc(address.get()) != 0 }
+        sys::has_cached_cfunc(address.get())
     }
 
     pub(crate) fn set_name(&mut self, address: Address, name: *const c_char) -> bool {

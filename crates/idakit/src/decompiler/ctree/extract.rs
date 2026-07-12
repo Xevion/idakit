@@ -1,20 +1,18 @@
 //! Building a [`Ctree`] from the facade's streaming ctree walk.
 //!
-//! The facade ([`idakit_sys::idakit_cfunc_walk_ctree`]) is a pure SDK walker, reading a
-//! decompiled function depth-first and, per node, calling one callback in [`VTBL`] to mint
-//! the owned node. Children are emitted before their parents, so each callback receives
-//! its children as the handles their own callbacks returned. [`CallbackBuilder`] holds
-//! the in-progress arenas; the `extern "C"` shims are thin adapters that decode the FFI
-//! arguments and call its safe methods (which the tests drive directly).
+//! The facade ([`idakit_sys::cfunc_walk_ctree`]) is a pure SDK walker, reading a decompiled
+//! function depth-first and, per node, calling one method of the `cxx` opaque
+//! [`CtreeVisitor`](idakit_sys::CtreeVisitor) it drives. Children are emitted before their
+//! parents, so each call receives its children as the handles their own calls returned.
+//! [`CallbackBuilder`] is the [`idakit_sys::CtreeSink`] the visitor forwards into and holds
+//! the in-progress arenas; its safe methods are also what the tests drive directly.
 //!
 //! All identity and meaning live here, not in the facade: an operator's `ctype` maps to
 //! [`BinaryOp`]/[`AssignmentOp`]/[`UnaryOp`] (their discriminants *are* the ctype values) or one of
 //! the structural [`ct`] constants; named aggregate types are interned by name with a
 //! placeholder so recursion resolves; structural types dedup through the type table.
 
-use std::ffi::{c_char, c_void};
-
-use idakit_sys::{CaseDesc, EmitVtbl, EnumConstInfo, IDAKIT_NONE, LvarLoc, MemberInfo};
+use idakit_sys::{EnumConstInfo, IDAKIT_NONE, MemberInfo};
 use snafu::Snafu;
 
 use super::node::{
@@ -25,7 +23,6 @@ use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use super::tree::{Ctree, CtreeBuilder};
 use crate::address::Address;
 use crate::arena::Idx;
-use crate::ffi::{lossy, slice};
 use crate::types::{SinkAdapter, TypeBuilder, TypeSink, raw, tid};
 
 /// Structural operator-tag values the generic operator callback dispatches by name
@@ -97,8 +94,8 @@ fn opt_s(raw: u32) -> Option<StatementId> {
 }
 
 /// Accumulates the owned ctree as the facade walks. Its methods are the safe surface the
-/// `extern "C"` shims (and the unit tests) call; each returns the new node's handle as a
-/// bare `u32` for the facade to thread to the parent. Node building lives here; type
+/// [`idakit_sys::CtreeSink`] impl below (and the unit tests) call; each returns the new node's
+/// handle as a bare `u32` for the facade to thread to the parent. Node building lives here; type
 /// building is delegated to the [`CtreeBuilder`]'s [`TypeBuilder`](crate::types::TypeBuilder).
 pub(crate) struct CallbackBuilder {
     b: CtreeBuilder,
@@ -474,295 +471,201 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
     }
 }
 
-/// Reborrow the opaque context as the builder the walk threads through every callback. The
-/// raw pointer is taken by reference so the returned lifetime is tied to its (stack) holder
-/// and cannot be chosen as `'static`.
-///
-/// # Safety
-/// `*ctx` must be the `*mut CallbackBuilder` passed to `idakit_cfunc_walk_ctree`, unaliased
-/// for the call (the walk is single-threaded and never re-enters a callback).
-// Reborrowing a `&mut` from a `&` (clippy::mut_from_ref) is intentional: taking `ctx` by
-// reference bounds the returned lifetime to its stack holder (see above), and the
-// single-threaded, non-re-entrant walk guarantees the builder is unaliased for each call.
-#[allow(clippy::mut_from_ref)]
-unsafe fn builder(ctx: &*mut c_void) -> &mut CallbackBuilder {
-    unsafe { &mut *(*ctx as *mut CallbackBuilder) }
-}
+/// The node half of the ctree walk: each method decodes its `&[u8]` arguments with
+/// `String::from_utf8_lossy` (IDA names and string literals are not guaranteed UTF-8) and
+/// forwards into the matching safe method above.
+impl idakit_sys::CtreeSink for CallbackBuilder {
+    fn e_num(&mut self, ea: u64, value: u64, ty: u32) -> u32 {
+        self.num(ea, value, ty)
+    }
 
-unsafe extern "C" fn cb_num(ctx: *mut c_void, address: u64, value: u64, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.num(address, value, ty)
-}
-unsafe extern "C" fn cb_fnum(ctx: *mut c_void, address: u64, value: f64, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.fnum(address, value, ty)
-}
-unsafe extern "C" fn cb_obj(
-    ctx: *mut c_void,
-    address: u64,
-    target: u64,
-    name: *const c_char,
-    name_len: usize,
-    ty: u32,
-) -> u32 {
-    let name = unsafe { lossy(name, name_len) };
-    unsafe { builder(&ctx) }.obj(address, target, name, ty)
-}
-unsafe extern "C" fn cb_var(ctx: *mut c_void, address: u64, idx: u32, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.var(address, idx, ty)
-}
-unsafe extern "C" fn cb_str(
-    ctx: *mut c_void,
-    address: u64,
-    s: *const c_char,
-    len: usize,
-    ty: u32,
-) -> u32 {
-    let s = unsafe { lossy(s, len) }.unwrap_or_default();
-    unsafe { builder(&ctx) }.string(address, s, ty)
-}
-unsafe extern "C" fn cb_helper(
-    ctx: *mut c_void,
-    address: u64,
-    s: *const c_char,
-    len: usize,
-    ty: u32,
-) -> u32 {
-    let s = unsafe { lossy(s, len) }.unwrap_or_default();
-    unsafe { builder(&ctx) }.helper(address, s, ty)
-}
-unsafe extern "C" fn cb_call(
-    ctx: *mut c_void,
-    address: u64,
-    callee: u32,
-    args: *const u32,
-    nargs: usize,
-    ty: u32,
-) -> u32 {
-    let args = unsafe { slice(&args, nargs) };
-    unsafe { builder(&ctx) }.call(address, callee, args, ty)
-}
-unsafe extern "C" fn cb_memref(
-    ctx: *mut c_void,
-    address: u64,
-    obj: u32,
-    offset: u32,
-    ty: u32,
-) -> u32 {
-    unsafe { builder(&ctx) }.memref(address, obj, offset, ty)
-}
-unsafe extern "C" fn cb_memptr(
-    ctx: *mut c_void,
-    address: u64,
-    obj: u32,
-    offset: u32,
-    ty: u32,
-) -> u32 {
-    unsafe { builder(&ctx) }.memptr(address, obj, offset, ty)
-}
-unsafe extern "C" fn cb_deref(ctx: *mut c_void, address: u64, x: u32, size: u32, ty: u32) -> u32 {
-    unsafe { builder(&ctx) }.deref(address, x, size, ty)
-}
-unsafe extern "C" fn cb_op(
-    ctx: *mut c_void,
-    address: u64,
-    ctype: u32,
-    x: u32,
-    y: u32,
-    z: u32,
-    ty: u32,
-) -> u32 {
-    unsafe { builder(&ctx) }.op(address, ctype, x, y, z, ty)
-}
+    fn e_fnum(&mut self, ea: u64, value: f64, ty: u32) -> u32 {
+        self.fnum(ea, value, ty)
+    }
 
-unsafe extern "C" fn cb_block(
-    ctx: *mut c_void,
-    address: u64,
-    kids: *const u32,
-    nkids: usize,
-) -> u32 {
-    let kids = unsafe { slice(&kids, nkids) };
-    unsafe { builder(&ctx) }.block(address, kids)
-}
-unsafe extern "C" fn cb_expr(ctx: *mut c_void, address: u64, e: u32) -> u32 {
-    unsafe { builder(&ctx) }.expression_statement(address, e)
-}
-unsafe extern "C" fn cb_if(
-    ctx: *mut c_void,
-    address: u64,
-    cond: u32,
-    then_s: u32,
-    else_s: u32,
-) -> u32 {
-    unsafe { builder(&ctx) }.if_(address, cond, then_s, else_s)
-}
-unsafe extern "C" fn cb_for(
-    ctx: *mut c_void,
-    address: u64,
-    init: u32,
-    cond: u32,
-    step: u32,
-    body: u32,
-) -> u32 {
-    unsafe { builder(&ctx) }.for_(address, init, cond, step, body)
-}
-unsafe extern "C" fn cb_while(ctx: *mut c_void, address: u64, cond: u32, body: u32) -> u32 {
-    unsafe { builder(&ctx) }.while_(address, cond, body)
-}
-unsafe extern "C" fn cb_do(ctx: *mut c_void, address: u64, body: u32, cond: u32) -> u32 {
-    unsafe { builder(&ctx) }.do_(address, body, cond)
-}
-unsafe extern "C" fn cb_switch(
-    ctx: *mut c_void,
-    address: u64,
-    expression: u32,
-    cases: *const CaseDesc,
-    ncases: usize,
-) -> u32 {
-    let cds = unsafe { slice(&cases, ncases) };
-    let cases = cds
-        .iter()
-        .map(|cd| Case {
-            values: unsafe { slice(&cd.values, cd.nvalues) }.to_vec(),
-            body: sid(cd.body),
-        })
-        .collect();
-    unsafe { builder(&ctx) }.switch(address, expression, cases)
-}
-unsafe extern "C" fn cb_break(ctx: *mut c_void, address: u64) -> u32 {
-    unsafe { builder(&ctx) }.break_(address)
-}
-unsafe extern "C" fn cb_continue(ctx: *mut c_void, address: u64) -> u32 {
-    unsafe { builder(&ctx) }.continue_(address)
-}
-unsafe extern "C" fn cb_return(ctx: *mut c_void, address: u64, e: u32) -> u32 {
-    unsafe { builder(&ctx) }.return_(address, e)
-}
-unsafe extern "C" fn cb_goto(ctx: *mut c_void, address: u64, label: i32) -> u32 {
-    unsafe { builder(&ctx) }.goto(address, label)
-}
-unsafe extern "C" fn cb_asm(ctx: *mut c_void, address: u64, addrs: *const u64, n: usize) -> u32 {
-    let addrs = unsafe { slice(&addrs, n) };
-    unsafe { builder(&ctx) }.asm(address, addrs)
-}
-unsafe extern "C" fn cb_try(
-    ctx: *mut c_void,
-    address: u64,
-    body: u32,
-    catches: *const u32,
-    n: usize,
-) -> u32 {
-    let catches = unsafe { slice(&catches, n) };
-    unsafe { builder(&ctx) }.try_(address, body, catches)
-}
-unsafe extern "C" fn cb_throw(ctx: *mut c_void, address: u64, e: u32) -> u32 {
-    unsafe { builder(&ctx) }.throw(address, e)
-}
-unsafe extern "C" fn cb_empty(ctx: *mut c_void, address: u64) -> u32 {
-    unsafe { builder(&ctx) }.empty_statement(address)
-}
+    fn e_obj(&mut self, ea: u64, target: u64, name: &[u8], ty: u32) -> u32 {
+        let name = if name.is_empty() {
+            None
+        } else {
+            Some(String::from_utf8_lossy(name).into_owned())
+        };
+        self.obj(ea, target, name, ty)
+    }
 
-#[allow(clippy::too_many_arguments)]
-unsafe extern "C" fn cb_lvar(
-    ctx: *mut c_void,
-    name: *const c_char,
-    name_len: usize,
-    ty: u32,
-    flags: u32,
-    width: u32,
-    comment: *const c_char,
-    comment_len: usize,
-    loc: *const LvarLoc,
-) {
-    // SAFETY: `loc` is a valid, non-null pointer for the duration of this call (facade invariant).
-    let loc = unsafe { &*loc };
-    // atype == 2 marks a scattered location (split across pieces); read the fragments, each
-    // a scalar (register or stack) location.
-    let pieces = if loc.atype == 2 && !loc.pieces.is_null() {
-        // SAFETY: `pieces` points at `npieces` valid `LocPiece`, live for this call.
-        let raw = unsafe { slice(&loc.pieces, loc.npieces as usize) };
-        raw.iter()
+    fn e_var(&mut self, ea: u64, idx: u32, ty: u32) -> u32 {
+        self.var(ea, idx, ty)
+    }
+
+    fn e_str(&mut self, ea: u64, bytes: &[u8], ty: u32) -> u32 {
+        self.string(ea, String::from_utf8_lossy(bytes).into_owned(), ty)
+    }
+
+    fn e_helper(&mut self, ea: u64, bytes: &[u8], ty: u32) -> u32 {
+        self.helper(ea, String::from_utf8_lossy(bytes).into_owned(), ty)
+    }
+
+    fn e_call(&mut self, ea: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
+        self.call(ea, callee, args, ty)
+    }
+
+    fn e_memref(&mut self, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+        self.memref(ea, obj, offset, ty)
+    }
+
+    fn e_memptr(&mut self, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
+        self.memptr(ea, obj, offset, ty)
+    }
+
+    fn e_deref(&mut self, ea: u64, x: u32, size: u32, ty: u32) -> u32 {
+        self.deref(ea, x, size, ty)
+    }
+
+    fn e_op(&mut self, ea: u64, ctype: u32, x: u32, y: u32, z: u32, ty: u32) -> u32 {
+        self.op(ea, ctype, x, y, z, ty)
+    }
+
+    fn s_block(&mut self, ea: u64, kids: &[u32]) -> u32 {
+        self.block(ea, kids)
+    }
+
+    fn s_expr(&mut self, ea: u64, e: u32) -> u32 {
+        self.expression_statement(ea, e)
+    }
+
+    fn s_if(&mut self, ea: u64, cond: u32, then_s: u32, else_s: u32) -> u32 {
+        self.if_(ea, cond, then_s, else_s)
+    }
+
+    fn s_for(&mut self, ea: u64, init: u32, cond: u32, step: u32, body: u32) -> u32 {
+        self.for_(ea, init, cond, step, body)
+    }
+
+    fn s_while(&mut self, ea: u64, cond: u32, body: u32) -> u32 {
+        self.while_(ea, cond, body)
+    }
+
+    fn s_do(&mut self, ea: u64, body: u32, cond: u32) -> u32 {
+        self.do_(ea, body, cond)
+    }
+
+    fn s_switch(
+        &mut self,
+        ea: u64,
+        expr: u32,
+        bodies: &[u32],
+        value_counts: &[u32],
+        values: &[u64],
+    ) -> u32 {
+        let mut pos = 0usize;
+        let cases = bodies
+            .iter()
+            .zip(value_counts)
+            .map(|(&body, &n)| {
+                let n = n as usize;
+                let vals = values[pos..pos + n].to_vec();
+                pos += n;
+                Case {
+                    values: vals,
+                    body: sid(body),
+                }
+            })
+            .collect();
+        self.switch(ea, expr, cases)
+    }
+
+    fn s_break(&mut self, ea: u64) -> u32 {
+        self.break_(ea)
+    }
+
+    fn s_continue(&mut self, ea: u64) -> u32 {
+        self.continue_(ea)
+    }
+
+    fn s_return(&mut self, ea: u64, e: u32) -> u32 {
+        self.return_(ea, e)
+    }
+
+    fn s_goto(&mut self, ea: u64, label: i32) -> u32 {
+        self.goto(ea, label)
+    }
+
+    fn s_asm(&mut self, ea: u64, addrs: &[u64]) -> u32 {
+        self.asm(ea, addrs)
+    }
+
+    fn s_try(&mut self, ea: u64, body: u32, catches: &[u32]) -> u32 {
+        self.try_(ea, body, catches)
+    }
+
+    fn s_throw(&mut self, ea: u64, e: u32) -> u32 {
+        self.throw(ea, e)
+    }
+
+    fn s_empty(&mut self, ea: u64) -> u32 {
+        self.empty_statement(ea)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn l_lvar(
+        &mut self,
+        name: &[u8],
+        ty: u32,
+        flags: u32,
+        width: u32,
+        comment: &[u8],
+        atype: u32,
+        reg1: u32,
+        reg2: u32,
+        sval: i64,
+        pieces: &[idakit_sys::LocPiece],
+    ) {
+        let pieces = pieces
+            .iter()
             .map(|p| LocationPiece {
                 location: LocalLocation::from_argloc(p.atype, p.reg, 0, p.sval, Vec::new()),
                 offset: p.off,
                 size: p.size,
             })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let location = LocalLocation::from_argloc(loc.atype, loc.reg1, loc.reg2, loc.sval, pieces);
-    let lvar = Local {
-        name: unsafe { lossy(name, name_len) }.unwrap_or_default(),
-        ty: tid(ty),
-        is_arg: flags & 1 != 0,
-        is_result: flags & 2 != 0,
-        is_byref: flags & 4 != 0,
-        width,
-        comment: unsafe { lossy(comment, comment_len) },
-        location,
-    };
-    unsafe { builder(&ctx) }.push_lvar(lvar);
+            .collect();
+        let location = LocalLocation::from_argloc(atype, reg1, reg2, sval, pieces);
+        let comment = if comment.is_empty() {
+            None
+        } else {
+            Some(String::from_utf8_lossy(comment).into_owned())
+        };
+        let lvar = Local {
+            name: String::from_utf8_lossy(name).into_owned(),
+            ty: tid(ty),
+            is_arg: flags & 1 != 0,
+            is_result: flags & 2 != 0,
+            is_byref: flags & 4 != 0,
+            width,
+            comment,
+            location,
+        };
+        self.push_lvar(lvar);
+    }
 }
 
-/// The node-callback table handed to the facade. Field order matches `idakit_emit_vtbl_t`. Node
-/// types are emitted through the `cxx` [`TypeWalkVisitor`] passed alongside, not this table.
-static VTBL: EmitVtbl = EmitVtbl {
-    e_num: cb_num,
-    e_fnum: cb_fnum,
-    e_obj: cb_obj,
-    e_var: cb_var,
-    e_str: cb_str,
-    e_helper: cb_helper,
-    e_call: cb_call,
-    e_memref: cb_memref,
-    e_memptr: cb_memptr,
-    e_deref: cb_deref,
-    e_op: cb_op,
-    s_block: cb_block,
-    s_expr: cb_expr,
-    s_if: cb_if,
-    s_for: cb_for,
-    s_while: cb_while,
-    s_do: cb_do,
-    s_switch: cb_switch,
-    s_break: cb_break,
-    s_continue: cb_continue,
-    s_return: cb_return,
-    s_goto: cb_goto,
-    s_asm: cb_asm,
-    s_try: cb_try,
-    s_throw: cb_throw,
-    s_empty: cb_empty,
-    l_lvar: cb_lvar,
-};
-
-/// Walk a decompiled function's ctree into an owned [`Ctree`]. `cfunc` is a live
-/// `idakit_decompile` handle (see [`DecompiledFunction`](crate::DecompiledFunction)); the walk runs on this (kernel)
-/// thread and copies everything it needs, so the result outlives the handle.
-pub(crate) fn walk(cfunc: *mut c_void) -> Result<Ctree, ExtractError> {
+/// Walk a decompiled function's ctree into an owned [`Ctree`]. `cfunc` is a live handle from
+/// [`DecompiledFunction`](crate::DecompiledFunction); the walk runs on this (kernel) thread and
+/// copies everything it needs, so the result outlives the handle.
+pub(crate) fn walk(cfunc: &idakit_sys::CFunc) -> Result<Ctree, ExtractError> {
     let mut cb = CallbackBuilder::new();
-    let mut root: u32 = 0;
-    // Derive both the node context and the type visitor from one raw pointer to `cb`, so the
-    // per-callback reborrows (nodes via `ctx`, node types via the visitor) share a provenance and
+    // Derive both the node sink and the type sink from one raw pointer to `cb`, so the
+    // per-callback reborrows (nodes via `nodes`, node types via `types`) share a provenance and
     // never conflict; the walk drives them one callback at a time.
     let cb_ptr: *mut CallbackBuilder = &raw mut cb;
     // SAFETY: `cb_ptr` points to the live, stack-local `cb` and outlives the walk; the walk is
     // single-threaded and non-reentrant, so the sink stays unaliased per callback.
-    let mut visitor =
+    let mut nodes = unsafe { idakit_sys::ctree_visitor(cb_ptr as *mut dyn idakit_sys::CtreeSink) };
+    // SAFETY: same provenance and non-reentrancy guarantee as `nodes`, for the node-type sink.
+    let mut types =
         unsafe { idakit_sys::type_walk_visitor(cb_ptr as *mut dyn idakit_sys::TypeWalkSink) };
-    // SAFETY: `cfunc` is a live handle (caller's invariant); `VTBL` is static; `cb_ptr` and
-    // `visitor` reach the same `cb`, reborrowed one callback at a time; `root` is a valid out-param.
-    let rc = unsafe {
-        idakit_sys::idakit_cfunc_walk_ctree(
-            cfunc,
-            &VTBL,
-            cb_ptr.cast(),
-            (&mut visitor as *mut idakit_sys::TypeWalkVisitor).cast(),
-            &mut root,
-        )
-    };
-    if rc != 0 {
-        return Err(ExtractError::WalkFailed);
-    }
+    let tv_addr = (&mut types as *mut idakit_sys::TypeWalkVisitor) as usize;
+    // SAFETY: `cfunc` is a live handle (a `&CFunc` cannot be null); `tv_addr` is `types`' own
+    // address, reinterpreted back to a `TypeWalkVisitor&` on the C++ side for its own calls.
+    let root = unsafe { idakit_sys::cfunc_walk_ctree(cfunc, &mut nodes, tv_addr) };
     cb.finish(root)
 }
 

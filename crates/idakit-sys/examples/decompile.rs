@@ -11,7 +11,7 @@ fn main() {
     let db = env::args().nth(1).expect("usage: decompile <db.i64> [idx]");
     let idx: usize = env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(7);
 
-    // SAFETY: the library lifecycle and hexrays init are the raw C ABI; decompile/cfunc_* are safe
+    // SAFETY: the library lifecycle is the raw C ABI; hexrays_init/decompile/cfunc_* are safe
     // bridge calls.
     unsafe {
         assert_eq!(init_library(0, ptr::null_mut()), 0, "init_library failed");
@@ -21,11 +21,11 @@ fn main() {
             0,
             "open failed"
         );
-
-        let hr = idakit_hexrays_init();
-        println!("hexrays_init -> {hr}");
-        assert_eq!(hr, 1, "hexrays unavailable");
     }
+
+    let hr = hexrays_init();
+    println!("hexrays_init -> {hr}");
+    assert!(hr, "hexrays unavailable");
 
     let address = func_ea(idx);
     println!("decompiling function[{idx}] @ {address:#x} ...\n");

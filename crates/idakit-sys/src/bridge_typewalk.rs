@@ -301,10 +301,10 @@ pub fn walk_frame_type(ea: u64, sink: &mut dyn TypeWalkSink) -> Option<FrameWalk
 /// Wrap a raw sink pointer as a [`TypeWalkVisitor`] for a walk driven outside this crate.
 ///
 /// The self-contained `walk_*` drivers cover the standalone walks; this exists for the ctree walk,
-/// where the visitor must be handed to [`idakit_cfunc_walk_ctree`](crate::idakit_cfunc_walk_ctree)
-/// alongside a raw node context that aliases the same builder. Passing `sink` as a raw pointer (not
-/// `&mut`) lets the caller derive both it and the node context from one provenance, so per-callback
-/// reborrows never conflict.
+/// where the visitor is handed to [`cfunc_walk_ctree`](crate::cfunc_walk_ctree) alongside a
+/// [`CtreeVisitor`](crate::CtreeVisitor) that shares the same builder. Passing `sink` as a raw
+/// pointer (not `&mut`) lets the caller derive both from one provenance, so per-callback reborrows
+/// never conflict.
 ///
 /// # Safety
 /// `sink` must be non-null and point to a live [`TypeWalkSink`] that outlives every use of the

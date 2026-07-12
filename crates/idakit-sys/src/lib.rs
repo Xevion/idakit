@@ -1,9 +1,9 @@
 //! Raw FFI bindings to IDA's idalib runtime and the idakit C++ facade.
 //!
 //! The declarations are split into per-domain source modules (`runtime`, `function`, `bytes`,
-//! `hexrays`, ...) that mirror the facade's translation units, but every item is re-exported
+//! `bridge_ctree`, ...) that mirror the facade's translation units, but every item is re-exported
 //! flat at the crate root, so the public surface is a single namespace
-//! (`idakit_sys::idakit_get_bytes`, `idakit_sys::EmitVtbl`), not a module hierarchy. There are
+//! (`idakit_sys::idakit_get_bytes`, `idakit_sys::CtreeVisitor`), not a module hierarchy. There are
 //! no safe wrappers here; those belong in `idakit`.
 //!
 //! # Buffer conventions
@@ -38,6 +38,7 @@ pub const BADADDR: Address = u64::MAX;
 
 mod bridge_cfg2;
 mod bridge_cfunc;
+mod bridge_ctree;
 mod bridge_gen;
 mod bridge_probe;
 mod bridge_probe_ext;
@@ -47,7 +48,6 @@ mod bytes;
 mod cfg;
 mod frame;
 mod function;
-mod hexrays;
 mod instruction;
 mod name;
 mod runtime;
@@ -58,6 +58,7 @@ mod ty_build;
 pub use bridge_cfg2::*;
 #[doc(hidden)]
 pub use bridge_cfunc::*;
+pub use bridge_ctree::*;
 pub use bridge_gen::*;
 #[doc(hidden)]
 pub use bridge_probe::*;
@@ -69,7 +70,6 @@ pub use bytes::*;
 pub use cfg::*;
 pub use frame::*;
 pub use function::*;
-pub use hexrays::*;
 pub use instruction::*;
 pub use name::*;
 pub use runtime::*;

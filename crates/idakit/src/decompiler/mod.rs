@@ -7,7 +7,6 @@
 pub mod ctree;
 
 use std::collections::HashSet;
-use std::ffi::c_void;
 use std::marker::PhantomData;
 
 use idakit_sys as sys;
@@ -38,9 +37,8 @@ impl Database {
     #[doc(alias("decompile_func"))]
     pub fn decompile(&self, address: Address) -> Result<DecompiledFunction<'_>> {
         if !self.hexrays_ready.get() {
-            let rc = self.hexrays_init();
-            if rc != 1 {
-                return Err(Error::HexRaysInit { code: rc });
+            if !self.hexrays_init() {
+                return Err(Error::HexRaysInit { code: 0 });
             }
             self.hexrays_ready.set(true);
         }
@@ -230,11 +228,7 @@ impl<'db> DecompiledFunction<'db> {
     /// # Errors
     /// [`ExtractError`] if the ctree fails to materialize.
     pub fn ctree(&self) -> Result<Ctree, ExtractError> {
-        // The UniquePtr holds the cfuncptr_t the raw walk expects (the generated `decompile` made
-        // the same `new cfuncptr_t`), and keeps it alive across the walk. `walk` copies everything
-        // it needs out of the SDK objects, so the result outlives this `cfunc`.
-        let cfunc = self.cfunc() as *const sys::CFunc as *mut c_void;
-        walk(cfunc)
+        walk(self.cfunc())
     }
 }
 

@@ -1655,8 +1655,8 @@ pub const INSTRUCTION: Domain = Domain {
 /// `~cfuncptr_t` (`release()`) on drop, retiring the raw `new`/`delete` handle dance. `decompile`
 /// wraps the microcode pipeline in the facade's `guarded<>` trap and throws on failure; the read
 /// accessors take a borrowed `&CFunc` and return pseudocode, ctree counts, and the extraction-gap
-/// diagnostic. The ctree walk itself (the raw `EmitVtbl` fn-pointer table) stays hand-written and is
-/// fed a `cfuncptr_t*` extracted from the `UniquePtr`. Bodies are in `facade/gen_hexrays.cc`.
+/// diagnostic. The ctree walk itself is a separate hand-written `cxx` bridge (`bridge_ctree`) fed
+/// the same `&CFunc`. Bodies are in `facade/gen_hexrays.cc`.
 pub const HEXRAYS: Domain = Domain {
     name: "hexrays",
     // funcs.hpp (pulling bytes.hpp/xref.hpp) precedes hexrays.hpp so the generated header is
