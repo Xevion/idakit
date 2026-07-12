@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.1](https://github.com/Xevion/idakit/compare/idakit-v0.1.0...idakit-v0.1.1) (2026-07-12)
+
+
+### Code Refactoring
+
+* **sys:** Always compile probe bridges, drop test-shims feature and alias dep ([c618a40](https://github.com/Xevion/idakit/commit/c618a40de18dc1b6ebc3083ad260d6bf79ecf056))
+
+
+### Documentation
+
+* Generate README from idakit's crate doc via cargo-rdme ([c440f86](https://github.com/Xevion/idakit/commit/c440f8687534cc7abf26a52a07301e3622bd5e71))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * idakit-sys bumped from 0.1.0 to 0.1.1
+
 ## 0.1.0 (2026-07-11)
 
 
