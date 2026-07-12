@@ -84,6 +84,12 @@ int64_t idakit_func_type(idakit_ea_t ea, char *buf, size_t cap); /* prototype te
 
 int idakit_hexrays_init(void); /* 1 = decompiler ready, 0 = unavailable */
 
+/* Hex-Rays cfunc cache (hexrays.hpp). Each guards on a null HEXDSP (decompiler not yet
+   initialized, so nothing is cached) and returns the empty answer. */
+int idakit_mark_cfunc_dirty(idakit_ea_t ea, int close_views); /* 1 if an entry existed */
+void idakit_clear_cached_cfuncs(void);
+int idakit_has_cached_cfunc(idakit_ea_t ea); /* 1 if cached */
+
 /* Streaming ctree extraction. The facade is a pure SDK walker: it reads a decompiled
  * function's ctree depth-first and, per node, calls one Rust callback in `vtbl` to mint
  * the corresponding owned node. Children are emitted before their parent (post-order),

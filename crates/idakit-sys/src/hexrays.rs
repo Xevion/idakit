@@ -101,6 +101,14 @@ pub struct EmitVtbl {
 // hex-rays decompiler
 unsafe extern "C" {
     pub fn idakit_hexrays_init() -> c_int;
+    /// Evict the cached decompilation for `ea` (`mark_cfunc_dirty`); returns 1 if an entry
+    /// existed, 0 if none or if the decompiler is not initialized.
+    pub fn idakit_mark_cfunc_dirty(ea: Address, close_views: c_int) -> c_int;
+    /// Evict every cached decompilation (`clear_cached_cfuncs`); a no-op if the decompiler is
+    /// not initialized.
+    pub fn idakit_clear_cached_cfuncs();
+    /// Whether `ea` has a cached decompilation (`has_cached_cfunc`); 0 if none or not initialized.
+    pub fn idakit_has_cached_cfunc(ea: Address) -> c_int;
     /// Walk `cfunc`'s ctree, driving `vtbl` (with `ctx`) per node and `visitor` (an opaque
     /// [`TypeWalkVisitor`](crate::TypeWalkVisitor)) per node type, writing the root statement handle
     /// to `*root`. Returns 0 on success, non-zero if any pointer argument is null.

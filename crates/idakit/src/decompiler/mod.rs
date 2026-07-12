@@ -6,6 +6,7 @@
 
 pub mod ctree;
 
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::marker::PhantomData;
 
@@ -55,6 +56,76 @@ impl Database {
                     address: address.get(),
                     reason: e.what().to_owned(),
                 })
+            }
+        }
+    }
+
+    /// Evict one function's cached decompilation, forcing a fresh decompile on next access.
+    ///
+    /// Returns whether a cached entry existed. A no-op returning `false` when the decompiler was
+    /// never initialized, since nothing is cached yet.
+    ///
+    /// This evicts only the named function. A prototype change that alters how callers render its
+    /// call sites does not propagate here, since Hex-Rays keeps no caller graph: invalidate each
+    /// caller too, or drive the edit through the [`FunctionEdit`](crate::function::FunctionEdit)
+    /// cursor, which does it automatically.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let entry = db.functions().next().unwrap().address();
+    /// if db.decompile(entry).is_ok() {
+    ///     assert!(db.is_decompilation_cached(entry));
+    ///     assert!(db.invalidate_decompilation(entry));
+    ///     assert!(!db.is_decompilation_cached(entry));
+    /// }
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[doc(alias("mark_cfunc_dirty"))]
+    pub fn invalidate_decompilation(&mut self, address: Address) -> bool {
+        self.hexrays_ready.get() && self.mark_cfunc_dirty(address, false)
+    }
+
+    /// Evict every cached decompilation, the broad hammer for a whole-library structural change.
+    ///
+    /// Prefer [`invalidate_decompilation`](Self::invalidate_decompilation) for a single function. A
+    /// no-op when the decompiler was never initialized.
+    #[doc(alias("clear_cached_cfuncs"))]
+    pub fn clear_decompilation_cache(&mut self) {
+        if self.hexrays_ready.get() {
+            self.clear_cached_cfuncs();
+        }
+    }
+
+    /// Whether the function at `address` has a cached decompilation.
+    ///
+    /// Always `false` when the decompiler was never initialized, since nothing is cached.
+    #[must_use]
+    #[doc(alias("has_cached_cfunc"))]
+    pub fn is_decompilation_cached(&self, address: Address) -> bool {
+        self.hexrays_ready.get() && self.has_cached_cfunc(address)
+    }
+
+    /// Evict the decompilation of `entry` and of every function whose pseudocode names it, so a
+    /// prototype or name change re-renders at all reference sites. A no-op if the decompiler was
+    /// never initialized.
+    ///
+    /// Reference sites are found through every cross-reference to `entry`, not just calls and jumps:
+    /// an address taken into a function pointer or vtable is a data reference, yet Hex-Rays still
+    /// prints the name there. Any reference whose source sits inside a function marks that function;
+    /// a source outside every function resolves to `BADADDR` and is skipped.
+    pub(crate) fn invalidate_decompilation_dependents(&mut self, entry: Address) {
+        if !self.hexrays_ready.get() {
+            return;
+        }
+        self.mark_cfunc_dirty(entry, false);
+        let mut seen = HashSet::from([entry]);
+        for xref in self.xrefs_to(entry) {
+            let Some(referrer) = Address::try_new(self.func_start(xref.from)) else {
+                continue;
+            };
+            if seen.insert(referrer) {
+                self.mark_cfunc_dirty(referrer, false);
             }
         }
     }

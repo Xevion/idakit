@@ -28,6 +28,24 @@ extern "C" int idakit_hexrays_init(void) {
   return init_hexrays_plugin() ? 1 : 0;
 }
 
+extern "C" int idakit_mark_cfunc_dirty(idakit_ea_t ea, int close_views) {
+  if (get_hexdsp() == nullptr)
+    return 0;
+  return mark_cfunc_dirty((ea_t)ea, close_views != 0) ? 1 : 0;
+}
+
+extern "C" void idakit_clear_cached_cfuncs(void) {
+  if (get_hexdsp() == nullptr)
+    return;
+  clear_cached_cfuncs();
+}
+
+extern "C" int idakit_has_cached_cfunc(idakit_ea_t ea) {
+  if (get_hexdsp() == nullptr)
+    return 0;
+  return has_cached_cfunc((ea_t)ea) ? 1 : 0;
+}
+
 namespace {
 
 struct walker_t {

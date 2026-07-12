@@ -44,6 +44,29 @@ impl Database {
         Function::new(address, self)
     }
 
+    /// A view of the function containing `address`, or `None` if none does.
+    ///
+    /// The read-only mirror of [`function_mut`](Self::function_mut): it normalizes to the
+    /// containing function's entry, so a mid-body address and the entry yield the same view.
+    /// Unlike [`function`](Self::function), which trusts the address you give it, this verifies a
+    /// function actually lives there.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let entry = db.functions().next().unwrap().address();
+    /// let view = db.function_at(entry).expect("entry resolves to its function");
+    /// assert_eq!(view.address(), entry);
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[inline]
+    #[must_use]
+    #[doc(alias("get_func"))]
+    pub fn function_at(&self, address: Address) -> Option<Function<'_>> {
+        let entry = Address::try_new(self.func_start(address))?;
+        Some(Function::new(entry, self))
+    }
+
     /// Iterates every function in the database, in kernel order.
     #[inline]
     #[must_use]
@@ -71,7 +94,12 @@ impl Database {
     #[doc(alias("get_func"))]
     pub fn function_mut(&mut self, address: Address) -> Option<FunctionEdit<'_>> {
         let entry = Address::try_new(self.func_start(address))?;
-        Some(FunctionEdit { db: self, entry })
+        Some(FunctionEdit {
+            db: self,
+            entry,
+            auto_invalidate: true,
+            pending: PendingInvalidation::None,
+        })
     }
 
     /// Runs `f` against a write cursor for the function containing `address`, or returns `None`
@@ -309,9 +337,32 @@ impl<'db> Function<'db> {
 /// common [`Function`] reads ([`name`](Self::name), [`prototype`](Self::prototype)) are inherent
 /// here, delegating to the view, so a read-modify-write stays on one cursor. Not obtainable from a
 /// borrowing [`Function`].
+///
+/// Prototype and name writes evict this function's cached decompilation and its direct callers', so
+/// the next [`decompile`](Database::decompile) reflects the change. Eviction is coalesced to when
+/// the cursor drops, so a read-modify-write sweeps callers once regardless of how many writes it
+/// made; opt out with [`auto_invalidate(false)`](Self::auto_invalidate).
 pub struct FunctionEdit<'db> {
     db: &'db mut Database,
     entry: Address,
+    auto_invalidate: bool,
+    pending: PendingInvalidation,
+}
+
+/// The strongest decompilation-cache eviction a cursor's writes have queued, applied once on
+/// [`Drop`] so a multi-write read-modify-write sweeps callers at most once.
+///
+/// Ordered by breadth: a later write can only widen the pending eviction, never narrow it. Nothing
+/// can observe the cache between a write and the cursor's drop, since the cursor holds the database
+/// exclusively, so deferring is invisible apart from the coalescing.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum PendingInvalidation {
+    /// No write needs eviction.
+    None,
+    /// Only this function's own decompilation is stale (a parameter rename, invisible at call sites).
+    SelfOnly,
+    /// This function and its callers are stale (a prototype or name change re-renders call sites).
+    Dependents,
 }
 
 impl FunctionEdit<'_> {
@@ -343,14 +394,38 @@ impl FunctionEdit<'_> {
         self.db.function(self.entry).end()
     }
 
+    /// Toggle automatic decompilation-cache invalidation on the writes this cursor performs.
+    ///
+    /// On by default: this cursor's prototype and name writes evict this function's cached
+    /// decompilation and its direct callers' when the cursor drops, so the next
+    /// [`decompile`](crate::Database::decompile) reflects the change. Disable it for a bulk edit
+    /// where you will invalidate once at the end (see [`Database::clear_decompilation_cache`]).
+    #[must_use]
+    pub fn auto_invalidate(mut self, on: bool) -> Self {
+        self.auto_invalidate = on;
+        self
+    }
+
+    /// Widen the eviction this cursor will apply on drop to at least `level`.
+    fn queue_invalidation(&mut self, level: PendingInvalidation) {
+        self.pending = self.pending.max(level);
+    }
+
     /// Rename the function.
+    ///
+    /// Renaming keeps [`ctree`](Function::ctree) correct everywhere, since names resolve fresh, but
+    /// the cached pseudocode text at call sites is stale until eviction, which this does.
     ///
     /// # Errors
     /// [`Error::WriteRejected`] if the kernel rejects the rename, or [`Error::InteriorNul`] if
     /// `name` contains a NUL byte.
     #[doc(alias("set_name"))]
     pub fn rename(&mut self, name: impl AsRef<str>) -> Result<()> {
-        self.db.at_mut(self.entry).rename(name)
+        let out = self.db.at_mut(self.entry).rename(name);
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Apply a function prototype (or any type) to this function's entry.
@@ -366,7 +441,11 @@ impl FunctionEdit<'_> {
     /// type, or [`Error::InteriorNul`] if the input contains a NUL byte.
     #[doc(alias("apply_tinfo"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
-        self.db.apply_type_at(self.entry, &ty.into())
+        let out = self.db.apply_type_at(self.entry, &ty.into());
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Apply a pre-built [`TypeInfo`] handle to this function's entry.
@@ -380,7 +459,11 @@ impl FunctionEdit<'_> {
     #[doc(alias("apply_tinfo"))]
     pub fn apply_type(&mut self, ty: &TypeInfo) -> Result<()> {
         let res = self.db.apply_tinfo(self.entry, ty.tinfo(), 0);
-        tinfo_apply_result(res, self.entry)
+        let out = tinfo_apply_result(res, self.entry);
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Remove this function's prototype, clearing the type at its entry.
@@ -391,7 +474,11 @@ impl FunctionEdit<'_> {
     /// [`Error::WriteRejected`] if the kernel refuses to remove the existing prototype.
     #[doc(alias("del_tinfo"))]
     pub fn clear_type(&mut self) -> Result<()> {
-        self.db.at_mut(self.entry).clear_type()
+        let out = self.db.at_mut(self.entry).clear_type();
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Replace this function's return type, keeping its parameters and calling convention.
@@ -408,7 +495,11 @@ impl FunctionEdit<'_> {
     pub fn set_return_type(&mut self, ret: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ret.into().checked_serialize()?;
         let result = self.db.func_set_rettype(self.entry, &recipe);
-        sig_result(result.code, self.entry, None, result.reason)
+        let out = sig_result(result.code, self.entry, None, result.reason);
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Replace the type of parameter `index` (zero-based), keeping its name.
@@ -423,12 +514,16 @@ impl FunctionEdit<'_> {
     pub fn set_arg_type(&mut self, index: usize, ty: impl Into<TypeExpr>) -> Result<()> {
         let recipe = ty.into().checked_serialize()?;
         let result = self.db.func_set_argtype(self.entry, index, &recipe);
-        sig_result(
+        let out = sig_result(
             result.code,
             self.entry,
             Some((index, result.arity)),
             result.reason,
-        )
+        );
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Rename parameter `index` (zero-based), keeping its type.
@@ -442,12 +537,17 @@ impl FunctionEdit<'_> {
     pub fn rename_arg(&mut self, index: usize, name: impl AsRef<str>) -> Result<()> {
         let name = nul_checked(name.as_ref(), "name")?;
         let result = self.db.func_rename_arg(self.entry, index, name);
-        sig_result(
+        let out = sig_result(
             result.code,
             self.entry,
             Some((index, result.arity)),
             result.reason,
-        )
+        );
+        // A parameter name never appears at call sites, so only this function's own text is stale.
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::SelfOnly);
+        }
+        out
     }
 
     /// Set this function's calling convention.
@@ -459,7 +559,11 @@ impl FunctionEdit<'_> {
     #[doc(alias("set_cc"))]
     pub fn set_calling_convention(&mut self, cc: CallingConvention) -> Result<()> {
         let result = self.db.func_set_cc(self.entry, c_int::from(u8::from(cc)));
-        sig_result(result.code, self.entry, None, result.reason)
+        let out = sig_result(result.code, self.entry, None, result.reason);
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
     }
 
     /// Insert an implicit `this` pointer as the first parameter, shifting the rest.
@@ -478,7 +582,29 @@ impl FunctionEdit<'_> {
     pub fn prepend_this(&mut self, this: impl Into<TypeExpr>) -> Result<()> {
         let recipe = this.into().checked_serialize()?;
         let result = self.db.func_prepend_this(self.entry, &recipe);
-        sig_result(result.code, self.entry, None, result.reason)
+        let out = sig_result(result.code, self.entry, None, result.reason);
+        if out.is_ok() {
+            self.queue_invalidation(PendingInvalidation::Dependents);
+        }
+        out
+    }
+}
+
+impl Drop for FunctionEdit<'_> {
+    /// Applies the queued decompilation-cache eviction once, after all of this cursor's writes.
+    fn drop(&mut self) {
+        if !self.auto_invalidate {
+            return;
+        }
+        match self.pending {
+            PendingInvalidation::None => {}
+            PendingInvalidation::SelfOnly => {
+                self.db.invalidate_decompilation(self.entry);
+            }
+            PendingInvalidation::Dependents => {
+                self.db.invalidate_decompilation_dependents(self.entry);
+            }
+        }
     }
 }
 
