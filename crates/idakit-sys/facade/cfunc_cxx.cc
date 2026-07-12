@@ -1,6 +1,6 @@
 // Placement shims backing moveit's construction traits over the decompiler's intrusive-refcounted
 // smart pointer cfuncptr_t (typedef qrefcnt_t<cfunc_t>), for the still-experimental inline CfuncVal
-// value type (test-shims only). Plain facade TU, no cxx.
+// value type. Plain facade TU, no cxx.
 //
 // qrefcnt_t is NOT std::shared_ptr, it holds a bare cfunc_t* whose copy-ctor increments an
 // intrusive cfunc_t::refcnt and whose destructor calls release() (decrement, delete at zero). The

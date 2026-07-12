@@ -1,8 +1,7 @@
 //! The fatal-trap mechanism in isolation. [`idakit_test_fatal`] runs a chosen fatal inside the
 //! facade's `guarded<>` wrapper; the trap must convert it to [`IDAKIT_EXIT_TRAPPED`] rather than
 //! terminate the process. nextest isolates each test in its own process, so a fatal that escapes
-//! the trap fails only that test. The shim compiles under the `test-shims` feature, which the
-//! crate's self dev-dependency enables for these tests.
+//! the trap fails only that test.
 
 use idakit_sys::{
     IDAKIT_EXIT_TRAPPED, IDAKIT_FATAL_ABORT, IDAKIT_FATAL_EXIT, IDAKIT_FATAL_INTERR, WriteOutcome,

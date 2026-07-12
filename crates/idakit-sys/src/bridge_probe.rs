@@ -1,15 +1,9 @@
-//! `cxx` fault-injection probes for the trap tests (`test-shims` only).
+//! `cxx` fault-injection probes for the trap tests.
 //!
-//! A separate `#[cxx::bridge]` from the production [`bridge`](crate::bridge) so nothing here
-//! reaches a normal build: the module is `mod`-gated in `lib.rs` and its C++ side is compiled
-//! only when `build.rs` sees the feature. A per-function `#[cfg]` on the production bridge would
-//! not do: `cxx-build`'s cfg evaluator matches feature names case-insensitively but not across
-//! `-`/`_`, so it never sees the hyphenated `test-shims` and would drop the C++ shim, leaving the
-//! symbol undefined at link. Gating the whole module sidesteps that.
-//!
-//! Shares the `idakit_cxx` namespace with the production bridge, so the generated shim symbols
-//! sit in the same family; the hand-written bodies and the `guarded<>` entry live in
-//! `facade/probe_cxx.cc`.
+//! A separate `#[cxx::bridge]` from the production bridges, kept off the public API by
+//! `#[doc(hidden)]` on its re-export in `lib.rs`. Shares the `idakit_cxx` namespace with them, so
+//! the generated shim symbols sit in the same family; the hand-written bodies and the `guarded<>`
+//! entry live in `facade/probe_cxx.cc`.
 
 #[cxx::bridge(namespace = "idakit_cxx")]
 mod ffi {

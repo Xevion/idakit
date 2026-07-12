@@ -1,5 +1,4 @@
-//! `cxx` spike bridge proving three findings about the bridge boundary (`idakit_cxx::ext_*`,
-//! `test-shims` only).
+//! `cxx` spike bridge proving three findings about the bridge boundary (`idakit_cxx::ext_*`).
 //!
 //! A hand-written `cxx_build` bridge (not the `cxx-gen` one, which inlines the `trycatch`
 //! definition and complicates the override) carrying three probes:
@@ -17,8 +16,9 @@
 //!   its own C++ enum and (because the type can hold any `repr`) a Rust match over it needs a
 //!   wildcard arm.
 //!
-//! The C++ side (custom `trycatch`, cursor, bodies) is `facade/probe_ext_cxx.{h,cc}`. Gated behind
-//! `test-shims` like [`bridge_probe`](crate::bridge_probe) and [`bridge_cfunc`](crate::bridge_cfunc).
+//! The C++ side (custom `trycatch`, cursor, bodies) is `facade/probe_ext_cxx.{h,cc}`. Kept off the
+//! public API by `#[doc(hidden)]` like [`bridge_probe`](crate::bridge_probe) and
+//! [`bridge_cfunc`](crate::bridge_cfunc).
 
 // The custom trycatch here is also productionized as the shared `facade/idakit_trycatch.h`, which
 // every production bridge includes (plus a scoped `set_interr_throws` arm). This spike keeps its own

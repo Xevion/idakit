@@ -35,10 +35,10 @@ size_t idakit_last_output(char *buf, size_t cap); /* captured stdout+stderr; len
 int idakit_reg_read_int(const char *name, int defval); /* read an int/bool registry value */
 int idakit_accept_eula(void); /* record EULA acceptance; returns its value */
 
-/* Fault-injection shim, compiled only under the `test-shims` feature. Runs the chosen fatal
- * inside the guarded<> wrapper so the trap tests can prove it is converted to
- * IDAKIT_EXIT_TRAPPED rather than terminating the process. */
-#ifdef IDAKIT_TEST_SHIMS
+/* Fault-injection hooks for the trap and cxx tests. Inert in normal use: idakit_test_fatal arms
+ * its own guarded<> so it always traps and returns rather than terminating, and
+ * idakit_trigger_fatal fires a fatal only when invoked with no guard on the stack. The Rust
+ * bindings are #[doc(hidden)], keeping them off the published API. */
 #define IDAKIT_FATAL_EXIT 0
 #define IDAKIT_FATAL_ABORT 1
 #define IDAKIT_FATAL_INTERR 2
@@ -51,7 +51,6 @@ void idakit_trigger_fatal(int kind);
  * the fatal's longjmp must cross the shim's try/catch frame. Returns IDAKIT_EXIT_TRAPPED when the
  * longjmp fired (exit/abort), or 1 when cxx caught the throw first (interr) and reported an Err. */
 int idakit_test_fatal_through_cxx(int kind);
-#endif
 
 int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size); /* bytes read, <0 on fail */
 

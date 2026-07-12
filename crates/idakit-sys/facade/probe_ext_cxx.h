@@ -1,4 +1,4 @@
-// Declarations for the cxx spike bridge (test-shims only). Proves three findings: a custom
+// Declarations for the cxx spike bridge. Proves three findings: a custom
 // rust::behavior::trycatch, a Pin<&mut Self> mutation path, and a real database write crossing the
 // bridge. Bodies live in probe_ext_cxx.cc; the
 // cxx-generated shim (from src/bridge_probe_ext.rs) calls them by their idakit_cxx-namespaced name.

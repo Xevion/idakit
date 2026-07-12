@@ -1,5 +1,5 @@
 //! The still-experimental inline `moveit` value type [`CfuncVal`] mirroring the decompiler's
-//! intrusive-refcounted `cfuncptr_t` (`test-shims` only).
+//! intrusive-refcounted `cfuncptr_t`.
 //!
 //! `cfuncptr_t` is the SDK typedef `qrefcnt_t<cfunc_t>`: a bare `cfunc_t*` whose **copy-ctor**
 //! increments the pointee's intrusive `cfunc_t::refcnt` and whose **destructor** calls `release()`
@@ -10,8 +10,8 @@
 //! copy-ctor ([`CopyNew`](moveit::CopyNew), refcount++) and running the C++ destructor on [`Drop`]
 //! (`release()`, refcount--), all through the raw placement shims below.
 //!
-//! Gated behind `test-shims` (it reads `cfunc_t::refcnt` for the refcount probes), like
-//! [`bridge_probe`](crate::bridge_probe).
+//! Kept off the public API by `#[doc(hidden)]` (it reads `cfunc_t::refcnt` for the refcount
+//! probes), like [`bridge_probe`](crate::bridge_probe).
 
 // TODO: decide the CfuncVal path's fate -- either productionize the inline moveit value type as a
 // heap-free alternative to the UniquePtr<CFunc> decompiler handle, or drop it; proven but unused.

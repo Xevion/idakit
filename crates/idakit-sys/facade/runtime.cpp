@@ -446,7 +446,6 @@ extern "C" size_t idakit_last_output(char *buf, size_t cap) {
   return n;
 }
 
-#ifdef IDAKIT_TEST_SHIMS
 // Run the chosen fatal inside guarded<> so the trap tests can prove it's caught: the exit/abort
 // stand-ins libida's redirected GOT slots point at (the longjmp path), or interr (the throw path).
 extern "C" int idakit_test_fatal(int kind) {
@@ -475,4 +474,3 @@ extern "C" void idakit_trigger_fatal(int kind) {
   else if (kind == IDAKIT_FATAL_INTERR)
     interr(1);
 }
-#endif

@@ -524,7 +524,6 @@ dependencies = [
  "cxx-build",
  "cxx-gen",
  "dirs",
- "idakit-sys",
  "libloading",
  "moveit",
  "proc-macro2",

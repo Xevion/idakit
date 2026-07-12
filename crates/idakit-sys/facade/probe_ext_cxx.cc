@@ -1,4 +1,4 @@
-// cxx spike bodies (test-shims only). See probe_ext_cxx.h for the custom trycatch that every
+// cxx spike bodies. See probe_ext_cxx.h for the custom trycatch that every
 // Result-returning body here routes through.
 
 #include <pro.h>

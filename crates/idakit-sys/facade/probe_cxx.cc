@@ -1,4 +1,4 @@
-// Fault-injection probes for the cxx bridge (test-shims only). Two jobs:
+// Fault-injection probes for the cxx bridge. Two jobs:
 //
 //   * probe_fatal_through_cxx / idakit_test_fatal_through_cxx force the "dangerous topology": a
 //     guarded<> setjmp ABOVE a cxx Result-shim, with the fatal firing from C++

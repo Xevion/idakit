@@ -110,14 +110,9 @@ fn main() {
         build.flag("-isystem").flag(sdk_include_str);
     }
     build.define("__EA64__", None).define(PLATFORM_DEFINE, None);
-    // Fault-injection shim for the trap tests, see the `test-shims` feature. Cargo sets this
-    // env when the feature is on; it gates `idakit_test_fatal` in the facade.
-    if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
-        build.define("IDAKIT_TEST_SHIMS", None);
-        // The cfunc placement shims (moveit inline CfuncVal path) are a plain facade TU, not a cxx
-        // bridge, so they ride in the whole-archived facade under the feature.
-        build.file("facade/cfunc_cxx.cc");
-    }
+    // The cfunc placement shims (moveit inline CfuncVal path) are a plain facade TU, not a cxx
+    // bridge, so they ride along in the whole-archived facade.
+    build.file("facade/cfunc_cxx.cc");
     // Mirror the caller's `-Zsanitizer=<name>` onto the facade TUs so bugs inside facade/*.cpp
     // are caught too, not just at the FFI boundary. Comma-separated like rustc's flag. `undefined`
     // uses trap mode: rustc links no UBSan runtime, so the usual `__ubsan_handle_*` calls would
@@ -219,27 +214,22 @@ fn main() {
     }
     gen_bridge.compile("idakit_cxx_gen_bridge");
 
-    // Test-only bridges, gated on `test-shims`. A per-fn `#[cfg]` inside a production bridge would
-    // not reach cxx-build's C++ generation (its cfg evaluator won't match the hyphenated feature),
-    // so the shim would go missing and the symbol undefined at link; a whole separate bridge built
-    // only under the feature avoids that. probe_cxx.cc needs IDAKIT_TEST_SHIMS to see the facade's
-    // test-only declarations; cfunc/probe_ext do not.
-    if env::var_os("CARGO_FEATURE_TEST_SHIMS").is_some() {
-        cxx_bridge(
-            "src/bridge_probe.rs",
-            &["facade/probe_cxx.cc"],
-            "idakit_cxx_probe",
-            sdk_include_str,
-            &["IDAKIT_TEST_SHIMS"],
-        );
-        cxx_bridge(
-            "src/bridge_probe_ext.rs",
-            &["facade/probe_ext_cxx.cc"],
-            "idakit_cxx_probe_ext_bridge",
-            sdk_include_str,
-            &[],
-        );
-    }
+    // The cxx fault-injection and boundary probe bridges. Each is its own static archive, like the
+    // production bridges above; their Rust bindings are `#[doc(hidden)]`, keeping them off the API.
+    cxx_bridge(
+        "src/bridge_probe.rs",
+        &["facade/probe_cxx.cc"],
+        "idakit_cxx_probe",
+        sdk_include_str,
+        &[],
+    );
+    cxx_bridge(
+        "src/bridge_probe_ext.rs",
+        &["facade/probe_ext_cxx.cc"],
+        "idakit_cxx_probe_ext_bridge",
+        sdk_include_str,
+        &[],
+    );
 
     if env::var_os("IDAKIT_EMIT_COMPILE_COMMANDS").is_some() {
         emit_compile_commands(sdk_include_str);
