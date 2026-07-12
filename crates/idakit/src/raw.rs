@@ -611,4 +611,160 @@ impl Database {
     ) -> Option<String> {
         sys::strlit_contents(address.get(), len, ty).ok()
     }
+
+    pub(crate) fn netnode_open(&self, name: &str) -> u64 {
+        sys::netnode_by_name(name, false)
+    }
+
+    pub(crate) fn netnode_create(&mut self, name: &str) -> u64 {
+        sys::netnode_by_name(name, true)
+    }
+
+    pub(crate) fn netnode_exists(&self, node: u64) -> bool {
+        sys::netnode_exists(node)
+    }
+
+    pub(crate) fn netnode_get_name(&self, node: u64) -> Option<String> {
+        sys::netnode_get_name(node).ok()
+    }
+
+    pub(crate) fn netnode_rename(&mut self, node: u64, name: &str) -> bool {
+        sys::netnode_rename(node, name)
+    }
+
+    pub(crate) fn netnode_kill(&mut self, node: u64) {
+        sys::netnode_kill(node);
+    }
+
+    pub(crate) fn netnode_first(&self) -> u64 {
+        sys::netnode_first()
+    }
+
+    pub(crate) fn netnode_next(&self, cur: u64) -> u64 {
+        sys::netnode_next(cur)
+    }
+
+    pub(crate) fn netnode_value(&self, node: u64) -> Option<Vec<u8>> {
+        sys::netnode_value(node).ok()
+    }
+
+    pub(crate) fn netnode_value_str(&self, node: u64) -> Option<String> {
+        sys::netnode_value_str(node).ok()
+    }
+
+    pub(crate) fn netnode_set_value(&mut self, node: u64, value: &[u8]) -> bool {
+        sys::netnode_set_value(node, value)
+    }
+
+    pub(crate) fn netnode_del_value(&mut self, node: u64) -> bool {
+        sys::netnode_del_value(node)
+    }
+
+    pub(crate) fn netnode_altval(&self, node: u64, idx: u64, tag: u32) -> u64 {
+        sys::netnode_altval(node, idx, tag)
+    }
+
+    pub(crate) fn netnode_altset(&mut self, node: u64, idx: u64, value: u64, tag: u32) -> bool {
+        sys::netnode_altset(node, idx, value, tag)
+    }
+
+    pub(crate) fn netnode_altdel(&mut self, node: u64, idx: u64, tag: u32) -> bool {
+        sys::netnode_altdel(node, idx, tag)
+    }
+
+    pub(crate) fn netnode_altdel_all(&mut self, node: u64, tag: u32) -> bool {
+        sys::netnode_altdel_all(node, tag)
+    }
+
+    pub(crate) fn netnode_altfirst(&self, node: u64, tag: u32) -> u64 {
+        sys::netnode_altfirst(node, tag)
+    }
+
+    pub(crate) fn netnode_altnext(&self, node: u64, cur: u64, tag: u32) -> u64 {
+        sys::netnode_altnext(node, cur, tag)
+    }
+
+    pub(crate) fn netnode_supval(&self, node: u64, idx: u64, tag: u32) -> Option<Vec<u8>> {
+        sys::netnode_supval(node, idx, tag).ok()
+    }
+
+    pub(crate) fn netnode_supset(&mut self, node: u64, idx: u64, value: &[u8], tag: u32) -> bool {
+        sys::netnode_supset(node, idx, value, tag)
+    }
+
+    pub(crate) fn netnode_supdel(&mut self, node: u64, idx: u64, tag: u32) -> bool {
+        sys::netnode_supdel(node, idx, tag)
+    }
+
+    pub(crate) fn netnode_supdel_all(&mut self, node: u64, tag: u32) -> bool {
+        sys::netnode_supdel_all(node, tag)
+    }
+
+    pub(crate) fn netnode_supfirst(&self, node: u64, tag: u32) -> u64 {
+        sys::netnode_supfirst(node, tag)
+    }
+
+    pub(crate) fn netnode_supnext(&self, node: u64, cur: u64, tag: u32) -> u64 {
+        sys::netnode_supnext(node, cur, tag)
+    }
+
+    pub(crate) fn netnode_hashval(&self, node: u64, key: &str, tag: u32) -> Option<Vec<u8>> {
+        sys::netnode_hashval(node, key, tag).ok()
+    }
+
+    pub(crate) fn netnode_hashval_long(&self, node: u64, key: &str, tag: u32) -> u64 {
+        sys::netnode_hashval_long(node, key, tag)
+    }
+
+    pub(crate) fn netnode_hashset(&mut self, node: u64, key: &str, value: &[u8], tag: u32) -> bool {
+        sys::netnode_hashset(node, key, value, tag)
+    }
+
+    pub(crate) fn netnode_hashset_long(
+        &mut self,
+        node: u64,
+        key: &str,
+        value: u64,
+        tag: u32,
+    ) -> bool {
+        sys::netnode_hashset_long(node, key, value, tag)
+    }
+
+    pub(crate) fn netnode_hashdel(&mut self, node: u64, key: &str, tag: u32) -> bool {
+        sys::netnode_hashdel(node, key, tag)
+    }
+
+    pub(crate) fn netnode_hashdel_all(&mut self, node: u64, tag: u32) -> bool {
+        sys::netnode_hashdel_all(node, tag)
+    }
+
+    pub(crate) fn netnode_hashfirst(&self, node: u64, tag: u32) -> Option<String> {
+        sys::netnode_hashfirst(node, tag).ok()
+    }
+
+    pub(crate) fn netnode_hashnext(&self, node: u64, key: &str, tag: u32) -> Option<String> {
+        sys::netnode_hashnext(node, key, tag).ok()
+    }
+
+    pub(crate) fn netnode_blobsize(&self, node: u64, start: u64, tag: u32) -> usize {
+        sys::netnode_blobsize(node, start, tag)
+    }
+
+    pub(crate) fn netnode_getblob(&self, node: u64, start: u64, tag: u32) -> Option<Vec<u8>> {
+        sys::netnode_getblob(node, start, tag).ok()
+    }
+
+    pub(crate) fn netnode_setblob(
+        &mut self,
+        node: u64,
+        value: &[u8],
+        start: u64,
+        tag: u32,
+    ) -> bool {
+        sys::netnode_setblob(node, value, start, tag)
+    }
+
+    pub(crate) fn netnode_delblob(&mut self, node: u64, start: u64, tag: u32) -> i32 {
+        sys::netnode_delblob(node, start, tag)
+    }
 }

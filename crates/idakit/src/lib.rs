@@ -162,6 +162,7 @@ pub mod error;
 pub mod function;
 pub mod instruction;
 pub mod kernel;
+pub mod netnode;
 pub mod types;
 
 #[doc(hidden)]
@@ -211,6 +212,7 @@ pub use crate::import::{Import, Imports};
 pub use crate::location::{Location, LocationMut};
 pub use crate::meta::DatabaseInfo;
 pub use crate::name::{Name, Names};
+pub use crate::netnode::{Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups};
 pub use crate::search::{Matches, Pattern};
 pub use crate::segment::{Segment, SegmentClass, Segments};
 pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
@@ -241,6 +243,9 @@ pub mod prelude {
     pub use crate::location::{Location, LocationMut};
     pub use crate::meta::DatabaseInfo;
     pub use crate::name::{Name, Names};
+    pub use crate::netnode::{
+        Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups,
+    };
     pub use crate::search::{Matches, Pattern};
     pub use crate::segment::{Segment, SegmentClass, Segments};
     pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
