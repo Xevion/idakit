@@ -392,8 +392,9 @@ impl Database {
         member_name: &str,
         member_bit: u64,
         buf: &[u8],
+        etf_flags: u32,
     ) -> sys::TypeWriteResult {
-        sys::udt_set_member_type(type_name, member_name, member_bit, buf)
+        sys::udt_set_member_type(type_name, member_name, member_bit, buf, etf_flags)
     }
 
     pub(crate) fn udt_rename_member(
@@ -450,8 +451,9 @@ impl Database {
         member_name: &str,
         value: u64,
         bmask: u64,
+        etf_flags: u32,
     ) -> sys::TypeWriteResult {
-        sys::enum_add_member(type_name, member_name, value, bmask)
+        sys::enum_add_member(type_name, member_name, value, bmask, etf_flags)
     }
 
     pub(crate) fn enum_set_bitmask(&mut self, type_name: &str, on: bool) -> sys::TypeWriteResult {
@@ -472,8 +474,9 @@ impl Database {
         type_name: &str,
         member_name: &str,
         new_name: &str,
+        etf_flags: u32,
     ) -> sys::TypeWriteResult {
-        sys::enum_rename_member(type_name, member_name, new_name)
+        sys::enum_rename_member(type_name, member_name, new_name, etf_flags)
     }
 
     pub(crate) fn enum_del_member(

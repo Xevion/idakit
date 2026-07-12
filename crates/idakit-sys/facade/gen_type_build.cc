@@ -627,7 +627,7 @@ TypeWriteResult udt_add_member(rust::Str type_name, rust::Str member_name,
 }
 
 TypeWriteResult udt_set_member_type(rust::Str type_name, rust::Str member_name, uint64_t member_bit,
-                                    rust::Slice<const uint8_t> recipe) {
+                                    rust::Slice<const uint8_t> recipe, uint32_t etf_flags) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
@@ -643,7 +643,7 @@ TypeWriteResult udt_set_member_type(rust::Str type_name, rust::Str member_name, 
       tinfo_t mt;
       if (build_recipe(recipe.data(), recipe.size(), mt) != IDAKIT_TYPE_OK)
         return IDAKIT_TEDIT_BUILD;
-      return (int)tif.set_udm_type((size_t)idx, mt);
+      return (int)tif.set_udm_type((size_t)idx, mt, etf_flags);
     });
     out.reason = captured_reason();
     return out;
@@ -753,7 +753,7 @@ TypeWriteResult udt_del_member(rust::Str type_name, rust::Str member_name, uint6
 }
 
 TypeWriteResult enum_add_member(rust::Str type_name, rust::Str member_name, uint64_t value,
-                                uint64_t bmask) {
+                                uint64_t bmask, uint32_t etf_flags) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
@@ -762,7 +762,7 @@ TypeWriteResult enum_add_member(rust::Str type_name, rust::Str member_name, uint
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return IDAKIT_TEDIT_NO_TYPE;
-      return (int)tif.add_edm(mn.c_str(), value, (bmask64_t)bmask);
+      return (int)tif.add_edm(mn.c_str(), value, (bmask64_t)bmask, etf_flags);
     });
     out.reason = captured_reason();
     return out;
@@ -809,7 +809,8 @@ TypeWriteResult enum_set_member_value(rust::Str type_name, rust::Str member_name
   }
 }
 
-TypeWriteResult enum_rename_member(rust::Str type_name, rust::Str member_name, rust::Str new_name) {
+TypeWriteResult enum_rename_member(rust::Str type_name, rust::Str member_name, rust::Str new_name,
+                                   uint32_t etf_flags) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
@@ -822,7 +823,7 @@ TypeWriteResult enum_rename_member(rust::Str type_name, rust::Str member_name, r
       ssize_t idx = resolve_edm(tif, mn.c_str());
       if (idx < 0)
         return IDAKIT_TEDIT_NO_MEMBER;
-      return (int)tif.rename_edm((size_t)idx, nn.c_str());
+      return (int)tif.rename_edm((size_t)idx, nn.c_str(), etf_flags);
     });
     out.reason = captured_reason();
     return out;

@@ -36,9 +36,11 @@ fn run(idb: &mut idakit::Database) {
     type_function_edit_direct(idb, address);
     type_named_arg_renders(idb, address);
     type_build_failed(idb, address);
+    type_member_set_type_compatible(idb);
+    type_enum_forcename(idb);
 
     println!(
-        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + member-repr-edit + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed"
+        "write OK: comment round-trip, patch round-trip, unmapped patch rejected, type apply + define + build + function-build + surgery + clear + member-edit + member-comment-edit + member-bitfield + member-repr-edit + enum-member-edit + enum-bitmask-edit + member-ref + offset-insert + offset-edit + direct function-edit + named-arg render + build-failed + member-set-type-compatible + enum-forcename"
     );
 }
 
@@ -1072,4 +1074,99 @@ fn type_build_failed(idb: &mut idakit::Database, address: Address) {
             source: TypeWriteError::BuildFailed { .. }
         }) = r
     );
+}
+
+/// `MemberEdit::set_type_compatible` (`ETF_COMPATIBLE`) is SDK-documented (`typeinf.hpp`) to
+/// reject a replacement the kernel's own compatibility check refuses, as
+/// `TypeEditCode::NotCompatible`. This crate's genuine attempts to trigger that rejection all
+/// succeeded instead: same-size and mismatched-size scalar<->scalar retypes (int<->char,
+/// int<->unsigned int), scalar<->same-size aggregate, scalar<->pointer and pointer<->scalar, a
+/// bitfield width change, a bitfield sign flip, a bitfield grown from a plain scalar, an enum
+/// retype, a solo union member grown past its old size, an existing numeric `set_repr` left in
+/// place across a retype to an aggregate, and shrinking a non-tail struct member (which leaves an
+/// unlabeled gap rather than moving the following member or converting to an array). None
+/// reproduced `NotCompatible`, so this test proves the flag threads through and takes structural
+/// effect instead of asserting the rejection.
+fn type_member_set_type_compatible(idb: &mut idakit::Database) {
+    use idakit::types::{TypeShape, expr};
+
+    idb.types_mut()
+        .define("struct idakit_etf_compat_probe { int a; };")
+        .expect("define a struct to retype");
+
+    idb.types_mut()
+        .edit("idakit_etf_compat_probe")
+        .member("a")
+        .set_type_compatible(expr::decl("unsigned int"))
+        .expect("a compatible retype should succeed under ETF_COMPATIBLE");
+
+    let probe = idb
+        .type_named("idakit_etf_compat_probe")
+        .expect("resolve the retyped struct");
+    let a = probe
+        .members()
+        .expect("a struct has members")
+        .iter()
+        .find(|m| m.name == "a")
+        .expect("member a");
+    assert!(let TypeShape::Int { signed: false, .. } = &probe.get(a.ty).shape);
+}
+
+/// `TypeEdit::add_constant_forced`/`ConstantEdit::rename_forced` (`ETF_FORCENAME`) force an enum
+/// constant name through the alien-name collision (`TERR_ALIEN_NAME`) that the plain add/rename
+/// paths reject when the name is already used by another enum.
+fn type_enum_forcename(idb: &mut idakit::Database) {
+    use idakit::types::{TypeEditCode, TypeWriteError};
+
+    idb.types_mut()
+        .define("enum idakit_forcename_owner { IDAKIT_FORCENAME_TAKEN = 1 };")
+        .expect("define the enum that owns the name");
+    idb.types_mut()
+        .define("enum idakit_forcename_add { IDAKIT_FORCENAME_OTHER = 1 };")
+        .expect("define a second enum to add a colliding constant to");
+    idb.types_mut()
+        .define("enum idakit_forcename_rename { IDAKIT_FORCENAME_MINE = 1 };")
+        .expect("define a third enum to rename a constant into a collision");
+
+    // Plain add rejects the cross-enum name collision.
+    let rejected = idb
+        .types_mut()
+        .edit("idakit_forcename_add")
+        .add_constant("IDAKIT_FORCENAME_TAKEN", 2);
+    assert!(
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::Rejected {
+                code: TypeEditCode::AlienName,
+                ..
+            }
+        }) = rejected
+    );
+
+    // add_constant_forced forces the same name through.
+    idb.types_mut()
+        .edit("idakit_forcename_add")
+        .add_constant_forced("IDAKIT_FORCENAME_TAKEN", 2)
+        .expect("add_constant_forced should force the name through the collision");
+
+    // Plain rename rejects the same collision.
+    let rejected = idb
+        .types_mut()
+        .edit("idakit_forcename_rename")
+        .constant("IDAKIT_FORCENAME_MINE")
+        .rename("IDAKIT_FORCENAME_TAKEN");
+    assert!(
+        let Err(Error::TypeWrite {
+            source: TypeWriteError::Rejected {
+                code: TypeEditCode::AlienName,
+                ..
+            }
+        }) = rejected
+    );
+
+    // rename_forced forces it through.
+    idb.types_mut()
+        .edit("idakit_forcename_rename")
+        .constant("IDAKIT_FORCENAME_MINE")
+        .rename_forced("IDAKIT_FORCENAME_TAKEN")
+        .expect("rename_forced should force the name through the collision");
 }

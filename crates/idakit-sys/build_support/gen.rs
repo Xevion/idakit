@@ -2110,11 +2110,16 @@ pub const TYPE_BUILD: Domain = Domain {
                     name: "recipe",
                     ty: ArgTy::Bytes,
                 },
+                Arg {
+                    name: "etf_flags",
+                    ty: ArgTy::U32,
+                },
             ],
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Replace the type of the member selected by `member_name` (or, when it is empty, \
-                  by bit offset `member_bit`) in `type_name` with the recipe type.",
+                  by bit offset `member_bit`) in `type_name` with the recipe type, passing \
+                  `etf_flags` (`etf_flag_t`, e.g. `ETF_COMPATIBLE`) to `set_udm_type`.",
         },
         FnSpec {
             name: "udt_rename_member",
@@ -2247,12 +2252,17 @@ pub const TYPE_BUILD: Domain = Domain {
                     name: "bmask",
                     ty: ArgTy::U64,
                 },
+                Arg {
+                    name: "etf_flags",
+                    ty: ArgTy::U32,
+                },
             ],
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Add an enum constant named `member_name` with `value` to the named enum \
                   `type_name`, in the explicit bitmask group `bmask` (`DEFMASK64` lets a bitmask \
-                  enum use `value` itself as the group mask; ignored by an ordinary enum). Same \
+                  enum use `value` itself as the group mask; ignored by an ordinary enum), passing \
+                  `etf_flags` (`etf_flag_t`, e.g. `ETF_FORCENAME`) to `add_edm`. Same \
                   `IDAKIT_TEDIT_*` codes as the `udt_*` fns.",
         },
         FnSpec {
@@ -2311,11 +2321,16 @@ pub const TYPE_BUILD: Domain = Domain {
                     name: "new_name",
                     ty: ArgTy::Str,
                 },
+                Arg {
+                    name: "etf_flags",
+                    ty: ArgTy::U32,
+                },
             ],
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Rename the enum constant `member_name` in the named enum `type_name` to \
-                  `new_name`.",
+                  `new_name`, passing `etf_flags` (`etf_flag_t`, e.g. `ETF_FORCENAME`) to \
+                  `rename_edm`.",
         },
         FnSpec {
             name: "enum_del_member",

@@ -28,6 +28,16 @@ use crate::types::{MemberRepr, TypeExpr};
 /// an ordinary enum.
 const DEFMASK64: u64 = u64::MAX;
 
+/// The SDK's `ETF_COMPATIBLE` (`etf_flag_t`, `typeinf.hpp`): passed to `set_udm_type` so the
+/// kernel additionally checks the new type against the member's old one before applying it,
+/// rejecting an incompatible replacement as [`TypeEditCode::NotCompatible`].
+const ETF_COMPATIBLE: u32 = 0x0000_0008;
+
+/// The SDK's `ETF_FORCENAME` (`etf_flag_t`, `typeinf.hpp`): passed to `add_edm`/`rename_edm` to
+/// force an enum constant name through a [`TypeEditCode::AlienName`] collision (the name is
+/// already used by another enum).
+const ETF_FORCENAME: u32 = 0x0000_0020;
+
 impl Database {
     /// A write cursor over the database's local type library.
     ///
@@ -238,14 +248,32 @@ impl TypeEdit<'_> {
     /// NUL byte in a name.
     #[doc(alias("add_edm"))]
     pub fn add_constant(&mut self, name: impl AsRef<str>, value: u64) -> Result<()> {
-        let type_name = self.name.clone();
-        let result = self.db.enum_add_member(
-            nul_checked(&type_name, "type name")?,
-            nul_checked(name.as_ref(), "constant name")?,
-            value,
-            DEFMASK64,
-        );
-        edit_result(result.code, result.reason, &type_name, None)
+        self.add_member_at_mask(name.as_ref(), value, DEFMASK64, 0)
+    }
+
+    /// Add an enum constant named `name` with `value`, forcing the name through an alien-name
+    /// collision.
+    ///
+    /// As [`add_constant`](Self::add_constant), with `ETF_FORCENAME` set: a name already used by
+    /// another enum ([`TypeEditCode::AlienName`]) is accepted instead of rejected.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("enum idakit_forcename_a { IDAKIT_SHARED_NAME = 1 };")?;
+    /// db.types_mut()
+    ///     .define("enum idakit_forcename_b { IDAKIT_OTHER = 1 };")?;
+    /// db.types_mut()
+    ///     .edit("idakit_forcename_b")
+    ///     .add_constant_forced("IDAKIT_SHARED_NAME", 2)?;
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// As [`add_constant`](Self::add_constant).
+    #[doc(alias("add_edm"))]
+    pub fn add_constant_forced(&mut self, name: impl AsRef<str>, value: u64) -> Result<()> {
+        self.add_member_at_mask(name.as_ref(), value, DEFMASK64, ETF_FORCENAME)
     }
 
     /// Add an enum constant named `name` with `value`, in the explicit bitmask group `mask`.
@@ -278,12 +306,50 @@ impl TypeEdit<'_> {
     /// [`TypeEditCode::BadMaskValue`]).
     #[doc(alias("add_edm"))]
     pub fn add_flag(&mut self, name: impl AsRef<str>, value: u64, mask: u64) -> Result<()> {
+        self.add_member_at_mask(name.as_ref(), value, mask, 0)
+    }
+
+    /// Add an enum constant named `name` with `value`, in the explicit bitmask group `mask`,
+    /// forcing the name through an alien-name collision.
+    ///
+    /// The `ETF_FORCENAME` sibling of [`add_flag`](Self::add_flag), as
+    /// [`add_constant_forced`](Self::add_constant_forced) is to [`add_constant`](Self::add_constant).
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("enum idakit_flag_forcename { IDAKIT_FLAG_RESERVED = 8 };")?;
+    /// let mut types = db.types_mut();
+    /// let mut edit = types.edit("idakit_flag_forcename");
+    /// edit.set_bitmask(true)?;
+    /// edit.add_flag_forced("IDAKIT_FLAG_READ", 1, 1)?;
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// As [`add_flag`](Self::add_flag).
+    #[doc(alias("add_edm"))]
+    pub fn add_flag_forced(&mut self, name: impl AsRef<str>, value: u64, mask: u64) -> Result<()> {
+        self.add_member_at_mask(name.as_ref(), value, mask, ETF_FORCENAME)
+    }
+
+    /// Add an enum constant, sharing the mask-add path between [`add_constant`](Self::add_constant),
+    /// [`add_constant_forced`](Self::add_constant_forced), [`add_flag`](Self::add_flag), and
+    /// [`add_flag_forced`](Self::add_flag_forced).
+    fn add_member_at_mask(
+        &mut self,
+        name: &str,
+        value: u64,
+        mask: u64,
+        etf_flags: u32,
+    ) -> Result<()> {
         let type_name = self.name.clone();
         let result = self.db.enum_add_member(
             nul_checked(&type_name, "type name")?,
-            nul_checked(name.as_ref(), "constant name")?,
+            nul_checked(name, "constant name")?,
             value,
             mask,
+            etf_flags,
         );
         edit_result(result.code, result.reason, &type_name, None)
     }
@@ -475,15 +541,52 @@ pub struct MemberEdit<'db> {
 impl MemberEdit<'_> {
     /// Replace this member's type.
     ///
+    /// A retype that shrinks or grows the member does not repack the aggregate: a following
+    /// member keeps its offset, so a shrink can leave an unlabeled gap and a grow that would
+    /// overlap a following member is rejected ([`TypeEditCode::Overlap`]).
+    ///
     /// # Errors
     /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], [`TypeWriteError::BuildFailed`]
     /// if `ty` cannot be built, or [`TypeWriteError::Rejected`] if the kernel rejects the type; or
     /// [`Error::InteriorNul`] for a NUL byte in a name or type.
     #[doc(alias("set_udm_type"))]
     pub fn set_type(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
+        self.set_type_with_flags(ty, 0)
+    }
+
+    /// Replace this member's type, additionally passing `ETF_COMPATIBLE` so the kernel checks the
+    /// replacement against the old type before applying it.
+    ///
+    /// As [`set_type`](Self::set_type), with the SDK's own compatibility check
+    /// ([`TypeEditCode::NotCompatible`]) also enforced.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// use idakit::types::expr;
+    ///
+    /// db.types_mut().define("struct idakit_compat_probe { int a; };")?;
+    /// db.types_mut()
+    ///     .edit("idakit_compat_probe")
+    ///     .member("a")
+    ///     .set_type_compatible(expr::decl("unsigned int"))?;
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// As [`set_type`](Self::set_type); additionally [`TypeEditCode::NotCompatible`] if the
+    /// kernel's compatibility check rejects the new type.
+    #[doc(alias("set_udm_type"))]
+    pub fn set_type_compatible(&mut self, ty: impl Into<TypeExpr>) -> Result<()> {
+        self.set_type_with_flags(ty, ETF_COMPATIBLE)
+    }
+
+    /// Replace this member's type, sharing the recipe-build-and-apply path between
+    /// [`set_type`](Self::set_type) and [`set_type_compatible`](Self::set_type_compatible).
+    fn set_type_with_flags(&mut self, ty: impl Into<TypeExpr>, etf_flags: u32) -> Result<()> {
         let recipe = ty.into().checked_serialize()?;
-        let result =
-            self.dispatch(|db, tp, mp, bit| db.udt_set_member_type(tp, mp, bit, &recipe))?;
+        let result = self
+            .dispatch(|db, tp, mp, bit| db.udt_set_member_type(tp, mp, bit, &recipe, etf_flags))?;
         edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
     }
 
@@ -631,8 +734,38 @@ impl ConstantEdit<'_> {
     /// for a NUL byte in a name.
     #[doc(alias("rename_edm"))]
     pub fn rename(&mut self, new_name: impl AsRef<str>) -> Result<()> {
-        let new_name = nul_checked(new_name.as_ref(), "new constant name")?;
-        let result = self.dispatch(|db, tp, np| db.enum_rename_member(tp, np, new_name))?;
+        self.rename_with_flags(new_name.as_ref(), 0)
+    }
+
+    /// Rename this constant, forcing the name through an alien-name collision.
+    ///
+    /// As [`rename`](Self::rename), with `ETF_FORCENAME` set: a name already used by another
+    /// enum ([`TypeEditCode::AlienName`]) is accepted instead of rejected.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// db.types_mut().define("enum idakit_rename_forcename { IDAKIT_RENAME_OLD = 1 };")?;
+    /// db.types_mut()
+    ///     .edit("idakit_rename_forcename")
+    ///     .constant("IDAKIT_RENAME_OLD")
+    ///     .rename_forced("IDAKIT_RENAME_NEW")?;
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// As [`rename`](Self::rename).
+    #[doc(alias("rename_edm"))]
+    pub fn rename_forced(&mut self, new_name: impl AsRef<str>) -> Result<()> {
+        self.rename_with_flags(new_name.as_ref(), ETF_FORCENAME)
+    }
+
+    /// Rename this constant, sharing the resolve-and-rename path between
+    /// [`rename`](Self::rename) and [`rename_forced`](Self::rename_forced).
+    fn rename_with_flags(&mut self, new_name: &str, etf_flags: u32) -> Result<()> {
+        let new_name = nul_checked(new_name, "new constant name")?;
+        let result =
+            self.dispatch(|db, tp, np| db.enum_rename_member(tp, np, new_name, etf_flags))?;
         self.result(result.code, result.reason)
     }
 
