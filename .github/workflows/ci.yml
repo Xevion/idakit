@@ -29,6 +29,12 @@ jobs:
       # Broken intra-doc links / bad code blocks, under DOCS_RS so no IDA runtime is needed.
       - name: Lint docs
         run: just doc hermetic
+      # README.md is generated from idakit's crate doc (see `just readme`); its intra-doc
+      # links resolve to live docs.rs URLs, which cargo-rdme needs a pinned nightly for.
+      - name: Install nightly toolchain for README intralinks
+        run: cargo rdme install-rust-toolchain-for-intralinks
+      - name: Check README is in sync
+        run: just readme-check
 
   check:
     name: check (${{ matrix.platform }} @ ${{ matrix.version }})

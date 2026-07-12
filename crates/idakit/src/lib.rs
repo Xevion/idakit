@@ -1,16 +1,18 @@
-//! Idiomatic Rust bindings for the IDA Pro 9.3 kernel.
+//! <p align="center">
+//!   <img src="https://raw.githubusercontent.com/Xevion/idakit/master/assets/idakit-banner.png" alt="idakit" width="820">
+//! </p>
 //!
-//! [![CI](https://github.com/Xevion/idakit/actions/workflows/ci.yml/badge.svg)](https://github.com/Xevion/idakit/actions/workflows/ci.yml)
-//! [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-//! ![MSRV](https://img.shields.io/badge/MSRV-1.88-blue.svg)
+//! <p align="center">
+//!   <a href="https://github.com/Xevion/idakit/actions/workflows/ci.yml"><img src="https://github.com/Xevion/idakit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+//!   <a href="https://crates.io/crates/idakit"><img src="https://img.shields.io/crates/v/idakit.svg" alt="crates.io"></a>
+//!   <a href="https://docs.rs/idakit"><img src="https://img.shields.io/docsrs/idakit" alt="docs.rs"></a>
+//!   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+//!   <img src="https://img.shields.io/badge/MSRV-1.88-blue.svg" alt="MSRV">
+//! </p>
 //!
-//! `idakit` drives IDA's analysis kernel from safe Rust. Bring the kernel up, open a
-//! database, and read its functions, segments, types, cross-references, and decompiled
-//! pseudocode through typed views instead of the raw C++ SDK.
+//! Access, extend, and automate IDA through a first-class Rust API.
 //!
-//! # A quick look
-//!
-//! Decompile every function in a database and flag calls into risky C APIs:
+//! `idakit` drives IDA's analysis kernel from safe Rust:
 //!
 //! ```
 //! # idakit::doctest::with_db(|db| {
@@ -42,38 +44,28 @@
 //! - [`Ctree`]: a decompiled function's syntax tree, walkable off the kernel thread.
 //! - [`Xref`]: a cross-reference edge between two addresses.
 //!
-//! # The kernel thread
+//! # Usage
 //!
-//! The IDA kernel is single-threaded and thread-affine. [`Ida::here`](crate::kernel::Ida::here) brings it up on
-//! the current thread and hands back the open [`Database`], with no kernel thread and no
-//! closure, for programs that own their thread (scripts, tests, CLIs):
+//! IDA's kernel initializes once per process and runs on a single thread. The example above
+//! used [`Ida::here`](kernel::Ida::here), which initializes it on the current thread and hands
+//! the database back directly, a good fit for a tool or test that owns its thread.
 //!
-//! ```no_run
-//! use idakit::kernel::Ida;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut idb = Ida::here()?;
-//! idb.open("/path/to/db.i64").call()?;
-//! for function in idb.functions() {
-//!     println!("{:#x} {}", function.address().get(), function.name());
-//! }
-//! idb.close(false);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! When the current thread must stay free (GUI/async) or many threads drive the kernel,
-//! [`Ida::run`](crate::kernel::Ida::run) hosts it on a dedicated thread and runs your app on the caller; any
-//! thread marshals work onto the kernel with [`Ida::call`](crate::kernel::Ida::call):
+//! When the current thread must stay free, such as a GUI event loop or an async runtime,
+//! [`Ida::run`](kernel::Ida::run) hosts the kernel on its own dedicated thread instead. It hands
+//! your closure an [`Ida`] handle whose [`Ida::call`](kernel::Ida::call) marshals work onto the
+//! kernel from any thread:
 //!
 //! ```no_run
 //! use idakit::prelude::*;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! Ida::run(|ida| {
-//!     ida.call(|idb: &mut Database| -> Result<()> {
-//!         idb.open("/path/to/db.i64").call()?;
-//!         idb.close(false);
+//!     ida.call(|db: &mut Database| -> Result<()> {
+//!         db.open("path/to/database.i64").call()?;
+//!         for function in db.functions() {
+//!             println!("{:#x} {}", function.address().get(), function.name());
+//!         }
+//!         db.close(false);
 //!         Ok(())
 //!     })?
 //! })??;
@@ -81,15 +73,15 @@
 //! # }
 //! ```
 //!
-//! The kernel is a process global: only one `Database` is live at a time (a second
-//! [`here`](crate::kernel::Ida::here)/[`run`](crate::kernel::Ida::run) yields
-//! [`InitError::AlreadyRunning`](crate::error::InitError::AlreadyRunning)).
+//! The open database stays on the kernel thread ([`Database`] is `!Send`). Reads borrow it and
+//! return lightweight views like [`Function`] and [`Segment`]; writes take it by mutable
+//! reference, so a read can't outlive a mutation.
 //!
-//! # Read/write separation
+//! Only one database is live at a time. [`Ida::here`](kernel::Ida::here) and
+//! [`Ida::run`](kernel::Ida::run) return [`InitError::AlreadyRunning`](error::InitError::AlreadyRunning)
+//! while one is already open; drop it and you can start another.
 //!
-//! [`Database`] is `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` and
-//! return lightweight views ([`Function`], [`Segment`], ...); writes take `&mut Database`, so a read
-//! view can't be held across a mutation.
+//! For lower-level control, [`idakit_sys`](crate::sys) exposes IDA's raw C bindings directly.
 //!
 //! # Conventions
 //!
@@ -104,12 +96,42 @@
 //! - A **kernel-handle owner** ([`Pattern`], [`decompiler::DecompiledFunction`]) holds an IDA
 //!   resource it frees on [`Drop`], so it stays `!Send` on the kernel thread.
 //!
+//! # Requirements
+//!
+//! - IDA Pro 9.3. A local install is needed to build, since idakit links its libraries, and a
+//!   valid license to run, since IDA checks it when the kernel initializes.
+//! - A 64-bit host running Linux, macOS, or Windows.
+//! - Rust 1.88 or newer.
+//! - A C++17 compiler for the build: g++ or Clang on Linux and macOS, MSVC on Windows.
+//! - `git`, to fetch the SDK headers that match your install, unless you supply a local SDK
+//!   checkout with `IDA_SDK_DIR`.
+//! - 64-bit databases. idakit works with `.i64` and can't open a 32-bit `.idb`.
+//!   - You don't have to bring one, though: it can analyze a binary from scratch.
+//!   - A 32-bit binary is fine, since the limitation is the database format, not the target.
+//!
 //! # Building
 //!
-//! Linking needs a real IDA install (`IDADIR`, holding `libida.so`); the build compiles
-//! a small C++ facade against the IDA SDK headers, fetched to match the installed IDA
-//! version (override with `IDA_SDK_DIR`). Databases must be 64-bit `.i64`, since the facade
-//! is compiled `__EA64__`.
+//! idakit locates your IDA install automatically, in order:
+//!
+//! 1. `IDADIR`, if set.
+//! 2. `idat64` on your `PATH`.
+//! 3. The platform's default install locations: `~/ida-pro-*` and `/opt/` on Linux,
+//!    `/Applications/` on macOS, `Program Files` on Windows.
+//!
+//! If none match, set `IDADIR` to the directory holding IDA's runtime library.
+//!
+//! The SDK headers are fetched to match your installed IDA version, so a normal build needs no
+//! extra flags. Two variables override that:
+//!
+//! - `IDA_SDK_DIR` builds against a local SDK checkout instead of fetching.
+//! - `IDA_SDK_CACHE_DIR` relocates the fetch cache.
+//!
+//! Databases must be 64-bit `.i64`, since the facade is compiled `__EA64__`.
+//!
+//! # License
+//!
+//! The bindings are MIT licensed. The IDA SDK and runtime are proprietary to Hex-Rays; idakit
+//! links against your own install and redistributes none of it.
 #![deny(missing_docs)]
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/Xevion/idakit/master/assets/idakit-logo.png",

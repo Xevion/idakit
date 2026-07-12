@@ -5,7 +5,7 @@ default:
     @just --list
 
 # One-stop gate mirroring CI: a clean run here means CI will very likely pass.
-check: fmt-check actionlint clippy tidy (doc "hermetic") test
+check: fmt-check actionlint clippy tidy (doc "hermetic") readme-check test
 
 build:
     cargo build --workspace
@@ -116,6 +116,16 @@ doc mode="scrape":
 # Lint the GitHub Actions workflows (auto-discovers .github/workflows/).
 actionlint:
     actionlint
+
+# README.md's generated block is idakit's crate-level `//!` doc, run through cargo-rdme so the
+# two can't drift; intra-doc links resolve to live docs.rs URLs, which needs the pinned nightly
+# `cargo rdme install-rust-toolchain-for-intralinks` installs. DOCS_RS=1 skips the native IDA
+# link, same as `doc hermetic`.
+readme:
+    DOCS_RS=1 cargo rdme --manifest-path crates/idakit/Cargo.toml --heading-base-level 1 --force
+
+readme-check:
+    DOCS_RS=1 cargo rdme --manifest-path crates/idakit/Cargo.toml --heading-base-level 1 --check
 
 # Like `test`, but --no-fail-fast so one run surfaces every platform's failures. In CI the
 # fetch-corpus step exports IDAKIT_CORPUS_MANIFEST, so the dedicated tests source the same
