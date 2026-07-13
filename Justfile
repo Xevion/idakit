@@ -117,15 +117,17 @@ doc mode="scrape":
 actionlint:
     actionlint
 
-# README.md's generated block is idakit's crate-level `//!` doc, run through cargo-rdme so the
-# two can't drift; intra-doc links resolve to live docs.rs URLs, which needs the pinned nightly
+# Each crate's README is its crate-level `//!` doc run through cargo-rdme so the two can't drift;
+# intra-doc links resolve to live docs.rs URLs, which needs the pinned nightly
 # `cargo rdme install-rust-toolchain-for-intralinks` installs. DOCS_RS=1 skips the native IDA
-# link, same as `doc hermetic`.
+# link, same as `doc hermetic`. The root README.md is idakit's; idakit-sys keeps its own.
 readme:
     DOCS_RS=1 cargo rdme --manifest-path crates/idakit/Cargo.toml --heading-base-level 1 --force
+    DOCS_RS=1 cargo rdme --manifest-path crates/idakit-sys/Cargo.toml --heading-base-level 1 --force
 
 readme-check:
     DOCS_RS=1 cargo rdme --manifest-path crates/idakit/Cargo.toml --heading-base-level 1 --check
+    DOCS_RS=1 cargo rdme --manifest-path crates/idakit-sys/Cargo.toml --heading-base-level 1 --check
 
 # Like `test`, but --no-fail-fast so one run surfaces every platform's failures. In CI the
 # fetch-corpus step exports IDAKIT_CORPUS_MANIFEST, so the dedicated tests source the same
