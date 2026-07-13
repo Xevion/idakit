@@ -2,7 +2,7 @@
 
 use std::ffi::c_int;
 
-use idakit_sys as sys;
+use idakit_sys::SigWriteCode;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::VariantArray;
 
@@ -13,8 +13,8 @@ use crate::types::TypeWriteError;
 
 /// Maps a surgery return code, the current arity, and any captured reason to a crate [`Result`],
 /// the shared tail of the [`FunctionEdit`](super::FunctionEdit) surgery verbs. `arg` is
-/// `Some((index, arity))` for the index-taking verbs, so an out-of-range code names both. The
-/// `IDAKIT_SIG_*` set is closed; an unexpected code names itself in the message rather than
+/// `Some((index, arity))` for the index-taking verbs, so an out-of-range code names both.
+/// [`SigWriteCode`] is the closed set; an unmodelled code names itself in the message rather than
 /// silently landing on a generic reason, so a facade drift shows up immediately instead of only
 /// in the reason text.
 pub(super) fn sig_result(
@@ -23,13 +23,13 @@ pub(super) fn sig_result(
     arg: Option<(usize, usize)>,
     reason: String,
 ) -> Result<()> {
-    match code {
-        sys::IDAKIT_SIG_OK => Ok(()),
-        sys::IDAKIT_SIG_NO_PROTOTYPE => Err(TypeWriteError::NoPrototype {
+    match SigWriteCode::try_from(code) {
+        Ok(SigWriteCode::Ok) => Ok(()),
+        Ok(SigWriteCode::NoPrototype) => Err(TypeWriteError::NoPrototype {
             address: address.get(),
         }
         .into()),
-        sys::IDAKIT_SIG_ARG_RANGE => {
+        Ok(SigWriteCode::ArgRange) => {
             let (index, arity) = arg.unwrap_or_default();
             Err(TypeWriteError::ArgIndexOutOfRange {
                 address: address.get(),
@@ -38,23 +38,25 @@ pub(super) fn sig_result(
             }
             .into())
         }
-        sys::IDAKIT_SIG_BUILD => Err(TypeWriteError::BuildFailed {
+        Ok(SigWriteCode::Build) => Err(TypeWriteError::BuildFailed {
             reason: reason_or(
                 reason,
                 "an unknown named type or invalid declaration within it",
             ),
         }
         .into()),
-        sys::IDAKIT_SIG_APPLY => Err(TypeWriteError::ApplyRejected {
+        Ok(SigWriteCode::Apply) => Err(TypeWriteError::ApplyRejected {
             address: address.get(),
             reason: reason_or(reason, "the kernel rejected the edited signature"),
         }
         .into()),
-        n => Err(TypeWriteError::ApplyRejected {
+        Err(_) => Err(TypeWriteError::ApplyRejected {
             address: address.get(),
             reason: reason_or(
                 reason,
-                &format!("the kernel rejected the edited signature (unexpected facade code {n})"),
+                &format!(
+                    "the kernel rejected the edited signature (unexpected facade code {code})"
+                ),
             ),
         }
         .into()),

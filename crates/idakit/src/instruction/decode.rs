@@ -97,6 +97,7 @@ pub(crate) fn insn_from_data(
         .iter()
         .map(|o| operand(o, address))
         .collect::<Result<Vec<_>, _>>()?;
+    let flow = sys::FlowFlags::from_bits_retain(data.flow);
     Ok(Instruction {
         address,
         len: data.len,
@@ -105,11 +106,11 @@ pub(crate) fn insn_from_data(
         mnemonic: data.mnemonic.as_str().into(),
         ops,
         flow: Flow {
-            is_call: data.flow & sys::IDAKIT_FLOW_CALL != 0,
-            is_ret: data.flow & sys::IDAKIT_FLOW_RET != 0,
-            is_jump: data.flow & sys::IDAKIT_FLOW_JUMP != 0,
-            is_indirect: data.flow & sys::IDAKIT_FLOW_INDIRECT != 0,
-            stops: data.flow & sys::IDAKIT_FLOW_STOPS != 0,
+            is_call: flow.contains(sys::FlowFlags::CALL),
+            is_ret: flow.contains(sys::FlowFlags::RET),
+            is_jump: flow.contains(sys::FlowFlags::JUMP),
+            is_indirect: flow.contains(sys::FlowFlags::INDIRECT),
+            stops: flow.contains(sys::FlowFlags::STOPS),
             target: Address::try_new(data.target),
         },
     })
@@ -294,7 +295,7 @@ mod tests {
     #[test]
     fn flow_flags_and_target_unpack() {
         let mut raw = blank_insn();
-        raw.flow = sys::IDAKIT_FLOW_CALL | sys::IDAKIT_FLOW_STOPS;
+        raw.flow = (sys::FlowFlags::CALL | sys::FlowFlags::STOPS).bits();
         raw.target = 0x2000;
         let instruction = insn_from_data(&raw, at()).expect("valid instruction");
         assert!(instruction.flow.is_call);
@@ -306,7 +307,7 @@ mod tests {
 
         // A branch with no static target reports None.
         let mut ind = blank_insn();
-        ind.flow = sys::IDAKIT_FLOW_JUMP | sys::IDAKIT_FLOW_INDIRECT | sys::IDAKIT_FLOW_STOPS;
+        ind.flow = (sys::FlowFlags::JUMP | sys::FlowFlags::INDIRECT | sys::FlowFlags::STOPS).bits();
         let instruction = insn_from_data(&ind, at()).expect("valid instruction");
         assert!(instruction.flow.is_jump);
         assert!(instruction.flow.is_indirect);

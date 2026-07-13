@@ -9,7 +9,6 @@
 //! parser, opt-in). The first three are matched under a per-byte bit mask, so a `0xF0`/`0x0F`
 //! mask nibble is a genuine half-byte wildcard.
 
-use std::ffi::c_int;
 use std::marker::PhantomData;
 use std::ops::Range;
 
@@ -61,7 +60,7 @@ pub struct Pattern<'db> {
     handle: cxx::UniquePtr<sys::CompiledBinpat>,
     /// Per-search match flags: bitmask matching for the byte/mask forms (so mask nibbles
     /// work), or plain case-sensitivity for [`ida`](Pattern::ida).
-    flags: c_int,
+    flags: sys::BinSearchFlags,
     _db: PhantomData<&'db Database>,
 }
 
@@ -138,7 +137,7 @@ impl<'db> Pattern<'db> {
         let handle = sys::binpat_from_bytes(bytes, mask.unwrap_or(&[]));
         Ok(Self {
             handle,
-            flags: sys::BIN_SEARCH_BITMASK,
+            flags: sys::BinSearchFlags::BITMASK,
             _db: PhantomData,
         })
     }
@@ -191,9 +190,9 @@ impl<'db> Pattern<'db> {
     ) -> Result<Self> {
         let pattern = pattern.as_ref();
         let flags = if case_sensitive {
-            sys::BIN_SEARCH_CASE
+            sys::BinSearchFlags::CASE
         } else {
-            0
+            sys::BinSearchFlags::empty()
         };
         // IDA's pattern compiler needs an address for byte-width context; the image floor is
         // valid, and every processor idakit targets is a flat 8-bit byte anyway.
@@ -338,7 +337,7 @@ impl Iterator for Matches<'_, '_> {
             start.get(),
             self.end.get(),
             self.pat.handle.as_ref().expect("live pattern"),
-            self.pat.flags,
+            self.pat.flags.bits(),
         );
         match Address::try_new(hit) {
             Some(address) => {

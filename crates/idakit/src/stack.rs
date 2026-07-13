@@ -49,10 +49,10 @@ impl StackSlotKind {
     ///
     /// A reserved slot (either flag set) drops the synthetic name/type; return-address wins a
     /// (never-real) tie so the mapping stays total and deterministic.
-    fn from_parts(flags: u32, name: String, ty: Option<TypeId>) -> Self {
-        if flags & sys::FRAME_VAR_RETADDR != 0 {
+    fn from_parts(flags: sys::FrameVarFlags, name: String, ty: Option<TypeId>) -> Self {
+        if flags.contains(sys::FrameVarFlags::RETADDR) {
             Self::ReturnAddress
-        } else if flags & sys::FRAME_VAR_SAVREGS != 0 {
+        } else if flags.contains(sys::FrameVarFlags::SAVREGS) {
             Self::SavedRegisters
         } else {
             Self::Variable { name, ty }
@@ -253,7 +253,7 @@ impl Database {
                 size: v.size,
                 // A reserved/untyped slot reports IDAKIT_NONE; only a real variable carries a type.
                 kind: StackSlotKind::from_parts(
-                    v.flags,
+                    sys::FrameVarFlags::from_bits_retain(v.flags),
                     v.name,
                     (v.ty != sys::IDAKIT_NONE).then(|| tid(v.ty)),
                 ),
@@ -284,23 +284,23 @@ mod tests {
     fn kind_from_parts() {
         let ty = Some(tid(0));
         assert!(
-            StackSlotKind::from_parts(0, "var_18".to_owned(), ty)
+            StackSlotKind::from_parts(sys::FrameVarFlags::empty(), "var_18".to_owned(), ty)
                 == StackSlotKind::Variable {
                     name: "var_18".to_owned(),
                     ty,
                 }
         );
         assert!(
-            StackSlotKind::from_parts(sys::FRAME_VAR_RETADDR, "r".to_owned(), ty)
+            StackSlotKind::from_parts(sys::FrameVarFlags::RETADDR, "r".to_owned(), ty)
                 == StackSlotKind::ReturnAddress
         );
         assert!(
-            StackSlotKind::from_parts(sys::FRAME_VAR_SAVREGS, "s".to_owned(), None)
+            StackSlotKind::from_parts(sys::FrameVarFlags::SAVREGS, "s".to_owned(), None)
                 == StackSlotKind::SavedRegisters
         );
         assert!(
             StackSlotKind::from_parts(
-                sys::FRAME_VAR_RETADDR | sys::FRAME_VAR_SAVREGS,
+                sys::FrameVarFlags::RETADDR | sys::FrameVarFlags::SAVREGS,
                 String::new(),
                 None
             ) == StackSlotKind::ReturnAddress

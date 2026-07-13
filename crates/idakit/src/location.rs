@@ -11,6 +11,7 @@
 //! on it too and a read-modify-write needs no re-borrow.
 
 use idakit_sys as sys;
+use idakit_sys::TypeApplyCode;
 
 use crate::Database;
 use crate::address::Address;
@@ -173,12 +174,12 @@ impl Database {
         match ty {
             TypeExpr::Named(name) => {
                 let result = self.apply_named_type(address, nul_checked(name, "name")?);
-                match result.code {
-                    sys::IDAKIT_TYPE_OK => Ok(()),
-                    sys::IDAKIT_TYPE_ERR_INPUT => {
+                match TypeApplyCode::try_from(result.code) {
+                    Ok(TypeApplyCode::Ok) => Ok(()),
+                    Ok(TypeApplyCode::ErrInput) => {
                         Err(TypeWriteError::NoType { name: name.clone() }.into())
                     }
-                    _ => Err(TypeWriteError::ApplyRejected {
+                    Ok(TypeApplyCode::ErrApply) | Err(_) => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: format!("the kernel rejected named type {name:?}"),
                     }
@@ -187,14 +188,14 @@ impl Database {
             }
             TypeExpr::Decl(decl) => {
                 let result = self.apply_type_decl(address, nul_checked(decl, "decl")?, 0);
-                match result.code {
-                    sys::IDAKIT_TYPE_OK => Ok(()),
-                    sys::IDAKIT_TYPE_ERR_INPUT => Err(TypeWriteError::ParseFailed {
+                match TypeApplyCode::try_from(result.code) {
+                    Ok(TypeApplyCode::Ok) => Ok(()),
+                    Ok(TypeApplyCode::ErrInput) => Err(TypeWriteError::ParseFailed {
                         decl: decl.clone(),
                         reason: reason_or(result.reason, "the declaration is not valid"),
                     }
                     .into()),
-                    _ => Err(TypeWriteError::ApplyRejected {
+                    Ok(TypeApplyCode::ErrApply) | Err(_) => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: reason_or(
                             result.reason,
@@ -209,9 +210,9 @@ impl Database {
             other => {
                 let recipe = other.checked_serialize()?;
                 let result = self.apply_type_recipe(address, &recipe, 0);
-                match result.code {
-                    sys::IDAKIT_TYPE_OK => Ok(()),
-                    sys::IDAKIT_TYPE_ERR_INPUT => Err(TypeWriteError::BuildFailed {
+                match TypeApplyCode::try_from(result.code) {
+                    Ok(TypeApplyCode::Ok) => Ok(()),
+                    Ok(TypeApplyCode::ErrInput) => Err(TypeWriteError::BuildFailed {
                         reason: reason_or(
                             result.reason,
                             &format!(
@@ -221,7 +222,7 @@ impl Database {
                         ),
                     }
                     .into()),
-                    _ => Err(TypeWriteError::ApplyRejected {
+                    Ok(TypeApplyCode::ErrApply) | Err(_) => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: reason_or(
                             result.reason,
@@ -242,8 +243,8 @@ impl Database {
 /// A pre-built handle is never a parse or build failure, so the only non-OK outcome is the kernel
 /// refusing to reshape the item: [`TypeWriteError::ApplyRejected`].
 pub(crate) fn tinfo_apply_result(res: sys::TypeWriteResult, address: Address) -> Result<()> {
-    match res.code {
-        sys::IDAKIT_TYPE_OK => Ok(()),
+    match TypeApplyCode::try_from(res.code) {
+        Ok(TypeApplyCode::Ok) => Ok(()),
         _ => Err(TypeWriteError::ApplyRejected {
             address: address.get(),
             reason: reason_or(res.reason, "the kernel could not apply the built type"),
@@ -463,8 +464,8 @@ impl LocationMut<'_> {
     /// [`Error::WriteRejected`] if the kernel refuses to remove an existing type.
     #[doc(alias("del_tinfo", "set_tinfo"))]
     pub fn clear_type(&mut self) -> Result<()> {
-        let out = match self.db.clear_type(self.address).code {
-            sys::IDAKIT_TYPE_OK => Ok(()),
+        let out = match TypeApplyCode::try_from(self.db.clear_type(self.address).code) {
+            Ok(TypeApplyCode::Ok) => Ok(()),
             _ => Err(self.rejected("clear_type")),
         };
         self.queued(out, PendingInvalidation::Dependents)

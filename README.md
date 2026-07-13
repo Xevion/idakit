@@ -79,6 +79,11 @@ while one is already open; drop it and you can start another.
 
 For lower-level control, [`idakit_sys`](https://docs.rs/idakit_sys/latest/idakit_sys/) exposes IDA's raw C bindings directly.
 
+Both crates carry `#[doc(alias)]` tags mapping items to their IDA SDK names, so a rustdoc search
+resolves an SDK spelling like `SEGPERM_READ` or `netnode::altval` to the binding. Aliases are
+per crate: search the [`idakit_sys`](https://docs.rs/idakit_sys/latest/idakit_sys/) page for raw-binding names and this page for the
+idiomatic wrappers.
+
 ## Conventions
 
 A handful of shapes recur across every domain:

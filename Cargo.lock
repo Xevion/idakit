@@ -541,6 +541,8 @@ dependencies = [
 name = "idakit-sys"
 version = "0.1.1"
 dependencies = [
+ "assert2",
+ "bitflags",
  "cc",
  "cxx",
  "cxx-build",
@@ -548,6 +550,9 @@ dependencies = [
  "idakit-sys-codegen",
  "libloading",
  "moveit",
+ "num_enum",
+ "rstest",
+ "strum",
 ]
 
 [[package]]

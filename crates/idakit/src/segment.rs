@@ -92,6 +92,13 @@ impl<'db> Segment<'db> {
         Bitness::try_from_bits(self.db.seg_bitness(self.index).max(0) as u8)
     }
 
+    /// The segment's raw permission bits.
+    #[inline]
+    #[must_use]
+    fn perm(&self) -> sys::SegPerm {
+        sys::SegPerm::from_bits_retain(self.db.seg_perm(self.index))
+    }
+
     /// Whether the segment is readable.
     ///
     /// All three permission predicates read `false` when the input format recorded no
@@ -99,21 +106,21 @@ impl<'db> Segment<'db> {
     #[must_use]
     #[doc(alias("SEGPERM_READ"))]
     pub fn is_readable(&self) -> bool {
-        self.db.seg_perm(self.index) & sys::SEGPERM_READ != 0
+        self.perm().contains(sys::SegPerm::READ)
     }
 
     /// Whether the segment is writable.
     #[must_use]
     #[doc(alias("SEGPERM_WRITE"))]
     pub fn is_writable(&self) -> bool {
-        self.db.seg_perm(self.index) & sys::SEGPERM_WRITE != 0
+        self.perm().contains(sys::SegPerm::WRITE)
     }
 
     /// Whether the segment is executable.
     #[must_use]
     #[doc(alias("SEGPERM_EXEC"))]
     pub fn is_executable(&self) -> bool {
-        self.db.seg_perm(self.index) & sys::SEGPERM_EXEC != 0
+        self.perm().contains(sys::SegPerm::EXEC)
     }
 }
 

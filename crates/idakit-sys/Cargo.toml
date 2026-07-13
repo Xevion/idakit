@@ -41,5 +41,12 @@ name = "writeop"
 path = "examples/writeop.rs"
 
 [dependencies]
+bitflags = "2.13.0"
 cxx = "1.0.197"
 moveit = { version = "0.6.0", features = ["cxx"] }
+num_enum = "0.7.6"
+strum = { version = "0.28.0", features = ["derive"] }
+
+[dev-dependencies]
+assert2 = "0.4.0"
+rstest = "0.26.1"

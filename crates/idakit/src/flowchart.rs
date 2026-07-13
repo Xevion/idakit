@@ -14,7 +14,6 @@
 //! blocks (`start == end`, decided purely by index past `nproper`), which idakit lifts to typed
 //! edges so the arena stays real code and out-of-function targets stay addressable.
 
-use std::ffi::c_int;
 use std::ops::Range;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -239,7 +238,7 @@ impl Database {
     /// [`Error::NoFunction`] when no function covers `address`.
     #[doc(alias("qflow_chart_t"))]
     pub fn flowchart(&self, address: Address) -> Result<FlowChart> {
-        self.build_flowchart(address, 0)
+        self.build_flowchart(address, sys::FlowChartFlags::empty())
     }
 
     /// The shared build path behind [`flowchart`](Self::flowchart) and the `flowchart_with`
@@ -247,8 +246,12 @@ impl Database {
     ///
     /// Constructs the flow chart and extracts every block and edge into an owned arena; the cxx
     /// `UniquePtr` frees the kernel object on drop, so the result is a detached `Send` snapshot.
-    pub(crate) fn build_flowchart(&self, address: Address, flags: c_int) -> Result<FlowChart> {
-        let chart = sys::cfg_build(address.get(), flags).map_err(|_| Error::NoFunction {
+    pub(crate) fn build_flowchart(
+        &self,
+        address: Address,
+        flags: sys::FlowChartFlags,
+    ) -> Result<FlowChart> {
+        let chart = sys::cfg_build(address.get(), flags.bits()).map_err(|_| Error::NoFunction {
             address: address.get(),
         })?;
         let blocks = extract(&chart)?;
@@ -264,16 +267,20 @@ impl Database {
 
 /// Compose an `FC_` flag word from the builder's booleans. `externals`/`predecessors` are the
 /// enabled state, so *disabling* either sets the corresponding `NO*` flag.
-pub(crate) fn flowchart_flags(call_ends: bool, externals: bool, predecessors: bool) -> c_int {
-    let mut flags = 0;
+pub(crate) fn flowchart_flags(
+    call_ends: bool,
+    externals: bool,
+    predecessors: bool,
+) -> sys::FlowChartFlags {
+    let mut flags = sys::FlowChartFlags::empty();
     if call_ends {
-        flags |= sys::FC_CALL_ENDS;
+        flags |= sys::FlowChartFlags::CALL_ENDS;
     }
     if !externals {
-        flags |= sys::FC_NOEXT;
+        flags |= sys::FlowChartFlags::NOEXT;
     }
     if !predecessors {
-        flags |= sys::FC_NOPREDS;
+        flags |= sys::FlowChartFlags::NOPREDS;
     }
     flags
 }
@@ -419,13 +426,15 @@ mod tests {
     /// The three booleans map onto the right `FC_` bits, and disabling is what sets a flag.
     #[test]
     fn cfg_flags_compose() {
-        assert!(flowchart_flags(false, true, true) == 0);
-        assert!(flowchart_flags(true, true, true) == sys::FC_CALL_ENDS);
-        assert!(flowchart_flags(false, false, true) == sys::FC_NOEXT);
-        assert!(flowchart_flags(false, true, false) == sys::FC_NOPREDS);
+        assert!(flowchart_flags(false, true, true).is_empty());
+        assert!(flowchart_flags(true, true, true) == sys::FlowChartFlags::CALL_ENDS);
+        assert!(flowchart_flags(false, false, true) == sys::FlowChartFlags::NOEXT);
+        assert!(flowchart_flags(false, true, false) == sys::FlowChartFlags::NOPREDS);
         assert!(
             flowchart_flags(true, false, false)
-                == sys::FC_CALL_ENDS | sys::FC_NOEXT | sys::FC_NOPREDS
+                == sys::FlowChartFlags::CALL_ENDS
+                    | sys::FlowChartFlags::NOEXT
+                    | sys::FlowChartFlags::NOPREDS
         );
     }
 }
