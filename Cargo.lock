@@ -544,10 +544,17 @@ dependencies = [
  "cc",
  "cxx",
  "cxx-build",
- "cxx-gen",
  "dirs",
+ "idakit-sys-codegen",
  "libloading",
  "moveit",
+]
+
+[[package]]
+name = "idakit-sys-codegen"
+version = "0.1.0"
+dependencies = [
+ "cxx-gen",
  "proc-macro2",
  "quote",
 ]

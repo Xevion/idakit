@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/idakit-sys", "crates/idakit"]
+members = ["crates/idakit-sys", "crates/idakit-sys-codegen", "crates/idakit"]
 
 [workspace.package]
 edition = "2024"

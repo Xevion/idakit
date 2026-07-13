@@ -1,0 +1,12 @@
+[package]
+name = "idakit-sys-codegen"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+proc-macro2 = "1.0.106"
+quote = "1.0.46"
+cxx-gen = "=0.7.197"

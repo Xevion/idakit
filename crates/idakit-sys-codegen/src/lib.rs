@@ -1,4 +1,7 @@
-//! Spec-driven `cxx` bridge generation via `cxx-gen`.
+//! Spec-driven `cxx` bridge generation via `cxx-gen`, the build-time engine behind `idakit-sys`.
+//!
+//! `idakit-sys`'s `build.rs` calls [`generate`] as a `[build-dependencies]` path crate; nothing
+//! here runs at `idakit-sys` compile time.
 //!
 //! `cxx_build::bridge()` parses bridge source textually with `syn`, so a `macro_rules!` can never
 //! author a `#[cxx::bridge] mod`: its symbols would be invisible to the parser and undefined at
@@ -14,10 +17,10 @@
 //! [`BodyKind`] as a convenience; the netnode domain supplies its own matrix-rendered
 //! [`BodyKind::Rendered`] bodies; everything else is [`BodyKind::Custom`] and hand-written.
 //!
-//! This module is the engine only, split into three sibling files: `dsl` (the authoring macros),
-//! `model` (the spec data vocabulary), and `emit` (the token/string emitters). The declarative
-//! manifest of domains lives in the sibling `domains` submodule ([`domains`]), one file per
-//! domain; the matrix-generated netnode domain lives in `domains::netnode`.
+//! The engine is split into three sibling files: `dsl` (the authoring macros), `model` (the spec
+//! data vocabulary), and `emit` (the token/string emitters). The declarative manifest of domains
+//! lives in the sibling `domains` submodule ([`domains`]), one file per domain; the
+//! matrix-generated netnode domain lives in `domains::netnode`.
 //!
 //! Files written to `$OUT_DIR`:
 //!

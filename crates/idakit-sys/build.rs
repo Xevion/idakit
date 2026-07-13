@@ -3,10 +3,7 @@ use std::ffi::c_int;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-// The spec-driven cxx-gen pipeline: a declarative spec generates the Rust bridge, the C++ shim
-// glue (via cxx-gen), and the templated C++ bodies. See the module for the full arrangement.
-#[path = "build_support/gen.rs"]
-mod codegen;
+use idakit_sys_codegen as codegen;
 
 // Compile the C++ facade against the IDA SDK headers and link the kernel. __EA64__ makes
 // ea_t 64-bit; `PLATFORM_DEFINE` (`__LINUX__`/`__MAC__`/`__NT__`) tells the SDK which OS it
@@ -258,7 +255,6 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bridge_probe_ext.rs");
     println!("cargo:rerun-if-changed=src/bridge_probe.rs");
     println!("cargo:rerun-if-changed=src/bridge_gen.rs");
-    println!("cargo:rerun-if-changed=build_support");
     println!("cargo:rerun-if-changed=facade/custom_escape_hatch.cc");
     println!("cargo:rerun-if-changed=facade/import_custom.cc");
     println!("cargo:rerun-if-changed=facade/range_custom.cc");
