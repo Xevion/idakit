@@ -27,6 +27,8 @@ namespace idakit_cxx {
 
 namespace {
 
+// Hand-maintained ABI sentinel, kept in lockstep with typewalk_cxx.cc's local NONE and Rust's
+// sys::IDAKIT_NONE; no shared codegen pins the three together.
 constexpr uint32_t IDAKIT_NONE = 0xFFFFFFFFu;
 
 rust::Slice<const uint8_t> bytes_of(const char *p, size_t n) {

@@ -664,10 +664,12 @@ pub(crate) fn walk(cfunc: &idakit_sys::CFunc) -> Result<Ctree, ExtractError> {
     let cb_ptr: *mut CallbackBuilder = &raw mut cb;
     // SAFETY: `cb_ptr` points to the live, stack-local `cb` and outlives the walk; the walk is
     // single-threaded and non-reentrant, so the sink stays unaliased per callback.
-    let mut nodes = unsafe { idakit_sys::ctree_visitor(cb_ptr as *mut dyn idakit_sys::CtreeSink) };
+    let mut nodes =
+        unsafe { idakit_sys::CtreeVisitor::from_raw(cb_ptr as *mut dyn idakit_sys::CtreeSink) };
     // SAFETY: same provenance and non-reentrancy guarantee as `nodes`, for the node-type sink.
-    let mut types =
-        unsafe { idakit_sys::type_walk_visitor(cb_ptr as *mut dyn idakit_sys::TypeWalkSink) };
+    let mut types = unsafe {
+        idakit_sys::TypeWalkVisitor::from_raw(cb_ptr as *mut dyn idakit_sys::TypeWalkSink)
+    };
     let tv_addr = (&mut types as *mut idakit_sys::TypeWalkVisitor) as usize;
     // SAFETY: `cfunc` is a live handle (a `&CFunc` cannot be null); `tv_addr` is `types`' own
     // address, reinterpreted back to a `TypeWalkVisitor&` on the C++ side for its own calls.

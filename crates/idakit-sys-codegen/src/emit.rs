@@ -72,8 +72,8 @@ impl ArgTy {
             ArgTy::Bool => "bool".into(),
             ArgTy::Str => "rust::Str".into(),
             ArgTy::Bytes => "rust::Slice<const uint8_t>".into(),
-            ArgTy::Extern(name) => format!("::{}", extern_cxx_name(name)),
-            ArgTy::ExternRef(name) => format!("const ::{}&", extern_cxx_name(name)),
+            ArgTy::Extern(name) => format!("::{}", ExternTy::cxx_name_of(name)),
+            ArgTy::ExternRef(name) => format!("const ::{}&", ExternTy::cxx_name_of(name)),
             ArgTy::F64 => "double".into(),
             ArgTy::I64 => "int64_t".into(),
             ArgTy::SliceU32 => "rust::Slice<const uint32_t>".into(),
@@ -140,10 +140,10 @@ impl RetShape {
             RetShape::U64 => "uint64_t".into(),
             RetShape::Usize => "size_t".into(),
             RetShape::String => "rust::String".into(),
-            RetShape::Extern(n) => format!("::{}", extern_cxx_name(n)),
+            RetShape::Extern(n) => format!("::{}", ExternTy::cxx_name_of(n)),
             RetShape::Shared(n) => (*n).into(),
-            RetShape::UniquePtr(n) => format!("std::unique_ptr<::{}>", extern_cxx_name(n)),
-            RetShape::Vec(n) => format!("rust::Vec<{}>", vec_elem_cxx(n)),
+            RetShape::UniquePtr(n) => format!("std::unique_ptr<::{}>", ExternTy::cxx_name_of(n)),
+            RetShape::Vec(n) => format!("rust::Vec<{}>", ExternTy::vec_elem_cxx(n)),
             RetShape::VecU32 => "rust::Vec<uint32_t>".into(),
             RetShape::VecU8 => "rust::Vec<uint8_t>".into(),
         }
@@ -170,37 +170,37 @@ impl RetKind {
     }
 }
 
-/// Resolve a `Vec<Name>` element's C++ spelling: a `Trivial` `ExternType` becomes `::cxx_name`, a
-/// shared struct keeps its own name.
-fn vec_elem_cxx(name: &str) -> String {
-    if is_extern(name) {
-        format!("::{}", extern_cxx_name(name))
-    } else {
-        name.to_string()
-    }
-}
-
-/// Find the domain-declared [`ExternTy`] a Rust name refers to, the shared lookup behind
-/// [`extern_cxx_name`] and [`is_extern`].
-fn find_extern(rust_name: &str) -> Option<&'static ExternTy> {
-    domains()
-        .iter()
-        .flat_map(|d| d.externs.iter())
-        .find(|e| e.rust_name == rust_name)
-}
-
-/// The C++ symbol behind an `ExternType`'s Rust name, e.g. `RangeT` -> `range_t`.
-fn extern_cxx_name(rust_name: &str) -> &'static str {
-    find_extern(rust_name)
-        .unwrap_or_else(|| panic!("unknown ExternType `{rust_name}` referenced in a spec"))
-        .cxx_name
-}
-
-fn is_extern(rust_name: &str) -> bool {
-    find_extern(rust_name).is_some()
-}
-
 impl ExternTy {
+    /// Find the domain-declared `ExternTy` a Rust name refers to, the shared lookup behind
+    /// [`Self::cxx_name_of`] and [`Self::exists`].
+    fn find(rust_name: &str) -> Option<&'static Self> {
+        domains()
+            .iter()
+            .flat_map(|d| d.externs.iter())
+            .find(|e| e.rust_name == rust_name)
+    }
+
+    /// The C++ symbol behind an `ExternType`'s Rust name, e.g. `RangeT` -> `range_t`.
+    fn cxx_name_of(rust_name: &str) -> &'static str {
+        Self::find(rust_name)
+            .unwrap_or_else(|| panic!("unknown ExternType `{rust_name}` referenced in a spec"))
+            .cxx_name
+    }
+
+    fn exists(rust_name: &str) -> bool {
+        Self::find(rust_name).is_some()
+    }
+
+    /// Resolve a `Vec<Name>` element's C++ spelling: a `Trivial` `ExternType` becomes
+    /// `::cxx_name`, a shared struct keeps its own name.
+    fn vec_elem_cxx(name: &str) -> String {
+        if Self::exists(name) {
+            format!("::{}", Self::cxx_name_of(name))
+        } else {
+            name.to_string()
+        }
+    }
+
     /// The module-level `#[repr(C)]` mirror + `unsafe impl ExternType` for one `Trivial`/`Opaque`
     /// `ExternType`. These sit outside `mod ffi`, in the same file `bridge_gen.rs` `include!`s.
     pub(crate) fn tokens(&self) -> TokenStream {
@@ -328,7 +328,7 @@ impl Domain {
         for f in self.fns {
             match f.ret.shape() {
                 RetShape::UniquePtr(n) => unique.push(*n),
-                RetShape::Vec(n) if is_extern(n) => vecs.push(*n),
+                RetShape::Vec(n) if ExternTy::exists(n) => vecs.push(*n),
                 _ => {}
             }
         }
@@ -421,7 +421,7 @@ impl FnSpec {
     pub(crate) fn cxx_signature(&self) -> String {
         let mut args: Vec<String> = Vec::new();
         if let Some(recv) = self.receiver {
-            args.push(format!("const ::{}& self", extern_cxx_name(recv)));
+            args.push(format!("const ::{}& self", ExternTy::cxx_name_of(recv)));
         }
         for a in self.args {
             args.push(a.ty.cxx(a.name));

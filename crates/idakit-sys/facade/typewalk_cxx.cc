@@ -278,7 +278,9 @@ uint32_t func_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
 }
 
 FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
-  // Sentinel for a reserved/untyped slot, matching IDAKIT_NONE on the Rust side.
+  // Hand-maintained ABI sentinel for a reserved/untyped slot, kept in lockstep with
+  // ctree_cxx.cc's IDAKIT_NONE and Rust's sys::IDAKIT_NONE; no shared codegen pins the three
+  // together.
   constexpr uint32_t NONE = 0xFFFFFFFFu;
   func_t *pfn = get_func((ea_t)ea);
   if (pfn == nullptr)

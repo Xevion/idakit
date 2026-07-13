@@ -1,11 +1,12 @@
 //! `cxx` bindings for IDA's own generic container `qvector<T>` (`idakit_cxx::*vec_*`).
 //!
 //! `cxx` has no generic-template support and its built-in `CxxVector<T>` is `std::vector`-only,
-//! so it cannot match `qvector`'s `{ T* array; size_t n; size_t alloc; }` ABI. This module
-//! applies the KDAB cxx-qt per-instantiation recipe: each concrete `qvector<T>` is bound as its
-//! own `Opaque` [`cxx::ExternType`] (one distinct `type_id!` per instantiation), and the
-//! mechanical per-`T` boilerplate is emitted by the [`qvec_opaque!`] macro. Two instantiations
-//! prove the recipe from scalar `T` to a `Trivial`-struct `T`:
+//! so it cannot match `qvector`'s `{ T* array; size_t n; size_t alloc; }` ABI. This module binds
+//! each concrete `qvector<T>` instantiation as its own `Opaque` [`cxx::ExternType`] (one distinct
+//! `type_id!` per instantiation), the mechanical per-`T` boilerplate emitted by the
+//! [`qvec_opaque!`] macro; this is the per-instantiation recipe KDAB's cxx-qt uses for its own
+//! Qt container bindings. Two instantiations prove the recipe from scalar `T` to a
+//! `Trivial`-struct `T`:
 //!
 //! - [`IntVec`] binds the SDK's `intvec_t` (`qvector<int>`), sourced from a flow-chart block's
 //!   successor edge list.

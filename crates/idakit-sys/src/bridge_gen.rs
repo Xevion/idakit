@@ -1,4 +1,4 @@
-//! The spec-generated `cxx` bridge, `include!`d from `$OUT_DIR/gen_bridge.rs` (written by the `build_support/` generator from its `spec` manifest and `netnode` matrix).
+//! The spec-generated `cxx` bridge, `include!`d from `$OUT_DIR/gen_bridge.rs` (written by the `idakit-sys-codegen` crate's `emit` engine from its `domains` manifest, including the `netnode` matrix).
 
 include!(concat!(env!("OUT_DIR"), "/gen_bridge.rs"));
 

@@ -1,12 +1,17 @@
 use super::super::model::*;
 
-/// The Hex-Rays decompiler domain: the SDK's `cfuncptr_t` (`qrefcnt_t<cfunc_t>`) bound as an
-/// `Opaque` `ExternType` ([`CFunc`]) owned by [`UniquePtr`](cxx::UniquePtr), so its cxx deleter runs
-/// `~cfuncptr_t` (`release()`) on drop, retiring the raw `new`/`delete` handle dance. `decompile`
-/// wraps the microcode pipeline in the facade's `guarded<>` trap and throws on failure; the read
-/// accessors take a borrowed `&CFunc` and return pseudocode, ctree counts, and the extraction-gap
-/// diagnostic. The ctree walk itself is a separate hand-written `cxx` bridge (`bridge_visitors`) fed
-/// the same `&CFunc`. Bodies are in `facade/hexrays_custom.cc`.
+/// The Hex-Rays decompiler domain, bodies in `facade/hexrays_custom.cc`.
+///
+/// The SDK's `cfuncptr_t` (`qrefcnt_t<cfunc_t>`) is bound as an `Opaque` `ExternType` ([`CFunc`])
+/// owned by [`UniquePtr`](cxx::UniquePtr), so its cxx deleter runs `~cfuncptr_t` (`release()`) on
+/// drop, retiring the raw `new`/`delete` handle dance.
+///
+/// `decompile` wraps the microcode pipeline in the facade's `guarded<>` trap and throws on
+/// failure; the read accessors take a borrowed `&CFunc` and return pseudocode, ctree counts, and
+/// the extraction-gap diagnostic.
+///
+/// The ctree walk itself is a separate hand-written `cxx` bridge (`bridge_visitors`) fed the same
+/// `&CFunc`.
 pub const HEXRAYS: Domain = Domain {
     name: "hexrays",
     // funcs.hpp (pulling bytes.hpp/xref.hpp) precedes hexrays.hpp so the generated header is
@@ -41,7 +46,8 @@ pub const HEXRAYS: Domain = Domain {
             fields: fields! {
                 visitor_total: I32 = "Every expression the SDK's own ctree visitor sees.";
                 expected: I32 = "How many the extraction walker should materialize (visitor total minus \
-                          elided empty-expression placeholders in optional slots).";
+                          elided empty-expression placeholders in optional slots, where an absent \
+                          operand decodes as `cot_empty`, for which the walker emits no node).";
             },
         },
     ],

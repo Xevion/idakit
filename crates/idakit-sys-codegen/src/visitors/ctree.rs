@@ -33,8 +33,8 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
                   `&mut self` methods, each forwarding into the [`CtreeSink`] it was built over.\n\n\
                   `cxx` generates a C++ class with a member function per method below; \
                   `facade/ctree_cxx.cc` receives a `CtreeVisitor&` and calls them. The visitor \
-                  holds the sink as a lifetime-erased raw pointer: [`ctree_visitor`] is its only \
-                  constructor, and the caller keeps the borrowed sink alive across the one \
+                  holds the sink as a lifetime-erased raw pointer: [`CtreeVisitor::from_raw`] is \
+                  its only constructor, and the caller keeps the borrowed sink alive across the one \
                   synchronous walk, so the pointer is always valid and unaliased when a method \
                   reborrows it.",
     methods: methods! {
