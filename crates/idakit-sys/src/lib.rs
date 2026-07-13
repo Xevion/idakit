@@ -1,7 +1,7 @@
 //! Raw FFI bindings to IDA's idalib runtime and the idakit C++ facade.
 //!
 //! The declarations are split into per-domain source modules (`runtime`, `function`, `bytes`,
-//! `bridge_ctree`, ...) that mirror the facade's translation units, but every item is re-exported
+//! `bridge_visitors`, ...) that mirror the facade's translation units, but every item is re-exported
 //! flat at the crate root, so the public surface is a single namespace
 //! (`idakit_sys::idakit_get_bytes`, `idakit_sys::CtreeVisitor`), not a module hierarchy. There are
 //! no safe wrappers here; those belong in `idakit`.
@@ -38,12 +38,11 @@ pub const BADADDR: Address = u64::MAX;
 
 mod bridge_cfg_check;
 mod bridge_cfunc;
-mod bridge_ctree;
 mod bridge_gen;
 mod bridge_probe;
 mod bridge_probe_ext;
 mod bridge_qvec;
-mod bridge_typewalk;
+mod bridge_visitors;
 mod bytes;
 mod cfg_flags;
 mod frame_flags;
@@ -59,7 +58,6 @@ mod ty_build;
 pub use bridge_cfg_check::*;
 #[doc(hidden)]
 pub use bridge_cfunc::*;
-pub use bridge_ctree::*;
 pub use bridge_gen::*;
 #[doc(hidden)]
 pub use bridge_probe::*;
@@ -67,7 +65,7 @@ pub use bridge_probe::*;
 pub use bridge_probe_ext::*;
 #[doc(hidden)]
 pub use bridge_qvec::*;
-pub use bridge_typewalk::*;
+pub use bridge_visitors::*;
 pub use bytes::*;
 pub use cfg_flags::*;
 pub use frame_flags::*;

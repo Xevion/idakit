@@ -168,34 +168,16 @@ fn main() {
         sdk_include_str,
         &[],
     );
-    // The tinfo type walk driven by an extern "Rust" opaque visitor: each node forwards straight
-    // into the sink, with no C function-pointer table or void* context to marshal.
-    cxx_bridge(
-        "src/bridge_typewalk.rs",
-        &["facade/typewalk_cxx.cc"],
-        "idakit_cxx_typewalk_bridge",
-        sdk_include_str,
-        &[],
-    );
-    // The ctree walk driven by an extern "Rust" opaque visitor, the same shape as the tinfo walk
-    // above: every expression/statement/local forwards straight into the sink, with no
-    // function-pointer table or void* context to marshal.
-    cxx_bridge(
-        "src/bridge_ctree.rs",
-        &["facade/ctree_cxx.cc"],
-        "idakit_cxx_ctree_bridge",
-        sdk_include_str,
-        &[],
-    );
-
-    // The spec-driven cxx-gen bridge (namespace idakit_gen). Unlike every bridge above, this one
-    // is not hand-written: codegen::generate builds the `#[cxx::bridge] mod` tokens from a declarative
-    // spec and emits, into OUT_DIR, the Rust bridge (include!d by src/bridge_gen.rs), the C++ shim
-    // glue (via cxx-gen), the templated C++ bodies, and a private rust/cxx.h. Compiled with plain
-    // cc (the glue already exists) mirroring the facade's flags; OUT_DIR is on the include path for
-    // the generated gen_seg.h and rust/cxx.h. The cxx runtime it links against is the one the
-    // hand-written bridges above already compiled. The Custom escape-hatch body lives in a
-    // hand-written TU compiled alongside.
+    // The spec-driven cxx-gen bridges: namespace idakit_gen (the domain bridge) and namespace
+    // idakit_cxx (the ctree/tinfo extern "Rust" opaque-visitor bridge). Unlike every bridge above,
+    // neither is hand-written: codegen::generate builds each `#[cxx::bridge] mod` tokens from a
+    // declarative spec and emits, into OUT_DIR, the Rust side (include!d by src/bridge_gen.rs /
+    // src/bridge_visitors.rs), the C++ shim glue (via cxx-gen), the templated C++ bodies, and a
+    // private rust/cxx.h. Compiled with plain cc (the glue already exists) mirroring the facade's
+    // flags; OUT_DIR is on the include path for the generated headers and rust/cxx.h. The cxx
+    // runtime it links against is the one the hand-written bridges above already compiled. The
+    // domain bridge's Custom escape-hatch bodies and the visitor bridge's ctree/typewalk drivers
+    // are hand-written TUs compiled alongside.
     let out_path = PathBuf::from(&out_dir);
     let mut gen_bridge = cc::Build::new();
     gen_bridge
@@ -217,6 +199,8 @@ fn main() {
     for tu in codegen::custom_tus() {
         gen_bridge.file(tu);
     }
+    gen_bridge.file("facade/ctree_cxx.cc");
+    gen_bridge.file("facade/typewalk_cxx.cc");
     gen_bridge.compile("idakit_cxx_gen_bridge");
 
     // The cxx fault-injection and boundary probe bridges. Each is its own static archive, like the
@@ -261,10 +245,9 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bridge_qvec.rs");
     println!("cargo:rerun-if-changed=facade/typewalk_cxx.cc");
     println!("cargo:rerun-if-changed=facade/typewalk_cxx.h");
-    println!("cargo:rerun-if-changed=src/bridge_typewalk.rs");
     println!("cargo:rerun-if-changed=facade/ctree_cxx.cc");
     println!("cargo:rerun-if-changed=facade/ctree_cxx.h");
-    println!("cargo:rerun-if-changed=src/bridge_ctree.rs");
+    println!("cargo:rerun-if-changed=src/bridge_visitors.rs");
     println!("cargo:rerun-if-changed=facade/probe_cxx.cc");
     println!("cargo:rerun-if-changed=facade/probe_cxx.h");
     println!("cargo:rerun-if-changed=facade/cfunc_cxx.cc");
@@ -276,6 +259,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bridge_probe.rs");
     println!("cargo:rerun-if-changed=src/bridge_gen.rs");
     println!("cargo:rerun-if-changed=build_support/gen.rs");
+    println!("cargo:rerun-if-changed=build_support/visitor_spec.rs");
     println!("cargo:rerun-if-changed=facade/custom_escape_hatch.cc");
     println!("cargo:rerun-if-changed=facade/import_custom.cc");
     println!("cargo:rerun-if-changed=facade/range_custom.cc");

@@ -34,6 +34,8 @@ use quote::{format_ident, quote};
 mod netnode;
 #[path = "spec.rs"]
 mod spec;
+#[path = "visitor_spec.rs"]
+mod visitor_spec;
 
 use spec::domains;
 
@@ -174,6 +176,19 @@ pub enum ArgTy {
     Extern(&'static str),
     /// A borrowed `ExternType` (`&T` / `const ::cxx_name&`), by Rust name.
     ExternRef(&'static str),
+    /// A borrowed `f64` (`f64` / `double`).
+    F64,
+    /// A borrowed `i64` (`i64` / `int64_t`).
+    I64,
+    /// A borrowed `u32` slice (`&[u32]` / `rust::Slice<const uint32_t>`).
+    SliceU32,
+    /// A borrowed `u64` slice (`&[u64]` / `rust::Slice<const uint64_t>`).
+    SliceU64,
+    /// A borrowed slice of a shared struct, by name (`&[Name]` / `rust::Slice<const Name>`).
+    SliceStruct(&'static str),
+    /// A borrowed mutable reference to an `extern "Rust"` opaque visitor, by name (`&mut Name` /
+    /// `Name &`).
+    VisitorMut(&'static str),
 }
 
 /// The return shapes the spec can express. `Result<T>` variants surface a thrown C++ exception as
@@ -281,6 +296,18 @@ impl ArgTy {
                 let id = format_ident!("{name}");
                 quote!(&#id)
             }
+            ArgTy::F64 => quote!(f64),
+            ArgTy::I64 => quote!(i64),
+            ArgTy::SliceU32 => quote!(&[u32]),
+            ArgTy::SliceU64 => quote!(&[u64]),
+            ArgTy::SliceStruct(name) => {
+                let id = format_ident!("{name}");
+                quote!(&[#id])
+            }
+            ArgTy::VisitorMut(name) => {
+                let id = format_ident!("{name}");
+                quote!(&mut #id)
+            }
         }
     }
     fn cxx(&self, arg_name: &str) -> String {
@@ -294,9 +321,26 @@ impl ArgTy {
             ArgTy::Bytes => "rust::Slice<const uint8_t>".into(),
             ArgTy::Extern(name) => format!("::{}", extern_cxx_name(name)),
             ArgTy::ExternRef(name) => format!("const ::{}&", extern_cxx_name(name)),
+            ArgTy::F64 => "double".into(),
+            ArgTy::I64 => "int64_t".into(),
+            ArgTy::SliceU32 => "rust::Slice<const uint32_t>".into(),
+            ArgTy::SliceU64 => "rust::Slice<const uint64_t>".into(),
+            ArgTy::SliceStruct(name) => format!("rust::Slice<const {name}>"),
+            ArgTy::VisitorMut(name) => format!("{name} &"),
         };
         format!("{ty} {arg_name}")
     }
+}
+
+/// `ty`'s Rust token, `ffi_qualified` prefixing a [`ArgTy::SliceStruct`]'s struct name with `ffi::`
+/// for use outside `mod ffi` (the sink trait and the visitor's forwarding impl); inside `mod ffi`
+/// the bare name already resolves, so callers there pass `false`.
+fn visitor_arg_rust(ty: &ArgTy, ffi_qualified: bool) -> TokenStream {
+    if let (true, ArgTy::SliceStruct(name)) = (ffi_qualified, ty) {
+        let id = format_ident!("{name}");
+        return quote!(&[ffi::#id]);
+    }
+    ty.rust()
 }
 
 impl RetKind {
@@ -454,25 +498,29 @@ fn extern_type_tokens(e: &ExternTy) -> TokenStream {
     }
 }
 
+/// A `cxx` shared struct's declaration inside `mod ffi`, shared by the domain bridge and the
+/// visitor bridge.
+fn struct_tokens(s: &SharedStruct) -> TokenStream {
+    let sid = format_ident!("{}", s.name);
+    let doc = s.doc;
+    let fields = s.fields.iter().map(|f| {
+        let fid = format_ident!("{}", f.name);
+        let fty = f.ty.rust();
+        let fdoc = f.doc;
+        quote! { #[doc = #fdoc] #fid: #fty, }
+    });
+    quote! {
+        #[doc = #doc]
+        struct #sid {
+            #(#fields)*
+        }
+    }
+}
+
 /// One domain's items inside `mod ffi`: its shared structs, extern-type aliases, its `extern "C++"`
 /// block (including the domain header + its fn decls), and any container `impl` blocks.
 fn domain_ffi_tokens(d: &Domain) -> TokenStream {
-    let structs = d.structs.iter().map(|s| {
-        let sid = format_ident!("{}", s.name);
-        let doc = s.doc;
-        let fields = s.fields.iter().map(|f| {
-            let fid = format_ident!("{}", f.name);
-            let fty = f.ty.rust();
-            let fdoc = f.doc;
-            quote! { #[doc = #fdoc] #fid: #fty, }
-        });
-        quote! {
-            #[doc = #doc]
-            struct #sid {
-                #(#fields)*
-            }
-        }
-    });
+    let structs = d.structs.iter().map(struct_tokens);
 
     let extern_aliases = d.externs.iter().map(|e| {
         let rust_id = format_ident!("{}", e.rust_name);
@@ -544,6 +592,235 @@ fn container_impls(d: &Domain) -> TokenStream {
         quote!(impl Vec<#id> {})
     });
     quote! { #(#unique)* #(#vecs)* }
+}
+
+/// One `extern "Rust"` opaque-visitor sub-bridge: a sink trait plus the opaque visitor that
+/// forwards every call into it. [`visitor_spec::VISITOR_BRIDGE`] pairs two of these (ctree,
+/// tinfo type walk) into one shared bridge module.
+pub struct VisitorSink {
+    /// The sink trait's name, e.g. `"CtreeSink"`.
+    pub sink_name: &'static str,
+    /// The sink trait's doc comment.
+    pub sink_doc: &'static str,
+    /// The opaque visitor's name, e.g. `"CtreeVisitor"`.
+    pub visitor_name: &'static str,
+    /// The opaque visitor's doc comment.
+    pub visitor_doc: &'static str,
+    /// The sink's methods, in declaration order.
+    pub methods: &'static [VisitorMethod],
+}
+
+/// One sink-trait method, emitted three times from this one spec: the trait declaration, the
+/// opaque visitor's forwarding `impl`, and the bridge's `extern "Rust"` fn decl.
+pub struct VisitorMethod {
+    pub name: &'static str,
+    pub doc: &'static str,
+    pub args: &'static [Arg],
+    pub ret: RetKind,
+    /// Emits `#[allow(clippy::too_many_arguments)]` on all three faces.
+    pub too_many_args: bool,
+}
+
+/// One `extern "C++"` driver fn in the visitor bridge's shared block: a hand-written entry point
+/// (`facade/ctree_cxx.cc` / `facade/typewalk_cxx.cc`) that drives a visitor over a ctree or tinfo.
+pub struct VisitorDriverFn {
+    pub name: &'static str,
+    pub doc: &'static str,
+    pub args: &'static [Arg],
+    pub ret: RetKind,
+    /// Whether the caller must uphold an invariant `cxx` can't check (surfaces as `unsafe fn` plus
+    /// a `#[allow(clippy::missing_safety_doc)]`, since the obligation is documented on the
+    /// hand-written shim, not regenerated per call).
+    pub unsafe_: bool,
+}
+
+/// The whole visitor bridge: its shared structs, its sink/visitor pairs, and the `extern "C++"`
+/// driver block that shares the `CFunc` extern type with the `idakit_gen` bridge's `hexrays`
+/// domain.
+pub struct VisitorBridge {
+    pub structs: &'static [SharedStruct],
+    pub sinks: &'static [VisitorSink],
+    pub drivers: &'static [VisitorDriverFn],
+}
+
+/// One sink trait: a `pub trait <sink_name> { fn method(&mut self, ...) -> ret; ... }`. Slice
+/// arguments name their struct with the `ffi::` prefix (the trait sits outside `mod ffi`).
+fn sink_trait_tokens(s: &VisitorSink) -> TokenStream {
+    let name = format_ident!("{}", s.sink_name);
+    let doc = s.sink_doc;
+    let methods = s.methods.iter().map(|m| {
+        let mname = format_ident!("{}", m.name);
+        let args = m.args.iter().map(|a| {
+            let an = format_ident!("{}", a.name);
+            let at = visitor_arg_rust(&a.ty, true);
+            quote!(#an: #at)
+        });
+        let ret = m.ret.rust();
+        let mdoc = m.doc;
+        let allow = m
+            .too_many_args
+            .then(|| quote!(#[allow(clippy::too_many_arguments)]));
+        quote! {
+            #[doc = #mdoc]
+            #allow
+            fn #mname(&mut self, #(#args),*) #ret;
+        }
+    });
+    quote! {
+        #[doc = #doc]
+        pub trait #name {
+            #(#methods)*
+        }
+    }
+}
+
+/// The opaque visitor struct plus its forwarding `impl`: a `sink: NonNull<dyn Sink>` field, a
+/// private `sink()` reborrow, and one forwarder per method that calls straight into it. `NonNull`
+/// resolves bare because this token stream is spliced (via `include!`) into a file that already
+/// `use`s it.
+fn visitor_impl_tokens(s: &VisitorSink) -> TokenStream {
+    let vname = format_ident!("{}", s.visitor_name);
+    let sname = format_ident!("{}", s.sink_name);
+    let vdoc = s.visitor_doc;
+    let methods = s.methods.iter().map(|m| {
+        let mname = format_ident!("{}", m.name);
+        let args = m.args.iter().map(|a| {
+            let an = format_ident!("{}", a.name);
+            let at = visitor_arg_rust(&a.ty, true);
+            quote!(#an: #at)
+        });
+        let arg_names = m.args.iter().map(|a| format_ident!("{}", a.name));
+        let ret = m.ret.rust();
+        let allow = m
+            .too_many_args
+            .then(|| quote!(#[allow(clippy::too_many_arguments)]));
+        quote! {
+            #allow
+            fn #mname(&mut self, #(#args),*) #ret {
+                self.sink().#mname(#(#arg_names),*)
+            }
+        }
+    });
+    quote! {
+        #[doc = #vdoc]
+        pub struct #vname {
+            sink: NonNull<dyn #sname>,
+        }
+
+        impl #vname {
+            /// Reborrow the erased sink for one callback.
+            ///
+            /// # Safety
+            /// The pointer is valid and unaliased for the walk (single-threaded, non-reentrant,
+            /// the walk holds the only borrow).
+            fn sink(&mut self) -> &mut dyn #sname {
+                unsafe { self.sink.as_mut() }
+            }
+
+            #(#methods)*
+        }
+    }
+}
+
+/// The bridge's `extern "Rust" { type <visitor>; fn method(self: &mut <visitor>, ...) -> ret; ... }`
+/// block. Slice arguments here name their struct bare (already inside `mod ffi`).
+fn visitor_extern_rust_tokens(s: &VisitorSink) -> TokenStream {
+    let vname = format_ident!("{}", s.visitor_name);
+    let methods = s.methods.iter().map(|m| {
+        let mname = format_ident!("{}", m.name);
+        let args = m.args.iter().map(|a| {
+            let an = format_ident!("{}", a.name);
+            let at = visitor_arg_rust(&a.ty, false);
+            quote!(#an: #at)
+        });
+        let ret = m.ret.rust();
+        let allow = m
+            .too_many_args
+            .then(|| quote!(#[allow(clippy::too_many_arguments)]));
+        quote! {
+            #allow
+            fn #mname(self: &mut #vname, #(#args),*) #ret;
+        }
+    });
+    quote! {
+        extern "Rust" {
+            type #vname;
+            #(#methods)*
+        }
+    }
+}
+
+/// One driver fn's `extern "C++"` decl inside `mod ffi`.
+fn visitor_driver_tokens(f: &VisitorDriverFn) -> TokenStream {
+    let name = format_ident!("{}", f.name);
+    let args = f.args.iter().map(|a| {
+        let an = format_ident!("{}", a.name);
+        let at = a.ty.rust();
+        quote!(#an: #at)
+    });
+    let ret = f.ret.rust();
+    let doc = f.doc;
+    if f.unsafe_ {
+        quote! {
+            #[doc = #doc]
+            #[allow(clippy::missing_safety_doc)]
+            unsafe fn #name(#(#args),*) #ret;
+        }
+    } else {
+        quote! {
+            #[doc = #doc]
+            fn #name(#(#args),*) #ret;
+        }
+    }
+}
+
+/// The visitor bridge's `#[cxx::bridge] mod ffi { ... }`: its shared structs, both sink pairs'
+/// `extern "Rust"` blocks, and the shared `extern "C++"` driver block. The driver block reuses the
+/// `idakit_gen` bridge's `CFunc` extern type (the `hexrays` domain's `cfuncptr_t` alias) by cross-
+/// bridge Rust path rather than redeclaring it, so the two bridges agree on one type without a
+/// conversion at the call site.
+fn visitor_bridge_mod_tokens(vb: &VisitorBridge) -> TokenStream {
+    let structs = vb.structs.iter().map(struct_tokens);
+    let sink_blocks = vb.sinks.iter().map(visitor_extern_rust_tokens);
+    let driver_fns = vb.drivers.iter().map(visitor_driver_tokens);
+    quote! {
+        #[cxx::bridge(namespace = "idakit_cxx")]
+        mod ffi {
+            #(#structs)*
+
+            #(#sink_blocks)*
+
+            unsafe extern "C++" {
+                include!("ctree_cxx.h");
+                include!("typewalk_cxx.h");
+
+                /// The same `cfuncptr_t` the `idakit_gen` bridge's `hexrays` domain bound; this is
+                /// a type alias, not a fresh opaque type, so a decompiled function feeds
+                /// `cfunc_walk_ctree` with no conversion.
+                #[namespace = ""]
+                #[cxx_name = "cfuncptr_t"]
+                type CFunc = crate::bridge_gen::CFunc;
+
+                #(#driver_fns)*
+            }
+        }
+    }
+}
+
+/// The whole visitor-bridge token stream: every sink's trait + opaque-visitor impl, then the
+/// bridge module. Fed to both the Rust side (written out and `include!`d by `bridge_visitors.rs`)
+/// and `cxx-gen` (C++ side), so the two stay in lockstep, mirroring [`bridge_tokens`].
+fn visitor_bridge_tokens(vb: &VisitorBridge) -> TokenStream {
+    let sinks = vb.sinks.iter().map(|s| {
+        let sink_trait = sink_trait_tokens(s);
+        let visitor_impl = visitor_impl_tokens(s);
+        quote! { #sink_trait #visitor_impl }
+    });
+    let bridge_mod = visitor_bridge_mod_tokens(vb);
+    quote! {
+        #(#sinks)*
+        #bridge_mod
+    }
 }
 
 /// Build the whole `#[cxx::bridge] mod` token stream from every domain. Fed to both the Rust side
@@ -687,7 +964,10 @@ fn bodies_source(d: &Domain) -> Option<String> {
 /// The generated body TUs (the `cxx-gen` glue plus each domain's templated bodies) that build.rs
 /// must compile.
 pub fn body_tus(out_dir: &Path) -> Vec<PathBuf> {
-    let mut tus = vec![out_dir.join("gen_bridge.cc")];
+    let mut tus = vec![
+        out_dir.join("gen_bridge.cc"),
+        out_dir.join("gen_visitors.cc"),
+    ];
     for d in domains() {
         if d.has_templated_body() {
             tus.push(out_dir.join(d.bodies_file()));
@@ -734,6 +1014,22 @@ pub fn generate(out_dir: &Path) {
                 .unwrap_or_else(|e| panic!("write {}: {e}", d.bodies_file()));
         }
     }
+
+    // The ctree/tinfo extern "Rust" opaque-visitor bridge, generated the same way as the domain
+    // bridge above: one token stream feeds both the Rust side (include!d by bridge_visitors.rs)
+    // and cxx-gen (the C++ shim glue, compiled alongside the domain bodies in build.rs).
+    let visitor_tokens = visitor_bridge_tokens(&visitor_spec::VISITOR_BRIDGE);
+    let visitor_rust = visitor_tokens.to_string();
+    std::fs::write(out_dir.join("gen_visitors.rs"), visitor_rust).expect("write gen_visitors.rs");
+    let visitor_code = cxx_gen::generate_header_and_cc(visitor_tokens, &opt)
+        .expect("cxx-gen rejected the generated visitor bridge tokens");
+    std::fs::write(out_dir.join("gen_visitors.h"), &visitor_code.header)
+        .expect("write gen_visitors.h");
+    std::fs::write(
+        out_dir.join("gen_visitors.cc"),
+        &visitor_code.implementation,
+    )
+    .expect("write gen_visitors.cc");
 
     let rust_dir = out_dir.join("rust");
     std::fs::create_dir_all(&rust_dir).expect("create OUT_DIR/rust");

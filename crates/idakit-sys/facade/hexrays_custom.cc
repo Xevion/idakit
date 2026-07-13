@@ -11,7 +11,9 @@
 
 #include <funcs.hpp>
 #include <hexrays.hpp>
-#include <lines.hpp> // tag_remove
+#include <idp.hpp>    // get_hexdsp
+#include <lines.hpp>  // tag_remove
+#include <loader.hpp> // load_plugin
 
 #include <stdexcept>
 
@@ -160,6 +162,31 @@ ExprGap cfunc_expr_gap(const ::cfuncptr_t &cf) {
   out.visitor_total = vt;
   out.expected = ex;
   return out;
+}
+
+bool hexrays_init() {
+  if (init_hexrays_plugin())
+    return true;
+  load_plugin("hexx64");
+  return init_hexrays_plugin();
+}
+
+bool mark_cfunc_dirty(uint64_t ea, bool close_views) {
+  if (get_hexdsp() == nullptr)
+    return false;
+  return ::mark_cfunc_dirty((ea_t)ea, close_views);
+}
+
+void clear_cached_cfuncs() {
+  if (get_hexdsp() == nullptr)
+    return;
+  ::clear_cached_cfuncs();
+}
+
+bool has_cached_cfunc(uint64_t ea) {
+  if (get_hexdsp() == nullptr)
+    return false;
+  return ::has_cached_cfunc((ea_t)ea);
 }
 
 } // namespace idakit_gen

@@ -15,14 +15,13 @@
 
 #include <funcs.hpp> // get_func
 #include <hexrays.hpp>
-#include <idp.hpp>  // HEXDSP / get_hexdsp
 #include <name.hpp> // get_name
 
 #include "ctree_cxx.h"
 #include "typewalk_walker.hpp"
-// The generated header defines the CtreeVisitor class (its member functions) and the LocPiece
-// shared struct. This TU is compiled in the cxx bridge, so its include path resolves it.
-#include "idakit-sys/src/bridge_ctree.rs.h"
+// The generated visitor-bridge header defines the CtreeVisitor class (its member functions) and
+// the LocPiece shared struct. OUT_DIR is on this TU's include path.
+#include "gen_visitors.h"
 
 namespace idakit_cxx {
 
@@ -265,31 +264,6 @@ struct walker_t {
     }
   }
 };
-
-bool hexrays_init() {
-  if (init_hexrays_plugin())
-    return true;
-  load_plugin("hexx64");
-  return init_hexrays_plugin();
-}
-
-bool mark_cfunc_dirty(uint64_t ea, bool close_views) {
-  if (get_hexdsp() == nullptr)
-    return false;
-  return ::mark_cfunc_dirty((ea_t)ea, close_views);
-}
-
-void clear_cached_cfuncs() {
-  if (get_hexdsp() == nullptr)
-    return;
-  ::clear_cached_cfuncs();
-}
-
-bool has_cached_cfunc(uint64_t ea) {
-  if (get_hexdsp() == nullptr)
-    return false;
-  return ::has_cached_cfunc((ea_t)ea);
-}
 
 uint32_t cfunc_walk_ctree(const ::cfuncptr_t &cfunc, CtreeVisitor &nodes, size_t type_visitor) {
   try {

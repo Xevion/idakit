@@ -1459,7 +1459,7 @@ pub const INSTRUCTION: Domain = Domain {
 /// `~cfuncptr_t` (`release()`) on drop, retiring the raw `new`/`delete` handle dance. `decompile`
 /// wraps the microcode pipeline in the facade's `guarded<>` trap and throws on failure; the read
 /// accessors take a borrowed `&CFunc` and return pseudocode, ctree counts, and the extraction-gap
-/// diagnostic. The ctree walk itself is a separate hand-written `cxx` bridge (`bridge_ctree`) fed
+/// diagnostic. The ctree walk itself is a separate hand-written `cxx` bridge (`bridge_visitors`) fed
 /// the same `&CFunc`. Bodies are in `facade/hexrays_custom.cc`.
 pub const HEXRAYS: Domain = Domain {
     name: "hexrays",
@@ -1586,6 +1586,52 @@ pub const HEXRAYS: Domain = Domain {
             body: BodyKind::Custom,
             doc: "The extraction-fidelity diagnostic for `cf`: total expressions the SDK visitor \
                   sees vs how many the extraction walker should materialize.",
+        },
+        FnSpec {
+            name: "hexrays_init",
+            receiver: None,
+            args: &[],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Initialize the Hex-Rays decompiler (loading the plugin if needed); `true` once \
+                  ready.",
+        },
+        FnSpec {
+            name: "mark_cfunc_dirty",
+            receiver: None,
+            args: &[
+                Arg {
+                    name: "ea",
+                    ty: ArgTy::U64,
+                },
+                Arg {
+                    name: "close_views",
+                    ty: ArgTy::Bool,
+                },
+            ],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Evict the cached decompilation for `ea`; `true` if an entry existed, `false` if \
+                  none or the decompiler is not initialized.",
+        },
+        FnSpec {
+            name: "clear_cached_cfuncs",
+            receiver: None,
+            args: &[],
+            ret: RetKind::Unit,
+            body: BodyKind::Custom,
+            doc: "Evict every cached decompilation; a no-op if the decompiler is not initialized.",
+        },
+        FnSpec {
+            name: "has_cached_cfunc",
+            receiver: None,
+            args: &[Arg {
+                name: "ea",
+                ty: ArgTy::U64,
+            }],
+            ret: RetKind::Bool,
+            body: BodyKind::Custom,
+            doc: "Whether `ea` has a cached decompilation; `false` if none or not initialized.",
         },
     ],
 };

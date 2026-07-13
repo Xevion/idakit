@@ -2,8 +2,8 @@
 // typewalk_walker.hpp) does a depth-first tinfo_t recursion guarded by a placeholder plus a
 // `defined`-set dedup, so a self-referential type resolves instead of looping. It emits through the
 // extern "Rust" opaque visitor's member functions (vis->scalar(...), vis->named_ref(...),
-// vis->fill_struct(...)) that cxx generates, not a C function-pointer table. Per-call names cross as
-// rust::Str and arrays as rust::Slice, borrowed for the one call.
+// vis->fill_struct(...)) that cxx generates, not a C function-pointer table. Per-call scalar names
+// cross as rust::Str; struct-member names as owned rust::String; arrays as rust::Slice.
 
 #include <pro.h>
 
@@ -20,11 +20,11 @@
 
 #include "typewalk_cxx.h"
 #include "typewalk_walker.hpp"
-// The generated header defines the TypeWalkVisitor class (its member functions) and the MemberInfo
-// / EnumConstInfo / FrameVar / FrameWalk shared structs. This TU is compiled in the cxx bridge, so
-// its include path resolves the generated header; the ctree walk drives visit_walker_t only through
-// the opaque handle in typewalk_walker.hpp.
-#include "idakit-sys/src/bridge_typewalk.rs.h"
+// The generated visitor-bridge header defines the TypeWalkVisitor class (its member functions) and
+// the MemberInfo / EnumConstInfo / FrameVar / FrameWalk shared structs. OUT_DIR is on this TU's
+// include path; the ctree walk drives visit_walker_t only through the opaque handle in
+// typewalk_walker.hpp.
+#include "gen_visitors.h"
 
 namespace idakit_cxx {
 
@@ -141,15 +141,14 @@ uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_si
   uint32_t id = placeholder(t, &first);
   if (first) {
     udt_type_data_t udt;
-    // Handles must be minted before the members slice is built (the members carry them), and the
-    // udt's qstrings must outlive the fill_struct call the names borrow into -- so keep `udt` and
-    // `ms` alive across the call below.
+    // Handles must be minted before the members slice is built (the members carry them), and `ms`
+    // must outlive the fill_struct call its slice points into, so keep both alive across the call.
     std::vector<MemberInfo> ms;
     if (t.get_udt_details(&udt)) {
       ms.reserve(udt.size());
       for (const udm_t &m : udt) {
         MemberInfo md;
-        md.name = borrow(m.name);
+        md.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
         md.bit_offset = m.offset;
         md.ty = ty(m.type);
         md.bitfield_width = m.is_bitfield() ? (uint32_t)m.size : 0;
@@ -181,7 +180,7 @@ uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_s
       cs.reserve(ed.size());
       for (const edm_t &m : ed) {
         EnumConstInfo ec;
-        ec.name = borrow(m.name);
+        ec.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
         ec.value = m.value;
         cs.push_back(ec);
       }
