@@ -12,10 +12,16 @@ use super::{
     SharedStruct, netnode,
 };
 
-const N: &[Arg] = &[Arg {
-    name: "n",
-    ty: ArgTy::I32,
-}];
+const N: &[Arg] = args!(n: I32);
+
+/// Shared arg lists for the recurring multi-use shapes (the single-arg `EA`/`IDX` twins live near
+/// their first domain). Each is one genuine family, not a coincidental type match: `FC_N` keys a
+/// flowchart block, `CF` a decompiled function, `FLAGS` a name-flag predicate, `INNER` a wrapped
+/// `TInfo`.
+const FC_N: &[Arg] = args!(fc: ExternRef("FlowChart"), n: Usize);
+const CF: &[Arg] = args!(cf: ExternRef("CFunc"));
+const FLAGS: &[Arg] = args!(flags: U64);
+const INNER: &[Arg] = args!(inner: ExternRef("TInfo"));
 
 /// The segment domain: mirrors the hand-written `idakit_cxx::seg_*` bridge one-for-one, plus a
 /// `Custom` proof. Templated bodies live in the generated `gen_seg_bodies.cc`; the one `Custom`
@@ -127,28 +133,12 @@ pub const IMPORT: Domain = Domain {
     structs: &[SharedStruct {
         name: "ImportRec",
         doc: "One import-table row, returned inside the [`imports_build`] snapshot.",
-        fields: &[
-            Field {
-                name: "ea",
-                ty: FieldTy::U64,
-                doc: "Address the import is bound to.",
-            },
-            Field {
-                name: "ord",
-                ty: FieldTy::U64,
-                doc: "Ordinal, or `0` when imported by name.",
-            },
-            Field {
-                name: "name",
-                ty: FieldTy::Str,
-                doc: "Symbol name, empty when imported by ordinal.",
-            },
-            Field {
-                name: "module",
-                ty: FieldTy::Str,
-                doc: "Owning module (library) name.",
-            },
-        ],
+        fields: fields! {
+            ea: U64 = "Address the import is bound to.";
+            ord: U64 = "Ordinal, or `0` when imported by name.";
+            name: Str = "Symbol name, empty when imported by ordinal.";
+            module: Str = "Owning module (library) name.";
+        },
     }],
     custom_tu: Some("facade/import_custom.cc"),
     body_helpers: None,
@@ -172,18 +162,10 @@ pub const RANGE: Domain = Domain {
     externs: &[ExternTy {
         rust_name: "RangeT",
         cxx_name: "range_t",
-        kind: ExternKind::Trivial(&[
-            Field {
-                name: "start",
-                ty: FieldTy::U64,
-                doc: "`start_ea`, inclusive.",
-            },
-            Field {
-                name: "end",
-                ty: FieldTy::U64,
-                doc: "`end_ea`, exclusive.",
-            },
-        ]),
+        kind: ExternKind::Trivial(fields! {
+            start: U64 = "`start_ea`, inclusive.";
+            end: U64 = "`end_ea`, exclusive.";
+        }),
         doc: "A `#[repr(C)]` mirror of the SDK's `range_t`, crossing the bridge by value as a \
               `Trivial` `ExternType`.",
         safety: "RangeT's two u64 fields mirror range_t's two ea_t members under __EA64__, and \
@@ -193,18 +175,10 @@ pub const RANGE: Domain = Domain {
     structs: &[SharedStruct {
         name: "ChunkInfo",
         doc: "One function chunk: its index paired with its address range.",
-        fields: &[
-            Field {
-                name: "index",
-                ty: FieldTy::Usize,
-                doc: "Zero-based chunk index (the entry chunk is `0`).",
-            },
-            Field {
-                name: "range",
-                ty: FieldTy::Extern("RangeT"),
-                doc: "The chunk's address range.",
-            },
-        ],
+        fields: fields! {
+            index: Usize = "Zero-based chunk index (the entry chunk is `0`).";
+            range: Extern("RangeT") = "The chunk's address range.";
+        },
     }],
     custom_tu: Some("facade/range_custom.cc"),
     body_helpers: None,
@@ -212,10 +186,7 @@ pub const RANGE: Domain = Domain {
         FnSpec {
             name: "range_entry_chunk",
             receiver: None,
-            args: &[Arg {
-                name: "ea",
-                ty: ArgTy::U64,
-            }],
+            args: EA,
             ret: RetKind::ResultExtern("RangeT"),
             body: BodyKind::Custom,
             doc: "Entry chunk (index `0`) of the function containing `ea`, returned by value; \
@@ -224,10 +195,7 @@ pub const RANGE: Domain = Domain {
         FnSpec {
             name: "range_size",
             receiver: None,
-            args: &[Arg {
-                name: "r",
-                ty: ArgTy::Extern("RangeT"),
-            }],
+            args: args!(r: Extern("RangeT")),
             ret: RetKind::U64,
             body: BodyKind::Custom,
             doc: "Size (`end - start`) of a `range_t` passed by value.",
@@ -235,16 +203,7 @@ pub const RANGE: Domain = Domain {
         FnSpec {
             name: "range_chunk_info",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: args!(ea: U64, n: Usize),
             ret: RetKind::ResultShared("ChunkInfo"),
             body: BodyKind::Custom,
             doc: "Chunk `n` of the function at `ea` as a `ChunkInfo`; `Err` when `n` is out of \
@@ -253,10 +212,7 @@ pub const RANGE: Domain = Domain {
         FnSpec {
             name: "range_all_chunks",
             receiver: None,
-            args: &[Arg {
-                name: "ea",
-                ty: ArgTy::U64,
-            }],
+            args: EA,
             ret: RetKind::ResultVec("RangeT"),
             body: BodyKind::Custom,
             doc: "Every chunk (entry plus tails) of the function at `ea` as one owned `Vec`; \
@@ -265,10 +221,7 @@ pub const RANGE: Domain = Domain {
     ],
 };
 
-const EA: &[Arg] = &[Arg {
-    name: "ea",
-    ty: ArgTy::U64,
-}];
+const EA: &[Arg] = args!(ea: U64);
 
 /// The function domain: per-function scalar accessors and the name string. Function *chunks* are
 /// the `range` domain (`range_all_chunks`), so no chunk accessor lives here. `func_qty` is a
@@ -294,10 +247,7 @@ pub const FUNCTION: Domain = Domain {
         FnSpec {
             name: "func_ea",
             receiver: None,
-            args: &[Arg {
-                name: "n",
-                ty: ArgTy::Usize,
-            }],
+            args: args!(n: Usize),
             ret: RetKind::U64,
             body: BodyKind::Custom,
             doc: "Entry address of the `n`-th function, or `BADADDR` when `n` is out of range.",
@@ -345,10 +295,7 @@ pub const FUNCTION: Domain = Domain {
     ],
 };
 
-const IDX: &[Arg] = &[Arg {
-    name: "idx",
-    ty: ArgTy::Usize,
-}];
+const IDX: &[Arg] = args!(idx: Usize);
 
 /// The export (entry-point) domain: per-export scalar accessors plus the name and forwarder
 /// strings, indexed `[0, export_qty)`. `export_qty` is a templated passthrough; the lookups are
@@ -491,10 +438,7 @@ pub const NAME: Domain = Domain {
         FnSpec {
             name: "get_name_ea",
             receiver: None,
-            args: &[Arg {
-                name: "name",
-                ty: ArgTy::Str,
-            }],
+            args: args!(name: Str),
             ret: RetKind::U64,
             body: BodyKind::Custom,
             doc: "Address the symbol `name` resolves to, or `BADADDR` when it is unknown.",
@@ -502,10 +446,7 @@ pub const NAME: Domain = Domain {
         FnSpec {
             name: "demangle_name",
             receiver: None,
-            args: &[Arg {
-                name: "name",
-                ty: ArgTy::Str,
-            }],
+            args: args!(name: Str),
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "Fully demangled form of `name`; `Err` when `name` is not mangled.",
@@ -537,10 +478,7 @@ pub const NAME: Domain = Domain {
         FnSpec {
             name: "has_user_name",
             receiver: None,
-            args: &[Arg {
-                name: "flags",
-                ty: ArgTy::U64,
-            }],
+            args: FLAGS,
             ret: RetKind::Bool,
             body: BodyKind::Custom,
             doc: "Whether a flags word marks a user-given (explicit) name.",
@@ -548,10 +486,7 @@ pub const NAME: Domain = Domain {
         FnSpec {
             name: "has_auto_name",
             receiver: None,
-            args: &[Arg {
-                name: "flags",
-                ty: ArgTy::U64,
-            }],
+            args: FLAGS,
             ret: RetKind::Bool,
             body: BodyKind::Custom,
             doc: "Whether a flags word marks an IDA-generated (auto) name.",
@@ -559,10 +494,7 @@ pub const NAME: Domain = Domain {
         FnSpec {
             name: "has_dummy_name",
             receiver: None,
-            args: &[Arg {
-                name: "flags",
-                ty: ArgTy::U64,
-            }],
+            args: FLAGS,
             ret: RetKind::Bool,
             body: BodyKind::Custom,
             doc: "Whether a flags word marks a dummy (address-derived) name.",
@@ -581,23 +513,11 @@ pub const STRINGS: Domain = Domain {
     structs: &[SharedStruct {
         name: "StrlistItem",
         doc: "One string-list entry: its address, octet length, and `STRTYPE` code.",
-        fields: &[
-            Field {
-                name: "ea",
-                ty: FieldTy::U64,
-                doc: "Address of the string literal.",
-            },
-            Field {
-                name: "length",
-                ty: FieldTy::I32,
-                doc: "Length in octets (raw bytes, not decoded characters).",
-            },
-            Field {
-                name: "type_",
-                ty: FieldTy::I32,
-                doc: "`STRTYPE` code describing the encoding.",
-            },
-        ],
+        fields: fields! {
+            ea: U64 = "Address of the string literal.";
+            length: I32 = "Length in octets (raw bytes, not decoded characters).";
+            type_: I32 = "`STRTYPE` code describing the encoding.";
+        },
     }],
     custom_tu: Some("facade/strings_custom.cc"),
     body_helpers: None,
@@ -621,10 +541,7 @@ pub const STRINGS: Domain = Domain {
         FnSpec {
             name: "strlist_item",
             receiver: None,
-            args: &[Arg {
-                name: "n",
-                ty: ArgTy::Usize,
-            }],
+            args: args!(n: Usize),
             ret: RetKind::ResultShared("StrlistItem"),
             body: BodyKind::Custom,
             doc: "The `n`-th string-list entry as a `StrlistItem`; `Err` when `n` is out of range.",
@@ -632,20 +549,7 @@ pub const STRINGS: Domain = Domain {
         FnSpec {
             name: "strlit_contents",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "len",
-                    ty: ArgTy::Usize,
-                },
-                Arg {
-                    name: "strtype",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, len: Usize, strtype: I32),
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "Decode the string literal at `ea` (given octet length and `STRTYPE`) to UTF-8; \
@@ -676,23 +580,11 @@ pub const CFG: Domain = Domain {
     structs: &[SharedStruct {
         name: "BlockInfo",
         doc: "One basic block's bounds and kind, returned by value from [`cfg_block`].",
-        fields: &[
-            Field {
-                name: "start",
-                ty: FieldTy::U64,
-                doc: "Start address of the block.",
-            },
-            Field {
-                name: "end",
-                ty: FieldTy::U64,
-                doc: "End address (exclusive) of the block.",
-            },
-            Field {
-                name: "kind",
-                ty: FieldTy::I32,
-                doc: "Raw `fc_block_type_t` discriminant (`fcb_normal`, `fcb_ret`, ...).",
-            },
-        ],
+        fields: fields! {
+            start: U64 = "Start address of the block.";
+            end: U64 = "End address (exclusive) of the block.";
+            kind: I32 = "Raw `fc_block_type_t` discriminant (`fcb_normal`, `fcb_ret`, ...).";
+        },
     }],
     custom_tu: Some("facade/cfg_custom.cc"),
     body_helpers: None,
@@ -700,16 +592,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_build",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "flags",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, flags: I32),
             ret: RetKind::ResultUniquePtr("FlowChart"),
             body: BodyKind::Custom,
             doc: "Build the flow chart for the function containing `ea`; `Err` when no function \
@@ -727,10 +610,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_nblocks",
             receiver: None,
-            args: &[Arg {
-                name: "fc",
-                ty: ArgTy::ExternRef("FlowChart"),
-            }],
+            args: args!(fc: ExternRef("FlowChart")),
             ret: RetKind::Usize,
             body: BodyKind::Custom,
             doc: "Total number of basic blocks (external blocks included).",
@@ -738,10 +618,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_nproper",
             receiver: None,
-            args: &[Arg {
-                name: "fc",
-                ty: ArgTy::ExternRef("FlowChart"),
-            }],
+            args: args!(fc: ExternRef("FlowChart")),
             ret: RetKind::Usize,
             body: BodyKind::Custom,
             doc: "Number of blocks belonging to the function's own range.",
@@ -749,16 +626,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_block",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "fc",
-                    ty: ArgTy::ExternRef("FlowChart"),
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: FC_N,
             ret: RetKind::ResultShared("BlockInfo"),
             body: BodyKind::Custom,
             doc: "Bounds and kind of block `n`; `Err` when `n` is out of range.",
@@ -766,16 +634,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_nsucc",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "fc",
-                    ty: ArgTy::ExternRef("FlowChart"),
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: FC_N,
             ret: RetKind::Usize,
             body: BodyKind::Custom,
             doc: "Number of successors of block `n` (`0` when `n` is out of range).",
@@ -783,20 +642,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_succ",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "fc",
-                    ty: ArgTy::ExternRef("FlowChart"),
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-                Arg {
-                    name: "i",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: args!(fc: ExternRef("FlowChart"), n: Usize, i: Usize),
             ret: RetKind::ResultUsize,
             body: BodyKind::Custom,
             doc: "The `i`-th successor block index of block `n`; `Err` when `n`/`i` is out of range.",
@@ -804,16 +650,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_npred",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "fc",
-                    ty: ArgTy::ExternRef("FlowChart"),
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: FC_N,
             ret: RetKind::Usize,
             body: BodyKind::Custom,
             doc: "Number of predecessors of block `n` (`0` when `n` is out of range).",
@@ -821,20 +658,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_pred",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "fc",
-                    ty: ArgTy::ExternRef("FlowChart"),
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-                Arg {
-                    name: "i",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: args!(fc: ExternRef("FlowChart"), n: Usize, i: Usize),
             ret: RetKind::ResultUsize,
             body: BodyKind::Custom,
             doc: "The `i`-th predecessor block index of block `n`; `Err` when `n`/`i` is out of \
@@ -843,16 +667,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_succs",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "fc",
-                    ty: ArgTy::ExternRef("FlowChart"),
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: FC_N,
             ret: RetKind::ResultVecU32,
             body: BodyKind::Custom,
             doc: "The whole successor edge list of block `n` as one owned `Vec<u32>`; `Err` when \
@@ -861,16 +676,7 @@ pub const CFG: Domain = Domain {
         FnSpec {
             name: "cfg_preds",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "fc",
-                    ty: ArgTy::ExternRef("FlowChart"),
-                },
-                Arg {
-                    name: "n",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: FC_N,
             ret: RetKind::ResultVecU32,
             body: BodyKind::Custom,
             doc: "The whole predecessor edge list of block `n` as one owned `Vec<u32>`; `Err` \
@@ -889,49 +695,20 @@ pub const REFERENCE: Domain = Domain {
     structs: &[SharedStruct {
         name: "XrefRec",
         doc: "One cross-reference edge, returned inside the [`xrefs_build`] snapshot.",
-        fields: &[
-            Field {
-                name: "from",
-                ty: FieldTy::U64,
-                doc: "Source address of the reference.",
-            },
-            Field {
-                name: "to",
-                ty: FieldTy::U64,
-                doc: "Target address of the reference.",
-            },
-            Field {
-                name: "type_",
-                ty: FieldTy::I32,
-                doc: "Raw `cref_t`/`dref_t` type code of the edge.",
-            },
-            Field {
-                name: "iscode",
-                ty: FieldTy::Bool,
-                doc: "`true` for a code reference, `false` for a data reference.",
-            },
-            Field {
-                name: "user",
-                ty: FieldTy::Bool,
-                doc: "`true` when user-defined, `false` when IDA's analysis generated it.",
-            },
-        ],
+        fields: fields! {
+            from: U64 = "Source address of the reference.";
+            to: U64 = "Target address of the reference.";
+            type_: I32 = "Raw `cref_t`/`dref_t` type code of the edge.";
+            iscode: Bool = "`true` for a code reference, `false` for a data reference.";
+            user: Bool = "`true` when user-defined, `false` when IDA's analysis generated it.";
+        },
     }],
     custom_tu: Some("facade/reference_custom.cc"),
     body_helpers: None,
     fns: &[FnSpec {
         name: "xrefs_build",
         receiver: None,
-        args: &[
-            Arg {
-                name: "ea",
-                ty: ArgTy::U64,
-            },
-            Arg {
-                name: "is_to",
-                ty: ArgTy::Bool,
-            },
-        ],
+        args: args!(ea: U64, is_to: Bool),
         ret: RetKind::Vec("XrefRec"),
         body: BodyKind::Custom,
         doc: "Every cross-reference edge at `ea` as an owned, `Send` snapshot: xrefs *to* `ea` \
@@ -962,18 +739,10 @@ pub const BYTES: Domain = Domain {
         name: "BinpatStats",
         doc: "The compiled length and anchor count of a pattern, returned by value from \
               [`binpat_stats`].",
-        fields: &[
-            Field {
-                name: "total",
-                ty: FieldTy::Usize,
-                doc: "Compiled byte length of the pattern.",
-            },
-            Field {
-                name: "anchors",
-                ty: FieldTy::Usize,
-                doc: "Count of concrete (non-wildcard) bytes; `0` means nothing to match on.",
-            },
-        ],
+        fields: fields! {
+            total: Usize = "Compiled byte length of the pattern.";
+            anchors: Usize = "Count of concrete (non-wildcard) bytes; `0` means nothing to match on.";
+        },
     }],
     custom_tu: Some("facade/bytes_custom.cc"),
     body_helpers: None,
@@ -981,16 +750,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "get_bytes",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "size",
-                    ty: ArgTy::Usize,
-                },
-            ],
+            args: args!(ea: U64, size: Usize),
             ret: RetKind::ResultVecU8,
             body: BodyKind::Custom,
             doc: "The `size` bytes at `ea` as an owned `Vec<u8>`; `Err` when the range is not \
@@ -1031,16 +791,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "get_strlit",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "strtype",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, strtype: I32),
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "The auto-detected string literal at `ea` (given its `STRTYPE`) decoded to UTF-8; \
@@ -1093,16 +844,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "get_next_head",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "maxea",
-                    ty: ArgTy::U64,
-                },
-            ],
+            args: args!(ea: U64, maxea: U64),
             ret: RetKind::U64,
             body: BodyKind::Custom,
             doc: "Next item head after `ea`, searching up to `maxea`, or `BADADDR` when none.",
@@ -1110,16 +852,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "get_prev_head",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "minea",
-                    ty: ArgTy::U64,
-                },
-            ],
+            args: args!(ea: U64, minea: U64),
             ret: RetKind::U64,
             body: BodyKind::Custom,
             doc: "Previous item head before `ea`, searching down to `minea`, or `BADADDR` when \
@@ -1128,16 +861,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "get_cmt",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "rptble",
-                    ty: ArgTy::Bool,
-                },
-            ],
+            args: args!(ea: U64, rptble: Bool),
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "The regular (or repeatable, when `rptble`) comment at `ea`; `Err` when there is \
@@ -1146,20 +870,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "binpat_compile",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "pattern",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "radix",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, pattern: Str, radix: I32),
             ret: RetKind::ResultUniquePtr("CompiledBinpat"),
             body: BodyKind::Custom,
             doc: "Compile `pattern` via IDA's own parser (byte width taken from `ea`); `Err` \
@@ -1168,16 +879,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "binpat_from_bytes",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "bytes",
-                    ty: ArgTy::Bytes,
-                },
-                Arg {
-                    name: "mask",
-                    ty: ArgTy::Bytes,
-                },
-            ],
+            args: args!(bytes: Bytes, mask: Bytes),
             ret: RetKind::UniquePtr("CompiledBinpat"),
             body: BodyKind::Custom,
             doc: "Compile a pattern from raw `bytes` and a per-byte bit `mask`; an empty `mask` \
@@ -1186,10 +888,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "binpat_stats",
             receiver: None,
-            args: &[Arg {
-                name: "pat",
-                ty: ArgTy::ExternRef("CompiledBinpat"),
-            }],
+            args: args!(pat: ExternRef("CompiledBinpat")),
             ret: RetKind::Shared("BinpatStats"),
             body: BodyKind::Custom,
             doc: "The compiled length and anchor count of `pat`.",
@@ -1197,24 +896,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "bin_search",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "start",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "end",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "pat",
-                    ty: ArgTy::ExternRef("CompiledBinpat"),
-                },
-                Arg {
-                    name: "flags",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(start: U64, end: U64, pat: ExternRef("CompiledBinpat"), flags: I32),
             ret: RetKind::U64,
             body: BodyKind::Custom,
             doc: "First address in `[start, end)` matching `pat`, or `BADADDR` when absent \
@@ -1223,16 +905,7 @@ pub const BYTES: Domain = Domain {
         FnSpec {
             name: "patch_bytes",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "bytes",
-                    ty: ArgTy::Bytes,
-                },
-            ],
+            args: args!(ea: U64, bytes: Bytes),
             ret: RetKind::Bool,
             body: BodyKind::Custom,
             doc: "Patch `bytes` over `ea`, or `false` without writing when any target byte is \
@@ -1258,162 +931,50 @@ pub const INSTRUCTION: Domain = Domain {
             name: "RegisterData",
             doc: "One register reference in a decoded operand, nested by value in an \
                   [`OperandData`].",
-            fields: &[
-                Field {
-                    name: "num",
-                    ty: FieldTy::U16,
-                    doc: "Register number, or `0xFFFF` for an absent base/index slot.",
-                },
-                Field {
-                    name: "cls",
-                    ty: FieldTy::U8,
-                    doc: "idakit `RegisterClass` code.",
-                },
-                Field {
-                    name: "width",
-                    ty: FieldTy::U8,
-                    doc: "Byte width selecting the name alias.",
-                },
-                Field {
-                    name: "name",
-                    ty: FieldTy::Str,
-                    doc: "IDA's resolved register name, empty if unresolved.",
-                },
-            ],
+            fields: fields! {
+                num: U16 = "Register number, or `0xFFFF` for an absent base/index slot.";
+                cls: U8 = "idakit `RegisterClass` code.";
+                width: U8 = "Byte width selecting the name alias.";
+                name: Str = "IDA's resolved register name, empty if unresolved.";
+            },
         },
         SharedStruct {
             name: "OperandData",
             doc: "One decoded operand; which fields are meaningful depends on `kind`.",
-            fields: &[
-                Field {
-                    name: "kind",
-                    ty: FieldTy::U8,
-                    doc: "Semantic kind (0 reg, 1 mem, 2 imm, 3 near, 4 far).",
-                },
-                Field {
-                    name: "idx",
-                    ty: FieldTy::U8,
-                    doc: "Original operand slot index (feature bits are keyed by it).",
-                },
-                Field {
-                    name: "data_type",
-                    ty: FieldTy::U8,
-                    doc: "Raw `op_dtype_t`.",
-                },
-                Field {
-                    name: "access",
-                    ty: FieldTy::U8,
-                    doc: "Access bits: bit0 read, bit1 written.",
-                },
-                Field {
-                    name: "scale",
-                    ty: FieldTy::U8,
-                    doc: "Memory index scale multiplier (1/2/4/8).",
-                },
-                Field {
-                    name: "reg",
-                    ty: FieldTy::Struct("RegisterData"),
-                    doc: "Register (kind = reg). Named `reg`, not `register` (a C++ keyword).",
-                },
-                Field {
-                    name: "base",
-                    ty: FieldTy::Struct("RegisterData"),
-                    doc: "Memory base register (kind = mem).",
-                },
-                Field {
-                    name: "index",
-                    ty: FieldTy::Struct("RegisterData"),
-                    doc: "Memory index register (kind = mem).",
-                },
-                Field {
-                    name: "disp",
-                    ty: FieldTy::I64,
-                    doc: "Memory displacement (kind = mem).",
-                },
-                Field {
-                    name: "value",
-                    ty: FieldTy::U64,
-                    doc: "Immediate value (kind = imm) or far offset (kind = far).",
-                },
-                Field {
-                    name: "addr",
-                    ty: FieldTy::U64,
-                    doc: "Near target, or memory static target / `BADADDR` (kind = near/mem).",
-                },
-                Field {
-                    name: "sel",
-                    ty: FieldTy::U16,
-                    doc: "Far selector (kind = far).",
-                },
-            ],
+            fields: fields! {
+                kind: U8 = "Semantic kind (0 reg, 1 mem, 2 imm, 3 near, 4 far).";
+                idx: U8 = "Original operand slot index (feature bits are keyed by it).";
+                data_type: U8 = "Raw `op_dtype_t`.";
+                access: U8 = "Access bits: bit0 read, bit1 written.";
+                scale: U8 = "Memory index scale multiplier (1/2/4/8).";
+                reg: Struct("RegisterData") = "Register (kind = reg). Named `reg`, not `register` (a C++ keyword).";
+                base: Struct("RegisterData") = "Memory base register (kind = mem).";
+                index: Struct("RegisterData") = "Memory index register (kind = mem).";
+                disp: I64 = "Memory displacement (kind = mem).";
+                value: U64 = "Immediate value (kind = imm) or far offset (kind = far).";
+                addr: U64 = "Near target, or memory static target / `BADADDR` (kind = near/mem).";
+                sel: U16 = "Far selector (kind = far).";
+            },
         },
         SharedStruct {
             name: "InstructionData",
             doc: "A decoded instruction, returned by value from [`decode_insn`]; `status` carries \
                   the raw result code and `ops` is right-sized to the populated operands.",
-            fields: &[
-                Field {
-                    name: "status",
-                    ty: FieldTy::I32,
-                    doc: "Result code: 0 ok, -1 no instruction, -2 unsupported processor, \
-                          -3 unmodeled operand, -4 unmodeled register.",
-                },
-                Field {
-                    name: "err_op",
-                    ty: FieldTy::U8,
-                    doc: "On the -3/-4 status, the offending operand index.",
-                },
-                Field {
-                    name: "err_optype",
-                    ty: FieldTy::U8,
-                    doc: "On -3 the offending raw operand type; on -4 the register number.",
-                },
-                Field {
-                    name: "address",
-                    ty: FieldTy::U64,
-                    doc: "Instruction address.",
-                },
-                Field {
-                    name: "target",
-                    ty: FieldTy::U64,
-                    doc: "Direct branch/call target, or `BADADDR`.",
-                },
-                Field {
-                    name: "itype",
-                    ty: FieldTy::U16,
-                    doc: "Processor-local canonical instruction id.",
-                },
-                Field {
-                    name: "len",
-                    ty: FieldTy::U8,
-                    doc: "Encoded length in bytes.",
-                },
-                Field {
-                    name: "isa",
-                    ty: FieldTy::U8,
-                    doc: "0 = x86, 1 = x64.",
-                },
-                Field {
-                    name: "nops",
-                    ty: FieldTy::U8,
-                    doc: "Number of populated operands (matches `ops.len()`).",
-                },
-                Field {
-                    name: "flow",
-                    ty: FieldTy::U8,
-                    doc: "`IDAKIT_FLOW_*` bit flags.",
-                },
-                Field {
-                    name: "mnemonic",
-                    ty: FieldTy::Str,
-                    doc: "Canonical mnemonic.",
-                },
-                Field {
-                    name: "ops",
-                    ty: FieldTy::VecStruct("OperandData"),
-                    doc: "Decoded operands; only meaningful when `status == 0`.",
-                },
-            ],
+            fields: fields! {
+                status: I32 = "Result code: 0 ok, -1 no instruction, -2 unsupported processor, \
+                          -3 unmodeled operand, -4 unmodeled register.";
+                err_op: U8 = "On the -3/-4 status, the offending operand index.";
+                err_optype: U8 = "On -3 the offending raw operand type; on -4 the register number.";
+                address: U64 = "Instruction address.";
+                target: U64 = "Direct branch/call target, or `BADADDR`.";
+                itype: U16 = "Processor-local canonical instruction id.";
+                len: U8 = "Encoded length in bytes.";
+                isa: U8 = "0 = x86, 1 = x64.";
+                nops: U8 = "Number of populated operands (matches `ops.len()`).";
+                flow: U8 = "`IDAKIT_FLOW_*` bit flags.";
+                mnemonic: Str = "Canonical mnemonic.";
+                ops: VecStruct("OperandData") = "Decoded operands; only meaningful when `status == 0`.";
+            },
         },
     ],
     custom_tu: Some("facade/instruction_custom.cc"),
@@ -1422,10 +983,7 @@ pub const INSTRUCTION: Domain = Domain {
         FnSpec {
             name: "decode_insn",
             receiver: None,
-            args: &[Arg {
-                name: "ea",
-                ty: ArgTy::U64,
-            }],
+            args: EA,
             ret: RetKind::Shared("InstructionData"),
             body: BodyKind::Custom,
             doc: "Decode the instruction at `ea`, folding raw operands into semantic kinds with \
@@ -1482,41 +1040,21 @@ pub const HEXRAYS: Domain = Domain {
             name: "CtreeCounts",
             doc: "Statement, expression, and call-site counts of a decompiled function's ctree, \
                   returned by value from [`cfunc_counts`].",
-            fields: &[
-                Field {
-                    name: "insns",
-                    ty: FieldTy::I32,
-                    doc: "Number of statement nodes.",
-                },
-                Field {
-                    name: "expressions",
-                    ty: FieldTy::I32,
-                    doc: "Number of expression nodes.",
-                },
-                Field {
-                    name: "calls",
-                    ty: FieldTy::I32,
-                    doc: "Number of call sites.",
-                },
-            ],
+            fields: fields! {
+                insns: I32 = "Number of statement nodes.";
+                expressions: I32 = "Number of expression nodes.";
+                calls: I32 = "Number of call sites.";
+            },
         },
         SharedStruct {
             name: "ExprGap",
             doc: "The ctree extraction-fidelity diagnostic, returned by value from \
                   [`cfunc_expr_gap`].",
-            fields: &[
-                Field {
-                    name: "visitor_total",
-                    ty: FieldTy::I32,
-                    doc: "Every expression the SDK's own ctree visitor sees.",
-                },
-                Field {
-                    name: "expected",
-                    ty: FieldTy::I32,
-                    doc: "How many the extraction walker should materialize (visitor total minus \
-                          elided empty-expression placeholders in optional slots).",
-                },
-            ],
+            fields: fields! {
+                visitor_total: I32 = "Every expression the SDK's own ctree visitor sees.";
+                expected: I32 = "How many the extraction walker should materialize (visitor total minus \
+                          elided empty-expression placeholders in optional slots).";
+            },
         },
     ],
     custom_tu: Some("facade/hexrays_custom.cc"),
@@ -1525,10 +1063,7 @@ pub const HEXRAYS: Domain = Domain {
         FnSpec {
             name: "decompile",
             receiver: None,
-            args: &[Arg {
-                name: "ea",
-                ty: ArgTy::U64,
-            }],
+            args: EA,
             ret: RetKind::ResultUniquePtr("CFunc"),
             body: BodyKind::Custom,
             doc: "Decompile the function at `ea` into a heap `cfuncptr_t` owned by a \
@@ -1540,10 +1075,7 @@ pub const HEXRAYS: Domain = Domain {
         FnSpec {
             name: "cfunc_pseudocode",
             receiver: None,
-            args: &[Arg {
-                name: "cf",
-                ty: ArgTy::ExternRef("CFunc"),
-            }],
+            args: CF,
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "The rendered pseudocode of `cf`, tags stripped; `Err` if the SDK cannot produce \
@@ -1552,10 +1084,7 @@ pub const HEXRAYS: Domain = Domain {
         FnSpec {
             name: "cfunc_counts",
             receiver: None,
-            args: &[Arg {
-                name: "cf",
-                ty: ArgTy::ExternRef("CFunc"),
-            }],
+            args: CF,
             ret: RetKind::Shared("CtreeCounts"),
             body: BodyKind::Custom,
             doc: "Statement, expression, and call-site counts of `cf`'s ctree.",
@@ -1563,10 +1092,7 @@ pub const HEXRAYS: Domain = Domain {
         FnSpec {
             name: "cfunc_refresh_text",
             receiver: None,
-            args: &[Arg {
-                name: "cf",
-                ty: ArgTy::ExternRef("CFunc"),
-            }],
+            args: CF,
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "Re-print `cf`'s pseudocode from its current ctree (`refresh_func_ctext`), then \
@@ -1578,10 +1104,7 @@ pub const HEXRAYS: Domain = Domain {
         FnSpec {
             name: "cfunc_expr_gap",
             receiver: None,
-            args: &[Arg {
-                name: "cf",
-                ty: ArgTy::ExternRef("CFunc"),
-            }],
+            args: CF,
             ret: RetKind::Shared("ExprGap"),
             body: BodyKind::Custom,
             doc: "The extraction-fidelity diagnostic for `cf`: total expressions the SDK visitor \
@@ -1599,16 +1122,7 @@ pub const HEXRAYS: Domain = Domain {
         FnSpec {
             name: "mark_cfunc_dirty",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "close_views",
-                    ty: ArgTy::Bool,
-                },
-            ],
+            args: args!(ea: U64, close_views: Bool),
             ret: RetKind::Bool,
             body: BodyKind::Custom,
             doc: "Evict the cached decompilation for `ea`; `true` if an entry existed, `false` if \
@@ -1625,10 +1139,7 @@ pub const HEXRAYS: Domain = Domain {
         FnSpec {
             name: "has_cached_cfunc",
             receiver: None,
-            args: &[Arg {
-                name: "ea",
-                ty: ArgTy::U64,
-            }],
+            args: EA,
             ret: RetKind::Bool,
             body: BodyKind::Custom,
             doc: "Whether `ea` has a cached decompilation; `false` if none or not initialized.",
@@ -1660,41 +1171,21 @@ pub const TYPE_BUILD: Domain = Domain {
             name: "TypeWriteResult",
             doc: "The outcome of a type-write call, returned by value from every type-write \
                   function except the two signature-surgery fns.",
-            fields: &[
-                Field {
-                    name: "code",
-                    ty: FieldTy::I32,
-                    doc: "Raw facade code: an `IDAKIT_TYPE_*`/`IDAKIT_TEDIT_*` sentinel, a negative \
-                          `tinfo_code_t`, or `define_type`'s parse-error count.",
-                },
-                Field {
-                    name: "reason",
-                    ty: FieldTy::Str,
-                    doc: "Captured IDA diagnostic, empty when the call has no error channel.",
-                },
-            ],
+            fields: fields! {
+                code: I32 = "Raw facade code: an `IDAKIT_TYPE_*`/`IDAKIT_TEDIT_*` sentinel, a negative \
+                          `tinfo_code_t`, or `define_type`'s parse-error count.";
+                reason: Str = "Captured IDA diagnostic, empty when the call has no error channel.";
+            },
         },
         SharedStruct {
             name: "SigWriteResult",
             doc: "The outcome of a signature-surgery call that also reports the function's \
                   parameter count.",
-            fields: &[
-                Field {
-                    name: "code",
-                    ty: FieldTy::I32,
-                    doc: "Raw facade `IDAKIT_SIG_*` code.",
-                },
-                Field {
-                    name: "arity",
-                    ty: FieldTy::Usize,
-                    doc: "Parameter count of the edited function type (`0` when it has no type).",
-                },
-                Field {
-                    name: "reason",
-                    ty: FieldTy::Str,
-                    doc: "Captured IDA diagnostic, empty when none.",
-                },
-            ],
+            fields: fields! {
+                code: I32 = "Raw facade `IDAKIT_SIG_*` code.";
+                arity: Usize = "Parameter count of the edited function type (`0` when it has no type).";
+                reason: Str = "Captured IDA diagnostic, empty when none.";
+            },
         },
     ],
     custom_tu: Some("facade/type_build_custom.cc"),
@@ -1703,20 +1194,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "apply_type_decl",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "decl",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "flags",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, decl: Str, flags: I32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Parse `decl` against the local til and apply it at `ea`. `code` is \
@@ -1725,16 +1203,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "apply_named_type",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "name",
-                    ty: ArgTy::Str,
-                },
-            ],
+            args: args!(ea: U64, name: Str),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Resolve the existing named type `name` and apply it at `ea`. `code` \
@@ -1753,20 +1222,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "apply_type_recipe",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "recipe",
-                    ty: ArgTy::Bytes,
-                },
-                Arg {
-                    name: "flags",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, recipe: Bytes, flags: I32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Build the `tinfo` the postfix recipe encodes and apply it at `ea`. Same codes as \
@@ -1777,10 +1233,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "define_type",
             receiver: None,
-            args: &[Arg {
-                name: "input",
-                ty: ArgTy::Str,
-            }],
+            args: args!(input: Str),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Parse the C declaration(s) in `input` into the local til. `code` is the \
@@ -1789,10 +1242,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "delete_type",
             receiver: None,
-            args: &[Arg {
-                name: "type_name",
-                ty: ArgTy::Str,
-            }],
+            args: args!(type_name: Str),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Delete the named type `type_name` from the local til, the inverse of \
@@ -1801,16 +1251,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "rename_type",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "new_name",
-                    ty: ArgTy::Str,
-                },
-            ],
+            args: args!(type_name: Str, new_name: Str),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Rename the named type `type_name` to `new_name` in place, preserving its \
@@ -1819,16 +1260,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "forward_declare_type",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "decl_type",
-                    ty: ArgTy::U32,
-                },
-            ],
+            args: args!(type_name: Str, decl_type: U32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Reserve `type_name` in the local til as an incomplete aggregate \
@@ -1840,16 +1272,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "func_set_rettype",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "recipe",
-                    ty: ArgTy::Bytes,
-                },
-            ],
+            args: args!(ea: U64, recipe: Bytes),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Replace the return type of the function type at `ea` with the recipe type, then \
@@ -1858,20 +1281,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "func_set_argtype",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "idx",
-                    ty: ArgTy::Usize,
-                },
-                Arg {
-                    name: "recipe",
-                    ty: ArgTy::Bytes,
-                },
-            ],
+            args: args!(ea: U64, idx: Usize, recipe: Bytes),
             ret: RetKind::Shared("SigWriteResult"),
             body: BodyKind::Custom,
             doc: "Replace parameter `idx`'s type with the recipe type, then rebuild and re-apply. \
@@ -1881,20 +1291,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "func_rename_arg",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "idx",
-                    ty: ArgTy::Usize,
-                },
-                Arg {
-                    name: "name",
-                    ty: ArgTy::Str,
-                },
-            ],
+            args: args!(ea: U64, idx: Usize, name: Str),
             ret: RetKind::Shared("SigWriteResult"),
             body: BodyKind::Custom,
             doc: "Rename parameter `idx` to `name`, then rebuild and re-apply. `arity` reports the \
@@ -1903,16 +1300,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "func_set_cc",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "cc",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, cc: I32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Set the calling convention of the function type at `ea` to the raw `CM_CC_*` \
@@ -1921,16 +1309,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "func_prepend_this",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "recipe",
-                    ty: ArgTy::Bytes,
-                },
-            ],
+            args: args!(ea: U64, recipe: Bytes),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Insert an implicit `this` parameter of the recipe type at index 0, then rebuild \
@@ -1939,24 +1318,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "udt_add_member",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "recipe",
-                    ty: ArgTy::Bytes,
-                },
-                Arg {
-                    name: "member_bit",
-                    ty: ArgTy::U64,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, recipe: Bytes, member_bit: U64),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Add a member of the recipe type to the named struct/union `type_name` at bit \
@@ -1966,28 +1328,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "udt_set_member_type",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_bit",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "recipe",
-                    ty: ArgTy::Bytes,
-                },
-                Arg {
-                    name: "etf_flags",
-                    ty: ArgTy::U32,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, member_bit: U64, recipe: Bytes, etf_flags: U32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Replace the type of the member selected by `member_name` (or, when it is empty, \
@@ -1997,24 +1338,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "udt_rename_member",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_bit",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "new_name",
-                    ty: ArgTy::Str,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, member_bit: U64, new_name: Str),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Rename the member selected by `member_name` (or, when it is empty, by bit offset \
@@ -2023,24 +1347,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "udt_set_member_comment",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_bit",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "comment",
-                    ty: ArgTy::Str,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, member_bit: U64, comment: Str),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Set the comment on the member selected by `member_name` (or, when it is empty, \
@@ -2050,32 +1357,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "udt_set_member_repr",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_bit",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "vtype",
-                    ty: ArgTy::U32,
-                },
-                Arg {
-                    name: "is_signed",
-                    ty: ArgTy::Bool,
-                },
-                Arg {
-                    name: "leading_zeros",
-                    ty: ArgTy::Bool,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, member_bit: U64, vtype: U32, is_signed: Bool, leading_zeros: Bool),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Set the value representation on the member selected by `member_name` (or, when \
@@ -2086,20 +1368,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "udt_del_member",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_bit",
-                    ty: ArgTy::U64,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, member_bit: U64),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Delete the member selected by `member_name` (or, when it is empty, by bit offset \
@@ -2108,28 +1377,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_add_member",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "value",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "bmask",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "etf_flags",
-                    ty: ArgTy::U32,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, value: U64, bmask: U64, etf_flags: U32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Add an enum constant named `member_name` with `value` to the named enum \
@@ -2141,16 +1389,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_set_bitmask",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "on",
-                    ty: ArgTy::Bool,
-                },
-            ],
+            args: args!(type_name: Str, on: Bool),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Set whether the named enum `type_name` is a bitmask (flag) enum \
@@ -2160,24 +1399,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_set_repr",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "vtype",
-                    ty: ArgTy::U32,
-                },
-                Arg {
-                    name: "is_signed",
-                    ty: ArgTy::Bool,
-                },
-                Arg {
-                    name: "leading_zeros",
-                    ty: ArgTy::Bool,
-                },
-            ],
+            args: args!(type_name: Str, vtype: U32, is_signed: Bool, leading_zeros: Bool),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Set the value representation on the named enum `type_name` \
@@ -2188,16 +1410,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_set_width",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "nbytes",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(type_name: Str, nbytes: I32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Set the storage width in bytes of the named enum `type_name`'s underlying type \
@@ -2206,20 +1419,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_set_member_value",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "value",
-                    ty: ArgTy::U64,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, value: U64),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Set the value of the enum constant `member_name` in the named enum `type_name`.",
@@ -2227,24 +1427,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_rename_member",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "new_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "etf_flags",
-                    ty: ArgTy::U32,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str, new_name: Str, etf_flags: U32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Rename the enum constant `member_name` in the named enum `type_name` to \
@@ -2254,16 +1437,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_del_member",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "member_name",
-                    ty: ArgTy::Str,
-                },
-            ],
+            args: args!(type_name: Str, member_name: Str),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Delete the enum constant `member_name` from the named enum `type_name`.",
@@ -2271,16 +1445,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "enum_del_member_by_value",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "type_name",
-                    ty: ArgTy::Str,
-                },
-                Arg {
-                    name: "value",
-                    ty: ArgTy::U64,
-                },
-            ],
+            args: args!(type_name: Str, value: U64),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Delete the enum constant carrying `value` from the named enum `type_name` \
@@ -2309,16 +1474,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_int",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "bytes",
-                    ty: ArgTy::U32,
-                },
-                Arg {
-                    name: "is_signed",
-                    ty: ArgTy::Bool,
-                },
-            ],
+            args: args!(bytes: U32, is_signed: Bool),
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "A `bytes`-wide integer (1/2/4/8/16), signed when `is_signed`, as a fresh handle; \
@@ -2327,10 +1483,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_float",
             receiver: None,
-            args: &[Arg {
-                name: "bytes",
-                ty: ArgTy::U32,
-            }],
+            args: args!(bytes: U32),
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "A `bytes`-wide float (4 or 8) as a fresh handle; a null handle when the width is \
@@ -2339,10 +1492,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_named",
             receiver: None,
-            args: &[Arg {
-                name: "name",
-                ty: ArgTy::Str,
-            }],
+            args: args!(name: Str),
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "The named type `name` as a fresh handle, an unresolved typedef ref. Builds a \
@@ -2352,10 +1502,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_decl",
             receiver: None,
-            args: &[Arg {
-                name: "decl",
-                ty: ArgTy::Str,
-            }],
+            args: args!(decl: Str),
             ret: RetKind::ResultUniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "The type `decl` parses to against the local til, as a fresh handle; `Err` (with \
@@ -2364,10 +1511,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_ptr",
             receiver: None,
-            args: &[Arg {
-                name: "inner",
-                ty: ArgTy::ExternRef("TInfo"),
-            }],
+            args: INNER,
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "A pointer to `inner` as a fresh handle. `inner` is copied, not consumed; a null \
@@ -2376,16 +1520,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_array",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "inner",
-                    ty: ArgTy::ExternRef("TInfo"),
-                },
-                Arg {
-                    name: "nelems",
-                    ty: ArgTy::U64,
-                },
-            ],
+            args: args!(inner: ExternRef("TInfo"), nelems: U64),
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "An `nelems`-element array of `inner` as a fresh handle. `inner` is copied, not \
@@ -2394,10 +1529,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_const",
             receiver: None,
-            args: &[Arg {
-                name: "inner",
-                ty: ArgTy::ExternRef("TInfo"),
-            }],
+            args: INNER,
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "A `const`-qualified copy of `inner` as a fresh handle. `inner` is not consumed.",
@@ -2405,10 +1537,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_volatile",
             receiver: None,
-            args: &[Arg {
-                name: "inner",
-                ty: ArgTy::ExternRef("TInfo"),
-            }],
+            args: INNER,
             ret: RetKind::UniquePtr("TInfo"),
             body: BodyKind::Custom,
             doc: "A `volatile`-qualified copy of `inner` as a fresh handle. `inner` is not \
@@ -2417,20 +1546,7 @@ pub const TYPE_BUILD: Domain = Domain {
         FnSpec {
             name: "tinfo_apply",
             receiver: None,
-            args: &[
-                Arg {
-                    name: "ea",
-                    ty: ArgTy::U64,
-                },
-                Arg {
-                    name: "handle",
-                    ty: ArgTy::ExternRef("TInfo"),
-                },
-                Arg {
-                    name: "flags",
-                    ty: ArgTy::I32,
-                },
-            ],
+            args: args!(ea: U64, handle: ExternRef("TInfo"), flags: I32),
             ret: RetKind::Shared("TypeWriteResult"),
             body: BodyKind::Custom,
             doc: "Apply the built `handle` at `ea` (`apply_tinfo`, `TINFO_DEFINITE | flags`). \
@@ -2454,10 +1570,7 @@ pub const TY: Domain = Domain {
         FnSpec {
             name: "func_type",
             receiver: None,
-            args: &[Arg {
-                name: "ea",
-                ty: ArgTy::U64,
-            }],
+            args: EA,
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it \
@@ -2476,10 +1589,7 @@ pub const TY: Domain = Domain {
         FnSpec {
             name: "type_name_at",
             receiver: None,
-            args: &[Arg {
-                name: "ordinal",
-                ty: ArgTy::U32,
-            }],
+            args: args!(ordinal: U32),
             ret: RetKind::ResultString,
             body: BodyKind::Custom,
             doc: "Name of the local type at `ordinal` (empty for an anonymous type); `Err` when \
