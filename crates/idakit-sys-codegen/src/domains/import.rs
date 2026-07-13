@@ -19,13 +19,9 @@ pub const IMPORT: Domain = Domain {
     }],
     custom_tu: Some("facade/import_custom.cc"),
     body_helpers: None,
-    fns: &[FnSpec {
-        name: "imports_build",
-        receiver: None,
-        args: &[],
-        ret: RetKind::Vec("ImportRec"),
-        body: BodyKind::Custom,
-        doc: "The whole import table as an owned, `Send` snapshot, built in one walk of every \
-              module's `enum_import_names`.",
-    }],
+    fns: fns! {
+        "The whole import table as an owned, `Send` snapshot, built in one walk of every module's \
+         `enum_import_names`."
+            imports_build() -> Vec("ImportRec");
+    },
 };

@@ -1,5 +1,4 @@
 use super::super::model::*;
-use super::EA;
 
 /// The instruction-decode domain: x86/x64 `decode_insn` folded into an owned, by-value
 /// [`InstructionData`] shared struct instead of a flat out-param POD. The struct nests
@@ -66,35 +65,17 @@ pub const INSTRUCTION: Domain = Domain {
     ],
     custom_tu: Some("facade/instruction_custom.cc"),
     body_helpers: None,
-    fns: &[
-        FnSpec {
-            name: "decode_insn",
-            receiver: None,
-            args: EA,
-            ret: RetKind::Shared("InstructionData"),
-            body: BodyKind::Custom,
-            doc: "Decode the instruction at `ea`, folding raw operands into semantic kinds with \
-                  resolved register names and control-flow facts. Infallible at the boundary: the \
-                  result code lands in [`InstructionData::status`] rather than throwing, since the \
-                  -3/-4 failures carry structured payloads.",
-        },
-        FnSpec {
-            name: "reg_class_ids",
-            receiver: None,
-            args: &[],
-            ret: RetKind::VecU8,
-            body: BodyKind::Custom,
-            doc: "The facade's `RegisterClass` codes in idakit's discriminant order, an alignment \
-                  source pinning the Rust mirror to this SDK build in a test.",
-        },
-        FnSpec {
-            name: "op_dtype_ids",
-            receiver: None,
-            args: &[],
-            ret: RetKind::VecU8,
-            body: BodyKind::Custom,
-            doc: "This SDK's `op_dtype_t` (`dt_*`) values in idakit `DataType`'s discriminant \
-                  order, an alignment source for a mirror test.",
-        },
-    ],
+    fns: fns! {
+        "Decode the instruction at `ea`, folding raw operands into semantic kinds with resolved \
+         register names and control-flow facts. Infallible at the boundary: the result code lands \
+         in [`InstructionData::status`] rather than throwing, since the -3/-4 failures carry \
+         structured payloads."
+            decode_insn(ea: U64) -> Shared("InstructionData");
+        "The facade's `RegisterClass` codes in idakit's discriminant order, an alignment source \
+         pinning the Rust mirror to this SDK build in a test."
+            reg_class_ids() -> VecU8;
+        "This SDK's `op_dtype_t` (`dt_*`) values in idakit `DataType`'s discriminant order, an \
+         alignment source for a mirror test."
+            op_dtype_ids() -> VecU8;
+    },
 };

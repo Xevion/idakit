@@ -1,5 +1,4 @@
 use super::super::model::*;
-use super::{CF, EA};
 
 /// The Hex-Rays decompiler domain: the SDK's `cfuncptr_t` (`qrefcnt_t<cfunc_t>`) bound as an
 /// `Opaque` `ExternType` ([`CFunc`]) owned by [`UniquePtr`](cxx::UniquePtr), so its cxx deleter runs
@@ -48,90 +47,33 @@ pub const HEXRAYS: Domain = Domain {
     ],
     custom_tu: Some("facade/hexrays_custom.cc"),
     body_helpers: None,
-    fns: &[
-        FnSpec {
-            name: "decompile",
-            receiver: None,
-            args: EA,
-            ret: RetKind::ResultUniquePtr("CFunc"),
-            body: BodyKind::Custom,
-            doc: "Decompile the function at `ea` into a heap `cfuncptr_t` owned by a \
-                  [`UniquePtr`](cxx::UniquePtr) (one owned ref); `Err` on any decompile failure. \
-                  Wrapped in the facade trap, so a fatal `exit()` surfaces as a trapped `Err` the \
-                  caller distinguishes via its own trap query. The `UniquePtr`'s cxx deleter runs \
-                  `~cfuncptr_t` (`release()`) on drop.",
-        },
-        FnSpec {
-            name: "cfunc_pseudocode",
-            receiver: None,
-            args: CF,
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "The rendered pseudocode of `cf`, tags stripped; `Err` if the SDK cannot produce \
-                  it.",
-        },
-        FnSpec {
-            name: "cfunc_counts",
-            receiver: None,
-            args: CF,
-            ret: RetKind::Shared("CtreeCounts"),
-            body: BodyKind::Custom,
-            doc: "Statement, expression, and call-site counts of `cf`'s ctree.",
-        },
-        FnSpec {
-            name: "cfunc_refresh_text",
-            receiver: None,
-            args: CF,
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Re-print `cf`'s pseudocode from its current ctree (`refresh_func_ctext`), then \
-                  return it; `Err` if the SDK cannot produce it. Cheap compared to a re-decompile, \
-                  since it walks the already-decompiled ctree, but reflects only what the ctree \
-                  already encodes (a rename resolves fresh; a structural or type change needs a \
-                  fresh [`decompile`]).",
-        },
-        FnSpec {
-            name: "cfunc_expr_gap",
-            receiver: None,
-            args: CF,
-            ret: RetKind::Shared("ExprGap"),
-            body: BodyKind::Custom,
-            doc: "The extraction-fidelity diagnostic for `cf`: total expressions the SDK visitor \
-                  sees vs how many the extraction walker should materialize.",
-        },
-        FnSpec {
-            name: "hexrays_init",
-            receiver: None,
-            args: &[],
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Initialize the Hex-Rays decompiler (loading the plugin if needed); `true` once \
-                  ready.",
-        },
-        FnSpec {
-            name: "mark_cfunc_dirty",
-            receiver: None,
-            args: args!(ea: U64, close_views: Bool),
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Evict the cached decompilation for `ea`; `true` if an entry existed, `false` if \
-                  none or the decompiler is not initialized.",
-        },
-        FnSpec {
-            name: "clear_cached_cfuncs",
-            receiver: None,
-            args: &[],
-            ret: RetKind::Unit,
-            body: BodyKind::Custom,
-            doc: "Evict every cached decompilation; a no-op if the decompiler is not initialized.",
-        },
-        FnSpec {
-            name: "has_cached_cfunc",
-            receiver: None,
-            args: EA,
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Whether `ea` has a cached decompilation; `false` if none or not initialized.",
-        },
-    ],
+    fns: fns! {
+        "Decompile the function at `ea` into a heap `cfuncptr_t` owned by a \
+         [`UniquePtr`](cxx::UniquePtr) (one owned ref); `Err` on any decompile failure. Wrapped in \
+         the facade trap, so a fatal `exit()` surfaces as a trapped `Err` the caller distinguishes \
+         via its own trap query. The `UniquePtr`'s cxx deleter runs `~cfuncptr_t` (`release()`) on \
+         drop."
+            decompile(ea: U64) -> ResultUniquePtr("CFunc");
+        "The rendered pseudocode of `cf`, tags stripped; `Err` if the SDK cannot produce it."
+            cfunc_pseudocode(cf: ExternRef("CFunc")) -> ResultString;
+        "Statement, expression, and call-site counts of `cf`'s ctree."
+            cfunc_counts(cf: ExternRef("CFunc")) -> Shared("CtreeCounts");
+        "Re-print `cf`'s pseudocode from its current ctree (`refresh_func_ctext`), then return it; \
+         `Err` if the SDK cannot produce it. Cheap compared to a re-decompile, since it walks the \
+         already-decompiled ctree, but reflects only what the ctree already encodes (a rename \
+         resolves fresh; a structural or type change needs a fresh [`decompile`])."
+            cfunc_refresh_text(cf: ExternRef("CFunc")) -> ResultString;
+        "The extraction-fidelity diagnostic for `cf`: total expressions the SDK visitor sees vs how \
+         many the extraction walker should materialize."
+            cfunc_expr_gap(cf: ExternRef("CFunc")) -> Shared("ExprGap");
+        "Initialize the Hex-Rays decompiler (loading the plugin if needed); `true` once ready."
+            hexrays_init() -> Bool;
+        "Evict the cached decompilation for `ea`; `true` if an entry existed, `false` if none or \
+         the decompiler is not initialized."
+            mark_cfunc_dirty(ea: U64, close_views: Bool) -> Bool;
+        "Evict every cached decompilation; a no-op if the decompiler is not initialized."
+            clear_cached_cfuncs();
+        "Whether `ea` has a cached decompilation; `false` if none or not initialized."
+            has_cached_cfunc(ea: U64) -> Bool;
+    },
 };

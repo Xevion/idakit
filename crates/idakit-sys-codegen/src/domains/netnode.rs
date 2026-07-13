@@ -30,6 +30,28 @@ inline rust::Vec<uint8_t> to_rust_bytes(const uint8_t *data, size_t n) {
 }
 ";
 
+/// A rendered netnode body: reconstruct `n` from the `node` id, then run `stmts` (each line already
+/// indented and newline-terminated). Every generated body opens the same way.
+fn nn_body(stmts: &str) -> String {
+    format!("  netnode n((nodeidx_t)node);\n{stmts}")
+}
+
+/// A one-line netnode body returning `expr`, the common shape for the scalar array accessors.
+fn nn_return(expr: &str) -> String {
+    nn_body(&format!("  return {expr};\n"))
+}
+
+/// A string-keyed netnode body: copy `key` into a `std::string k`, reconstruct `n`, then run
+/// `stmts`. The hash family keys by string, so every keyed hash body opens this way.
+fn nn_key_body(stmts: &str) -> String {
+    format!("  std::string k(key);\n{}", nn_body(stmts))
+}
+
+/// A one-line string-keyed netnode body returning `expr`.
+fn nn_key_return(expr: &str) -> String {
+    nn_key_body(&format!("  return {expr};\n"))
+}
+
 /// One keying axis over the array families: how its index argument is named, typed, cast, and
 /// described in docs. The SDK member name gains `suffix` (`""`, `"_ea"`, `"_idx8"`).
 #[derive(Clone, Copy)]
@@ -72,6 +94,7 @@ const IDX8: Key = Key {
 fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
     let suf = k.suffix;
     let bit8 = k.bit8;
+    let cast = k.idx_cast;
     v.push(FnSpec::rendered(
         format!("netnode_{fam}first{suf}"),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
@@ -79,19 +102,22 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
         format!(
             "Lowest populated {bit8}{fam} index under `tag`, or `BADNODE` when the array is empty."
         ),
-        format!(
-            "  netnode n((nodeidx_t)node);\n  return (uint64_t)n.{fam}first{suf}((uchar)tag);\n"
-        ),
+        nn_return(&format!("(uint64_t)n.{fam}first{suf}((uchar)tag)")),
     ));
     v.push(FnSpec::rendered(
         format!("netnode_{fam}next{suf}"),
-        vec![Arg::new("node", ArgTy::U64), Arg::new("cur", k.idx_ty), Arg::new("tag", ArgTy::U32)],
+        vec![
+            Arg::new("node", ArgTy::U64),
+            Arg::new("cur", k.idx_ty),
+            Arg::new("tag", ArgTy::U32),
+        ],
         RetKind::U64,
-        format!("Next populated {bit8}{fam} index after `cur` under `tag`, or `BADNODE` when none."),
         format!(
-            "  netnode n((nodeidx_t)node);\n  return (uint64_t)n.{fam}next{suf}({}cur, (uchar)tag);\n",
-            k.idx_cast
+            "Next populated {bit8}{fam} index after `cur` under `tag`, or `BADNODE` when none."
         ),
+        nn_return(&format!(
+            "(uint64_t)n.{fam}next{suf}({cast}cur, (uchar)tag)"
+        )),
     ));
     v.push(FnSpec::rendered(
         format!("netnode_{fam}last{suf}"),
@@ -100,19 +126,22 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
         format!(
             "Highest populated {bit8}{fam} index under `tag`, or `BADNODE` when the array is empty."
         ),
-        format!(
-            "  netnode n((nodeidx_t)node);\n  return (uint64_t)n.{fam}last{suf}((uchar)tag);\n"
-        ),
+        nn_return(&format!("(uint64_t)n.{fam}last{suf}((uchar)tag)")),
     ));
     v.push(FnSpec::rendered(
         format!("netnode_{fam}prev{suf}"),
-        vec![Arg::new("node", ArgTy::U64), Arg::new("cur", k.idx_ty), Arg::new("tag", ArgTy::U32)],
+        vec![
+            Arg::new("node", ArgTy::U64),
+            Arg::new("cur", k.idx_ty),
+            Arg::new("tag", ArgTy::U32),
+        ],
         RetKind::U64,
-        format!("Previous populated {bit8}{fam} index before `cur` under `tag`, or `BADNODE` when none."),
         format!(
-            "  netnode n((nodeidx_t)node);\n  return (uint64_t)n.{fam}prev{suf}({}cur, (uchar)tag);\n",
-            k.idx_cast
+            "Previous populated {bit8}{fam} index before `cur` under `tag`, or `BADNODE` when none."
         ),
+        nn_return(&format!(
+            "(uint64_t)n.{fam}prev{suf}({cast}cur, (uchar)tag)"
+        )),
     ));
 }
 
@@ -129,9 +158,9 @@ fn shift(fam: &str) -> FnSpec {
         ],
         RetKind::Usize,
         format!("Shift the {fam} array under `tag`; the number of elements moved."),
-        format!(
-            "  netnode n((nodeidx_t)node);\n  return n.{fam}shift((nodeidx_t)from, (nodeidx_t)to, (nodeidx_t)size, (uchar)tag);\n"
-        ),
+        nn_return(&format!(
+            "n.{fam}shift((nodeidx_t)from, (nodeidx_t)to, (nodeidx_t)size, (uchar)tag)"
+        )),
     )
 }
 
@@ -142,7 +171,7 @@ fn del_all(fam: &str) -> FnSpec {
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
         RetKind::Bool,
         format!("Delete the entire {fam} array under `tag`."),
-        format!("  netnode n((nodeidx_t)node);\n  return n.{fam}del_all((uchar)tag);\n"),
+        nn_return(&format!("n.{fam}del_all((uchar)tag)")),
     )
 }
 
@@ -152,10 +181,14 @@ fn alt(v: &mut Vec<FnSpec>) {
         let (suf, cast, idx, at) = (k.suffix, k.idx_cast, k.idx_name, k.at);
         v.push(FnSpec::rendered(
             format!("netnode_altval{suf}"),
-            vec![Arg::new("node", ArgTy::U64), Arg::new(idx, k.idx_ty), Arg::new("tag", ArgTy::U32)],
+            vec![
+                Arg::new("node", ArgTy::U64),
+                Arg::new(idx, k.idx_ty),
+                Arg::new("tag", ArgTy::U32),
+            ],
             RetKind::U64,
             format!("Alt value {at} under `tag`, or `0` when unset."),
-            format!("  netnode n((nodeidx_t)node);\n  return (uint64_t)n.altval{suf}({cast}{idx}, (uchar)tag);\n"),
+            nn_return(&format!("(uint64_t)n.altval{suf}({cast}{idx}, (uchar)tag)")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_altset{suf}"),
@@ -167,7 +200,9 @@ fn alt(v: &mut Vec<FnSpec>) {
             ],
             RetKind::Bool,
             format!("Set the alt value {at} under `tag` to `value`."),
-            format!("  netnode n((nodeidx_t)node);\n  return n.altset{suf}({cast}{idx}, (nodeidx_t)value, (uchar)tag);\n"),
+            nn_return(&format!(
+                "n.altset{suf}({cast}{idx}, (nodeidx_t)value, (uchar)tag)"
+            )),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_altdel{suf}"),
@@ -178,9 +213,7 @@ fn alt(v: &mut Vec<FnSpec>) {
             ],
             RetKind::Bool,
             format!("Delete the alt value {at} under `tag`."),
-            format!(
-                "  netnode n((nodeidx_t)node);\n  return n.altdel{suf}({cast}{idx}, (uchar)tag);\n"
-            ),
+            nn_return(&format!("n.altdel{suf}({cast}{idx}, (uchar)tag)")),
         ));
     }
     iteration(v, "alt", DEF);
@@ -198,14 +231,14 @@ fn sup(v: &mut Vec<FnSpec>) {
             vec![Arg::new("node", ArgTy::U64), Arg::new(idx, k.idx_ty), Arg::new("tag", ArgTy::U32)],
             RetKind::ResultVecU8,
             format!("Sup value {at} under `tag` as raw bytes; `Err` when unset."),
-            format!("  netnode n((nodeidx_t)node);\n  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = n.supval{suf}({cast}{idx}, buf, sizeof(buf), (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_bytes(buf, (size_t)r);\n"),
+            nn_body(&format!("  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = n.supval{suf}({cast}{idx}, buf, sizeof(buf), (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_bytes(buf, (size_t)r);\n")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_supstr{suf}"),
             vec![Arg::new("node", ArgTy::U64), Arg::new(idx, k.idx_ty), Arg::new("tag", ArgTy::U32)],
             RetKind::ResultString,
             format!("Sup value {at} under `tag` as a string; `Err` when unset."),
-            format!("  netnode n((nodeidx_t)node);\n  qstring out;\n  if (n.supstr{suf}(&out, {cast}{idx}, (uchar)tag) < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_string(out);\n"),
+            nn_body(&format!("  qstring out;\n  if (n.supstr{suf}(&out, {cast}{idx}, (uchar)tag) < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_string(out);\n")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_supset{suf}"),
@@ -217,7 +250,9 @@ fn sup(v: &mut Vec<FnSpec>) {
             ],
             RetKind::Bool,
             format!("Set the sup value {at} under `tag` (max `MAXSPECSIZE` bytes)."),
-            format!("  netnode n((nodeidx_t)node);\n  return n.supset{suf}({cast}{idx}, value.data(), value.size(), (uchar)tag);\n"),
+            nn_return(&format!(
+                "n.supset{suf}({cast}{idx}, value.data(), value.size(), (uchar)tag)"
+            )),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_supdel{suf}"),
@@ -228,26 +263,33 @@ fn sup(v: &mut Vec<FnSpec>) {
             ],
             RetKind::Bool,
             format!("Delete the sup value {at} under `tag`."),
-            format!(
-                "  netnode n((nodeidx_t)node);\n  return n.supdel{suf}({cast}{idx}, (uchar)tag);\n"
-            ),
+            nn_return(&format!("n.supdel{suf}({cast}{idx}, (uchar)tag)")),
         ));
     }
     iteration(v, "sup", DEF);
     iteration(v, "sup", IDX8);
     v.push(FnSpec::rendered(
         "netnode_lower_bound".into(),
-        vec![Arg::new("node", ArgTy::U64), Arg::new("cur", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
+        vec![
+            Arg::new("node", ArgTy::U64),
+            Arg::new("cur", ArgTy::U64),
+            Arg::new("tag", ArgTy::U32),
+        ],
         RetKind::U64,
         "Lowest populated sup index `>= cur` under `tag`, or `BADNODE` when none.".into(),
-        "  netnode n((nodeidx_t)node);\n  return (uint64_t)n.lower_bound((nodeidx_t)cur, (uchar)tag);\n".into(),
+        nn_return("(uint64_t)n.lower_bound((nodeidx_t)cur, (uchar)tag)"),
     ));
     v.push(FnSpec::rendered(
         "netnode_lower_bound_idx8".into(),
-        vec![Arg::new("node", ArgTy::U64), Arg::new("idx", ArgTy::U32), Arg::new("tag", ArgTy::U32)],
+        vec![
+            Arg::new("node", ArgTy::U64),
+            Arg::new("idx", ArgTy::U32),
+            Arg::new("tag", ArgTy::U32),
+        ],
         RetKind::U64,
-        "Lowest populated 8-bit sup index at or after `idx` under `tag`, or `BADNODE` when none.".into(),
-        "  netnode n((nodeidx_t)node);\n  return (uint64_t)n.lower_bound_idx8((uchar)idx, (uchar)tag);\n".into(),
+        "Lowest populated 8-bit sup index at or after `idx` under `tag`, or `BADNODE` when none."
+            .into(),
+        nn_return("(uint64_t)n.lower_bound_idx8((uchar)idx, (uchar)tag)"),
     ));
     v.push(shift("sup"));
     v.push(FnSpec::rendered(
@@ -260,7 +302,7 @@ fn sup(v: &mut Vec<FnSpec>) {
         ],
         RetKind::I32,
         "Delete sup elements in `[idx1, idx2)` under `tag`; the number deleted.".into(),
-        "  netnode n((nodeidx_t)node);\n  return (int32_t)n.supdel_range((nodeidx_t)idx1, (nodeidx_t)idx2, (uchar)tag);\n".into(),
+        nn_return("(int32_t)n.supdel_range((nodeidx_t)idx1, (nodeidx_t)idx2, (uchar)tag)"),
     ));
     v.push(del_all("sup"));
 }
@@ -279,21 +321,21 @@ fn hash(v: &mut Vec<FnSpec>) {
         key(),
         RetKind::ResultVecU8,
         "Hash value for `key` under `tag` as raw bytes; `Err` when the key is unset.".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = n.hashval(k.c_str(), buf, sizeof(buf), (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_bytes(buf, (size_t)r);\n".into(),
+        nn_key_body("  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = n.hashval(k.c_str(), buf, sizeof(buf), (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_bytes(buf, (size_t)r);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashstr".into(),
         key(),
         RetKind::ResultString,
         "Hash value for `key` under `tag` as a string; `Err` when the key is unset.".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  qstring out;\n  if (n.hashstr(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_string(out);\n".into(),
+        nn_key_body("  qstring out;\n  if (n.hashstr(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashval_long".into(),
         key(),
         RetKind::U64,
         "Hash value for `key` under `tag` decoded as an integer, or `0` when unset.".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  return (uint64_t)n.hashval_long(k.c_str(), (uchar)tag);\n".into(),
+        nn_key_return("(uint64_t)n.hashval_long(k.c_str(), (uchar)tag)"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashset".into(),
@@ -305,7 +347,7 @@ fn hash(v: &mut Vec<FnSpec>) {
         ],
         RetKind::Bool,
         "Set the hash value for `key` under `tag` (max `MAXSPECSIZE` bytes).".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  return n.hashset(k.c_str(), value.data(), value.size(), (uchar)tag);\n".into(),
+        nn_key_return("n.hashset(k.c_str(), value.data(), value.size(), (uchar)tag)"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashset_long".into(),
@@ -317,42 +359,42 @@ fn hash(v: &mut Vec<FnSpec>) {
         ],
         RetKind::Bool,
         "Set the hash value for `key` under `tag` to the integer `value`.".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  return n.hashset(k.c_str(), (nodeidx_t)value, (uchar)tag);\n".into(),
+        nn_key_return("n.hashset(k.c_str(), (nodeidx_t)value, (uchar)tag)"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashdel".into(),
         key(),
         RetKind::Bool,
         "Delete the hash value for `key` under `tag`.".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  return n.hashdel(k.c_str(), (uchar)tag);\n".into(),
+        nn_key_return("n.hashdel(k.c_str(), (uchar)tag)"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashfirst".into(),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
         RetKind::ResultString,
         "Lexically first hash key under `tag`; `Err` when the hash is empty.".into(),
-        "  netnode n((nodeidx_t)node);\n  qstring out;\n  if (n.hashfirst(&out, (uchar)tag) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n".into(),
+        nn_body("  qstring out;\n  if (n.hashfirst(&out, (uchar)tag) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashnext".into(),
         key(),
         RetKind::ResultString,
         "Hash key after `key` under `tag`; `Err` when `key` is the last.".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  qstring out;\n  if (n.hashnext(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"no next hash key\");\n  return to_rust_string(out);\n".into(),
+        nn_key_body("  qstring out;\n  if (n.hashnext(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"no next hash key\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashlast".into(),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
         RetKind::ResultString,
         "Lexically last hash key under `tag`; `Err` when the hash is empty.".into(),
-        "  netnode n((nodeidx_t)node);\n  qstring out;\n  if (n.hashlast(&out, (uchar)tag) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n".into(),
+        nn_body("  qstring out;\n  if (n.hashlast(&out, (uchar)tag) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashprev".into(),
         key(),
         RetKind::ResultString,
         "Hash key before `key` under `tag`; `Err` when `key` is the first.".into(),
-        "  std::string k(key);\n  netnode n((nodeidx_t)node);\n  qstring out;\n  if (n.hashprev(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"no previous hash key\");\n  return to_rust_string(out);\n".into(),
+        nn_key_body("  qstring out;\n  if (n.hashprev(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"no previous hash key\");\n  return to_rust_string(out);\n"),
     ));
     v.push(del_all("hash"));
 }
@@ -363,10 +405,16 @@ fn char_vals(v: &mut Vec<FnSpec>) {
         let (suf, cast, idx, at) = (k.suffix, k.idx_cast, k.idx_name, k.at);
         v.push(FnSpec::rendered(
             format!("netnode_charval{suf}"),
-            vec![Arg::new("node", ArgTy::U64), Arg::new(idx, k.idx_ty), Arg::new("tag", ArgTy::U32)],
+            vec![
+                Arg::new("node", ArgTy::U64),
+                Arg::new(idx, k.idx_ty),
+                Arg::new("tag", ArgTy::U32),
+            ],
             RetKind::U32,
             format!("Char value {at} under `tag` (0..255), or `0` when unset."),
-            format!("  netnode n((nodeidx_t)node);\n  return (uint32_t)n.charval{suf}({cast}{idx}, (uchar)tag);\n"),
+            nn_return(&format!(
+                "(uint32_t)n.charval{suf}({cast}{idx}, (uchar)tag)"
+            )),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_charset{suf}"),
@@ -378,7 +426,9 @@ fn char_vals(v: &mut Vec<FnSpec>) {
             ],
             RetKind::Bool,
             format!("Set the char value {at} under `tag` (low 8 bits of `value`)."),
-            format!("  netnode n((nodeidx_t)node);\n  return n.charset{suf}({cast}{idx}, (uchar)value, (uchar)tag);\n"),
+            nn_return(&format!(
+                "n.charset{suf}({cast}{idx}, (uchar)value, (uchar)tag)"
+            )),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_chardel{suf}"),
@@ -389,9 +439,7 @@ fn char_vals(v: &mut Vec<FnSpec>) {
             ],
             RetKind::Bool,
             format!("Delete the char value {at} under `tag`."),
-            format!(
-                "  netnode n((nodeidx_t)node);\n  return n.chardel{suf}({cast}{idx}, (uchar)tag);\n"
-            ),
+            nn_return(&format!("n.chardel{suf}({cast}{idx}, (uchar)tag)")),
         ));
     }
     v.push(shift("char"));
@@ -408,17 +456,21 @@ fn blob(v: &mut Vec<FnSpec>) {
         };
         v.push(FnSpec::rendered(
             format!("netnode_blobsize{suf}"),
-            vec![Arg::new("node", ArgTy::U64), Arg::new(name, ArgTy::U64), Arg::new("tag", ArgTy::U32)],
+            vec![
+                Arg::new("node", ArgTy::U64),
+                Arg::new(name, ArgTy::U64),
+                Arg::new("tag", ArgTy::U32),
+            ],
             RetKind::Usize,
             format!("Byte length of the blob based at {desc} under `tag`, or `0` when absent."),
-            format!("  netnode n((nodeidx_t)node);\n  return n.blobsize{suf}({cast}{name}, (uchar)tag);\n"),
+            nn_return(&format!("n.blobsize{suf}({cast}{name}, (uchar)tag)")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_getblob{suf}"),
             vec![Arg::new("node", ArgTy::U64), Arg::new(name, ArgTy::U64), Arg::new("tag", ArgTy::U32)],
             RetKind::ResultVecU8,
             format!("The blob based at {desc} under `tag` as owned bytes; `Err` when absent."),
-            format!("  netnode n((nodeidx_t)node);\n  bytevec_t blob;\n  ssize_t r = n.getblob{suf}(&blob, {cast}{name}, (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"blob does not exist\");\n  return to_rust_bytes(blob.begin(), blob.size());\n"),
+            nn_body(&format!("  bytevec_t blob;\n  ssize_t r = n.getblob{suf}(&blob, {cast}{name}, (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"blob does not exist\");\n  return to_rust_bytes(blob.begin(), blob.size());\n")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_setblob{suf}"),
@@ -430,15 +482,21 @@ fn blob(v: &mut Vec<FnSpec>) {
             ],
             RetKind::Bool,
             format!("Store `value` as the blob based at {desc} under `tag`."),
-            format!("  netnode n((nodeidx_t)node);\n  return n.setblob{suf}(value.data(), value.size(), {cast}{name}, (uchar)tag);\n"),
+            nn_return(&format!(
+                "n.setblob{suf}(value.data(), value.size(), {cast}{name}, (uchar)tag)"
+            )),
         ));
     }
     v.push(FnSpec::rendered(
         "netnode_delblob".into(),
-        vec![Arg::new("node", ArgTy::U64), Arg::new("start", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
+        vec![
+            Arg::new("node", ArgTy::U64),
+            Arg::new("start", ArgTy::U64),
+            Arg::new("tag", ArgTy::U32),
+        ],
         RetKind::I32,
         "Delete the blob based at index `start` under `tag`; the number of slots freed.".into(),
-        "  netnode n((nodeidx_t)node);\n  return (int32_t)n.delblob((nodeidx_t)start, (uchar)tag);\n".into(),
+        nn_return("(int32_t)n.delblob((nodeidx_t)start, (uchar)tag)"),
     ));
     v.push(shift("blob"));
 }
@@ -456,141 +514,49 @@ fn family_fns() -> Vec<FnSpec> {
 
 /// The irregular lifecycle and node-value functions, kept hand-written with `Custom` bodies in
 /// `facade/netnode_custom.cc`.
-fn custom_fns() -> Vec<FnSpec> {
-    vec![
-        // Lifecycle.
-        FnSpec {
-            name: "netnode_by_name",
-            receiver: None,
-            args: args!(name: Str, create: Bool),
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Resolve the netnode named `name`, creating it when `create`; the node id, or \
-              `BADNODE` when it is absent and `create` is false.",
-        },
-        FnSpec {
-            name: "netnode_exists",
-            receiver: None,
-            args: args!(node: U64),
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Whether `node` has any information attached (a named or non-empty node).",
-        },
-        FnSpec {
-            name: "netnode_exists_name",
-            receiver: None,
-            args: args!(name: Str),
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Whether a netnode named `name` exists, without creating it.",
-        },
-        FnSpec {
-            name: "netnode_kill",
-            receiver: None,
-            args: args!(node: U64),
-            ret: RetKind::Unit,
-            body: BodyKind::Custom,
-            doc: "Delete `node` and every array attached to it.",
-        },
-        FnSpec {
-            name: "netnode_get_name",
-            receiver: None,
-            args: args!(node: U64),
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Name of `node`; `Err` when it is unnamed.",
-        },
-        FnSpec {
-            name: "netnode_rename",
-            receiver: None,
-            args: args!(node: U64, name: Str),
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Rename `node` to `name` (empty clears the name); `false` when `name` is taken.",
-        },
-        FnSpec {
-            name: "netnode_first",
-            receiver: None,
-            args: &[],
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Lowest-id existing netnode, or `BADNODE` when the database has none.",
-        },
-        FnSpec {
-            name: "netnode_last",
-            receiver: None,
-            args: &[],
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Highest-id existing netnode, or `BADNODE` when the database has none.",
-        },
-        FnSpec {
-            name: "netnode_next",
-            receiver: None,
-            args: args!(cur: U64),
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Next existing netnode after `cur`, or `BADNODE` when `cur` is the last.",
-        },
-        FnSpec {
-            name: "netnode_prev",
-            receiver: None,
-            args: args!(cur: U64),
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Previous existing netnode before `cur`, or `BADNODE` when `cur` is the first.",
-        },
-        FnSpec {
-            name: "netnode_copyto",
-            receiver: None,
-            args: args!(node: U64, count: U64, target: U64, move_: Bool),
-            ret: RetKind::Usize,
-            body: BodyKind::Custom,
-            doc: "Copy (or move, when `move_`) `count` nodes starting at `node` onto `target`; the \
-              number of nodes affected.",
-        },
-        // Node value (vtag).
-        FnSpec {
-            name: "netnode_value",
-            receiver: None,
-            args: args!(node: U64),
-            ret: RetKind::ResultVecU8,
-            body: BodyKind::Custom,
-            doc: "The node value of `node` as raw bytes; `Err` when no value is set.",
-        },
-        FnSpec {
-            name: "netnode_value_str",
-            receiver: None,
-            args: args!(node: U64),
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "The node value of `node` as a string; `Err` when no value is set.",
-        },
-        FnSpec {
-            name: "netnode_set_value",
-            receiver: None,
-            args: args!(node: U64, value: Bytes),
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Set the node value of `node` (max `MAXSPECSIZE` bytes).",
-        },
-        FnSpec {
-            name: "netnode_del_value",
-            receiver: None,
-            args: args!(node: U64),
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Delete the node value of `node`.",
-        },
-    ]
-}
+const CUSTOM_FNS: &[FnSpec] = fns! {
+    // Lifecycle.
+    "Resolve the netnode named `name`, creating it when `create`; the node id, or `BADNODE` when it \
+     is absent and `create` is false."
+        netnode_by_name(name: Str, create: Bool) -> U64;
+    "Whether `node` has any information attached (a named or non-empty node)."
+        netnode_exists(node: U64) -> Bool;
+    "Whether a netnode named `name` exists, without creating it."
+        netnode_exists_name(name: Str) -> Bool;
+    "Delete `node` and every array attached to it."
+        netnode_kill(node: U64);
+    "Name of `node`; `Err` when it is unnamed."
+        netnode_get_name(node: U64) -> ResultString;
+    "Rename `node` to `name` (empty clears the name); `false` when `name` is taken."
+        netnode_rename(node: U64, name: Str) -> Bool;
+    "Lowest-id existing netnode, or `BADNODE` when the database has none."
+        netnode_first() -> U64;
+    "Highest-id existing netnode, or `BADNODE` when the database has none."
+        netnode_last() -> U64;
+    "Next existing netnode after `cur`, or `BADNODE` when `cur` is the last."
+        netnode_next(cur: U64) -> U64;
+    "Previous existing netnode before `cur`, or `BADNODE` when `cur` is the first."
+        netnode_prev(cur: U64) -> U64;
+    "Copy (or move, when `move_`) `count` nodes starting at `node` onto `target`; the number of \
+     nodes affected."
+        netnode_copyto(node: U64, count: U64, target: U64, move_: Bool) -> Usize;
+    // Node value (vtag).
+    "The node value of `node` as raw bytes; `Err` when no value is set."
+        netnode_value(node: U64) -> ResultVecU8;
+    "The node value of `node` as a string; `Err` when no value is set."
+        netnode_value_str(node: U64) -> ResultString;
+    "Set the node value of `node` (max `MAXSPECSIZE` bytes)."
+        netnode_set_value(node: U64, value: Bytes) -> Bool;
+    "Delete the node value of `node`."
+        netnode_del_value(node: U64) -> Bool;
+};
 
 /// The netnode [`Domain`], built once: the hand-written lifecycle/value functions followed by the
 /// matrix-generated array families.
 pub fn domain() -> &'static Domain {
     static DOMAIN: OnceLock<Domain> = OnceLock::new();
     DOMAIN.get_or_init(|| {
-        let mut fns = custom_fns();
+        let mut fns = CUSTOM_FNS.to_vec();
         fns.extend(family_fns());
         Domain {
             name: "netnode",

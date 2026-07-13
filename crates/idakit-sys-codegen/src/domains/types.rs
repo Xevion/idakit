@@ -1,5 +1,4 @@
 use super::super::model::*;
-use super::EA;
 
 /// The local-type read domain: render a function's prototype and enumerate the local type library.
 ///
@@ -12,34 +11,13 @@ pub const TY: Domain = Domain {
     structs: &[],
     custom_tu: Some("facade/ty_custom.cc"),
     body_helpers: None,
-    fns: &[
-        FnSpec {
-            name: "func_type",
-            receiver: None,
-            args: EA,
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it \
-                  has no type.",
-        },
-        FnSpec {
-            name: "type_ordinal_limit",
-            receiver: None,
-            args: &[],
-            ret: RetKind::U32,
-            body: BodyKind::ScalarCall {
-                call: "get_ordinal_limit(get_idati())",
-            },
-            doc: "Exclusive upper bound on local-type ordinals: valid ordinals run `1..limit`.",
-        },
-        FnSpec {
-            name: "type_name_at",
-            receiver: None,
-            args: args!(ordinal: U32),
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Name of the local type at `ordinal` (empty for an anonymous type); `Err` when \
-                  the ordinal holds no type.",
-        },
-    ],
+    fns: fns! {
+        "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it has no type."
+            func_type(ea: U64) -> ResultString;
+        "Exclusive upper bound on local-type ordinals: valid ordinals run `1..limit`."
+            type_ordinal_limit() -> U32 = scalar("get_ordinal_limit(get_idati())");
+        "Name of the local type at `ordinal` (empty for an anonymous type); `Err` when the ordinal \
+         holds no type."
+            type_name_at(ordinal: U32) -> ResultString;
+    },
 };

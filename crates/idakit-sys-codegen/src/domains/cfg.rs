@@ -1,5 +1,4 @@
 use super::super::model::*;
-use super::FC_N;
 
 /// The control-flow-graph domain: the SDK's `qflow_chart_t` bound as an `Opaque` `ExternType`
 /// (`FlowChart`) owned by [`UniquePtr`](cxx::UniquePtr), so its C++ deleter handles cleanup without
@@ -31,99 +30,32 @@ pub const CFG: Domain = Domain {
     }],
     custom_tu: Some("facade/cfg_custom.cc"),
     body_helpers: None,
-    fns: &[
-        FnSpec {
-            name: "cfg_build",
-            receiver: None,
-            args: args!(ea: U64, flags: I32),
-            ret: RetKind::ResultUniquePtr("FlowChart"),
-            body: BodyKind::Custom,
-            doc: "Build the flow chart for the function containing `ea`; `Err` when no function \
-                  is there. Runs analysis, so it can also fail from a thrown SDK exception.",
-        },
-        FnSpec {
-            name: "size",
-            receiver: Some("FlowChart"),
-            args: &[],
-            ret: RetKind::I32,
-            body: BodyKind::Custom,
-            doc: "Number of basic blocks, bound to `qflow_chart_t::size()` directly (the `self:` \
-                  receiver). The return is `i32` to match the member's exact `int` signature.",
-        },
-        FnSpec {
-            name: "cfg_nblocks",
-            receiver: None,
-            args: args!(fc: ExternRef("FlowChart")),
-            ret: RetKind::Usize,
-            body: BodyKind::Custom,
-            doc: "Total number of basic blocks (external blocks included).",
-        },
-        FnSpec {
-            name: "cfg_nproper",
-            receiver: None,
-            args: args!(fc: ExternRef("FlowChart")),
-            ret: RetKind::Usize,
-            body: BodyKind::Custom,
-            doc: "Number of blocks belonging to the function's own range.",
-        },
-        FnSpec {
-            name: "cfg_block",
-            receiver: None,
-            args: FC_N,
-            ret: RetKind::ResultShared("BlockInfo"),
-            body: BodyKind::Custom,
-            doc: "Bounds and kind of block `n`; `Err` when `n` is out of range.",
-        },
-        FnSpec {
-            name: "cfg_nsucc",
-            receiver: None,
-            args: FC_N,
-            ret: RetKind::Usize,
-            body: BodyKind::Custom,
-            doc: "Number of successors of block `n` (`0` when `n` is out of range).",
-        },
-        FnSpec {
-            name: "cfg_succ",
-            receiver: None,
-            args: args!(fc: ExternRef("FlowChart"), n: Usize, i: Usize),
-            ret: RetKind::ResultUsize,
-            body: BodyKind::Custom,
-            doc: "The `i`-th successor block index of block `n`; `Err` when `n`/`i` is out of range.",
-        },
-        FnSpec {
-            name: "cfg_npred",
-            receiver: None,
-            args: FC_N,
-            ret: RetKind::Usize,
-            body: BodyKind::Custom,
-            doc: "Number of predecessors of block `n` (`0` when `n` is out of range).",
-        },
-        FnSpec {
-            name: "cfg_pred",
-            receiver: None,
-            args: args!(fc: ExternRef("FlowChart"), n: Usize, i: Usize),
-            ret: RetKind::ResultUsize,
-            body: BodyKind::Custom,
-            doc: "The `i`-th predecessor block index of block `n`; `Err` when `n`/`i` is out of \
-                  range.",
-        },
-        FnSpec {
-            name: "cfg_succs",
-            receiver: None,
-            args: FC_N,
-            ret: RetKind::ResultVecU32,
-            body: BodyKind::Custom,
-            doc: "The whole successor edge list of block `n` as one owned `Vec<u32>`; `Err` when \
-                  `n` is out of range.",
-        },
-        FnSpec {
-            name: "cfg_preds",
-            receiver: None,
-            args: FC_N,
-            ret: RetKind::ResultVecU32,
-            body: BodyKind::Custom,
-            doc: "The whole predecessor edge list of block `n` as one owned `Vec<u32>`; `Err` \
-                  when `n` is out of range.",
-        },
-    ],
+    fns: fns! {
+        "Build the flow chart for the function containing `ea`; `Err` when no function is there. \
+         Runs analysis, so it can also fail from a thrown SDK exception."
+            cfg_build(ea: U64, flags: I32) -> ResultUniquePtr("FlowChart");
+        "Number of basic blocks, bound to `qflow_chart_t::size()` directly (the `self:` receiver). \
+         The return is `i32` to match the member's exact `int` signature."
+            size(self: FlowChart) -> I32;
+        "Total number of basic blocks (external blocks included)."
+            cfg_nblocks(fc: ExternRef("FlowChart")) -> Usize;
+        "Number of blocks belonging to the function's own range."
+            cfg_nproper(fc: ExternRef("FlowChart")) -> Usize;
+        "Bounds and kind of block `n`; `Err` when `n` is out of range."
+            cfg_block(fc: ExternRef("FlowChart"), n: Usize) -> ResultShared("BlockInfo");
+        "Number of successors of block `n` (`0` when `n` is out of range)."
+            cfg_nsucc(fc: ExternRef("FlowChart"), n: Usize) -> Usize;
+        "The `i`-th successor block index of block `n`; `Err` when `n`/`i` is out of range."
+            cfg_succ(fc: ExternRef("FlowChart"), n: Usize, i: Usize) -> ResultUsize;
+        "Number of predecessors of block `n` (`0` when `n` is out of range)."
+            cfg_npred(fc: ExternRef("FlowChart"), n: Usize) -> Usize;
+        "The `i`-th predecessor block index of block `n`; `Err` when `n`/`i` is out of range."
+            cfg_pred(fc: ExternRef("FlowChart"), n: Usize, i: Usize) -> ResultUsize;
+        "The whole successor edge list of block `n` as one owned `Vec<u32>`; `Err` when `n` is out \
+         of range."
+            cfg_succs(fc: ExternRef("FlowChart"), n: Usize) -> ResultVecU32;
+        "The whole predecessor edge list of block `n` as one owned `Vec<u32>`; `Err` when `n` is \
+         out of range."
+            cfg_preds(fc: ExternRef("FlowChart"), n: Usize) -> ResultVecU32;
+    },
 };

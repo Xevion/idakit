@@ -20,14 +20,10 @@ pub const REFERENCE: Domain = Domain {
     }],
     custom_tu: Some("facade/reference_custom.cc"),
     body_helpers: None,
-    fns: &[FnSpec {
-        name: "xrefs_build",
-        receiver: None,
-        args: args!(ea: U64, is_to: Bool),
-        ret: RetKind::Vec("XrefRec"),
-        body: BodyKind::Custom,
-        doc: "Every cross-reference edge at `ea` as an owned, `Send` snapshot: xrefs *to* `ea` \
-              when `is_to`, else xrefs *from* it. Ordinary next-instruction flow edges are \
-              excluded (`XREF_NOFLOW`).",
-    }],
+    fns: fns! {
+        "Every cross-reference edge at `ea` as an owned, `Send` snapshot: xrefs *to* `ea` when \
+         `is_to`, else xrefs *from* it. Ordinary next-instruction flow edges are excluded \
+         (`XREF_NOFLOW`)."
+            xrefs_build(ea: U64, is_to: Bool) -> Vec("XrefRec");
+    },
 };

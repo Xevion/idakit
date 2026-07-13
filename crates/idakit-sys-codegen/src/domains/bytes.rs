@@ -1,5 +1,4 @@
 use super::super::model::*;
-use super::EA;
 
 /// The bytes domain: raw byte-range reads, typed scalar reads (each `Err`s when a covered byte is
 /// uninitialized), string-literal decode, item classification, and linear navigation. `min_ea`/
@@ -30,170 +29,48 @@ pub const BYTES: Domain = Domain {
     }],
     custom_tu: Some("facade/bytes_custom.cc"),
     body_helpers: None,
-    fns: &[
-        FnSpec {
-            name: "get_bytes",
-            receiver: None,
-            args: args!(ea: U64, size: Usize),
-            ret: RetKind::ResultVecU8,
-            body: BodyKind::Custom,
-            doc: "The `size` bytes at `ea` as an owned `Vec<u8>`; `Err` when the range is not \
-                  fully mapped.",
-        },
-        FnSpec {
-            name: "get_u8",
-            receiver: None,
-            args: EA,
-            ret: RetKind::ResultU8,
-            body: BodyKind::Custom,
-            doc: "The byte at `ea`; `Err` when it is uninitialized.",
-        },
-        FnSpec {
-            name: "get_u16",
-            receiver: None,
-            args: EA,
-            ret: RetKind::ResultU16,
-            body: BodyKind::Custom,
-            doc: "The little-endian word at `ea`; `Err` when any covered byte is uninitialized.",
-        },
-        FnSpec {
-            name: "get_u32",
-            receiver: None,
-            args: EA,
-            ret: RetKind::ResultU32,
-            body: BodyKind::Custom,
-            doc: "The little-endian dword at `ea`; `Err` when any covered byte is uninitialized.",
-        },
-        FnSpec {
-            name: "get_u64",
-            receiver: None,
-            args: EA,
-            ret: RetKind::ResultU64,
-            body: BodyKind::Custom,
-            doc: "The little-endian qword at `ea`; `Err` when any covered byte is uninitialized.",
-        },
-        FnSpec {
-            name: "get_strlit",
-            receiver: None,
-            args: args!(ea: U64, strtype: I32),
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "The auto-detected string literal at `ea` (given its `STRTYPE`) decoded to UTF-8; \
-                  `Err` when there is none or it cannot be decoded.",
-        },
-        FnSpec {
-            name: "min_ea",
-            receiver: None,
-            args: &[],
-            ret: RetKind::U64,
-            body: BodyKind::ScalarCall {
-                call: "inf_get_min_ea()",
-            },
-            doc: "Lowest mapped address in the database (`inf_get_min_ea`).",
-        },
-        FnSpec {
-            name: "max_ea",
-            receiver: None,
-            args: &[],
-            ret: RetKind::U64,
-            body: BodyKind::ScalarCall {
-                call: "inf_get_max_ea()",
-            },
-            doc: "One past the highest mapped address in the database (`inf_get_max_ea`).",
-        },
-        FnSpec {
-            name: "get_flags",
-            receiver: None,
-            args: EA,
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Flag word of the item at `ea` (`get_flags`).",
-        },
-        FnSpec {
-            name: "get_item_head",
-            receiver: None,
-            args: EA,
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Start address of the item covering `ea` (`ea` itself when it is an item head).",
-        },
-        FnSpec {
-            name: "get_item_end",
-            receiver: None,
-            args: EA,
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Address just past the item covering `ea` (`get_item_end`).",
-        },
-        FnSpec {
-            name: "get_next_head",
-            receiver: None,
-            args: args!(ea: U64, maxea: U64),
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Next item head after `ea`, searching up to `maxea`, or `BADADDR` when none.",
-        },
-        FnSpec {
-            name: "get_prev_head",
-            receiver: None,
-            args: args!(ea: U64, minea: U64),
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Previous item head before `ea`, searching down to `minea`, or `BADADDR` when \
-                  none.",
-        },
-        FnSpec {
-            name: "get_cmt",
-            receiver: None,
-            args: args!(ea: U64, rptble: Bool),
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "The regular (or repeatable, when `rptble`) comment at `ea`; `Err` when there is \
-                  none.",
-        },
-        FnSpec {
-            name: "binpat_compile",
-            receiver: None,
-            args: args!(ea: U64, pattern: Str, radix: I32),
-            ret: RetKind::ResultUniquePtr("CompiledBinpat"),
-            body: BodyKind::Custom,
-            doc: "Compile `pattern` via IDA's own parser (byte width taken from `ea`); `Err` \
-                  carries the parser's rejection message.",
-        },
-        FnSpec {
-            name: "binpat_from_bytes",
-            receiver: None,
-            args: args!(bytes: Bytes, mask: Bytes),
-            ret: RetKind::UniquePtr("CompiledBinpat"),
-            body: BodyKind::Custom,
-            doc: "Compile a pattern from raw `bytes` and a per-byte bit `mask`; an empty `mask` \
-                  means every byte is concrete.",
-        },
-        FnSpec {
-            name: "binpat_stats",
-            receiver: None,
-            args: args!(pat: ExternRef("CompiledBinpat")),
-            ret: RetKind::Shared("BinpatStats"),
-            body: BodyKind::Custom,
-            doc: "The compiled length and anchor count of `pat`.",
-        },
-        FnSpec {
-            name: "bin_search",
-            receiver: None,
-            args: args!(start: U64, end: U64, pat: ExternRef("CompiledBinpat"), flags: I32),
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "First address in `[start, end)` matching `pat`, or `BADADDR` when absent \
-                  (headless: `NOBREAK | NOSHOW` forced).",
-        },
-        FnSpec {
-            name: "patch_bytes",
-            receiver: None,
-            args: args!(ea: U64, bytes: Bytes),
-            ret: RetKind::Bool,
-            body: BodyKind::Custom,
-            doc: "Patch `bytes` over `ea`, or `false` without writing when any target byte is \
-                  unmapped.",
-        },
-    ],
+    fns: fns! {
+        "The `size` bytes at `ea` as an owned `Vec<u8>`; `Err` when the range is not fully mapped."
+            get_bytes(ea: U64, size: Usize) -> ResultVecU8;
+        "The byte at `ea`; `Err` when it is uninitialized."
+            get_u8(ea: U64) -> ResultU8;
+        "The little-endian word at `ea`; `Err` when any covered byte is uninitialized."
+            get_u16(ea: U64) -> ResultU16;
+        "The little-endian dword at `ea`; `Err` when any covered byte is uninitialized."
+            get_u32(ea: U64) -> ResultU32;
+        "The little-endian qword at `ea`; `Err` when any covered byte is uninitialized."
+            get_u64(ea: U64) -> ResultU64;
+        "The auto-detected string literal at `ea` (given its `STRTYPE`) decoded to UTF-8; `Err` \
+         when there is none or it cannot be decoded."
+            get_strlit(ea: U64, strtype: I32) -> ResultString;
+        "Lowest mapped address in the database (`inf_get_min_ea`)."
+            min_ea() -> U64 = scalar("inf_get_min_ea()");
+        "One past the highest mapped address in the database (`inf_get_max_ea`)."
+            max_ea() -> U64 = scalar("inf_get_max_ea()");
+        "Flag word of the item at `ea` (`get_flags`)."
+            get_flags(ea: U64) -> U64;
+        "Start address of the item covering `ea` (`ea` itself when it is an item head)."
+            get_item_head(ea: U64) -> U64;
+        "Address just past the item covering `ea` (`get_item_end`)."
+            get_item_end(ea: U64) -> U64;
+        "Next item head after `ea`, searching up to `maxea`, or `BADADDR` when none."
+            get_next_head(ea: U64, maxea: U64) -> U64;
+        "Previous item head before `ea`, searching down to `minea`, or `BADADDR` when none."
+            get_prev_head(ea: U64, minea: U64) -> U64;
+        "The regular (or repeatable, when `rptble`) comment at `ea`; `Err` when there is none."
+            get_cmt(ea: U64, rptble: Bool) -> ResultString;
+        "Compile `pattern` via IDA's own parser (byte width taken from `ea`); `Err` carries the \
+         parser's rejection message."
+            binpat_compile(ea: U64, pattern: Str, radix: I32) -> ResultUniquePtr("CompiledBinpat");
+        "Compile a pattern from raw `bytes` and a per-byte bit `mask`; an empty `mask` means every \
+         byte is concrete."
+            binpat_from_bytes(bytes: Bytes, mask: Bytes) -> UniquePtr("CompiledBinpat");
+        "The compiled length and anchor count of `pat`."
+            binpat_stats(pat: ExternRef("CompiledBinpat")) -> Shared("BinpatStats");
+        "First address in `[start, end)` matching `pat`, or `BADADDR` when absent (headless: \
+         `NOBREAK | NOSHOW` forced)."
+            bin_search(start: U64, end: U64, pat: ExternRef("CompiledBinpat"), flags: I32) -> U64;
+        "Patch `bytes` over `ea`, or `false` without writing when any target byte is unmapped."
+            patch_bytes(ea: U64, bytes: Bytes) -> Bool;
+    },
 };

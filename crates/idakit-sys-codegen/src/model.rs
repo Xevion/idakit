@@ -105,6 +105,7 @@ pub enum FieldTy {
 
 /// One facade function: its shared name, optional `self:` receiver, arguments, return shape, and
 /// how its C++ body is produced. `name` is used verbatim for the Rust bridge fn and the C++ symbol.
+#[derive(Clone)]
 pub struct FnSpec {
     pub name: &'static str,
     /// `Some(extern rust_name)` for a `self: &T` member call; `None` for a free function.
@@ -187,6 +188,7 @@ pub enum ArgTy {
 /// a Rust `Err`; the non-`Result` twins are for infallible calls.
 // The allow covers taxonomy slots no current spec constructs.
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum RetKind {
     Unit,
     Bool,
@@ -225,6 +227,7 @@ pub enum RetKind {
 /// scalar/string shapes; the netnode matrix supplies its own [`Rendered`](BodyKind::Rendered)
 /// bodies; every other body is [`Custom`](BodyKind::Custom) and hand-written in the domain's
 /// `custom_tu`.
+#[derive(Clone)]
 pub enum BodyKind {
     /// Nullary scalar passthrough: `return (ret)CALL;`.
     ScalarCall { call: &'static str },

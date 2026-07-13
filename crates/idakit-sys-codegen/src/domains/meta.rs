@@ -10,54 +10,18 @@ pub const META: Domain = Domain {
     structs: &[],
     custom_tu: Some("facade/meta_custom.cc"),
     body_helpers: None,
-    fns: &[
-        FnSpec {
-            name: "bitness",
-            receiver: None,
-            args: &[],
-            ret: RetKind::I32,
-            body: BodyKind::Custom,
-            doc: "Application bitness (`inf_get_app_bitness`): 16, 32, or 64.",
-        },
-        FnSpec {
-            name: "image_base",
-            receiver: None,
-            args: &[],
-            ret: RetKind::U64,
-            body: BodyKind::Custom,
-            doc: "Preferred load address of the input (`get_imagebase`).",
-        },
-        FnSpec {
-            name: "proc_name",
-            receiver: None,
-            args: &[],
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Processor module id, e.g. `metapc`; `Err` when none is set.",
-        },
-        FnSpec {
-            name: "file_type_name",
-            receiver: None,
-            args: &[],
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Human-readable input file format text; `Err` when unavailable.",
-        },
-        FnSpec {
-            name: "input_path",
-            receiver: None,
-            args: &[],
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Full path of the analyzed input; `Err` when unknown.",
-        },
-        FnSpec {
-            name: "root_filename",
-            receiver: None,
-            args: &[],
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Base filename of the input; `Err` when unknown.",
-        },
-    ],
+    fns: fns! {
+        "Application bitness (`inf_get_app_bitness`): 16, 32, or 64."
+            bitness() -> I32;
+        "Preferred load address of the input (`get_imagebase`)."
+            image_base() -> U64;
+        "Processor module id, e.g. `metapc`; `Err` when none is set."
+            proc_name() -> ResultString;
+        "Human-readable input file format text; `Err` when unavailable."
+            file_type_name() -> ResultString;
+        "Full path of the analyzed input; `Err` when unknown."
+            input_path() -> ResultString;
+        "Base filename of the input; `Err` when unknown."
+            root_filename() -> ResultString;
+    },
 };

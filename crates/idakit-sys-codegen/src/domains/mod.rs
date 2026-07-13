@@ -3,11 +3,12 @@
 //! Every [`Domain`] here is one slice of the facade, one per file; [`domains`] lists them in
 //! emission order. This directory is data only, except the netnode domain, which is
 //! matrix-generated in the sibling `netnode` module. The engine that turns a [`Domain`] into the
-//! Rust bridge, the C++ header, and the `cxx` glue lives in the sibling `gen.rs`.
+//! Rust bridge, the C++ header, and the `cxx` glue lives in the sibling `emit` module; each domain
+//! authors its functions with the `fns!` macro.
 
 use std::sync::OnceLock;
 
-use super::model::*;
+use super::model::Domain;
 
 mod bytes;
 mod cfg;
@@ -41,21 +42,6 @@ use self::segment::SEGMENT;
 use self::strings::STRINGS;
 use self::type_build::TYPE_BUILD;
 use self::types::TY;
-
-const N: &[Arg] = args!(n: I32);
-
-/// Shared arg lists for the recurring multi-use shapes (the single-arg `EA`/`IDX` twins live near
-/// their first domain). Each is one genuine family, not a coincidental type match: `FC_N` keys a
-/// flowchart block, `CF` a decompiled function, `FLAGS` a name-flag predicate, `INNER` a wrapped
-/// `TInfo`.
-const FC_N: &[Arg] = args!(fc: ExternRef("FlowChart"), n: Usize);
-const CF: &[Arg] = args!(cf: ExternRef("CFunc"));
-const FLAGS: &[Arg] = args!(flags: U64);
-const INNER: &[Arg] = args!(inner: ExternRef("TInfo"));
-
-const EA: &[Arg] = args!(ea: U64);
-
-const IDX: &[Arg] = args!(idx: Usize);
 
 /// The netnode domain: IDA's persistent per-database key/value + blob store. A `netnode` is a value
 /// type over a single `nodeidx_t` id, so every function is keyed by a bare `node: u64` (the id) with

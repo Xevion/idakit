@@ -1,5 +1,5 @@
-//! The `macro_rules!` authoring DSL for [`super::spec`]/[`super::netnode`]/[`super::visitors`]:
-//! terse row syntax that expands into the [`super::model`] spec types.
+//! The `macro_rules!` authoring DSL for [`super::domains`]/[`super::visitors`]: terse row syntax
+//! that expands into the [`super::model`] spec types.
 
 /// `&[Arg]` from `name: Variant` pairs; a `("Name")` suffix supplies a tuple variant's payload
 /// (`args!(id: U32, members: SliceStruct("MemberInfo"))`). The one authoring primitive for a
@@ -39,4 +39,70 @@ macro_rules! methods {
     (@ret) => { RetKind::U32 };
     (@ret $rk:ident) => { RetKind::$rk };
     (@ret $rk:ident($rarg:literal)) => { RetKind::$rk($rarg) };
+}
+
+/// `&[FnSpec]` from `"doc" name(args) [-> Ret] [= body];` rows, the domain twin of [`methods!`].
+///
+/// A row is `"doc" name(args) -> Ret;`, composing [`args!`] for the argument list. Omitting `->`
+/// defaults the return to `Unit` (as in Rust); a leading `self: Type` in the args names a `self: &T`
+/// receiver (`FnSpec::receiver`). The body defaults to [`BodyKind::Custom`] (hand-written in the
+/// domain's `custom_tu`); the `= scalar(...)` / `= seg_scalar(...)` / `= seg_string(...)` /
+/// `= seg_string_pos(...)` suffixes select the templated body kinds instead.
+macro_rules! fns {
+    // All rows consumed: emit the accumulated slice.
+    (@munch [ $($acc:expr,)* ]) => { &[ $($acc),* ] };
+
+    // A `self: Type` receiver row (member call); tried first, so a plain row never sees `self`.
+    (@munch [ $($acc:expr,)* ]
+        $doc:literal
+        $name:ident ( self : $recv:ident $(, $an:ident : $av:ident $(($aarg:literal))? )* $(,)? )
+        $( -> $rk:ident $(($rarg:literal))? )?
+        $( = $bk:ident ( $($bargs:literal),* ) )? ;
+        $($rest:tt)*
+    ) => {
+        fns!(@munch [ $($acc,)* FnSpec {
+            name: stringify!($name),
+            receiver: Some(stringify!($recv)),
+            args: args!( $( $an : $av $(($aarg))? ),* ),
+            ret: fns!(@ret $( $rk $(($rarg))? )?),
+            body: fns!(@body $( $bk ( $($bargs),* ) )?),
+            doc: $doc,
+        }, ] $($rest)*)
+    };
+
+    // A free-function row.
+    (@munch [ $($acc:expr,)* ]
+        $doc:literal
+        $name:ident ( $( $an:ident : $av:ident $(($aarg:literal))? ),* $(,)? )
+        $( -> $rk:ident $(($rarg:literal))? )?
+        $( = $bk:ident ( $($bargs:literal),* ) )? ;
+        $($rest:tt)*
+    ) => {
+        fns!(@munch [ $($acc,)* FnSpec {
+            name: stringify!($name),
+            receiver: None,
+            args: args!( $( $an : $av $(($aarg))? ),* ),
+            ret: fns!(@ret $( $rk $(($rarg))? )?),
+            body: fns!(@body $( $bk ( $($bargs),* ) )?),
+            doc: $doc,
+        }, ] $($rest)*)
+    };
+
+    (@ret) => { RetKind::Unit };
+    (@ret $rk:ident) => { RetKind::$rk };
+    (@ret $rk:ident($rarg:literal)) => { RetKind::$rk($rarg) };
+    (@body) => { BodyKind::Custom };
+    (@body scalar($call:literal)) => { BodyKind::ScalarCall { call: $call } };
+    (@body seg_scalar($accessor:literal, $sentinel:literal)) => {
+        BodyKind::SegScalar { accessor: $accessor, null_sentinel: $sentinel }
+    };
+    (@body seg_string($getter:literal)) => {
+        BodyKind::SegString { getter: $getter, require_positive: false }
+    };
+    (@body seg_string_pos($getter:literal)) => {
+        BodyKind::SegString { getter: $getter, require_positive: true }
+    };
+
+    // Entry: seed the muncher. Placed last so the `@munch`/`@ret`/`@body` arms match first.
+    ( $($rows:tt)* ) => { fns!(@munch [] $($rows)*) };
 }

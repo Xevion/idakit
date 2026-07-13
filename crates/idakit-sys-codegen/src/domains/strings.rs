@@ -19,39 +19,15 @@ pub const STRINGS: Domain = Domain {
     }],
     custom_tu: Some("facade/strings_custom.cc"),
     body_helpers: None,
-    fns: &[
-        FnSpec {
-            name: "strlist_build",
-            receiver: None,
-            args: &[],
-            ret: RetKind::Unit,
-            body: BodyKind::Custom,
-            doc: "(Re)build IDA's string list, an O(database) scan of the whole image.",
-        },
-        FnSpec {
-            name: "strlist_qty",
-            receiver: None,
-            args: &[],
-            ret: RetKind::Usize,
-            body: BodyKind::Custom,
-            doc: "Number of entries in the current string list (`get_strlist_qty`).",
-        },
-        FnSpec {
-            name: "strlist_item",
-            receiver: None,
-            args: args!(n: Usize),
-            ret: RetKind::ResultShared("StrlistItem"),
-            body: BodyKind::Custom,
-            doc: "The `n`-th string-list entry as a `StrlistItem`; `Err` when `n` is out of range.",
-        },
-        FnSpec {
-            name: "strlit_contents",
-            receiver: None,
-            args: args!(ea: U64, len: Usize, strtype: I32),
-            ret: RetKind::ResultString,
-            body: BodyKind::Custom,
-            doc: "Decode the string literal at `ea` (given octet length and `STRTYPE`) to UTF-8; \
-                  `Err` when it cannot be decoded.",
-        },
-    ],
+    fns: fns! {
+        "(Re)build IDA's string list, an O(database) scan of the whole image."
+            strlist_build();
+        "Number of entries in the current string list (`get_strlist_qty`)."
+            strlist_qty() -> Usize;
+        "The `n`-th string-list entry as a `StrlistItem`; `Err` when `n` is out of range."
+            strlist_item(n: Usize) -> ResultShared("StrlistItem");
+        "Decode the string literal at `ea` (given octet length and `STRTYPE`) to UTF-8; `Err` when \
+         it cannot be decoded."
+            strlit_contents(ea: U64, len: Usize, strtype: I32) -> ResultString;
+    },
 };

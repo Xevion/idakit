@@ -2,12 +2,12 @@
 //!
 //! [`VISITOR_BRIDGE`] pairs the ctree walk's [`CtreeSink`](VisitorSink)-shaped spec with the tinfo
 //! type walk's, plus the shared `extern "C++"` driver block both are called through. The engine
-//! that turns this into the Rust bridge and the C++ shim glue lives in the sibling `gen.rs`; the
-//! hand-written C++ drivers stay in `facade/ctree_cxx.cc` / `facade/typewalk_cxx.cc`.
+//! that turns this into the Rust bridge and the C++ shim glue lives in the sibling `emit` module;
+//! the hand-written C++ drivers stay in `facade/ctree_cxx.cc` / `facade/typewalk_cxx.cc`.
 //!
-//! The `args!` / `fields!` / `methods!` DSL macros used below are defined in the parent `gen.rs`
-//! (they author every spec's arg and field slices, not just this one). The ctree and tinfo sinks
-//! each live in their own sibling module ([`ctree`], [`typewalk`]).
+//! The `args!` / `fields!` / `methods!` DSL macros used below are defined in the parent `dsl`
+//! module (they author every spec's arg and field slices, not just this one). The ctree and tinfo
+//! sinks each live in their own sibling module ([`ctree`], [`typewalk`]).
 
 mod ctree;
 mod typewalk;
