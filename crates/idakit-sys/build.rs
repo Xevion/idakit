@@ -422,7 +422,12 @@ fn known_install_dirs() -> Vec<(String, PathBuf)> {
         .chain([PathBuf::from("/Applications")]);
     collect_installs(
         roots,
-        |n| n.starts_with("IDA ") && n.ends_with(".app"),
+        |n| {
+            n.starts_with("IDA ")
+                && Path::new(n)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+        },
         Some("Contents/MacOS"),
     )
 }
