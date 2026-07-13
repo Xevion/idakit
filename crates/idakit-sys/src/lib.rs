@@ -19,16 +19,6 @@
 //! Opaque owned handles cross as cxx `UniquePtr<T>` (`CompiledBinpat`, `CFunc`, `TInfo`), freed by
 //! cxx's deleter on drop. Any handle still passed as a raw `*mut c_void` is paired with an explicit
 //! dispose call; using one after disposal is undefined behaviour.
-#![deny(
-    rustdoc::broken_intra_doc_links,
-    rustdoc::private_intra_doc_links,
-    rustdoc::invalid_codeblock_attributes,
-    rustdoc::invalid_html_tags,
-    rustdoc::invalid_rust_codeblocks,
-    rustdoc::bare_urls,
-    rustdoc::unescaped_backticks,
-    rustdoc::redundant_explicit_links
-)]
 
 /// IDA's effective address (`ea_t`), compiled `__EA64__`.
 pub type Address = u64;

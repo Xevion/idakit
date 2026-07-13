@@ -239,7 +239,7 @@ fn editing_members(idb: &mut Database) -> Result<(), Error> {
         .constant("DEMO_A")
         .set_value(10)?;
     let constants: Vec<(String, u64)> = match idb.type_named("edit_enum_demo")?.shape() {
-        idakit::types::TypeShape::Enum { members, .. } => {
+        TypeShape::Enum { members, .. } => {
             members.iter().map(|m| (m.name.clone(), m.value)).collect()
         }
         _ => Vec::new(),
@@ -355,12 +355,12 @@ fn report(call: &str, r: Result<(), Error>) {
         Err(Error::TypeWrite {
             source: TypeWriteError::ParseFailed { reason, .. },
         }) => {
-            println!("  {call} -> ParseFailed: {reason}")
+            println!("  {call} -> ParseFailed: {reason}");
         }
         Err(Error::TypeWrite {
             source: TypeWriteError::ApplyRejected { reason, .. },
         }) => {
-            println!("  {call} -> ApplyRejected: {reason}")
+            println!("  {call} -> ApplyRejected: {reason}");
         }
         Err(e) => println!("  {call} -> {e}"),
     }

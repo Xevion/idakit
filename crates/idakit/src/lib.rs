@@ -137,24 +137,10 @@
 //!
 //! The bindings are MIT licensed. The IDA SDK and runtime are proprietary to Hex-Rays; idakit
 //! links against your own install and redistributes none of it.
-#![deny(missing_docs)]
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/Xevion/idakit/master/assets/idakit-logo.png",
     html_favicon_url = "https://raw.githubusercontent.com/Xevion/idakit/master/assets/idakit-favicon.png"
 )]
-#![deny(
-    rustdoc::broken_intra_doc_links,
-    rustdoc::missing_crate_level_docs,
-    rustdoc::private_intra_doc_links,
-    rustdoc::invalid_codeblock_attributes,
-    rustdoc::invalid_html_tags,
-    rustdoc::invalid_rust_codeblocks,
-    rustdoc::bare_urls,
-    rustdoc::unescaped_backticks,
-    rustdoc::redundant_explicit_links
-)]
-// Public fallible/panicking items document their failure modes (`just clippy` runs `-D warnings`).
-#![warn(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -388,7 +374,7 @@ impl Database {
     pub fn with_open<T>(
         &mut self,
         path: impl AsRef<str>,
-        f: impl FnOnce(&mut Database) -> Result<T>,
+        f: impl FnOnce(&mut Self) -> Result<T>,
     ) -> Result<T> {
         self.open(path).call()?;
         let closer = CloseOnDrop { db: self };

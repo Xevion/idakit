@@ -59,7 +59,7 @@ fn open_is_rejected(idb: &mut Database, path: &str) {
 fn assert_open_rejected(path: String) {
     Ida::run(move |ida| {
         ida.call(move |idb| open_is_rejected(idb, &path))
-            .unwrap_or_else(|e| e.resume())
+            .unwrap_or_else(|e| e.resume());
     })
     .expect("kernel init failed");
 }
@@ -118,7 +118,7 @@ fn unsupported_java_class_reports_reason() {
                 "KernelExit diagnostic should carry the loader reason, got {diagnostic:?}"
             );
         })
-        .unwrap_or_else(|e| e.resume())
+        .unwrap_or_else(|e| e.resume());
     })
     .expect("kernel init failed");
 }

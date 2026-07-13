@@ -1,0 +1,3 @@
+msrv = "1.88"
+# Codegen emitters and a few walkers are single linear pipelines that don't decompose cleanly.
+too-many-lines-threshold = 150

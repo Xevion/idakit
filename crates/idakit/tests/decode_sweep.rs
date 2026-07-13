@@ -23,7 +23,7 @@ fn decode_is_strict_and_consistent() {
     let path = db.path().to_owned();
     Ida::run(move |ida| {
         ida.call(move |idb| run(idb, &path))
-            .unwrap_or_else(|e| e.resume())
+            .unwrap_or_else(|e| e.resume());
     })
     .expect("kernel init failed");
 }

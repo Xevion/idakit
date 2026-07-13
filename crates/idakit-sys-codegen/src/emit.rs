@@ -1,6 +1,8 @@
 //! The token/string emitters: methods that turn the [`super::model`] spec vocabulary into the
 //! Rust bridge `TokenStream`, the C++ header/body `String`s, and the visitor bridge's tokens.
 
+use std::fmt::Write as _;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -10,20 +12,20 @@ use super::model::*;
 impl FieldTy {
     pub(crate) fn rust(&self) -> TokenStream {
         match self {
-            FieldTy::U8 => quote!(u8),
-            FieldTy::U16 => quote!(u16),
-            FieldTy::U32 => quote!(u32),
-            FieldTy::U64 => quote!(u64),
-            FieldTy::I32 => quote!(i32),
-            FieldTy::I64 => quote!(i64),
-            FieldTy::Usize => quote!(usize),
-            FieldTy::Bool => quote!(bool),
-            FieldTy::Str => quote!(String),
-            FieldTy::Extern(name) | FieldTy::Struct(name) => {
+            Self::U8 => quote!(u8),
+            Self::U16 => quote!(u16),
+            Self::U32 => quote!(u32),
+            Self::U64 => quote!(u64),
+            Self::I32 => quote!(i32),
+            Self::I64 => quote!(i64),
+            Self::Usize => quote!(usize),
+            Self::Bool => quote!(bool),
+            Self::Str => quote!(String),
+            Self::Extern(name) | Self::Struct(name) => {
                 let id = format_ident!("{name}");
                 quote!(#id)
             }
-            FieldTy::VecStruct(name) => {
+            Self::VecStruct(name) => {
                 let id = format_ident!("{name}");
                 quote!(Vec<#id>)
             }
@@ -34,30 +36,30 @@ impl FieldTy {
 impl ArgTy {
     pub(crate) fn rust(&self) -> TokenStream {
         match self {
-            ArgTy::I32 => quote!(i32),
-            ArgTy::U32 => quote!(u32),
-            ArgTy::U64 => quote!(u64),
-            ArgTy::Usize => quote!(usize),
-            ArgTy::Bool => quote!(bool),
-            ArgTy::Str => quote!(&str),
-            ArgTy::Bytes => quote!(&[u8]),
-            ArgTy::Extern(name) => {
+            Self::I32 => quote!(i32),
+            Self::U32 => quote!(u32),
+            Self::U64 => quote!(u64),
+            Self::Usize => quote!(usize),
+            Self::Bool => quote!(bool),
+            Self::Str => quote!(&str),
+            Self::Bytes => quote!(&[u8]),
+            Self::Extern(name) => {
                 let id = format_ident!("{name}");
                 quote!(#id)
             }
-            ArgTy::ExternRef(name) => {
+            Self::ExternRef(name) => {
                 let id = format_ident!("{name}");
                 quote!(&#id)
             }
-            ArgTy::F64 => quote!(f64),
-            ArgTy::I64 => quote!(i64),
-            ArgTy::SliceU32 => quote!(&[u32]),
-            ArgTy::SliceU64 => quote!(&[u64]),
-            ArgTy::SliceStruct(name) => {
+            Self::F64 => quote!(f64),
+            Self::I64 => quote!(i64),
+            Self::SliceU32 => quote!(&[u32]),
+            Self::SliceU64 => quote!(&[u64]),
+            Self::SliceStruct(name) => {
                 let id = format_ident!("{name}");
                 quote!(&[#id])
             }
-            ArgTy::VisitorMut(name) => {
+            Self::VisitorMut(name) => {
                 let id = format_ident!("{name}");
                 quote!(&mut #id)
             }
@@ -65,21 +67,21 @@ impl ArgTy {
     }
     pub(crate) fn cxx(&self, arg_name: &str) -> String {
         let ty = match self {
-            ArgTy::I32 => "int32_t".into(),
-            ArgTy::U32 => "uint32_t".into(),
-            ArgTy::U64 => "uint64_t".into(),
-            ArgTy::Usize => "size_t".into(),
-            ArgTy::Bool => "bool".into(),
-            ArgTy::Str => "rust::Str".into(),
-            ArgTy::Bytes => "rust::Slice<const uint8_t>".into(),
-            ArgTy::Extern(name) => format!("::{}", ExternTy::cxx_name_of(name)),
-            ArgTy::ExternRef(name) => format!("const ::{}&", ExternTy::cxx_name_of(name)),
-            ArgTy::F64 => "double".into(),
-            ArgTy::I64 => "int64_t".into(),
-            ArgTy::SliceU32 => "rust::Slice<const uint32_t>".into(),
-            ArgTy::SliceU64 => "rust::Slice<const uint64_t>".into(),
-            ArgTy::SliceStruct(name) => format!("rust::Slice<const {name}>"),
-            ArgTy::VisitorMut(name) => format!("{name} &"),
+            Self::I32 => "int32_t".into(),
+            Self::U32 => "uint32_t".into(),
+            Self::U64 => "uint64_t".into(),
+            Self::Usize => "size_t".into(),
+            Self::Bool => "bool".into(),
+            Self::Str => "rust::Str".into(),
+            Self::Bytes => "rust::Slice<const uint8_t>".into(),
+            Self::Extern(name) => format!("::{}", ExternTy::cxx_name_of(name)),
+            Self::ExternRef(name) => format!("const ::{}&", ExternTy::cxx_name_of(name)),
+            Self::F64 => "double".into(),
+            Self::I64 => "int64_t".into(),
+            Self::SliceU32 => "rust::Slice<const uint32_t>".into(),
+            Self::SliceU64 => "rust::Slice<const uint64_t>".into(),
+            Self::SliceStruct(name) => format!("rust::Slice<const {name}>"),
+            Self::VisitorMut(name) => format!("{name} &"),
         };
         format!("{ty} {arg_name}")
     }
@@ -88,7 +90,7 @@ impl ArgTy {
     /// `ffi::` for use outside `mod ffi` (the sink trait and the visitor's forwarding impl); inside
     /// `mod ffi` the bare name already resolves, so callers there pass `false`.
     pub(crate) fn visitor_rust(&self, ffi_qualified: bool) -> TokenStream {
-        if let (true, ArgTy::SliceStruct(name)) = (ffi_qualified, self) {
+        if let (true, Self::SliceStruct(name)) = (ffi_qualified, self) {
             let id = format_ident!("{name}");
             return quote!(&[ffi::#id]);
         }
@@ -104,26 +106,26 @@ impl RetShape {
             quote!(#id)
         }
         match self {
-            RetShape::Unit => quote!(()),
-            RetShape::Bool => quote!(bool),
-            RetShape::I32 => quote!(i32),
-            RetShape::U8 => quote!(u8),
-            RetShape::U16 => quote!(u16),
-            RetShape::U32 => quote!(u32),
-            RetShape::U64 => quote!(u64),
-            RetShape::Usize => quote!(usize),
-            RetShape::String => quote!(String),
-            RetShape::Extern(n) | RetShape::Shared(n) => named(n),
-            RetShape::UniquePtr(n) => {
+            Self::Unit => quote!(()),
+            Self::Bool => quote!(bool),
+            Self::I32 => quote!(i32),
+            Self::U8 => quote!(u8),
+            Self::U16 => quote!(u16),
+            Self::U32 => quote!(u32),
+            Self::U64 => quote!(u64),
+            Self::Usize => quote!(usize),
+            Self::String => quote!(String),
+            Self::Extern(n) | Self::Shared(n) => named(n),
+            Self::UniquePtr(n) => {
                 let t = named(n);
                 quote!(UniquePtr<#t>)
             }
-            RetShape::Vec(n) => {
+            Self::Vec(n) => {
                 let t = named(n);
                 quote!(Vec<#t>)
             }
-            RetShape::VecU32 => quote!(Vec<u32>),
-            RetShape::VecU8 => quote!(Vec<u8>),
+            Self::VecU32 => quote!(Vec<u32>),
+            Self::VecU8 => quote!(Vec<u8>),
         }
     }
 
@@ -131,21 +133,21 @@ impl RetShape {
     /// throwing fn's C++ type straight to the `Ok` payload's type).
     fn cxx(&self) -> String {
         match self {
-            RetShape::Unit => "void".into(),
-            RetShape::Bool => "bool".into(),
-            RetShape::I32 => "int32_t".into(),
-            RetShape::U8 => "uint8_t".into(),
-            RetShape::U16 => "uint16_t".into(),
-            RetShape::U32 => "uint32_t".into(),
-            RetShape::U64 => "uint64_t".into(),
-            RetShape::Usize => "size_t".into(),
-            RetShape::String => "rust::String".into(),
-            RetShape::Extern(n) => format!("::{}", ExternTy::cxx_name_of(n)),
-            RetShape::Shared(n) => (*n).into(),
-            RetShape::UniquePtr(n) => format!("std::unique_ptr<::{}>", ExternTy::cxx_name_of(n)),
-            RetShape::Vec(n) => format!("rust::Vec<{}>", ExternTy::vec_elem_cxx(n)),
-            RetShape::VecU32 => "rust::Vec<uint32_t>".into(),
-            RetShape::VecU8 => "rust::Vec<uint8_t>".into(),
+            Self::Unit => "void".into(),
+            Self::Bool => "bool".into(),
+            Self::I32 => "int32_t".into(),
+            Self::U8 => "uint8_t".into(),
+            Self::U16 => "uint16_t".into(),
+            Self::U32 => "uint32_t".into(),
+            Self::U64 => "uint64_t".into(),
+            Self::Usize => "size_t".into(),
+            Self::String => "rust::String".into(),
+            Self::Extern(n) => format!("::{}", ExternTy::cxx_name_of(n)),
+            Self::Shared(n) => (*n).into(),
+            Self::UniquePtr(n) => format!("std::unique_ptr<::{}>", ExternTy::cxx_name_of(n)),
+            Self::Vec(n) => format!("rust::Vec<{}>", ExternTy::vec_elem_cxx(n)),
+            Self::VecU32 => "rust::Vec<uint32_t>".into(),
+            Self::VecU8 => "rust::Vec<uint8_t>".into(),
         }
     }
 }
@@ -153,12 +155,12 @@ impl RetShape {
 impl RetKind {
     pub(crate) fn rust(&self) -> TokenStream {
         match self {
-            RetKind::Value(RetShape::Unit) => quote!(),
-            RetKind::Value(shape) => {
+            Self::Value(RetShape::Unit) => quote!(),
+            Self::Value(shape) => {
                 let t = shape.rust();
                 quote!(-> #t)
             }
-            RetKind::Fallible(shape) => {
+            Self::Fallible(shape) => {
                 let t = shape.rust();
                 quote!(-> Result<#t>)
             }
@@ -298,8 +300,10 @@ impl Domain {
             });
             let ret = f.ret.rust();
             let doc = f.doc;
+            let must_use = f.ret.is_must_use().then(|| quote!(#[must_use]));
             quote! {
                 #[doc = #doc]
+                #must_use
                 fn #name(#recv #(#args),*) #ret;
             }
         });
@@ -355,13 +359,13 @@ impl Domain {
         s.push_str("#include <cstddef>\n#include <cstdint>\n#include <memory>\n\n");
         s.push_str("#include <pro.h>\n#include <ida.hpp>\n");
         for inc in self.sdk_includes {
-            s.push_str(&format!("#include {inc}\n"));
+            let _ = writeln!(s, "#include {inc}");
         }
         // The custom trycatch (an idalib interr or a non-std throw becomes a Rust Err, not a
         // terminate) must be in scope in the generated .cc, which includes this header, so cxx's
         // default is disabled; it pulls in rust/cxx.h itself.
         s.push_str("\n#include \"idakit_trycatch.h\"\n\n");
-        s.push_str(&format!("namespace {NAMESPACE} {{\n\n"));
+        let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
         // Shared body helpers, `inline` so the generated body TU and the custom_tu can both call
         // them.
         if let Some(helpers) = self.body_helpers {
@@ -371,7 +375,7 @@ impl Domain {
         // Shared structs are defined by the cxx-generated header; forward-declare so a decl may
         // name one by value (the body TU includes the generated header for the full definition).
         for st in self.structs {
-            s.push_str(&format!("struct {};\n", st.name));
+            let _ = writeln!(s, "struct {};", st.name);
         }
         if !self.structs.is_empty() {
             s.push('\n');
@@ -385,7 +389,7 @@ impl Domain {
             s.push_str(&f.cxx_signature());
             s.push_str(";\n");
         }
-        s.push_str(&format!("\n}} // namespace {NAMESPACE}\n"));
+        let _ = write!(s, "\n}} // namespace {NAMESPACE}\n");
         s
     }
 
@@ -396,22 +400,23 @@ impl Domain {
             return None;
         }
         let mut s = String::new();
-        s.push_str(&format!(
-            "// GENERATED by idakit-sys-codegen from the {} domain spec; do not edit.\n",
+        let _ = writeln!(
+            s,
+            "// GENERATED by idakit-sys-codegen from the {} domain spec; do not edit.",
             self.name
-        ));
+        );
         s.push_str("#include <pro.h>\n#include <ida.hpp>\n");
         for inc in self.sdk_includes {
-            s.push_str(&format!("#include {inc}\n"));
+            let _ = writeln!(s, "#include {inc}");
         }
-        s.push_str(&format!("\n#include \"{}\"\n\n", self.header()));
-        s.push_str(&format!("namespace {NAMESPACE} {{\n\n"));
+        let _ = writeln!(s, "\n#include \"{}\"\n", self.header());
+        let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
         for f in self.fns {
             if let Some(body) = f.body_source() {
                 s.push_str(&body);
             }
         }
-        s.push_str(&format!("}} // namespace {NAMESPACE}\n"));
+        let _ = writeln!(s, "}} // namespace {NAMESPACE}");
         Some(s)
     }
 }
@@ -454,12 +459,13 @@ impl FnSpec {
                      qstring out;\n",
                 );
                 if *require_positive {
-                    b.push_str(&format!(
+                    let _ = writeln!(
+                        b,
                         "  if ({getter}(&out, s) <= 0)\n    \
-                         throw std::runtime_error(\"segment has no class\");\n"
-                    ));
+                         throw std::runtime_error(\"segment has no class\");"
+                    );
                 } else {
-                    b.push_str(&format!("  {getter}(&out, s);\n"));
+                    let _ = writeln!(b, "  {getter}(&out, s);");
                 }
                 b.push_str("  return rust::String(out.c_str(), out.length());\n");
                 b

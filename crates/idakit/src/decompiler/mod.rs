@@ -19,8 +19,8 @@ use crate::error::{Error, Result};
 impl Database {
     /// Decompiles the function at `address` and materializes its ctree.
     ///
-    /// Sugar for
-    /// [`function(address)`](Self::function)`.`[`ctree()`](crate::function::Function::ctree).
+    /// Sugar for calling [`ctree()`](crate::function::Function::ctree) on
+    /// [`function(address)`](Self::function).
     ///
     /// # Errors
     /// Propagates [`Function::ctree`](crate::function::Function::ctree)'s errors.
@@ -147,9 +147,10 @@ pub struct CtreeCounts {
 
 /// A decompiled function that frees its Hex-Rays result on [`Drop`].
 ///
-/// `handle` is a [`UniquePtr`](cxx::UniquePtr)`<`[`CFunc`](sys::CFunc)`>`, non-null by construction;
-/// cxx's deleter runs `~cfuncptr_t` (`release()`) on drop. A `PhantomData<*const ()>` keeps
-/// `DecompiledFunction` `!Send`, so it lives only on the kernel thread.
+/// `handle` is a [`UniquePtr`](cxx::UniquePtr) of [`CFunc`](sys::CFunc), non-null by
+/// construction; cxx's deleter runs `~cfuncptr_t` (`release()`) on drop. A
+/// `PhantomData<*const ()>` keeps `DecompiledFunction` `!Send`, so it lives only on the kernel
+/// thread.
 #[doc(alias("cfuncptr_t", "cfunc_t"))]
 pub struct DecompiledFunction<'db> {
     handle: cxx::UniquePtr<sys::CFunc>,

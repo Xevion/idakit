@@ -51,10 +51,10 @@ impl Database {
 
 /// A compiled binary search pattern that frees its kernel handle on [`Drop`].
 ///
-/// `handle` is a [`UniquePtr`](cxx::UniquePtr)`<`[`CompiledBinpat`](sys::CompiledBinpat)`>`, non-null
-/// by construction; cxx's deleter frees the `compiled_binpat_vec_t` on drop. `UniquePtr` over an
-/// opaque type is `!Send`, so `Pattern` lives only on the kernel thread. It borrows `&Database`, so
-/// it can't coexist with a write.
+/// `handle` is a [`UniquePtr`](cxx::UniquePtr) of [`CompiledBinpat`](sys::CompiledBinpat),
+/// non-null by construction; cxx's deleter frees the `compiled_binpat_vec_t` on drop. `UniquePtr`
+/// over an opaque type is `!Send`, so `Pattern` lives only on the kernel thread. It borrows
+/// `&Database`, so it can't coexist with a write.
 #[doc(alias("compiled_binpat_t"))]
 pub struct Pattern<'db> {
     handle: cxx::UniquePtr<sys::CompiledBinpat>,
@@ -339,15 +339,12 @@ impl Iterator for Matches<'_, '_> {
             self.pat.handle.as_ref().expect("live pattern"),
             self.pat.flags.bits(),
         );
-        match Address::try_new(hit) {
-            Some(address) => {
-                self.cur = Some(address + 1);
-                Some(address)
-            }
-            None => {
-                self.cur = None;
-                None
-            }
+        if let Some(address) = Address::try_new(hit) {
+            self.cur = Some(address + 1);
+            Some(address)
+        } else {
+            self.cur = None;
+            None
         }
     }
 }

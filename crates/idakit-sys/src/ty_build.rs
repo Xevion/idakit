@@ -96,13 +96,16 @@ pub const IDAKIT_RECIPE_ARRAY: u8 = 7;
 pub const IDAKIT_RECIPE_CONST: u8 = 8;
 /// Recipe opcode: pop one type, push its `volatile`-qualified form.
 pub const IDAKIT_RECIPE_VOLATILE: u8 = 9;
-/// Recipe opcode: build a function type. Followed by a `u32` parameter count, a `u8` varargs flag,
-/// a `u16` calling convention (0 = default), then that many `u32`-length-prefixed parameter names;
-/// pops the parameter types then the return type (return pushed first) and pushes the function.
+/// Recipe opcode: build a function type.
+///
+/// Followed by a `u32` parameter count, a `u8` varargs flag, a `u16` calling convention (0 =
+/// default), then that many `u32`-length-prefixed parameter names; pops the parameter types then
+/// the return type (return pushed first) and pushes the function.
 pub const IDAKIT_RECIPE_FUNCTION: u8 = 10;
-/// Recipe opcode: build a bitfield member type, followed by a `u8` container width in bytes, a
-/// `u8` field width in bits, and a `u8` signedness flag. Valid only as a struct member; the kernel
-/// rejects a bitfield in a union.
+/// Recipe opcode: build a bitfield member type.
+///
+/// Followed by a `u8` container width in bytes, a `u8` field width in bits, and a `u8`
+/// signedness flag. Valid only as a struct member; the kernel rejects a bitfield in a union.
 pub const IDAKIT_RECIPE_BITFIELD: u8 = 11;
 
 #[cfg(test)]

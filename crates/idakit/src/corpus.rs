@@ -64,9 +64,11 @@ pub fn fixtures() -> Vec<Fixture> {
 }
 
 /// The manifest-designated canonical fixture: the one deterministic database the dedicated
-/// single-DB tests and doctests open. Identical on every platform, so their assertions never depend
-/// on which binary a host happens to carry. `None` when no corpus is configured, no
-/// `[corpus].canonical` is set, or it names no openable fixture.
+/// single-DB tests and doctests open.
+///
+/// Identical on every platform, so their assertions never depend on which binary a host happens
+/// to carry. `None` when no corpus is configured, no `[corpus].canonical` is set, or it names no
+/// openable fixture.
 #[must_use]
 pub fn canonical() -> Option<PathBuf> {
     let (parsed, root) = parse()?;
@@ -122,9 +124,11 @@ impl Drop for WorkingCopy {
     }
 }
 
-/// Copy `src` into a scratch dir co-located with the corpus, so large fixtures never land in a
-/// RAM-backed `/tmp` or `/dev/shm` (which would compete with the kernel's working set under
-/// fan-out). The location is derived from the manifest, not hardcoded or configured.
+/// Copy `src` into a scratch dir co-located with the corpus.
+///
+/// This keeps large fixtures off a RAM-backed `/tmp` or `/dev/shm` (which would compete with the
+/// kernel's working set under fan-out). The location is derived from the manifest, not hardcoded
+/// or configured.
 ///
 /// # Errors
 ///
@@ -152,10 +156,10 @@ fn scratch_root() -> PathBuf {
 /// A fixture's display name: its file stem with `.` replaced by `_` so it reads as one identifier.
 #[must_use]
 pub fn display_name(rel: &str) -> String {
-    Path::new(rel)
-        .file_stem()
-        .map(|s| s.to_string_lossy().replace('.', "_"))
-        .unwrap_or_else(|| "unknown".into())
+    Path::new(rel).file_stem().map_or_else(
+        || "unknown".into(),
+        |s| s.to_string_lossy().replace('.', "_"),
+    )
 }
 
 #[derive(Deserialize)]
@@ -194,12 +198,12 @@ enum Opens {
 
 impl Default for Opens {
     fn default() -> Self {
-        Opens::Bool(false)
+        Self::Bool(false)
     }
 }
 
 impl Opens {
     fn runnable(&self) -> bool {
-        matches!(self, Opens::Bool(true))
+        matches!(self, Self::Bool(true))
     }
 }

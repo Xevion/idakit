@@ -47,6 +47,7 @@ impl<T> Idx<T> {
 
     /// The position this handle refers to.
     #[inline]
+    #[must_use]
     pub fn index(self) -> usize {
         self.raw as usize
     }
@@ -89,6 +90,7 @@ pub struct Arena<T> {
 impl<T> Arena<T> {
     /// An empty arena.
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Self { data: Vec::new() }
     }
@@ -103,17 +105,20 @@ impl<T> Arena<T> {
 
     /// The number of allocated elements.
     #[inline]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// Whether nothing has been allocated yet.
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
     /// Iterates every `(handle, value)` pair in allocation order.
+    #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (Idx<T>, &T)> {
         self.data
             .iter()

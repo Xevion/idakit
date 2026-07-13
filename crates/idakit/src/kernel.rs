@@ -59,8 +59,10 @@ impl Ida {
     /// Chains setters (`stack_size`, and policies as they land), then finishes with
     /// `.run(app)` or `.here()`. The [`run`](Self::run) and [`here`](Self::here) shortcuts
     /// skip the builder for the defaults.
-    // Deliberate builder entry (Command::new style), not a constructor returning Self.
-    #[allow(clippy::new_ret_no_self)]
+    #[expect(
+        clippy::new_ret_no_self,
+        reason = "deliberate builder entry (Command::new style), not a constructor returning Self"
+    )]
     pub fn new() -> IdaConfigBuilder {
         IdaConfig::builder()
     }
@@ -96,7 +98,7 @@ impl Ida {
     #[doc(alias("init_library"))]
     pub fn run<R, F>(app: F) -> Result<R, InitError>
     where
-        F: FnOnce(Ida) -> R,
+        F: FnOnce(Self) -> R,
     {
         IdaConfig::builder().run(app)
     }
@@ -110,7 +112,7 @@ impl Ida {
     /// Same as [`run`](Self::run).
     pub fn run_with_stack<R, F>(stack_size: usize, app: F) -> Result<R, InitError>
     where
-        F: FnOnce(Ida) -> R,
+        F: FnOnce(Self) -> R,
     {
         IdaConfig::builder().stack_size(stack_size).run(app)
     }

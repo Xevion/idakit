@@ -76,12 +76,11 @@ impl TypeBuilder {
         size: u64,
         has_size: u32,
     ) -> TypeId {
-        let width = match u8::try_from(bytes) {
-            Ok(w) => w,
-            Err(_) => {
-                self.too_wide.get_or_insert(bytes);
-                0
-            }
+        let width = if let Ok(w) = u8::try_from(bytes) {
+            w
+        } else {
+            self.too_wide.get_or_insert(bytes);
+            0
         };
         let shape = match kind {
             scalar_kind::VOID => TypeShape::Void,
@@ -179,7 +178,10 @@ impl TypeBuilder {
         );
     }
 
-    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the facade's flat fill_enum callback"
+    )]
     pub(crate) fn fill_enum(
         &mut self,
         id: TypeId,

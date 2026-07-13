@@ -8,6 +8,8 @@
 //! cross-checks direct-branch targets against IDA's own reference graph. Two independent sources
 //! that must agree. Read-only; never opens for write.
 
+use std::fmt::Write as _;
+
 use idakit::prelude::*;
 
 mod common;
@@ -24,10 +26,10 @@ fn fmt_op(op: &Operand) -> String {
                 s.push_str(&b.name);
             }
             if let Some(i) = &m.index {
-                s.push_str(&format!("+{}*{}", i.name, m.scale));
+                let _ = write!(s, "+{}*{}", i.name, m.scale);
             }
             if m.disp != 0 {
-                s.push_str(&format!("{:+#x}", m.disp));
+                let _ = write!(s, "{:+#x}", m.disp);
             }
             s.push(']');
             s
@@ -59,11 +61,10 @@ fn run(idb: &mut Database) {
     'outer: for function in idb.functions() {
         let mut address = function.address();
         for _ in 0..256 {
-            let instruction = match idb.decode(address) {
-                Ok(i) => i,
-                // NotCode ends the run of this function's straight-line decode (data,
-                // alignment, or the function tail); move on to the next function.
-                Err(_) => break,
+            // NotCode ends the run of this function's straight-line decode (data,
+            // alignment, or the function tail); move on to the next function.
+            let Ok(instruction) = idb.decode(address) else {
+                break;
             };
 
             // Structural invariants that must hold for every decoded instruction.

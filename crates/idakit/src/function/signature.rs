@@ -21,7 +21,7 @@ pub(super) fn sig_result(
     code: c_int,
     address: Address,
     arg: Option<(usize, usize)>,
-    reason: String,
+    reason: &str,
 ) -> Result<()> {
     match SigWriteCode::try_from(code) {
         Ok(SigWriteCode::Ok) => Ok(()),

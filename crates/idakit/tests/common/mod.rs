@@ -30,7 +30,7 @@ pub fn with_canonical_db(body: impl FnOnce(&mut Database) + Send + 'static) {
             body(idb);
             idb.close(false);
         })
-        .unwrap_or_else(|e| e.resume())
+        .unwrap_or_else(|e| e.resume());
     })
     .expect("kernel init failed");
 }

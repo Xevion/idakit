@@ -20,6 +20,13 @@
 //! public API by `#[doc(hidden)]` like [`bridge_probe`](crate::bridge_probe) and
 //! [`bridge_cfunc`](crate::bridge_cfunc).
 
+// cxx::bridge's own expansion mis-attributes a missing_errors_doc warning to this attribute's
+// own span, though every Result-returning fn below already documents its `Err` condition.
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "false positive misattributed to the #[cxx::bridge] attribute by its own expansion"
+)]
+
 // The custom trycatch here is also productionized as the shared `facade/idakit_trycatch.h`, which
 // every production bridge includes (plus a scoped `set_interr_throws` arm). This spike keeps its own
 // inline copy so its throwing probes stay self-contained.
@@ -49,6 +56,7 @@ mod ffi {
         type AddrCursor;
 
         /// Build a cursor positioned at `init`, owned by a [`UniquePtr`](cxx::UniquePtr).
+        #[must_use]
         fn make_addr_cursor(init: u64) -> UniquePtr<AddrCursor>;
         /// The cursor's current address (const member, `&self` receiver).
         fn pos(self: &AddrCursor) -> u64;
@@ -59,23 +67,39 @@ mod ffi {
 
         /// Throw a non-`std::exception` (`throw 42`). With the custom `trycatch`'s `catch (...)`
         /// arm this returns `Err`; cxx's default would `std::terminate`. Never returns `Ok`.
+        ///
+        /// # Errors
+        /// Always `Err`, carrying the custom `trycatch`'s message for a non-`std::exception` throw.
         fn ext_throw_plain_int() -> Result<String>;
         /// Throw an `interr_exc_t` carrying `code`; the custom `catch (const interr_exc_t&)` arm
         /// formats the code into the `Err` message. Never returns `Ok`.
+        ///
+        /// # Errors
+        /// Always `Err`, its message formatted from `code`.
         fn ext_throw_interr(code: i32) -> Result<String>;
         /// Throw a `std::runtime_error` whose message encodes `code` (`idakit:qerrno=<code>`), so
         /// the Rust side can re-parse it. The string channel is the only one a `cxx::Exception`
         /// has. Never returns `Ok`.
+        ///
+        /// # Errors
+        /// Always `Err`, its message encoding `code`.
         fn ext_throw_coded(code: i32) -> Result<String>;
 
         /// Rename the item at `ea` via libida `set_name`; `Err` (a bare failure signal) on
         /// rejection. Implicit-current-DB, so it needs an open database.
+        ///
+        /// # Errors
+        /// `Err` when libida's `set_name` rejects the rename.
         fn ext_set_name(ea: u64, name: &str) -> Result<()>;
         /// Set the comment at `ea` via libida `set_cmt`; `Err` on rejection. Implicit-current-DB.
+        ///
+        /// # Errors
+        /// `Err` when libida's `set_cmt` rejects the write.
         fn ext_set_cmt(ea: u64, comment: &str, repeatable: bool) -> Result<()>;
 
         /// Map a small integer code to a [`WriteOutcome`], returned by value across the bridge
         /// (`0` = `Applied`, `1` = `Rejected`, else `NoChange`); the shared-enum mechanics probe.
+        #[must_use]
         fn ext_classify(code: i32) -> WriteOutcome;
     }
 }

@@ -1,13 +1,16 @@
+//! Compiles the C++ facade against the IDA SDK headers and links the kernel.
+//!
+//! `__EA64__` makes `ea_t` 64-bit; `PLATFORM_DEFINE` (`__LINUX__`/`__MAC__`/`__NT__`) tells the
+//! SDK which OS it targets. SDK headers come from `IDA_SDK_DIR`, else are fetched to match the
+//! installed IDA's version.
+
 use std::env;
 use std::ffi::c_int;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use idakit_sys_codegen as codegen;
-
-// Compile the C++ facade against the IDA SDK headers and link the kernel. __EA64__ makes
-// ea_t 64-bit; `PLATFORM_DEFINE` (`__LINUX__`/`__MAC__`/`__NT__`) tells the SDK which OS it
-// targets. SDK headers: `IDA_SDK_DIR`, else fetched to match the installed IDA's version.
 
 const SDK_REPO: &str = "https://github.com/HexRaysSA/ida-sdk.git";
 
@@ -231,6 +234,12 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,{idadir_str}");
     }
     println!("cargo:lib_dir={idadir_str}"); // -> DEP_IDA_LIB_DIR for dependents' rpath
+    emit_rerun_directives();
+}
+
+/// The exhaustive `rerun-if-changed`/`rerun-if-env-changed` block: every facade/bridge source
+/// and env var this build depends on.
+fn emit_rerun_directives() {
     for src in FACADE_SOURCES {
         println!("cargo:rerun-if-changed={src}");
     }
@@ -291,11 +300,12 @@ fn emit_compile_commands(sdk_include: &str) {
             json.push_str(",\n");
         }
         let plat = format!("-D{PLATFORM_DEFINE}");
-        json.push_str(&format!(
+        let _ = write!(
+            json,
             "  {{\"directory\": {dir:?}, \"file\": {src:?}, \"arguments\": \
              [\"c++\", \"-std=c++17\", \"-Ifacade\", \"-isystem\", {sdk_include:?}, \
              \"-D__EA64__\", {plat:?}, \"-c\", {src:?}]}}"
-        ));
+        );
     }
     json.push_str("\n]\n");
     std::fs::write(Path::new(&dir).join("compile_commands.json"), json)
@@ -558,13 +568,15 @@ fn newest_release_tag(major: i32, minor: i32) -> String {
             Some((patch, tag.to_owned()))
         })
         .max_by_key(|(patch, _)| *patch)
-        .map(|(_, tag)| tag)
-        .unwrap_or_else(|| {
-            panic!(
-                "no SDK release tag matching v{major}.{minor}.*-release in {SDK_REPO}; \
+        .map_or_else(
+            || {
+                panic!(
+                    "no SDK release tag matching v{major}.{minor}.*-release in {SDK_REPO}; \
                  set IDA_SDK_DIR to a local SDK checkout"
-            )
-        })
+                )
+            },
+            |(_, tag)| tag,
+        )
 }
 
 /// Fetch the SDK at `tag` into the cache and return its root (partial + sparse checkout of
@@ -585,8 +597,7 @@ fn fetch_sdk(tag: &str) -> PathBuf {
     // half-written cache.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
+        .map_or(0, |d| d.subsec_nanos());
     let staging = dir.with_file_name(format!(".staging-{tag}-{}-{nanos}", std::process::id()));
     let _ = std::fs::remove_dir_all(&staging);
     let staging_str = staging.to_str().expect("staging path is not UTF-8");
@@ -642,8 +653,7 @@ fn preflight_git() {
     let ok = Command::new("git")
         .arg("--version")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
     assert!(
         ok,
         "`git` is required to fetch the IDA SDK; install git or set IDA_SDK_DIR to a local checkout"

@@ -14,7 +14,7 @@ fn search() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Database) {
+fn run(idb: &mut Database) {
     let first = idb.functions().next().expect("a function");
     let address = first.address();
     let bytes = idb.bytes(address, 8);
@@ -29,7 +29,7 @@ fn run(idb: &mut idakit::Database) {
 }
 
 /// hex / bytes / code_mask built from the same entry bytes must each list `address`.
-fn exact_forms_all_find_entry(idb: &idakit::Database, address: Address, bytes: &[u8]) {
+fn exact_forms_all_find_entry(idb: &Database, address: Address, bytes: &[u8]) {
     let hex_str = bytes
         .iter()
         .map(|b| format!("{b:02X}"))
@@ -64,10 +64,10 @@ fn exact_forms_all_find_entry(idb: &idakit::Database, address: Address, bytes: &
 }
 
 /// A byte- and a nibble-wildcard both still match `address` (mask can only widen the set).
-fn wildcards_still_match(idb: &idakit::Database, address: Address, bytes: &[u8]) {
+fn wildcards_still_match(idb: &Database, address: Address, bytes: &[u8]) {
     // Byte wildcard on the second byte.
     let mut wild: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
-    wild[1] = "?".to_owned();
+    "?".clone_into(&mut wild[1]);
     let byte_wild = Pattern::hex(idb, wild.join(" ")).expect("byte-wildcard compiles");
     assert!(
         idb.search(&byte_wild).any(|m| m == address),
@@ -84,22 +84,22 @@ fn wildcards_still_match(idb: &idakit::Database, address: Address, bytes: &[u8])
 }
 
 /// A search range starting past `address` must not report `address`.
-fn range_excludes_start(idb: &idakit::Database, address: Address, bytes: &[u8]) {
+fn range_excludes_start(idb: &Database, address: Address, bytes: &[u8]) {
     let pat = Pattern::bytes(idb, bytes).call().expect("bytes compiles");
     let bounds = idb
         .address_range()
         .expect("open database has an address range");
-    let after: Vec<Address> = idb.search_in((address + 1)..bounds.end, &pat).collect();
     assert!(
-        !after.contains(&address),
+        !idb.search_in((address + 1)..bounds.end, &pat)
+            .any(|m| m == address),
         "range after {address:#x} should exclude it"
     );
 }
 
 /// Each kernel-dependent rejection returns its specific typed `PatternRejection`.
-fn rejections_trip(idb: &idakit::Database) {
+fn rejections_trip(idb: &Database) {
     // All-wildcard hex -> NoAnchor.
-    let_no_anchor(Pattern::hex(idb, "? ?"), 2);
+    let_no_anchor(&Pattern::hex(idb, "? ?"), 2);
 
     // Mask shorter than the bytes -> MaskMismatch.
     let r = Pattern::bytes(idb, &[0x90, 0x90]).mask(&[0xFF]).call();
@@ -129,14 +129,14 @@ fn rejections_trip(idb: &idakit::Database) {
 }
 
 /// Assert a compile result is `NoAnchor { total }`.
-fn let_no_anchor(r: Result<Pattern<'_>>, total: usize) {
+fn let_no_anchor(r: &Result<Pattern<'_>>, total: usize) {
     assert!(
         matches!(
             r,
             Err(Error::PatternRejected {
                 kind: PatternRejection::NoAnchor { total: t },
                 ..
-            }) if t == total
+            }) if *t == total
         ),
         "expected NoAnchor {{ total: {total} }}, got {r:?}"
     );

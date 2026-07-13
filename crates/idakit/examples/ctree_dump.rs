@@ -11,11 +11,7 @@ use idakit::prelude::*;
 /// Recursively prints each node's kind, indented by depth.
 ///
 /// The structural ground truth behind the render.
-fn dump(
-    tree: &idakit::decompiler::ctree::Ctree,
-    node: idakit::decompiler::ctree::NodeRef,
-    depth: usize,
-) {
+fn dump(tree: &Ctree, node: idakit::decompiler::ctree::NodeRef, depth: usize) {
     use idakit::decompiler::ctree::NodeRef;
     let pad = "  ".repeat(depth);
     let label = match node {

@@ -6,11 +6,7 @@
 
 use idakit::prelude::*;
 
-fn dump(
-    tree: &idakit::decompiler::ctree::Ctree,
-    node: idakit::decompiler::ctree::NodeRef,
-    depth: usize,
-) {
+fn dump(tree: &Ctree, node: idakit::decompiler::ctree::NodeRef, depth: usize) {
     use idakit::decompiler::ctree::NodeRef;
     let pad = "  ".repeat(depth);
     let label = match node {

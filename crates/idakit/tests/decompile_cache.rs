@@ -17,7 +17,7 @@ fn invalidate_roundtrip() {
     common::with_canonical_db(invalidate_roundtrip_body);
 }
 
-fn invalidate_roundtrip_body(idb: &mut idakit::Database) {
+fn invalidate_roundtrip_body(idb: &mut Database) {
     let Some(entry) = first_decompilable(idb) else {
         println!("skipping: no decompilable function in the corpus fixture");
         return;
@@ -55,7 +55,7 @@ fn set_type_auto_invalidates_callers() {
     common::with_canonical_db(set_type_auto_invalidates_callers_body);
 }
 
-fn set_type_auto_invalidates_callers_body(idb: &mut idakit::Database) {
+fn set_type_auto_invalidates_callers_body(idb: &mut Database) {
     // A parseable prototype that applies on any target; a callee that rejects it is skipped.
     let proto = "__int64 f(__int64 a)";
     let entries: Vec<Address> = idb.functions().map(|f| f.address()).collect();
@@ -64,7 +64,7 @@ fn set_type_auto_invalidates_callers_body(idb: &mut idakit::Database) {
         // Every code-xref source targeting this callee's entry, snapshotted before the &mut below.
         let sources: Vec<Address> = idb
             .xrefs_to(callee)
-            .filter(|x| x.is_code())
+            .filter(Xref::is_code)
             .map(|x| x.from)
             .collect();
 
@@ -131,7 +131,7 @@ fn set_type_auto_invalidates_pointer_referrers() {
     common::with_canonical_db(set_type_auto_invalidates_pointer_referrers_body);
 }
 
-fn set_type_auto_invalidates_pointer_referrers_body(idb: &mut idakit::Database) {
+fn set_type_auto_invalidates_pointer_referrers_body(idb: &mut Database) {
     let proto = "__int64 f(__int64 a)";
     let entries: Vec<Address> = idb.functions().map(|f| f.address()).collect();
 
@@ -189,7 +189,7 @@ fn at_mut_rename_invalidates_referrers() {
 /// The raw address cursor drives dependent invalidation, not just `function_mut`: a rename through
 /// `at_mut` evicts every function that renders the address. A function entry is the convenient
 /// referenced address here; a data symbol travels the identical dependents path.
-fn at_mut_rename_invalidates_referrers_body(idb: &mut idakit::Database) {
+fn at_mut_rename_invalidates_referrers_body(idb: &mut Database) {
     let entries: Vec<Address> = idb.functions().map(|f| f.address()).collect();
 
     for &target in &entries {
@@ -244,13 +244,13 @@ fn refresh_text_reflects_rename() {
 
 /// A held [`DecompiledFunction`] re-prints a callee rename through `refresh_text` with no
 /// re-decompile: the cached ctext is stale, but re-walking the ctree resolves the new name.
-fn refresh_text_reflects_rename_body(idb: &mut idakit::Database) {
+fn refresh_text_reflects_rename_body(idb: &mut Database) {
     let entries: Vec<Address> = idb.functions().map(|f| f.address()).collect();
 
     for &callee in &entries {
         let sources: Vec<Address> = idb
             .xrefs_to(callee)
-            .filter(|x| x.is_code())
+            .filter(Xref::is_code)
             .map(|x| x.from)
             .collect();
 
@@ -323,7 +323,7 @@ fn data_symbol_rename_invalidates_readers() {
 
 /// Renaming a genuine data symbol (a named address that is not a function entry) through `at_mut`
 /// evicts every function that reads it, exercising the `LocationMut` consumer on a data address.
-fn data_symbol_rename_invalidates_readers_body(idb: &mut idakit::Database) {
+fn data_symbol_rename_invalidates_readers_body(idb: &mut Database) {
     let functions: HashSet<Address> = idb.functions().map(|f| f.address()).collect();
     let symbols: Vec<Address> = idb
         .names()
@@ -369,7 +369,7 @@ fn patch_self_evicts_containing_function() {
 
 /// A byte patch self-evicts the containing function's cached decompilation through the kernel's
 /// byte-patched hook, so `patch` queues no invalidation of its own. Guards that ground truth.
-fn patch_self_evicts_containing_function_body(idb: &mut idakit::Database) {
+fn patch_self_evicts_containing_function_body(idb: &mut Database) {
     let Some(entry) = first_decompilable(idb) else {
         println!("skipping: no decompilable function in the corpus fixture");
         return;
@@ -398,7 +398,7 @@ fn patch_self_evicts_containing_function_body(idb: &mut idakit::Database) {
 }
 
 /// The first function (scanning a bounded prefix) that Hex-Rays decompiles, or `None` if none do.
-fn first_decompilable(idb: &idakit::Database) -> Option<Address> {
+fn first_decompilable(idb: &Database) -> Option<Address> {
     idb.functions()
         .take(2000)
         .map(|f| f.address())

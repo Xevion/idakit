@@ -91,14 +91,14 @@ impl OperandDataType {
     #[must_use]
     pub fn bytes(self) -> Option<u32> {
         Some(match self {
-            OperandDataType::Byte => 1,
-            OperandDataType::Word | OperandDataType::Half => 2,
-            OperandDataType::Dword | OperandDataType::Float => 4,
-            OperandDataType::Fword => 6,
-            OperandDataType::Double | OperandDataType::Qword => 8,
-            OperandDataType::Byte16 => 16,
-            OperandDataType::Byte32 => 32,
-            OperandDataType::Byte64 => 64,
+            Self::Byte => 1,
+            Self::Word | Self::Half => 2,
+            Self::Dword | Self::Float => 4,
+            Self::Fword => 6,
+            Self::Double | Self::Qword => 8,
+            Self::Byte16 => 16,
+            Self::Byte32 => 32,
+            Self::Byte64 => 64,
             _ => return None,
         })
     }
@@ -109,11 +109,7 @@ impl OperandDataType {
     pub fn is_float(self) -> bool {
         matches!(
             self,
-            OperandDataType::Float
-                | OperandDataType::Double
-                | OperandDataType::Tbyte
-                | OperandDataType::Ldbl
-                | OperandDataType::Half
+            Self::Float | Self::Double | Self::Tbyte | Self::Ldbl | Self::Half
         )
     }
 }

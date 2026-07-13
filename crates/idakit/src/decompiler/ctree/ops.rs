@@ -121,9 +121,10 @@ pub enum AssignmentOp {
     UmodAssign = 15,
 }
 
-/// A unary operator, `OP x` (or `x OP` for post-inc/dec). `(type)x`, `*x`, and
-/// `&x`-as-member are modeled as their own expression variants because they carry a
-/// type, an access size, or a member offset; the operators here carry nothing extra.
+/// A unary operator, `OP x` (or `x OP` for post-inc/dec).
+///
+/// `(type)x`, `*x`, and `&x`-as-member are modeled as their own expression variants because they
+/// carry a type, an access size, or a member offset; the operators here carry nothing extra.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
 )]
@@ -157,25 +158,25 @@ impl BinaryOp {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            BinaryOp::Comma => ",",
-            BinaryOp::LogOr => "||",
-            BinaryOp::LogAnd => "&&",
-            BinaryOp::BitOr => "|",
-            BinaryOp::BitXor => "^",
-            BinaryOp::BitAnd => "&",
-            BinaryOp::Eq => "==",
-            BinaryOp::Ne => "!=",
-            BinaryOp::Sge | BinaryOp::Uge => ">=",
-            BinaryOp::Sle | BinaryOp::Ule => "<=",
-            BinaryOp::Sgt | BinaryOp::Ugt => ">",
-            BinaryOp::Slt | BinaryOp::Ult => "<",
-            BinaryOp::Sshr | BinaryOp::Ushr => ">>",
-            BinaryOp::Shl => "<<",
-            BinaryOp::Add | BinaryOp::Fadd => "+",
-            BinaryOp::Sub | BinaryOp::Fsub => "-",
-            BinaryOp::Mul | BinaryOp::Fmul => "*",
-            BinaryOp::Sdiv | BinaryOp::Udiv | BinaryOp::Fdiv => "/",
-            BinaryOp::Smod | BinaryOp::Umod => "%",
+            Self::Comma => ",",
+            Self::LogOr => "||",
+            Self::LogAnd => "&&",
+            Self::BitOr => "|",
+            Self::BitXor => "^",
+            Self::BitAnd => "&",
+            Self::Eq => "==",
+            Self::Ne => "!=",
+            Self::Sge | Self::Uge => ">=",
+            Self::Sle | Self::Ule => "<=",
+            Self::Sgt | Self::Ugt => ">",
+            Self::Slt | Self::Ult => "<",
+            Self::Sshr | Self::Ushr => ">>",
+            Self::Shl => "<<",
+            Self::Add | Self::Fadd => "+",
+            Self::Sub | Self::Fsub => "-",
+            Self::Mul | Self::Fmul => "*",
+            Self::Sdiv | Self::Udiv | Self::Fdiv => "/",
+            Self::Smod | Self::Umod => "%",
         }
     }
 }
@@ -185,17 +186,17 @@ impl AssignmentOp {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            AssignmentOp::Assign => "=",
-            AssignmentOp::BitOrAssign => "|=",
-            AssignmentOp::BitXorAssign => "^=",
-            AssignmentOp::BitAndAssign => "&=",
-            AssignmentOp::AddAssign => "+=",
-            AssignmentOp::SubAssign => "-=",
-            AssignmentOp::MulAssign => "*=",
-            AssignmentOp::SshrAssign | AssignmentOp::UshrAssign => ">>=",
-            AssignmentOp::ShlAssign => "<<=",
-            AssignmentOp::SdivAssign | AssignmentOp::UdivAssign => "/=",
-            AssignmentOp::SmodAssign | AssignmentOp::UmodAssign => "%=",
+            Self::Assign => "=",
+            Self::BitOrAssign => "|=",
+            Self::BitXorAssign => "^=",
+            Self::BitAndAssign => "&=",
+            Self::AddAssign => "+=",
+            Self::SubAssign => "-=",
+            Self::MulAssign => "*=",
+            Self::SshrAssign | Self::UshrAssign => ">>=",
+            Self::ShlAssign => "<<=",
+            Self::SdivAssign | Self::UdivAssign => "/=",
+            Self::SmodAssign | Self::UmodAssign => "%=",
         }
     }
 }
@@ -206,12 +207,12 @@ impl UnaryOp {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
-            UnaryOp::FNeg | UnaryOp::Neg => "-",
-            UnaryOp::LogNot => "!",
-            UnaryOp::BitNot => "~",
-            UnaryOp::Ref => "&",
-            UnaryOp::PreInc | UnaryOp::PostInc => "++",
-            UnaryOp::PreDec | UnaryOp::PostDec => "--",
+            Self::FNeg | Self::Neg => "-",
+            Self::LogNot => "!",
+            Self::BitNot => "~",
+            Self::Ref => "&",
+            Self::PreInc | Self::PostInc => "++",
+            Self::PreDec | Self::PostDec => "--",
         }
     }
 }

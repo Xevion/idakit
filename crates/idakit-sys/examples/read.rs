@@ -16,7 +16,7 @@ fn main() {
     // calls needing no `unsafe`.
     unsafe {
         assert_eq!(init_library(0, ptr::null_mut()), 0, "init_library failed");
-        let cpath = CString::new(db.clone()).unwrap();
+        let cpath = CString::new(db).unwrap();
         assert_eq!(
             open_database(cpath.as_ptr(), false, ptr::null()),
             0,

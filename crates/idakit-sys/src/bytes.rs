@@ -9,6 +9,8 @@ use crate::Address;
 
 // raw bytes
 unsafe extern "C" {
+    /// Read `size` bytes starting at `address` into `buf`; returns the count read, or negative
+    /// on failure.
     pub fn idakit_get_bytes(address: Address, buf: *mut c_void, size: usize) -> i64;
 }
 
@@ -41,6 +43,7 @@ pub const FF_DATA: u64 = 0x0000_0400;
 
 // comment write (plain libida `set_cmt`).
 unsafe extern "C" {
+    /// Set the comment at `address` (repeatable when `rptble`); returns whether it succeeded.
     pub fn set_cmt(address: Address, comm: *const c_char, rptble: bool) -> bool;
 }
 

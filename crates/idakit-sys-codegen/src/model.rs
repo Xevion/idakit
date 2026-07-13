@@ -232,8 +232,14 @@ impl RetKind {
     /// The value shape, independent of fallibility.
     pub(crate) fn shape(&self) -> &RetShape {
         match self {
-            RetKind::Value(s) | RetKind::Fallible(s) => s,
+            Self::Value(s) | Self::Fallible(s) => s,
         }
+    }
+
+    /// Whether the Rust return conveys a value worth a `#[must_use]`: only an infallible,
+    /// non-`()` value. A `Fallible` return is always `Result<_>`, already `#[must_use]` itself.
+    pub(crate) fn is_must_use(&self) -> bool {
+        matches!(self, Self::Value(shape) if !matches!(shape, RetShape::Unit))
     }
 }
 

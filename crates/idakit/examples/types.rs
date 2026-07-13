@@ -48,8 +48,7 @@ fn one_line(table: &TypeTable, id: TypeId) -> String {
             let tail = if *varargs { ", ..." } else { "" };
             format!("{} ({}{})", one_line(table, *ret), ps.join(", "), tail)
         }
-        TypeShape::Typedef { name, .. } => name.clone(),
-        TypeShape::Opaque(name) => name.clone(),
+        TypeShape::Typedef { name, .. } | TypeShape::Opaque(name) => name.clone(),
         TypeShape::Unknown => "<unknown>".to_owned(),
     }
 }
@@ -110,7 +109,7 @@ fn print_layout(image: &Type, name: &str) {
         Some(s) => println!("  {}  ({s:#x} bytes)", one_line(table, root)),
         None => println!("  {}  (no stored size)", one_line(table, root)),
     }
-    if image.members().is_none_or(|m| m.is_empty()) {
+    if image.members().is_none_or(<[TypeMember]>::is_empty) {
         println!("  forward-declared -- the database stores the name but no field layout");
         return;
     }

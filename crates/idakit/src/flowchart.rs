@@ -84,9 +84,10 @@ impl BasicBlockKind {
 }
 
 /// A control-flow edge that leaves the function, a tail-jump or tail-call from a [`BasicBlock`]
-/// to `target`, an address in no block of this graph. IDA carries these as zero-length stub
-/// blocks; idakit lifts them to edges (see the module docs). Read them with
-/// [`BasicBlock::exits`]; internal edges are [`BasicBlock::successors`].
+/// to `target`, an address in no block of this graph.
+///
+/// IDA carries these as zero-length stub blocks; idakit lifts them to edges (see the module
+/// docs). Read them with [`BasicBlock::exits`]; internal edges are [`BasicBlock::successors`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[doc(alias("fcb_enoret", "fcb_extern"))]
 pub struct ExternalExit {
@@ -215,6 +216,7 @@ impl FlowChart {
     }
 
     /// Iterates every `(BasicBlockId, &BasicBlock)` in index order, starting with the entry block.
+    #[must_use]
     pub fn blocks(&self) -> impl ExactSizeIterator<Item = (BasicBlockId, &BasicBlock)> {
         self.blocks.iter()
     }
@@ -246,6 +248,10 @@ impl Database {
     ///
     /// Constructs the flow chart and extracts every block and edge into an owned arena; the cxx
     /// `UniquePtr` frees the kernel object on drop, so the result is a detached `Send` snapshot.
+    #[expect(
+        clippy::unused_self,
+        reason = "&self is the kernel-thread/live-database proof token, not instance state"
+    )]
     pub(crate) fn build_flowchart(
         &self,
         address: Address,

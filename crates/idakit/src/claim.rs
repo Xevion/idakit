@@ -54,10 +54,11 @@ impl MainClaim {
 /// [rip+disp32]`, `ff 25`); [`follow_jmp_thunk`] resolves it to the body.
 #[cfg(target_arch = "x86_64")]
 fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
+    const WINDOW: usize = 32;
+
     // SAFETY: `entry` is a mapped code pointer; a thunk and its slot are mapped (see fn doc).
     let entry = unsafe { follow_jmp_thunk(entry) };
 
-    const WINDOW: usize = 32;
     // SAFETY: `entry` is a mapped executable function; the load we decode lies within its
     // first WINDOW bytes.
     let head: [u8; WINDOW] = unsafe { ptr::read(entry.cast()) };

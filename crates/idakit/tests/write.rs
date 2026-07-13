@@ -12,7 +12,7 @@ fn write() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Database) {
+fn run(idb: &mut Database) {
     let address = idb.functions().next().expect("a function").address();
 
     comment_round_trips(idb, address);
@@ -50,7 +50,7 @@ fn run(idb: &mut idakit::Database) {
 
 /// A regular and a repeatable comment set on `address` read back verbatim on their own channels,
 /// read through the same write cursor (the cursor is read-capable).
-fn comment_round_trips(idb: &mut idakit::Database, address: Address) {
+fn comment_round_trips(idb: &mut Database, address: Address) {
     let mut loc = idb.at_mut(address);
     loc.set_comment("idakit regular", false)
         .expect("set regular comment");
@@ -67,7 +67,7 @@ fn comment_round_trips(idb: &mut idakit::Database, address: Address) {
 }
 
 /// Patching bytes is visible to a read-back on the same cursor, and restoring returns the originals.
-fn patch_round_trips(idb: &mut idakit::Database, address: Address) {
+fn patch_round_trips(idb: &mut Database, address: Address) {
     let original = idb.at(address).bytes(4);
     assert!(original.len() == 4, "need 4 readable bytes at the entry");
 
@@ -88,14 +88,14 @@ fn patch_round_trips(idb: &mut idakit::Database, address: Address) {
 }
 
 /// A patch targeting an unmapped address is rejected whole, as a typed `WriteRejected`.
-fn patch_rejects_unmapped(idb: &mut idakit::Database) {
+fn patch_rejects_unmapped(idb: &mut Database) {
     let nowhere = Address::new_const(0xffff_ffff_f000);
     let r = idb.at_mut(nowhere).patch(&[0x90, 0x90]);
     assert!(let Err(Error::WriteRejected { op: "patch", .. }) = r);
 }
 
 /// Applying a well-formed prototype sets it; a bad name or declaration surfaces the typed error.
-fn type_apply(idb: &mut idakit::Database, address: Address) {
+fn type_apply(idb: &mut Database, address: Address) {
     // A well-formed prototype applies through the function cursor and shows up as a prototype.
     idb.function_mut(address)
         .expect("a function at the entry")
@@ -118,7 +118,7 @@ fn type_apply(idb: &mut idakit::Database, address: Address) {
     // or the fallback when IDA left none). Print it so a run shows whether the capture landed.
     match idb
         .at_mut(address)
-        .set_type(idakit::types::expr::decl("%%% not a type %%%"))
+        .set_type(expr::decl("%%% not a type %%%"))
     {
         Err(Error::TypeWrite {
             source: TypeWriteError::ParseFailed { reason, .. },
@@ -131,7 +131,7 @@ fn type_apply(idb: &mut idakit::Database, address: Address) {
 
 /// Defining a struct adds it to the type library so a later apply can reference it by name; a
 /// malformed declaration surfaces the typed error.
-fn type_define(idb: &mut idakit::Database) {
+fn type_define(idb: &mut Database) {
     idb.types_mut()
         .define("struct idakit_pt { int x; int y; };")
         .expect("define struct");
@@ -158,9 +158,7 @@ fn type_define(idb: &mut idakit::Database) {
     // A declaration referencing the freshly defined struct must parse, proving parse_decl
     // resolves against the local til, whether or not the kernel reshapes a code address to it.
     // Routed through the scoped-closure location cursor.
-    let r = idb.with_location_mut(entry, |loc| {
-        loc.set_type(idakit::types::expr::decl("idakit_pt *"))
-    });
+    let r = idb.with_location_mut(entry, |loc| loc.set_type(expr::decl("idakit_pt *")));
     assert!(
         !matches!(
             r,
@@ -182,7 +180,7 @@ fn type_define(idb: &mut idakit::Database) {
 /// serialize-and-build path: the encoder emits postfix bytecode, the facade interpreter rebuilds
 /// the `tinfo` bottom-up and applies it. A composite agrees with its text declaration, and one over
 /// an unknown named type surfaces the typed error instead of panicking.
-fn type_build(idb: &mut idakit::Database, address: Address) {
+fn type_build(idb: &mut Database, address: Address) {
     use idakit::types::expr;
 
     idb.types_mut()
@@ -220,7 +218,7 @@ fn type_build(idb: &mut idakit::Database, address: Address) {
 /// `int f(int, unsigned int)` and a variadic twin, apply each as the entry's prototype, and read
 /// the stored prototype back structurally (arch-independent) to confirm its return, arity, and
 /// varargs flag.
-fn type_function_build(idb: &mut idakit::Database, entry: Address) {
+fn type_function_build(idb: &mut Database, entry: Address) {
     use idakit::types::{TypeShape, expr};
 
     idb.function_mut(entry)
@@ -289,7 +287,7 @@ fn type_function_build(idb: &mut idakit::Database, entry: Address) {
 /// retype and rename a parameter, prepend an implicit `this`, and set a calling convention,
 /// confirming each through a structural or textual read; the out-of-range and no-prototype paths
 /// surface the typed `TypeWriteError`.
-fn type_surgery(idb: &mut idakit::Database, entry: Address) {
+fn type_surgery(idb: &mut Database, entry: Address) {
     use idakit::types::{TypeShape, expr};
 
     idb.function_mut(entry)
@@ -389,7 +387,7 @@ fn type_surgery(idb: &mut idakit::Database, entry: Address) {
 
 /// Clearing a type is the inverse of applying one: set a prototype, confirm it, clear it, confirm
 /// it is gone, and confirm a second clear is an idempotent success.
-fn type_clear(idb: &mut idakit::Database, entry: Address) {
+fn type_clear(idb: &mut Database, entry: Address) {
     idb.function_mut(entry)
         .expect("a function at the entry")
         .set_type("int idakit_clear_probe(int a)")
@@ -413,10 +411,10 @@ fn type_clear(idb: &mut idakit::Database, entry: Address) {
 /// Struct-member surgery on a freshly defined type: append a member, rename one by bit offset,
 /// retype another by name, then delete one. Each edit reads back structurally through `type_named`,
 /// and the typed failures (duplicate name, missing member, missing type) surface without mutating.
-fn type_member_edit(idb: &mut idakit::Database) {
+fn type_member_edit(idb: &mut Database) {
     use idakit::types::{TypeEditCode, TypeWriteError, expr};
 
-    fn member_names(idb: &idakit::Database, ty: &str) -> Vec<String> {
+    fn member_names(idb: &Database, ty: &str) -> Vec<String> {
         let t = idb.type_named(ty).expect("resolve the type");
         t.members()
             .expect("a struct has members")
@@ -525,7 +523,7 @@ fn type_member_edit(idb: &mut idakit::Database) {
 /// the read side, so this asserts the write succeeds and a re-comment is stable, rather than
 /// reading the comment back; an unresolved member is still the same typed `NoMember` other member
 /// edits give it.
-fn type_member_comment_edit(idb: &mut idakit::Database) {
+fn type_member_comment_edit(idb: &mut Database) {
     use idakit::types::TypeWriteError;
 
     idb.types_mut()
@@ -560,10 +558,10 @@ fn type_member_comment_edit(idb: &mut idakit::Database) {
 /// `TypeMember::bitfield_width` already reads it back. A bitfield in a union is rejected by the
 /// kernel (`TERR_UNION_BF`), flowing through the existing `TypeEditCode` decode with no special
 /// handling.
-fn type_member_bitfield(idb: &mut idakit::Database) {
+fn type_member_bitfield(idb: &mut Database) {
     use idakit::types::{TypeEditCode, TypeWriteError, expr};
 
-    fn bitfield_width(idb: &idakit::Database, ty: &str, member: &str) -> Option<u32> {
+    fn bitfield_width(idb: &Database, ty: &str, member: &str) -> Option<u32> {
         idb.type_named(ty)
             .expect("resolve the type")
             .members()
@@ -622,10 +620,10 @@ fn type_member_bitfield(idb: &mut idakit::Database) {
 /// `MemberEdit::set_repr` builds a `value_repr_t` for the numeric subset (radix/char, forced
 /// sign, leading zeros); `TypeMember::repr` reads it back. An unresolved member still surfaces as
 /// `TypeWriteError::NoMember`, mirroring the comment/bitfield tests.
-fn type_member_repr_edit(idb: &mut idakit::Database) {
+fn type_member_repr_edit(idb: &mut Database) {
     use idakit::types::{NumberFormat, TypeWriteError, ValueRepr};
 
-    fn repr(idb: &idakit::Database, ty: &str, member: &str) -> Option<ValueRepr> {
+    fn repr(idb: &Database, ty: &str, member: &str) -> Option<ValueRepr> {
         idb.type_named(ty)
             .expect("resolve the type")
             .members()
@@ -679,10 +677,10 @@ fn type_member_repr_edit(idb: &mut idakit::Database) {
 /// Enum-constant surgery on a freshly defined enum: add a constant, change a value, rename one,
 /// delete one, each read back through `type_named`, and the typed failures (missing constant,
 /// missing type, duplicate name) surface without mutating.
-fn type_enum_member_edit(idb: &mut idakit::Database) {
+fn type_enum_member_edit(idb: &mut Database) {
     use idakit::types::{TypeShape, TypeWriteError};
 
-    fn constants(idb: &idakit::Database, ty: &str) -> Vec<(String, u64)> {
+    fn constants(idb: &Database, ty: &str) -> Vec<(String, u64)> {
         let t = idb.type_named(ty).expect("resolve the enum");
         match t.shape() {
             TypeShape::Enum { members, .. } => {
@@ -777,10 +775,10 @@ fn type_enum_member_edit(idb: &mut idakit::Database) {
 
 /// `set_bitmask` flips `TypeShape::Enum::is_bitmask` and back, and `add_flag`'s explicit group
 /// mask lands the same way `add_constant`'s implicit one does.
-fn type_enum_bitmask_edit(idb: &mut idakit::Database) {
+fn type_enum_bitmask_edit(idb: &mut Database) {
     use idakit::types::TypeShape;
 
-    fn shape(idb: &idakit::Database, ty: &str) -> (bool, Vec<(String, u64)>) {
+    fn shape(idb: &Database, ty: &str) -> (bool, Vec<(String, u64)>) {
         let t = idb.type_named(ty).expect("resolve the enum");
         match t.shape() {
             TypeShape::Enum {
@@ -836,10 +834,10 @@ fn type_enum_bitmask_edit(idb: &mut idakit::Database) {
 
 /// `TypeEdit::set_repr` builds the same `value_repr_t` as `MemberEdit::set_repr`, but at the
 /// whole-enum level (`tinfo_t::set_enum_repr`); `TypeShape::Enum::repr` reads it back.
-fn type_enum_repr_edit(idb: &mut idakit::Database) {
+fn type_enum_repr_edit(idb: &mut Database) {
     use idakit::types::{NumberFormat, TypeShape, ValueRepr};
 
-    fn repr(idb: &idakit::Database, ty: &str) -> Option<ValueRepr> {
+    fn repr(idb: &Database, ty: &str) -> Option<ValueRepr> {
         let t = idb.type_named(ty).expect("resolve the enum");
         match t.shape() {
             TypeShape::Enum { repr, .. } => *repr,
@@ -876,7 +874,7 @@ fn type_enum_repr_edit(idb: &mut idakit::Database) {
 
 /// `TypeEdit::set_enum_width` sets the enum's storage width (`tinfo_t::set_enum_width`); the new
 /// width shows through the resolved `Type`'s own byte size.
-fn type_enum_width_edit(idb: &mut idakit::Database) {
+fn type_enum_width_edit(idb: &mut Database) {
     idb.types_mut()
         .define("enum idakit_enum_width_probe { PROBE_A = 1 };")
         .expect("define an enum to resize");
@@ -911,10 +909,10 @@ fn type_enum_width_edit(idb: &mut idakit::Database) {
 /// A durable MemberRef is a stable index handle guarded by a structural fingerprint: it survives a
 /// rename of another member, edits through it, but goes stale once the layout changes (an append).
 /// An out-of-range mint is a typed error.
-fn type_member_ref(idb: &mut idakit::Database) {
+fn type_member_ref(idb: &mut Database) {
     use idakit::types::{TypeWriteError, expr};
 
-    fn names(idb: &idakit::Database, ty: &str) -> Vec<String> {
+    fn names(idb: &Database, ty: &str) -> Vec<String> {
         idb.type_named(ty)
             .expect("resolve the type")
             .members()
@@ -1003,7 +1001,7 @@ fn type_member_ref(idb: &mut idakit::Database) {
 /// (which only selects an existing one). A char followed by an int leaves an alignment gap in
 /// most tils; insert into that gap and confirm the new member lands there. Skips if this
 /// database's til packs the two fields with no gap to insert into.
-fn type_member_add_at_offset(idb: &mut idakit::Database) {
+fn type_member_add_at_offset(idb: &mut Database) {
     use idakit::types::expr;
 
     idb.types_mut()
@@ -1047,7 +1045,7 @@ fn type_member_add_at_offset(idb: &mut idakit::Database) {
 
 /// Offset-keyed selection also retypes and deletes, not just renames (the rename case is
 /// already covered in `type_member_edit`).
-fn type_member_offset_edit(idb: &mut idakit::Database) {
+fn type_member_offset_edit(idb: &mut Database) {
     use idakit::types::{TypeShape, expr};
 
     idb.types_mut()
@@ -1094,7 +1092,7 @@ fn type_member_offset_edit(idb: &mut idakit::Database) {
 
 /// `clear_type` and `rename` invoked directly on the function cursor from `function_mut`
 /// (previously only exercised through the location cursor's `at_mut`).
-fn type_function_edit_direct(idb: &mut idakit::Database, entry: Address) {
+fn type_function_edit_direct(idb: &mut Database, entry: Address) {
     idb.function_mut(entry)
         .expect("a function at the entry")
         .set_type("int idakit_direct_probe(int a)")
@@ -1123,7 +1121,7 @@ fn type_function_edit_direct(idb: &mut idakit::Database, entry: Address) {
 }
 
 /// A builder-supplied parameter name renders in the applied prototype's text.
-fn type_named_arg_renders(idb: &mut idakit::Database, entry: Address) {
+fn type_named_arg_renders(idb: &mut Database, entry: Address) {
     use idakit::types::expr;
 
     idb.function_mut(entry)
@@ -1141,7 +1139,7 @@ fn type_named_arg_renders(idb: &mut idakit::Database, entry: Address) {
 /// (`BuildFailed`), distinct from a bare top-level `decl()`, which fails at parse time
 /// (`ParseFailed`, see `type_apply`): wrapping the same garbage text in `.pointer()` routes it
 /// through the recipe-build path instead of the direct-decl path.
-fn type_build_failed(idb: &mut idakit::Database, address: Address) {
+fn type_build_failed(idb: &mut Database, address: Address) {
     use idakit::types::expr;
 
     let r = idb
@@ -1165,7 +1163,7 @@ fn type_build_failed(idb: &mut idakit::Database, address: Address) {
 /// unlabeled gap rather than moving the following member or converting to an array). None
 /// reproduced `NotCompatible`, so this test proves the flag threads through and takes structural
 /// effect instead of asserting the rejection.
-fn type_member_set_type_compatible(idb: &mut idakit::Database) {
+fn type_member_set_type_compatible(idb: &mut Database) {
     use idakit::types::{TypeShape, expr};
 
     idb.types_mut()
@@ -1193,7 +1191,7 @@ fn type_member_set_type_compatible(idb: &mut idakit::Database) {
 /// `TypeEdit::add_constant_forced`/`ConstantEdit::rename_forced` (`ETF_FORCENAME`) force an enum
 /// constant name through the alien-name collision (`TERR_ALIEN_NAME`) that the plain add/rename
 /// paths reject when the name is already used by another enum.
-fn type_enum_forcename(idb: &mut idakit::Database) {
+fn type_enum_forcename(idb: &mut Database) {
     use idakit::types::{TypeEditCode, TypeWriteError};
 
     idb.types_mut()
@@ -1252,7 +1250,7 @@ fn type_enum_forcename(idb: &mut idakit::Database) {
 /// `TypesMut::forward_declare` reserves a named struct with no body: it appears in `named_types`
 /// and reads back as an opaque, bodyless type, and a later `define` over the same name completes
 /// it into a full struct.
-fn type_forward_declare(idb: &mut idakit::Database) {
+fn type_forward_declare(idb: &mut Database) {
     use idakit::types::TypeShape;
     use idakit::types::diff::AggregateKind;
 
@@ -1288,10 +1286,10 @@ fn type_forward_declare(idb: &mut idakit::Database) {
 
 /// `TypeEdit::delete_constant_by_value` deletes an enum constant keyed by its value rather than
 /// its name; deleting a value no constant carries surfaces the typed `TypeEditCode::NotFound`.
-fn type_enum_delete_by_value(idb: &mut idakit::Database) {
+fn type_enum_delete_by_value(idb: &mut Database) {
     use idakit::types::{TypeEditCode, TypeShape, TypeWriteError};
 
-    fn constants(idb: &idakit::Database, ty: &str) -> Vec<(String, u64)> {
+    fn constants(idb: &Database, ty: &str) -> Vec<(String, u64)> {
         let t = idb.type_named(ty).expect("resolve the enum");
         match t.shape() {
             TypeShape::Enum { members, .. } => {

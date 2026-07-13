@@ -400,8 +400,7 @@ impl Printer<'_> {
             TypeShape::Struct { name, .. }
             | TypeShape::Union { name, .. }
             | TypeShape::Enum { name, .. } => name.clone(),
-            TypeShape::Typedef { name, .. } => Some(name.clone()),
-            TypeShape::Opaque(name) => Some(name.clone()),
+            TypeShape::Typedef { name, .. } | TypeShape::Opaque(name) => Some(name.clone()),
             _ => None,
         }
     }
@@ -410,8 +409,7 @@ impl Printer<'_> {
         self.tree
             .lvars()
             .nth(v.0 as usize)
-            .map(|l| l.name.clone())
-            .unwrap_or_else(|| format!("v{}", v.0))
+            .map_or_else(|| format!("v{}", v.0), |l| l.name.clone())
     }
 
     fn print_type(&self, id: TypeId) -> String {
@@ -448,8 +446,7 @@ impl Printer<'_> {
                 }
                 format!("{} (*)({})", self.print_type(*ret), parts.join(", "))
             }
-            TypeShape::Typedef { name, .. } => name.clone(),
-            TypeShape::Opaque(name) => name.clone(),
+            TypeShape::Typedef { name, .. } | TypeShape::Opaque(name) => name.clone(),
             TypeShape::Unknown => "_UNKNOWN".into(),
         }
     }
@@ -621,6 +618,10 @@ mod tests {
 
     /// Left-associative same-precedence chains need no parentheses.
     #[test]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "single-letter locals mirror the a - b - c expression the test builds"
+    )]
     fn omits_parens_for_left_associative_chain() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
@@ -637,7 +638,7 @@ mod tests {
         let tree = b.finish(block);
         let s = tree.to_pseudocode();
         assert!(s.contains("a - b - c"), "got: {s}");
-        assert!(!s.contains("("), "should not parenthesize: {s}");
+        assert!(!s.contains('('), "should not parenthesize: {s}");
     }
 
     /// A call renders its callee and comma-joined arguments.

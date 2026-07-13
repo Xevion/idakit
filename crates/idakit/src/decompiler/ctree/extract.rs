@@ -152,19 +152,18 @@ impl CallbackBuilder {
     }
 
     fn obj(&mut self, address: u64, target: u64, name: Option<String>, ty: u32) -> u32 {
-        match Address::try_new(target) {
-            Some(addr) => self.push_expression(
+        if let Some(addr) = Address::try_new(target) {
+            self.push_expression(
                 address,
                 ty,
                 ExpressionKind::Obj {
                     address: addr,
                     name,
                 },
-            ),
-            None => {
-                self.fail(ExtractError::BadEa);
-                self.push_expression(address, ty, ExpressionKind::Empty)
-            }
+            )
+        } else {
+            self.fail(ExtractError::BadEa);
+            self.push_expression(address, ty, ExpressionKind::Empty)
         }
     }
 
@@ -455,7 +454,6 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             has_size,
         );
     }
-    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     fn fill_enum(
         &mut self,
         id: u32,
@@ -615,7 +613,6 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
         self.empty_statement(ea)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn l_lvar(
         &mut self,
         name: &[u8],
@@ -986,6 +983,10 @@ mod tests {
 
     /// A float literal carries its real value, round-tripped through `fnum`.
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "3.5 round-trips exactly through f64; this is a bitwise round-trip check"
+    )]
     fn float_literal_round_trips() {
         let mut cb = CallbackBuilder::new();
         let ft = cb.scalar(4, 8, 0, 8, 1);

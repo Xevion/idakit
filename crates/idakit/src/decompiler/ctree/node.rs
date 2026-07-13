@@ -31,8 +31,8 @@ impl NodeRef {
     #[must_use]
     pub fn as_expression(self) -> Option<ExpressionId> {
         match self {
-            NodeRef::Expression(e) => Some(e),
-            NodeRef::Statement(_) => None,
+            Self::Expression(e) => Some(e),
+            Self::Statement(_) => None,
         }
     }
 
@@ -41,8 +41,8 @@ impl NodeRef {
     #[must_use]
     pub fn as_statement(self) -> Option<StatementId> {
         match self {
-            NodeRef::Statement(s) => Some(s),
-            NodeRef::Expression(_) => None,
+            Self::Statement(s) => Some(s),
+            Self::Expression(_) => None,
         }
     }
 
@@ -50,14 +50,14 @@ impl NodeRef {
     #[inline]
     #[must_use]
     pub fn is_expression(self) -> bool {
-        matches!(self, NodeRef::Expression(_))
+        matches!(self, Self::Expression(_))
     }
 
     /// Whether this refers to a statement.
     #[inline]
     #[must_use]
     pub fn is_statement(self) -> bool {
-        matches!(self, NodeRef::Statement(_))
+        matches!(self, Self::Statement(_))
     }
 }
 
@@ -130,21 +130,21 @@ impl LocalLocation {
         pieces: Vec<LocationPiece>,
     ) -> Self {
         match atype {
-            0 => LocalLocation::Unallocated,
-            1 => LocalLocation::Stack(sval),
-            2 => LocalLocation::Scattered(pieces),
-            3 => LocalLocation::Register(reg1),
-            4 => LocalLocation::RegisterPair {
+            0 => Self::Unallocated,
+            1 => Self::Stack(sval),
+            2 => Self::Scattered(pieces),
+            3 => Self::Register(reg1),
+            4 => Self::RegisterPair {
                 low: reg1,
                 high: reg2,
             },
-            5 => LocalLocation::RegisterRelative {
+            5 => Self::RegisterRelative {
                 reg: reg1,
                 offset: sval,
             },
-            6 => LocalLocation::Static(Address::new_const(sval as u64)),
+            6 => Self::Static(Address::new_const(sval as u64)),
             // Custom locations are 7 or higher; no other location types are defined.
-            _ => LocalLocation::Custom,
+            _ => Self::Custom,
         }
     }
 }
@@ -163,7 +163,7 @@ pub struct LocationPiece {
 
 /// One local variable of a decompiled function: its name, resolved type, and role.
 /// [`ExpressionKind::Var`] indexes the tree's lvar table to one of these.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[doc(alias("lvar_t"))]
 pub struct Local {
     /// The variable's name, as the decompiler named it.
@@ -203,7 +203,7 @@ pub struct ExpressionNode {
 /// A statement node with its source address, parent, and kind.
 ///
 /// `address` is [`None`] for synthetic nodes with no backing instruction.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StatementNode {
     /// The backing instruction's address, or `None` for a synthetic node.
     pub address: Option<Address>,
@@ -409,7 +409,7 @@ expression_accessors! {
 }
 
 /// One `case` of a `switch`: its values (empty = `default`) and body.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Case {
     /// The case's match values; empty for the `default` case.
     pub values: Vec<u64>,
@@ -421,7 +421,7 @@ pub struct Case {
 ///
 /// A closed set on the same terms as [`ExpressionKind`]: it covers the finalized decompiler tree,
 /// and extraction rejects an unmodelled tag rather than folding it in here.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[doc(alias("cinsn_t"))]
 pub enum StatementKind {
     /// A block of statements, `{ ... }`.
@@ -528,7 +528,7 @@ impl ExpressionKind {
                 f(NodeRef::Expression(*index));
             }
             Unary { x, .. } | Cast { x } | Deref { x, .. } | Sizeof(x) => {
-                f(NodeRef::Expression(*x))
+                f(NodeRef::Expression(*x));
             }
             MemberRef { obj, .. } | MemberPtr { obj, .. } => f(NodeRef::Expression(*obj)),
             Ternary { cond, then_, else_ } => {
@@ -538,7 +538,9 @@ impl ExpressionKind {
             }
             Call { callee, args } => {
                 f(NodeRef::Expression(*callee));
-                args.iter().for_each(|a| f(NodeRef::Expression(*a)));
+                for a in args {
+                    f(NodeRef::Expression(*a));
+                }
             }
             // Leaves carry no child handles.
             Self::Num(_)
@@ -560,12 +562,18 @@ impl StatementKind {
     pub(crate) fn for_each_child(&self, mut f: impl FnMut(NodeRef)) {
         use StatementKind::{Block, Do, Expression, For, If, Return, Switch, Throw, Try, While};
         match self {
-            Block(statements) => statements.iter().for_each(|s| f(NodeRef::Statement(*s))),
+            Block(statements) => {
+                for s in statements {
+                    f(NodeRef::Statement(*s));
+                }
+            }
             Expression(e) => f(NodeRef::Expression(*e)),
             If { cond, then_, else_ } => {
                 f(NodeRef::Expression(*cond));
                 f(NodeRef::Statement(*then_));
-                else_.iter().for_each(|s| f(NodeRef::Statement(*s)));
+                if let Some(s) = else_ {
+                    f(NodeRef::Statement(*s));
+                }
             }
             For {
                 init,
@@ -573,9 +581,15 @@ impl StatementKind {
                 step,
                 body,
             } => {
-                init.iter().for_each(|e| f(NodeRef::Expression(*e)));
-                cond.iter().for_each(|e| f(NodeRef::Expression(*e)));
-                step.iter().for_each(|e| f(NodeRef::Expression(*e)));
+                if let Some(e) = init {
+                    f(NodeRef::Expression(*e));
+                }
+                if let Some(e) = cond {
+                    f(NodeRef::Expression(*e));
+                }
+                if let Some(e) = step {
+                    f(NodeRef::Expression(*e));
+                }
                 f(NodeRef::Statement(*body));
             }
             While { cond, body } => {
@@ -588,12 +602,20 @@ impl StatementKind {
             }
             Switch { expression, cases } => {
                 f(NodeRef::Expression(*expression));
-                cases.iter().for_each(|c| f(NodeRef::Statement(c.body)));
+                for c in cases {
+                    f(NodeRef::Statement(c.body));
+                }
             }
-            Return(e) | Throw(e) => e.iter().for_each(|x| f(NodeRef::Expression(*x))),
+            Return(e) | Throw(e) => {
+                if let Some(x) = e {
+                    f(NodeRef::Expression(*x));
+                }
+            }
             Try { body, catches } => {
                 f(NodeRef::Statement(*body));
-                catches.iter().for_each(|s| f(NodeRef::Statement(*s)));
+                for s in catches {
+                    f(NodeRef::Statement(*s));
+                }
             }
             // No child handles.
             Self::Break | Self::Continue | Self::Goto { .. } | Self::Asm(_) | Self::Empty => {}

@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `run` -> Err on kernel setup; the app closure -> Err on an operational failure.
     Ida::run(move |ida| -> Result<(), Error> {
         {
-            let db = db.clone();
+            let db = db;
             ida.call(move |idb| idb.open(&db).call())??;
         }
 

@@ -152,22 +152,16 @@ fn run(idb: &mut Database, db: &str) -> Result<(), Error> {
 
     for (i, &address) in eas.iter().enumerate() {
         let started = Instant::now();
-        let cf = match idb.decompile(address) {
-            Ok(cf) => cf,
-            Err(_) => {
-                t.decompile_failed += 1;
-                continue;
-            }
+        let Ok(cf) = idb.decompile(address) else {
+            t.decompile_failed += 1;
+            continue;
         };
         t.decompile += started.elapsed();
 
         let started = Instant::now();
-        let tree = match cf.ctree() {
-            Ok(tree) => tree,
-            Err(_) => {
-                t.extract_failed += 1;
-                continue;
-            }
+        let Ok(tree) = cf.ctree() else {
+            t.extract_failed += 1;
+            continue;
         };
         t.extract += started.elapsed();
 

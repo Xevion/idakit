@@ -44,9 +44,9 @@ impl AggregateKind {
     #[must_use]
     pub const fn keyword(self) -> &'static str {
         match self {
-            AggregateKind::Struct => "struct",
-            AggregateKind::Union => "union",
-            AggregateKind::Enum => "enum",
+            Self::Struct => "struct",
+            Self::Union => "union",
+            Self::Enum => "enum",
         }
     }
 }
@@ -93,14 +93,14 @@ pub enum CanonicalType {
     /// `T *`. `width` is the pointer's own byte size, `None` under a size-abstracted key.
     Ptr {
         /// The addressed type.
-        pointee: Box<CanonicalType>,
+        pointee: Box<Self>,
         /// The pointer's own width in bytes, or `None` when sizes are abstracted away.
         width: Option<u8>,
     },
     /// `T[len]`.
     Array {
         /// The element type.
-        elem: Box<CanonicalType>,
+        elem: Box<Self>,
         /// Number of elements.
         len: u64,
     },
@@ -129,7 +129,7 @@ pub enum CanonicalType {
         /// The tag, or `None` if anonymous.
         tag: Option<String>,
         /// The underlying integer type.
-        underlying: Box<CanonicalType>,
+        underlying: Box<Self>,
         /// The `(name, value)` constants in declaration order.
         members: Vec<(String, u64)>,
         /// Size in bytes, or `None` under a size-abstracted key.
@@ -138,9 +138,9 @@ pub enum CanonicalType {
     /// A function prototype.
     Function {
         /// Return type.
-        ret: Box<CanonicalType>,
+        ret: Box<Self>,
         /// Parameter types, in order.
-        params: Vec<CanonicalType>,
+        params: Vec<Self>,
         /// Whether the prototype is variadic.
         varargs: bool,
     },
@@ -150,7 +150,7 @@ pub enum CanonicalType {
         /// The alias name.
         name: String,
         /// The aliased type.
-        underlying: Box<CanonicalType>,
+        underlying: Box<Self>,
     },
     /// A named type with no available body: a forward declaration or unresolved reference.
     /// Nominal-only, its identity is known but its structure is not.
@@ -292,11 +292,8 @@ impl CanonicalType {
     #[must_use]
     pub fn identity(&self) -> Option<TypeIdentity> {
         match self {
-            CanonicalType::Named { tag, kind } => Some(TypeIdentity::Tagged {
-                tag: tag.clone(),
-                kind: *kind,
-            }),
-            CanonicalType::Aggregate {
+            Self::Named { tag, kind }
+            | Self::Aggregate {
                 tag: Some(tag),
                 kind,
                 ..
@@ -304,11 +301,11 @@ impl CanonicalType {
                 tag: tag.clone(),
                 kind: *kind,
             }),
-            CanonicalType::Enum { tag: Some(tag), .. } => Some(TypeIdentity::Tagged {
+            Self::Enum { tag: Some(tag), .. } => Some(TypeIdentity::Tagged {
                 tag: tag.clone(),
                 kind: AggregateKind::Enum,
             }),
-            CanonicalType::Typedef { name, .. } => Some(TypeIdentity::Alias { name: name.clone() }),
+            Self::Typedef { name, .. } => Some(TypeIdentity::Alias { name: name.clone() }),
             _ => None,
         }
     }
@@ -452,7 +449,10 @@ fn nominal_cut(
 
 /// Canonicalize a struct or union, cutting to [`Named`](CanonicalType::Named) if referenced, or
 /// else spelling the body and closing any residual cycle with a [`BackRef`](CanonicalType::BackRef).
-#[allow(clippy::too_many_arguments)] // the plumbing (table/id/stack/opts) is inherent to a walk
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the plumbing (table/id/stack/opts) is inherent to a walk"
+)]
 fn aggregate(
     table: &TypeTable,
     id: TypeId,
@@ -519,7 +519,7 @@ impl Type {
     /// The ergonomic form of [`CanonicalType::diff`], for types resolved from two different
     /// databases.
     #[must_use]
-    pub fn diff(&self, other: &Type) -> TypeDiff {
+    pub fn diff(&self, other: &Self) -> TypeDiff {
         self.canonical().diff(&other.canonical())
     }
 }
@@ -543,20 +543,20 @@ impl CanonicalType {
     /// A scalar's spelling, shared by both renderings (`i32`, `u8`, `f64`, `iint`).
     fn write_scalar(&self, f: &mut fmt::Formatter<'_>) -> Option<fmt::Result> {
         Some(match self {
-            CanonicalType::Void => f.write_str("void"),
-            CanonicalType::Bool => f.write_str("bool"),
-            CanonicalType::Int { bytes, signed } => {
+            Self::Void => f.write_str("void"),
+            Self::Bool => f.write_str("bool"),
+            Self::Int { bytes, signed } => {
                 let sign = if *signed { "i" } else { "u" };
                 match bytes {
                     Some(b) => write!(f, "{sign}{}", u32::from(*b) * 8),
                     None => write!(f, "{sign}int"),
                 }
             }
-            CanonicalType::Float { bytes } => match bytes {
+            Self::Float { bytes } => match bytes {
                 Some(b) => write!(f, "f{}", u32::from(*b) * 8),
                 None => f.write_str("float"),
             },
-            CanonicalType::BackRef(n) => write!(f, "#{n}"),
+            Self::BackRef(n) => write!(f, "#{n}"),
             _ => return None,
         })
     }
@@ -567,16 +567,16 @@ impl CanonicalType {
             return scalar;
         }
         match self {
-            CanonicalType::Ptr { pointee, width } => {
+            Self::Ptr { pointee, width } => {
                 f.write_str("ptr")?;
                 if let Some(w) = width {
                     write!(f, ":{w}")?;
                 }
                 write!(f, "({pointee})")
             }
-            CanonicalType::Array { elem, len } => write!(f, "[{elem};{len}]"),
-            CanonicalType::Named { tag, kind } => write!(f, "{}:{tag}", kind.keyword()),
-            CanonicalType::Aggregate {
+            Self::Array { elem, len } => write!(f, "[{elem};{len}]"),
+            Self::Named { tag, kind } => write!(f, "{}:{tag}", kind.keyword()),
+            Self::Aggregate {
                 tag,
                 kind,
                 members,
@@ -606,7 +606,7 @@ impl CanonicalType {
                 }
                 Ok(())
             }
-            CanonicalType::Enum {
+            Self::Enum {
                 tag,
                 underlying,
                 members,
@@ -629,7 +629,7 @@ impl CanonicalType {
                 }
                 Ok(())
             }
-            CanonicalType::Function {
+            Self::Function {
                 ret,
                 params,
                 varargs,
@@ -649,14 +649,12 @@ impl CanonicalType {
                 }
                 write!(f, ")->{ret}")
             }
-            CanonicalType::Typedef { name, underlying } => write!(f, "typedef {name}={underlying}"),
-            CanonicalType::Opaque(name) => write!(f, "opaque:{name}"),
+            Self::Typedef { name, underlying } => write!(f, "typedef {name}={underlying}"),
+            Self::Opaque(name) => write!(f, "opaque:{name}"),
             // Scalars and back-refs handled by `write_scalar` above.
-            CanonicalType::Void
-            | CanonicalType::Bool
-            | CanonicalType::Int { .. }
-            | CanonicalType::Float { .. }
-            | CanonicalType::BackRef(_) => unreachable!("scalars written above"),
+            Self::Void | Self::Bool | Self::Int { .. } | Self::Float { .. } | Self::BackRef(_) => {
+                unreachable!("scalars written above")
+            }
         }
     }
 
@@ -666,21 +664,21 @@ impl CanonicalType {
             return scalar;
         }
         match self {
-            CanonicalType::Ptr { pointee, .. } => write!(f, "{pointee:#}*"),
-            CanonicalType::Array { elem, len } => write!(f, "{elem:#}[{len}]"),
-            CanonicalType::Named { tag, .. } => f.write_str(tag),
-            CanonicalType::Aggregate { tag, kind, .. } => {
+            Self::Ptr { pointee, .. } => write!(f, "{pointee:#}*"),
+            Self::Array { elem, len } => write!(f, "{elem:#}[{len}]"),
+            Self::Named { tag, .. } => f.write_str(tag),
+            Self::Aggregate { tag, kind, .. } => {
                 f.write_str(kind.keyword())?;
                 match tag {
                     Some(t) => write!(f, " {t}"),
                     None => f.write_str(" {...}"),
                 }
             }
-            CanonicalType::Enum { tag, .. } => match tag {
+            Self::Enum { tag, .. } => match tag {
                 Some(t) => write!(f, "enum {t}"),
                 None => f.write_str("enum {...}"),
             },
-            CanonicalType::Function {
+            Self::Function {
                 ret,
                 params,
                 varargs,
@@ -700,13 +698,10 @@ impl CanonicalType {
                 }
                 f.write_str(")")
             }
-            CanonicalType::Typedef { name, .. } => f.write_str(name),
-            CanonicalType::Opaque(name) => f.write_str(name),
-            CanonicalType::Void
-            | CanonicalType::Bool
-            | CanonicalType::Int { .. }
-            | CanonicalType::Float { .. }
-            | CanonicalType::BackRef(_) => unreachable!("scalars written above"),
+            Self::Typedef { name, .. } | Self::Opaque(name) => f.write_str(name),
+            Self::Void | Self::Bool | Self::Int { .. } | Self::Float { .. } | Self::BackRef(_) => {
+                unreachable!("scalars written above")
+            }
         }
     }
 }
@@ -881,26 +876,26 @@ impl CanonicalType {
     /// assert!(a.diff(&a).is_empty()); // a type never differs from itself
     /// ```
     #[must_use]
-    pub fn diff(&self, other: &CanonicalType) -> TypeDiff {
+    pub fn diff(&self, other: &Self) -> TypeDiff {
         let mut changes = Vec::new();
         self.diff_into(String::new(), other, &mut changes);
         TypeDiff { changes }
     }
 
     /// Append the changes turning `self` into `other` under `path` to `out`.
-    fn diff_into(&self, path: String, other: &CanonicalType, out: &mut Vec<Change>) {
+    fn diff_into(&self, path: String, other: &Self, out: &mut Vec<Change>) {
         if self == other {
             return;
         }
         match (self, other) {
             (
-                CanonicalType::Aggregate {
+                Self::Aggregate {
                     tag: lt,
                     kind: lk,
                     members: lm,
                     size: ls,
                 },
-                CanonicalType::Aggregate {
+                Self::Aggregate {
                     tag: rt,
                     kind: rk,
                     members: rm,
@@ -919,13 +914,13 @@ impl CanonicalType {
                 diff_members(&path, lm, rm, out);
             }
             (
-                CanonicalType::Enum {
+                Self::Enum {
                     tag: lt,
                     underlying: lu,
                     members: lm,
                     size: ls,
                 },
-                CanonicalType::Enum {
+                Self::Enum {
                     tag: rt,
                     underlying: ru,
                     members: rm,
@@ -949,26 +944,25 @@ impl CanonicalType {
             // wrapper's own shape changes (pointer width, array length, arity/varargs) does it fall
             // through to a whole retype below.
             (
-                CanonicalType::Ptr {
+                Self::Ptr {
                     pointee: lp,
                     width: lw,
                 },
-                CanonicalType::Ptr {
+                Self::Ptr {
                     pointee: rp,
                     width: rw,
                 },
             ) if lw == rw => lp.diff_into(path, rp, out),
+            (Self::Array { elem: le, len: ll }, Self::Array { elem: re, len: rl }) if ll == rl => {
+                le.diff_into(path, re, out);
+            }
             (
-                CanonicalType::Array { elem: le, len: ll },
-                CanonicalType::Array { elem: re, len: rl },
-            ) if ll == rl => le.diff_into(path, re, out),
-            (
-                CanonicalType::Function {
+                Self::Function {
                     ret: lret,
                     params: lp,
                     varargs: lv,
                 },
-                CanonicalType::Function {
+                Self::Function {
                     ret: rret,
                     params: rp,
                     varargs: rv,
@@ -983,19 +977,19 @@ impl CanonicalType {
             // mismatched pair) is one whole-node retype. Listed exhaustively so a new variant must
             // be handled.
             (
-                CanonicalType::Void
-                | CanonicalType::Bool
-                | CanonicalType::Int { .. }
-                | CanonicalType::Float { .. }
-                | CanonicalType::Ptr { .. }
-                | CanonicalType::Array { .. }
-                | CanonicalType::Named { .. }
-                | CanonicalType::Aggregate { .. }
-                | CanonicalType::Enum { .. }
-                | CanonicalType::Function { .. }
-                | CanonicalType::Typedef { .. }
-                | CanonicalType::Opaque(_)
-                | CanonicalType::BackRef(_),
+                Self::Void
+                | Self::Bool
+                | Self::Int { .. }
+                | Self::Float { .. }
+                | Self::Ptr { .. }
+                | Self::Array { .. }
+                | Self::Named { .. }
+                | Self::Aggregate { .. }
+                | Self::Enum { .. }
+                | Self::Function { .. }
+                | Self::Typedef { .. }
+                | Self::Opaque(_)
+                | Self::BackRef(_),
                 _,
             ) => out.push(Change {
                 path,
@@ -1020,13 +1014,7 @@ impl CanonicalMember {
 
     /// Append the changes turning `self` into `other` (already matched to the same slot) to `out`.
     /// `report_move` gates offset-move reporting, suppressed during an add/remove cascade.
-    fn diff_against(
-        &self,
-        other: &CanonicalMember,
-        parent: &str,
-        report_move: bool,
-        out: &mut Vec<Change>,
-    ) {
+    fn diff_against(&self, other: &Self, parent: &str, report_move: bool, out: &mut Vec<Change>) {
         let at = other.path_in(parent);
         self.ty.diff_into(at.clone(), &other.ty, out);
         if self.bitfield_width != other.bitfield_width {
@@ -1690,6 +1678,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "a/b name the two type tables being diffed, matching the diff's own a/b framing"
+    )]
     fn drift_reports_retype_add_and_size() {
         // point {x:i32, y:i32}=8  ->  point {x:i32, y:i64, z:i32}=16.
         let mut a = TypeTable::new();

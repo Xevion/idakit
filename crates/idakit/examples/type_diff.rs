@@ -7,6 +7,8 @@
 //!
 //! Run: cargo run -p idakit --example type_diff -- path/to/a.i64 path/to/b.i64
 
+use std::fmt::Write as _;
+
 use idakit::prelude::*;
 
 /// How many drifted types to list in the overview, and to expand in full below it.
@@ -76,7 +78,7 @@ fn report(la: &str, a: &TypeCatalog, lb: &str, b: &TypeCatalog) {
     println!("\ndetail ({} fewest-changed):", drifted.len().min(CLOSE_UP));
     for (name, d) in drifted.iter().take(CLOSE_UP) {
         println!("  {name}");
-        let text = format!("{d:width$}", width = BUDGET);
+        let text = format!("{d:BUDGET$}");
         let lines: Vec<&str> = text.lines().collect();
         for line in lines.iter().take(MAX_LINES) {
             println!("    {line}");
@@ -110,7 +112,7 @@ fn tally(d: &TypeDiff) -> String {
     }
     let mut out = format!("{:<12}", parts.join(" "));
     if let Some((l, r)) = d.size_change() {
-        out.push_str(&format!("size {} -> {}", hex(l), hex(r)));
+        let _ = write!(out, "size {} -> {}", hex(l), hex(r));
     }
     out.trim_end().to_owned()
 }

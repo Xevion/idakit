@@ -94,6 +94,7 @@ impl TypeCatalog {
     }
 
     /// The `(name, canonical)` pairs, in sorted order.
+    #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, &CanonicalType)> {
         self.types.iter().map(|(n, e)| (n.as_str(), &e.canonical))
     }
@@ -132,7 +133,7 @@ impl TypeCatalog {
     /// Both catalogs should be built under the same [`CanonicalOptions`], since an ABI catalog and
     /// a logical one aren't comparable (which a debug build asserts).
     #[must_use]
-    pub fn diff(&self, other: &TypeCatalog) -> CatalogDiff {
+    pub fn diff(&self, other: &Self) -> CatalogDiff {
         debug_assert_eq!(
             self.opts, other.opts,
             "diffing catalogs built under different canonicalization lenses"

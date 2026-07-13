@@ -31,6 +31,21 @@
 //!
 //! This is a recipe demonstration, not yet consumed by the `idakit` library.
 
+// cxx::bridge's own attribute allowlist rejects #[expect]/#[allow] on individual fn items
+// (`unsupported attribute`), so the three zero-copy fns' required explicit `<'a>` -- cxx has no
+// lifetime elision -- is silenced here at module scope instead.
+#![expect(
+    unused_lifetimes,
+    reason = "cxx::bridge requires the lifetime spelled out; elided, it no longer compiles"
+)]
+// cxx::bridge's own expansion mis-attributes a missing_errors_doc warning to the #[cxx::bridge]
+// attribute's own span, though every Result-returning fn below already documents its `Err`
+// condition.
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "false positive misattributed to the #[cxx::bridge] attribute by its own expansion"
+)]
+
 /// Emit the per-instantiation `Opaque` handle for one `qvector<T>`: a zero-sized `!Unpin`
 /// mirror struct plus its [`cxx::ExternType`] impl bound to the SDK type named by `$cxx`.
 ///
@@ -94,6 +109,9 @@ mod ffi {
         /// Borrow block `n`'s successor edge list (`qbasic_block_t::succ`, an `intvec_t`) out of
         /// the live flow chart; `Err` when `n` is out of range. The returned `&IntVec` borrows
         /// `fc`, so it cannot outlive it.
+        ///
+        /// # Errors
+        /// `Err` when `n` is out of range for `fc`'s block count.
         fn cfg_succ_vec<'a>(fc: &'a FlowChart, n: usize) -> Result<&'a IntVec>;
 
         /// Element count of an `intvec_t`, via its `qvector::size()`.
@@ -106,6 +124,9 @@ mod ffi {
 
         /// Build a `rangevec_t` of every chunk (entry plus tails) of the function at `ea`, owned
         /// by a [`UniquePtr`](cxx::UniquePtr); `Err` when no function is there.
+        ///
+        /// # Errors
+        /// `Err` when there is no function at `ea`.
         fn rangevec_build_chunks(ea: u64) -> Result<UniquePtr<RangeVec>>;
         /// Element count of a `rangevec_t`, via its inherited `qvector::size()`.
         fn rangevec_len(v: &RangeVec) -> usize;

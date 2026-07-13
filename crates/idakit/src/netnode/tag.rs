@@ -9,17 +9,17 @@ pub struct Tag(u8);
 
 impl Tag {
     /// The reserved alt-array tag (`atag`).
-    pub const ALT: Tag = Tag(b'A');
+    pub const ALT: Self = Self(b'A');
     /// The reserved sup-array tag (`stag`).
-    pub const SUP: Tag = Tag(b'S');
+    pub const SUP: Self = Self(b'S');
     /// The reserved hash tag (`htag`).
-    pub const HASH: Tag = Tag(b'H');
+    pub const HASH: Self = Self(b'H');
 
     /// A tag from a raw selector byte, e.g. `Tag::new(b'X')` for a user array.
     #[inline]
     #[must_use]
-    pub const fn new(tag: u8) -> Tag {
-        Tag(tag)
+    pub const fn new(tag: u8) -> Self {
+        Self(tag)
     }
 
     /// The raw selector byte.

@@ -452,7 +452,7 @@ impl FunctionEdit<'_> {
         let entry = self.inner.address();
         let recipe = ret.into().checked_serialize()?;
         let result = self.inner.db_mut().func_set_rettype(entry, &recipe);
-        let out = sig_result(result.code, entry, None, result.reason);
+        let out = sig_result(result.code, entry, None, &result.reason);
         self.inner.queued(out, PendingInvalidation::Dependents)
     }
 
@@ -473,7 +473,7 @@ impl FunctionEdit<'_> {
             result.code,
             entry,
             Some((index, result.arity)),
-            result.reason,
+            &result.reason,
         );
         self.inner.queued(out, PendingInvalidation::Dependents)
     }
@@ -494,7 +494,7 @@ impl FunctionEdit<'_> {
             result.code,
             entry,
             Some((index, result.arity)),
-            result.reason,
+            &result.reason,
         );
         // A parameter name never appears at call sites, so only this function's own text is stale.
         self.inner.queued(out, PendingInvalidation::SelfOnly)
@@ -513,7 +513,7 @@ impl FunctionEdit<'_> {
             .inner
             .db_mut()
             .func_set_cc(entry, c_int::from(u8::from(cc)));
-        let out = sig_result(result.code, entry, None, result.reason);
+        let out = sig_result(result.code, entry, None, &result.reason);
         self.inner.queued(out, PendingInvalidation::Dependents)
     }
 
@@ -534,12 +534,13 @@ impl FunctionEdit<'_> {
         let entry = self.inner.address();
         let recipe = this.into().checked_serialize()?;
         let result = self.inner.db_mut().func_prepend_this(entry, &recipe);
-        let out = sig_result(result.code, entry, None, result.reason);
+        let out = sig_result(result.code, entry, None, &result.reason);
         self.inner.queued(out, PendingInvalidation::Dependents)
     }
 }
 
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
+///
 /// `Function` borrows a `!Send` [`Database`]; collect snapshots inside an
 /// [`Ida::call`](crate::kernel::Ida::call) job to carry results back out.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

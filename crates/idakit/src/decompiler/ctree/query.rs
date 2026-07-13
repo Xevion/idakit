@@ -26,9 +26,12 @@ pub struct GlobalRef {
 }
 
 /// Peel cast `(T)x` and address-of `&x` wrappers, which rename nothing, down to the first
-/// expression that is neither. Does not look through a dereference `*x`, which names the
-/// pointee. Whether to follow that is the matcher's call. Shared by [`base_var`] and
-/// [`global_target`], and public so custom matchers peel the same way.
+/// expression that is neither.
+///
+/// Does not look through a dereference `*x`, which names the pointee. Whether to follow that is
+/// the matcher's call. Shared by [`base_var`] and [`global_target`], and public so custom
+/// matchers peel the same way.
+#[must_use]
 pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
     loop {
         match tree.kind(e) {
@@ -42,8 +45,9 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
     }
 }
 
-/// Follow `e` through place/address wrappers (`MemberRef`/`MemberPtr`/`Deref`/`&`/`Cast`)
-/// and pointer arithmetic down to the root [`ExpressionKind::Var`], accumulating the byte offset.
+/// Follow `e` through place/address wrappers (`MemberRef`/`MemberPtr`/`Deref`/`&`/`Cast`) and
+/// pointer arithmetic down to the root [`ExpressionKind::Var`], accumulating the byte offset.
+///
 /// Returns the local and the total offset from its base, or `None` if the expression isn't
 /// rooted at a variable.
 ///
@@ -84,6 +88,7 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 /// // The cast is peeled and the member offset threaded back to its base local.
 /// assert_eq!(base_var(&tree, cast), Some((this, 16)));
 /// ```
+#[must_use]
 pub fn base_var(tree: &Ctree, e: ExpressionId) -> Option<(LocalId, i64)> {
     // Casts and `&` rename nothing; peel them first so the match below sees the place node.
     let e = strip_casts(tree, e);

@@ -46,7 +46,7 @@ pub(crate) fn read_string(f: impl Fn(*mut c_char, usize) -> i64) -> Option<Strin
 ///
 /// Not every apply path emits a message, and the captured text carries a trailing newline from
 /// the msg channel, so it is trimmed before use.
-pub(crate) fn reason_or(reason: String, fallback: &str) -> String {
+pub(crate) fn reason_or(reason: &str, fallback: &str) -> String {
     let trimmed = reason.trim();
     if trimmed.is_empty() {
         fallback.to_owned()
@@ -140,7 +140,7 @@ mod tests {
     fn with_cstr_passes_valid_string() {
         let len = with_cstr("hello", "name", |p| {
             // SAFETY: p is a valid C string for the call.
-            unsafe { std::ffi::CStr::from_ptr(p) }.to_bytes().len()
+            unsafe { CStr::from_ptr(p) }.to_bytes().len()
         })
         .expect("valid");
         assert!(len == 5);

@@ -46,6 +46,7 @@ use emit::{bridge_tokens, reexport_tokens};
 
 /// The generated body TUs (the `cxx-gen` glue plus each domain's templated bodies) that build.rs
 /// must compile.
+#[must_use]
 pub fn body_tus(out_dir: &Path) -> Vec<PathBuf> {
     let mut tus = vec![
         out_dir.join("gen_bridge.cc"),
@@ -60,6 +61,7 @@ pub fn body_tus(out_dir: &Path) -> Vec<PathBuf> {
 }
 
 /// The hand-written `Custom`-body TUs build.rs must compile alongside the generated ones.
+#[must_use]
 pub fn custom_tus() -> Vec<&'static str> {
     domains().iter().filter_map(|d| d.custom_tu).collect()
 }

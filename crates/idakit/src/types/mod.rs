@@ -181,7 +181,7 @@ impl TypeShape {
     #[must_use]
     pub fn pointee(&self) -> Option<TypeId> {
         match self {
-            TypeShape::Ptr(elem) => Some(*elem),
+            Self::Ptr(elem) => Some(*elem),
             _ => None,
         }
     }
@@ -196,10 +196,10 @@ impl TypeShape {
     #[must_use]
     pub fn tag_name(&self) -> Option<&str> {
         match self {
-            TypeShape::Struct { name, .. }
-            | TypeShape::Union { name, .. }
-            | TypeShape::Enum { name, .. } => name.as_deref(),
-            TypeShape::Typedef { name, .. } => Some(name.as_str()),
+            Self::Struct { name, .. } | Self::Union { name, .. } | Self::Enum { name, .. } => {
+                name.as_deref()
+            }
+            Self::Typedef { name, .. } => Some(name.as_str()),
             _ => None,
         }
     }
@@ -260,6 +260,7 @@ impl TypeTable {
     }
 
     /// Iterate every `(handle, type)` in interning order.
+    #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeValue)> {
         self.arena.iter()
     }

@@ -15,7 +15,7 @@ fn tinfo() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Database) {
+fn run(idb: &mut Database) {
     let entry = idb.functions().next().expect("a function").address();
 
     leaf_handles_apply(idb, entry);
@@ -39,7 +39,7 @@ fn run(idb: &mut idakit::Database) {
 
 /// Every leaf width builds a live handle, and applying the int32 handle agrees with the
 /// [`TypeExpr`] int32 recipe at the same address.
-fn leaf_handles_apply(idb: &mut idakit::Database, entry: Address) {
+fn leaf_handles_apply(idb: &mut Database, entry: Address) {
     use idakit::types::expr;
 
     // Construct the whole leaf surface: void, bool, every int width, and both floats.
@@ -64,7 +64,7 @@ fn leaf_handles_apply(idb: &mut idakit::Database, entry: Address) {
 
 /// An out-of-set leaf width is a clean [`TypeWriteError::BuildFailed`], never a panic: integers
 /// admit 1/2/4/8/16, floats admit 4/8.
-fn leaf_width_validation(idb: &mut idakit::Database) {
+fn leaf_width_validation(idb: &Database) {
     assert!(idb.type_int(4, true).is_ok());
     assert!(idb.type_int(16, false).is_ok());
     // Include widths that alias a valid one under a u8 truncation (257 & 0xff == 1, 260 == 4): the
@@ -92,10 +92,10 @@ fn leaf_width_validation(idb: &mut idakit::Database) {
 
 /// Each composite (pointer, array, const, volatile) over int32 applies in parity with its
 /// [`TypeExpr`] twin.
-fn composite_handles_apply(idb: &mut idakit::Database, entry: Address) {
+fn composite_handles_apply(idb: &mut Database, entry: Address) {
     use idakit::types::expr;
 
-    fn parity(idb: &mut idakit::Database, entry: Address, built: &TypeInfo, recipe: TypeExpr) {
+    fn parity(idb: &mut Database, entry: Address, built: &TypeInfo, recipe: TypeExpr) {
         let b = idb.at_mut(entry).apply_type(built);
         let r = idb.at_mut(entry).set_type(recipe);
         assert!(
@@ -123,7 +123,7 @@ fn composite_handles_apply(idb: &mut idakit::Database, entry: Address) {
 
 /// A composite over an awkward base returns cleanly, never panics: whichever way IDA rules on a
 /// pointer to / array of a bare function type, the fallible signature contains it as a `Result`.
-fn composite_over_awkward_base_never_panics(idb: &mut idakit::Database) {
+fn composite_over_awkward_base_never_panics(idb: &Database) {
     let func = idb.parse_type("int f(int)").expect("parse a function type");
     // The verdict is version-dependent (IDA's leniency on array-of-function varies), so it is not
     // asserted; reaching the next line at all proves neither call panicked.
@@ -133,7 +133,7 @@ fn composite_over_awkward_base_never_panics(idb: &mut idakit::Database) {
 
 /// A defined struct resolves through [`type_ref`](idakit::Database::type_ref), and a pointer to it
 /// applies in parity with the named-recipe twin.
-fn named_ref_resolves_and_applies(idb: &mut idakit::Database, entry: Address) {
+fn named_ref_resolves_and_applies(idb: &mut Database, entry: Address) {
     use idakit::types::expr;
 
     idb.types_mut()
@@ -156,7 +156,7 @@ fn named_ref_resolves_and_applies(idb: &mut idakit::Database, entry: Address) {
 }
 
 /// An unknown name is a clean [`TypeWriteError::NoType`], never a panic.
-fn named_ref_missing_is_no_type(idb: &mut idakit::Database) {
+fn named_ref_missing_is_no_type(idb: &Database) {
     let r = idb.type_ref("idakit_no_such_zzz");
     assert!(
         let Err(Error::TypeWrite {
@@ -166,7 +166,7 @@ fn named_ref_missing_is_no_type(idb: &mut idakit::Database) {
 }
 
 /// A parsed declaration builds a handle that applies in parity with the `decl` recipe twin.
-fn parse_type_roundtrips(idb: &mut idakit::Database, entry: Address) {
+fn parse_type_roundtrips(idb: &mut Database, entry: Address) {
     use idakit::types::expr;
 
     let handle = idb
@@ -182,7 +182,7 @@ fn parse_type_roundtrips(idb: &mut idakit::Database, entry: Address) {
 
 /// Garbage text is a [`TypeWriteError::ParseFailed`] carrying IDA's reason; print it so a run
 /// shows whether the capture landed.
-fn parse_type_rejects_garbage(idb: &mut idakit::Database) {
+fn parse_type_rejects_garbage(idb: &Database) {
     match idb.parse_type("%%% not a type %%%") {
         Err(Error::TypeWrite {
             source: TypeWriteError::ParseFailed { reason, .. },
@@ -195,7 +195,7 @@ fn parse_type_rejects_garbage(idb: &mut idakit::Database) {
 
 /// A declaration referencing the freshly defined struct parses, proving `parse_type` resolves
 /// against the local til (not just built-in types).
-fn parse_type_resolves_local_til(idb: &mut idakit::Database) {
+fn parse_type_resolves_local_til(idb: &Database) {
     let r = idb.parse_type("idakit_h_pt *");
     assert!(
         !matches!(
@@ -210,7 +210,7 @@ fn parse_type_resolves_local_til(idb: &mut idakit::Database) {
 
 /// A base handle seeds two derivations from one `&self`, proving the composites copy rather than
 /// consume: both the pointer and the array apply.
-fn handle_reuse(idb: &mut idakit::Database, entry: Address) {
+fn handle_reuse(idb: &mut Database, entry: Address) {
     let base = idb.type_int(4, true).expect("build int32 base");
     let ptr = base.pointer().expect("pointer");
     let arr = base.array(4).expect("array");
@@ -228,7 +228,7 @@ fn handle_reuse(idb: &mut idakit::Database, entry: Address) {
 /// A pointer to an unresolved name is rejected. Depending on the parser it may fail at parse time
 /// (an unknown name never resolves) or build and then fail at apply; only the apply-reject case is
 /// asserted, the parse-reject case is noted and skipped.
-fn apply_unresolved_pointer_is_rejected(idb: &mut idakit::Database, entry: Address) {
+fn apply_unresolved_pointer_is_rejected(idb: &mut Database, entry: Address) {
     match idb.parse_type("idakit_no_such_built *") {
         Ok(handle) => {
             let r = idb.at_mut(entry).apply_type(&handle);
@@ -252,7 +252,7 @@ fn apply_unresolved_pointer_is_rejected(idb: &mut idakit::Database, entry: Addre
 /// One handle applies through both write cursors: a function-typed handle sets the prototype via
 /// [`FunctionEdit::apply_type`], and an int handle routes through [`LocationMut::apply_type`], both
 /// reaching the shared result mapping.
-fn apply_through_both_cursors(idb: &mut idakit::Database, entry: Address) {
+fn apply_through_both_cursors(idb: &mut Database, entry: Address) {
     let proto = idb
         .parse_type("int idakit_h_proto(int a, int b)")
         .expect("parse a function prototype");

@@ -328,7 +328,7 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 /// Lossy: a [`CallError::Panicked`] payload is reduced to its message (see [`Error::Kernel`]).
 impl From<CallError> for Error {
     fn from(e: CallError) -> Self {
-        Error::Kernel {
+        Self::Kernel {
             reason: e.to_string(),
         }
     }

@@ -80,22 +80,22 @@ pub enum TypeExpr {
     /// A reference to an existing named type, resolved at apply time.
     Named(String),
     /// A pointer to the inner recipe.
-    Pointer(Box<TypeExpr>),
+    Pointer(Box<Self>),
     /// An array of the inner recipe.
     Array {
         /// The element type.
-        elem: Box<TypeExpr>,
+        elem: Box<Self>,
         /// The element count.
         len: u64,
     },
     /// The inner recipe qualified `const`.
-    Const(Box<TypeExpr>),
+    Const(Box<Self>),
     /// The inner recipe qualified `volatile`.
-    Volatile(Box<TypeExpr>),
+    Volatile(Box<Self>),
     /// A function prototype: a return type, ordered parameters, and a varargs flag.
     Function {
         /// The return type.
-        ret: Box<TypeExpr>,
+        ret: Box<Self>,
         /// The parameters, in order.
         params: Vec<Param>,
         /// Whether the prototype ends in `...`.
@@ -361,15 +361,15 @@ impl TypeExpr {
     /// [`deref`](Self::deref) peels one layer back.
     #[inline]
     #[must_use]
-    pub fn pointer(self) -> TypeExpr {
-        TypeExpr::Pointer(Box::new(self))
+    pub fn pointer(self) -> Self {
+        Self::Pointer(Box::new(self))
     }
 
     /// Wraps this recipe in an array of `len` elements: `T` becomes `T[len]`.
     #[inline]
     #[must_use]
-    pub fn array(self, len: u64) -> TypeExpr {
-        TypeExpr::Array {
+    pub fn array(self, len: u64) -> Self {
+        Self::Array {
             elem: Box::new(self),
             len,
         }
@@ -382,11 +382,11 @@ impl TypeExpr {
     /// (`T * const`).
     #[inline]
     #[must_use]
-    pub fn const_(self) -> TypeExpr {
-        if matches!(self, TypeExpr::Const(_)) {
+    pub fn const_(self) -> Self {
+        if matches!(self, Self::Const(_)) {
             self
         } else {
-            TypeExpr::Const(Box::new(self))
+            Self::Const(Box::new(self))
         }
     }
 
@@ -395,11 +395,11 @@ impl TypeExpr {
     /// Idempotent: an already-`volatile` recipe is returned unchanged.
     #[inline]
     #[must_use]
-    pub fn volatile_(self) -> TypeExpr {
-        if matches!(self, TypeExpr::Volatile(_)) {
+    pub fn volatile_(self) -> Self {
+        if matches!(self, Self::Volatile(_)) {
             self
         } else {
-            TypeExpr::Volatile(Box::new(self))
+            Self::Volatile(Box::new(self))
         }
     }
 
@@ -409,10 +409,10 @@ impl TypeExpr {
     /// other recipe (there is nothing to peel).
     #[inline]
     #[must_use]
-    pub fn deref(self) -> TypeExpr {
+    pub fn deref(self) -> Self {
         match self {
-            TypeExpr::Pointer(inner) => *inner,
-            TypeExpr::Array { elem, .. } => *elem,
+            Self::Pointer(inner) => *inner,
+            Self::Array { elem, .. } => *elem,
             other => other,
         }
     }
@@ -461,7 +461,7 @@ impl TypeExpr {
     /// The pointee, or `None` if this is not a pointer.
     #[inline]
     #[must_use]
-    pub fn as_pointer(&self) -> Option<&TypeExpr> {
+    pub fn as_pointer(&self) -> Option<&Self> {
         match self {
             Self::Pointer(inner) => Some(inner),
             _ => None,
@@ -478,7 +478,7 @@ impl TypeExpr {
     /// The element type and length, or `None` if this is not an array.
     #[inline]
     #[must_use]
-    pub fn as_array(&self) -> Option<(&TypeExpr, u64)> {
+    pub fn as_array(&self) -> Option<(&Self, u64)> {
         match self {
             Self::Array { elem, len } => Some((elem, *len)),
             _ => None,
@@ -526,7 +526,7 @@ impl TypeExpr {
     /// The return type, parameters, and varargs flag, or `None` if this is not a function.
     #[inline]
     #[must_use]
-    pub fn as_function(&self) -> Option<(&TypeExpr, &[Param], bool)> {
+    pub fn as_function(&self) -> Option<(&Self, &[Param], bool)> {
         match self {
             Self::Function {
                 ret,

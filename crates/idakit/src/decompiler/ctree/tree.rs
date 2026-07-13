@@ -107,7 +107,7 @@ impl Ctree {
         &self.statements[id]
     }
 
-    /// The expression *kind* behind a handle: shorthand for [`expression(id)`](Self::expression)`.kind`,
+    /// The expression *kind* behind a handle: the `kind` field of [`expression(id)`](Self::expression),
     /// the form matchers want when projecting with the [`ExpressionKind`] `as_*` accessors.
     #[inline]
     #[must_use]
@@ -115,7 +115,7 @@ impl Ctree {
         &self.expressions[id].kind
     }
 
-    /// The statement *kind* behind a handle: shorthand for [`statement(id)`](Self::statement)`.kind`.
+    /// The statement *kind* behind a handle: the `kind` field of [`statement(id)`](Self::statement).
     #[inline]
     #[must_use]
     pub fn statement_kind(&self, id: StatementId) -> &StatementKind {
@@ -137,6 +137,7 @@ impl Ctree {
     }
 
     /// Every local variable of the function, in lvar-index order.
+    #[must_use]
     pub fn lvars(&self) -> impl ExactSizeIterator<Item = &Local> {
         self.lvars.iter()
     }
@@ -157,11 +158,13 @@ impl Ctree {
     /// Every expression node, flat, in allocation order.
     ///
     /// Useful for whole-tree scans, like "find all calls", that don't need the tree shape.
+    #[must_use]
     pub fn expressions(&self) -> impl ExactSizeIterator<Item = (ExpressionId, &ExpressionNode)> {
         self.expressions.iter()
     }
 
     /// Every statement node, flat, in allocation order.
+    #[must_use]
     pub fn statements(&self) -> impl ExactSizeIterator<Item = (StatementId, &StatementNode)> {
         self.statements.iter()
     }
@@ -190,6 +193,7 @@ impl Ctree {
     }
 
     /// Every interned type, flat.
+    #[must_use]
     pub fn types(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeValue)> {
         self.types.iter()
     }

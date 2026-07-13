@@ -108,14 +108,14 @@ impl PartialOrd for Address {
 }
 
 impl Add<u64> for Address {
-    type Output = Address;
+    type Output = Self;
 
     /// Advance by a byte count, saturating into `[0, BADADDR)` so the result is always a
     /// valid [`Address`], never the sentinel.
     #[inline]
-    fn add(self, bytes: u64) -> Address {
+    fn add(self, bytes: u64) -> Self {
         let clamped = self.get().saturating_add(bytes).min(MAX_EA);
-        Address::try_new(clamped).expect("clamped below BADADDR")
+        Self::try_new(clamped).expect("clamped below BADADDR")
     }
 }
 
@@ -126,7 +126,7 @@ impl Address {
     /// `start.distance_to(end)` rather than an unsigned-cast subtraction.
     #[inline]
     #[must_use]
-    pub const fn distance_to(self, end: Address) -> u64 {
+    pub const fn distance_to(self, end: Self) -> u64 {
         end.get().saturating_sub(self.get())
     }
 }

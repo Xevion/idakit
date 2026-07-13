@@ -139,7 +139,7 @@ impl Database {
             Ok(handle) => Ok(TypeInfo::from_handle(handle)),
             Err(e) => Err(TypeWriteError::ParseFailed {
                 decl: decl.to_owned(),
-                reason: reason_or(e.what().to_owned(), "the declaration is not valid"),
+                reason: reason_or(e.what(), "the declaration is not valid"),
             }
             .into()),
         }
@@ -154,9 +154,10 @@ impl Database {
 /// or [`FunctionEdit::apply_type`](crate::function::FunctionEdit::apply_type). The composites take
 /// `&self` and copy the base, so one handle seeds many derivations and applies to many addresses.
 ///
-/// `handle` is a [`UniquePtr`](cxx::UniquePtr)`<`[`TInfo`](sys::TInfo)`>`, non-null by construction;
-/// cxx's deleter runs `~tinfo_t` on drop. A `PhantomData<*const ()>` keeps [`TypeInfo`] `!Send`, so
-/// it lives only on the kernel thread and cannot escape [`Ida::call`](crate::kernel::Ida::call).
+/// `handle` is a [`UniquePtr`](cxx::UniquePtr) of [`TInfo`](sys::TInfo), non-null by
+/// construction; cxx's deleter runs `~tinfo_t` on drop. A `PhantomData<*const ()>` keeps
+/// [`TypeInfo`] `!Send`, so it lives only on the kernel thread and cannot escape
+/// [`Ida::call`](crate::kernel::Ida::call).
 ///
 /// ```
 /// # idakit::doctest::with_db(|db| {
@@ -222,8 +223,8 @@ impl TypeInfo {
     /// # Errors
     /// [`TypeWriteError::BuildFailed`] if the kernel could not build the pointer type.
     #[doc(alias("BT_PTR"))]
-    pub fn pointer(&self) -> Result<TypeInfo> {
-        TypeInfo::from_nullable(sys::tinfo_ptr(self.tinfo())).ok_or_else(|| {
+    pub fn pointer(&self) -> Result<Self> {
+        Self::from_nullable(sys::tinfo_ptr(self.tinfo())).ok_or_else(|| {
             TypeWriteError::BuildFailed {
                 reason: "could not build a pointer to the type".to_owned(),
             }
@@ -237,29 +238,27 @@ impl TypeInfo {
     /// [`TypeWriteError::BuildFailed`] if the base type cannot be arrayed (an array of a bare
     /// function type, for instance).
     #[doc(alias("BT_ARRAY"))]
-    pub fn array(&self, nelems: u32) -> Result<TypeInfo> {
-        TypeInfo::from_nullable(sys::tinfo_array(self.tinfo(), u64::from(nelems))).ok_or_else(
-            || {
-                TypeWriteError::BuildFailed {
-                    reason: format!("could not build a {nelems}-element array of the type"),
-                }
-                .into()
-            },
-        )
+    pub fn array(&self, nelems: u32) -> Result<Self> {
+        Self::from_nullable(sys::tinfo_array(self.tinfo(), u64::from(nelems))).ok_or_else(|| {
+            TypeWriteError::BuildFailed {
+                reason: format!("could not build a {nelems}-element array of the type"),
+            }
+            .into()
+        })
     }
 
     /// A `const`-qualified copy of this type.
     #[must_use]
     #[doc(alias("BTM_CONST"))]
-    pub fn const_(&self) -> TypeInfo {
-        TypeInfo::from_handle(sys::tinfo_const(self.tinfo()))
+    pub fn const_(&self) -> Self {
+        Self::from_handle(sys::tinfo_const(self.tinfo()))
     }
 
     /// A `volatile`-qualified copy of this type.
     #[must_use]
     #[doc(alias("BTM_VOLATILE"))]
-    pub fn volatile_(&self) -> TypeInfo {
-        TypeInfo::from_handle(sys::tinfo_volatile(self.tinfo()))
+    pub fn volatile_(&self) -> Self {
+        Self::from_handle(sys::tinfo_volatile(self.tinfo()))
     }
 }
 

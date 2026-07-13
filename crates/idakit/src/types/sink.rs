@@ -54,7 +54,10 @@ pub(crate) trait TypeSink {
         self.type_builder()
             .fill_struct(tid(id), is_union, members, size, has_size);
     }
-    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the facade's flat fill_enum callback"
+    )]
     fn fill_enum(
         &mut self,
         id: u32,
@@ -124,7 +127,7 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
         let members = members
             .iter()
             .map(|m| TypeMember {
-                name: m.name.to_owned(),
+                name: m.name.clone(),
                 bit_offset: m.bit_offset,
                 ty: tid(m.ty),
                 bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
@@ -137,7 +140,6 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
             .collect();
         self.0.fill_struct(id, is_union, members, size, has_size);
     }
-    #[allow(clippy::too_many_arguments)] // mirrors the facade's flat fill_enum callback
     fn fill_enum(
         &mut self,
         id: u32,
@@ -153,7 +155,7 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
         let members = consts
             .iter()
             .map(|c| EnumMember {
-                name: c.name.to_owned(),
+                name: c.name.clone(),
                 value: c.value,
             })
             .collect();

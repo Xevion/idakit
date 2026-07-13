@@ -15,7 +15,11 @@ fn roundtrip() {
     common::with_canonical_db(run);
 }
 
-fn run(idb: &mut idakit::Database) {
+#[expect(
+    clippy::too_many_lines,
+    reason = "one end-to-end test body kept at a single indent level, per project test convention"
+)]
+fn run(idb: &mut Database) {
     let func_count = idb.functions().count();
     let seg_count = idb.segments().count();
     assert!(func_count > 0, "expected at least one function");
@@ -536,6 +540,8 @@ fn run(idb: &mut idakit::Database) {
     // Exercise the RAII owned-handle path (best-effort).
     match first.decompile() {
         Ok(cf) => {
+            use idakit::decompiler::ctree::{ExpressionKind, NodeRef, StatementKind};
+
             let c = cf.counts();
             assert!(c.expressions >= 0 && c.insns >= 0);
             println!(
@@ -546,7 +552,6 @@ fn run(idb: &mut idakit::Database) {
             // Materialize the whole ctree and cross-check it against the
             // independent visitor counts: two separate traversals of the same
             // cfunc must agree, node-for-node.
-            use idakit::decompiler::ctree::{ExpressionKind, NodeRef, StatementKind};
             let tree = cf.ctree().expect("ctree extraction");
             let root = tree.root();
             assert!(let StatementKind::Block(_) = &tree.statement(root).kind);

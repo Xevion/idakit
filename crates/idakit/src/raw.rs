@@ -14,6 +14,17 @@
 //! adds exclusivity for writes. Raw buffer pointers are valid for the call, and
 //! string getters fill `(buf, cap)` and return the value's full length.
 
+// `&self`/`&mut self` here is the kernel-thread token proven live by holding a `Database` (see
+// the module doc above), not a source of instance state, so several forwarders never touch it.
+#![expect(
+    clippy::unused_self,
+    reason = "&self is the kernel-thread/live-database proof token, not instance state"
+)]
+#![expect(
+    clippy::needless_pass_by_ref_mut,
+    reason = "&mut self proves write-exclusivity on the kernel thread, not a mutated field"
+)]
+
 use std::ffi::{c_char, c_int, c_void};
 
 use idakit_sys as sys;

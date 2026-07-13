@@ -11,6 +11,9 @@ keywords = ["ida", "ida-pro", "reverse-engineering", "decompiler", "disassembler
 categories = ["api-bindings", "development-tools"]
 readme = "../../README.md"
 
+[lints]
+workspace = true
+
 # build.rs detects DOCS_RS and skips the native compile/link (no IDA on docs.rs).
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"

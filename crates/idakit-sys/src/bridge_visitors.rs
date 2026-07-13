@@ -33,6 +33,15 @@
 //! the boundary: `cxx` logs and calls `std::process::abort`, so a panic never unwinds into C++.
 //! The visitor methods here are panic-free in the normal path regardless; this is the contract if
 //! one ever did.
+
+// cxx::bridge auto-derives Clone/Debug/etc. for each shared struct it declares, and that
+// generated code trips unused_qualifications on the struct's own name; scoped here since the
+// generated module can't carry its own attribute.
+#![expect(
+    unused_qualifications,
+    reason = "false positive from cxx::bridge's auto-derived impls for shared structs"
+)]
+
 use std::ptr::NonNull;
 
 /// Absent optional child / sentinel, matching the facade's own `IDAKIT_NONE` constant.
@@ -69,6 +78,9 @@ impl TypeWalkVisitor {
     /// `sink` must be non-null and point to a live [`TypeWalkSink`] that outlives every use of
     /// the returned visitor, and stay unaliased for the duration of each callback (the walk is
     /// single-threaded and non-reentrant).
+    ///
+    /// # Panics
+    /// Panics if `sink` is null.
     #[must_use]
     pub unsafe fn from_raw(sink: *mut dyn TypeWalkSink) -> Self {
         Self {
@@ -88,6 +100,9 @@ impl CtreeVisitor {
     /// `sink` must be non-null and point to a live [`CtreeSink`] that outlives every use of the
     /// returned visitor, and stay unaliased for the duration of each callback (the walk is
     /// single-threaded and non-reentrant).
+    ///
+    /// # Panics
+    /// Panics if `sink` is null.
     #[must_use]
     pub unsafe fn from_raw(sink: *mut dyn CtreeSink) -> Self {
         Self {
@@ -116,9 +131,10 @@ pub fn walk_func_type(ea: u64, sink: &mut dyn TypeWalkSink) -> Option<u32> {
     ffi::func_type_walk_visit(ea, &mut TypeWalkVisitor::new(sink)).ok()
 }
 
-/// Walk the stack frame of the function at `ea`, interning each variable's type into `sink` and
-/// returning the frame size and variables. `None` when there is no function or frame at `ea`. The
-/// returned [`FrameVar::ty`] handles index the table `sink` built.
+/// Walk the stack frame of the function at `ea`, interning each variable's type into `sink`.
+///
+/// Returns the frame size and variables, or `None` when there is no function or frame at `ea`.
+/// The returned [`FrameVar::ty`] handles index the table `sink` built.
 pub fn walk_frame_type(ea: u64, sink: &mut dyn TypeWalkSink) -> Option<FrameWalk> {
     ffi::frame_type_walk_visit(ea, &mut TypeWalkVisitor::new(sink)).ok()
 }

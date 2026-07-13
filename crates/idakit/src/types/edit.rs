@@ -106,7 +106,7 @@ impl TypesMut<'_> {
         } else {
             Err(Error::TypeDefineFailed {
                 decl: decl.to_owned(),
-                reason: reason_or(result.reason, "the declaration is not valid"),
+                reason: reason_or(&result.reason, "the declaration is not valid"),
             })
         }
     }
@@ -135,7 +135,7 @@ impl TypesMut<'_> {
     pub fn delete(&mut self, name: impl AsRef<str>) -> Result<()> {
         let name = name.as_ref();
         let result = self.db.delete_type(nul_checked(name, "name")?);
-        edit_result(result.code, result.reason, name, None)
+        edit_result(result.code, &result.reason, name, None)
     }
 
     /// Rename the named type `name` to `new_name`, in place.
@@ -162,7 +162,7 @@ impl TypesMut<'_> {
         let name = name.as_ref();
         let new_name = nul_checked(new_name.as_ref(), "new name")?;
         let result = self.db.rename_type(nul_checked(name, "name")?, new_name);
-        edit_result(result.code, result.reason, name, None)
+        edit_result(result.code, &result.reason, name, None)
     }
 
     /// Reserve `name` in the local type library as an incomplete `kind` aggregate, with no body.
@@ -193,7 +193,7 @@ impl TypesMut<'_> {
         let result = self
             .db
             .forward_declare_type(nul_checked(name, "name")?, decl_type_of(kind));
-        edit_result(result.code, result.reason, name, None)
+        edit_result(result.code, &result.reason, name, None)
     }
 
     /// Open the existing named type `name` for member surgery.
@@ -231,7 +231,7 @@ impl TypeEdit<'_> {
     /// (e.g. a duplicate name); or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("add_udm"))]
     pub fn add_member(&mut self, name: impl AsRef<str>, ty: impl Into<TypeExpr>) -> Result<()> {
-        self.add_member_impl(name.as_ref(), ty.into(), sys::IDAKIT_MEMBER_APPEND)
+        self.add_member_impl(name.as_ref(), &ty.into(), sys::IDAKIT_MEMBER_APPEND)
     }
 
     /// Add a member named `name` of type `ty` at `bit_offset` from the start of the aggregate.
@@ -249,10 +249,10 @@ impl TypeEdit<'_> {
         name: impl AsRef<str>,
         ty: impl Into<TypeExpr>,
     ) -> Result<()> {
-        self.add_member_impl(name.as_ref(), ty.into(), bit_offset)
+        self.add_member_impl(name.as_ref(), &ty.into(), bit_offset)
     }
 
-    fn add_member_impl(&mut self, name: &str, ty: TypeExpr, member_bit: u64) -> Result<()> {
+    fn add_member_impl(&mut self, name: &str, ty: &TypeExpr, member_bit: u64) -> Result<()> {
         let recipe = ty.checked_serialize()?;
         let type_name = self.name.clone();
         let result = self.db.udt_add_member(
@@ -261,7 +261,7 @@ impl TypeEdit<'_> {
             &recipe,
             member_bit,
         );
-        edit_result(result.code, result.reason, &type_name, None)
+        edit_result(result.code, &result.reason, &type_name, None)
     }
 
     /// Select the member named `name` for editing.
@@ -400,7 +400,7 @@ impl TypeEdit<'_> {
             mask,
             etf_flags,
         );
-        edit_result(result.code, result.reason, &type_name, None)
+        edit_result(result.code, &result.reason, &type_name, None)
     }
 
     /// Mark this enum as a bitmask (flag) enum, or clear that marking.
@@ -431,7 +431,7 @@ impl TypeEdit<'_> {
         let result = self
             .db
             .enum_set_bitmask(nul_checked(&type_name, "type name")?, on);
-        edit_result(result.code, result.reason, &type_name, None)
+        edit_result(result.code, &result.reason, &type_name, None)
     }
 
     /// Set this enum's value representation: radix or char format, forced sign, and leading
@@ -477,7 +477,7 @@ impl TypeEdit<'_> {
             repr.signed,
             repr.leading_zeros,
         );
-        edit_result(result.code, result.reason, &type_name, None)
+        edit_result(result.code, &result.reason, &type_name, None)
     }
 
     /// Set the storage width, in bytes, of this enum's underlying integer type.
@@ -506,7 +506,7 @@ impl TypeEdit<'_> {
         let result = self
             .db
             .enum_set_width(nul_checked(&type_name, "type name")?, nbytes);
-        edit_result(result.code, result.reason, &type_name, None)
+        edit_result(result.code, &result.reason, &type_name, None)
     }
 
     /// Delete the enum constant carrying `value` from this enum.
@@ -536,7 +536,7 @@ impl TypeEdit<'_> {
         let result = self
             .db
             .enum_del_member_by_value(nul_checked(&type_name, "type name")?, value);
-        edit_result(result.code, result.reason, &type_name, None)
+        edit_result(result.code, &result.reason, &type_name, None)
     }
 
     /// Select the enum constant named `name` for editing.
@@ -741,7 +741,12 @@ impl MemberEdit<'_> {
         let recipe = ty.into().checked_serialize()?;
         let result = self
             .dispatch(|db, tp, mp, bit| db.udt_set_member_type(tp, mp, bit, &recipe, etf_flags))?;
-        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
+        edit_result(
+            result.code,
+            &result.reason,
+            &self.type_name,
+            Some(&self.key),
+        )
     }
 
     /// Rename this member. The new name must be unique within the aggregate.
@@ -754,7 +759,12 @@ impl MemberEdit<'_> {
         let new_name = nul_checked(new_name.as_ref(), "new member name")?;
         let result =
             self.dispatch(|db, tp, mp, bit| db.udt_rename_member(tp, mp, bit, new_name))?;
-        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
+        edit_result(
+            result.code,
+            &result.reason,
+            &self.type_name,
+            Some(&self.key),
+        )
     }
 
     /// Set this member's comment.
@@ -778,7 +788,12 @@ impl MemberEdit<'_> {
         let text = nul_checked(text.as_ref(), "comment")?;
         let result =
             self.dispatch(|db, tp, mp, bit| db.udt_set_member_comment(tp, mp, bit, text))?;
-        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
+        edit_result(
+            result.code,
+            &result.reason,
+            &self.type_name,
+            Some(&self.key),
+        )
     }
 
     /// Set this member's value representation: radix or char format, forced sign, and leading
@@ -824,7 +839,12 @@ impl MemberEdit<'_> {
                 repr.leading_zeros,
             )
         })?;
-        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
+        edit_result(
+            result.code,
+            &result.reason,
+            &self.type_name,
+            Some(&self.key),
+        )
     }
 
     /// Delete this member from its aggregate.
@@ -839,8 +859,13 @@ impl MemberEdit<'_> {
     /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("del_udm"))]
     pub fn delete(&mut self) -> Result<()> {
-        let result = self.dispatch(|db, tp, mp, bit| db.udt_del_member(tp, mp, bit))?;
-        edit_result(result.code, result.reason, &self.type_name, Some(&self.key))
+        let result = self.dispatch(Database::udt_del_member)?;
+        edit_result(
+            result.code,
+            &result.reason,
+            &self.type_name,
+            Some(&self.key),
+        )
     }
 
     /// Resolve the type-name and member-name from the key, then run `f`. An offset key passes an
@@ -877,7 +902,7 @@ impl ConstantEdit<'_> {
     #[doc(alias("edit_edm"))]
     pub fn set_value(&mut self, value: u64) -> Result<()> {
         let result = self.dispatch(|db, tp, np| db.enum_set_member_value(tp, np, value))?;
-        self.result(result.code, result.reason)
+        self.result(result.code, &result.reason)
     }
 
     /// Rename this constant. The new name must be unique.
@@ -920,7 +945,7 @@ impl ConstantEdit<'_> {
         let new_name = nul_checked(new_name, "new constant name")?;
         let result =
             self.dispatch(|db, tp, np| db.enum_rename_member(tp, np, new_name, etf_flags))?;
-        self.result(result.code, result.reason)
+        self.result(result.code, &result.reason)
     }
 
     /// Delete this constant from its enum.
@@ -930,8 +955,8 @@ impl ConstantEdit<'_> {
     /// or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("del_edm"))]
     pub fn delete(&mut self) -> Result<()> {
-        let result = self.dispatch(|db, tp, np| db.enum_del_member(tp, np))?;
-        self.result(result.code, result.reason)
+        let result = self.dispatch(Database::enum_del_member)?;
+        self.result(result.code, &result.reason)
     }
 
     /// Resolve the type-name and constant-name, then run `f`.
@@ -944,7 +969,7 @@ impl ConstantEdit<'_> {
         Ok(f(&mut *self.db, type_name, name))
     }
 
-    fn result(&self, code: c_int, reason: String) -> Result<()> {
+    fn result(&self, code: c_int, reason: &str) -> Result<()> {
         edit_result(
             code,
             reason,
@@ -972,12 +997,7 @@ impl fmt::Display for MemberKey {
 
 /// Maps a member-edit return code and any captured reason to a crate [`Result`]. `key` is the
 /// member selector for a [`TypeWriteError::NoMember`] (absent when adding a new member).
-fn edit_result(
-    code: c_int,
-    reason: String,
-    type_name: &str,
-    key: Option<&MemberKey>,
-) -> Result<()> {
+fn edit_result(code: c_int, reason: &str, type_name: &str, key: Option<&MemberKey>) -> Result<()> {
     match code {
         0 => Ok(()),
         sys::IDAKIT_TEDIT_NO_TYPE => Err(TypeWriteError::NoType {
@@ -1011,8 +1031,9 @@ fn edit_result(
     }
 }
 
-/// The single error for the whole type-write surface: applying a type at an address
-/// ([`LocationMut::set_type`](crate::LocationMut::set_type),
+/// The single error for the whole type-write surface.
+///
+/// Covers applying a type at an address ([`LocationMut::set_type`](crate::LocationMut::set_type),
 /// [`FunctionEdit::set_type`](crate::function::FunctionEdit::set_type)), function-prototype
 /// surgery ([`FunctionEdit`](crate::function::FunctionEdit)'s field-at-a-time verbs), and til
 /// member/constant edits ([`TypeEdit`]/[`MemberEdit`]/[`ConstantEdit`]).
@@ -1243,7 +1264,6 @@ impl TypeEditCode {
             Self::BadUnionVar => "unions cannot have variable-sized members",
             Self::BadVarLast => "a variable-sized member must be the last member",
             Self::Overlap => "the member overlaps with members that cannot be deleted",
-            Self::BadSubtype => "recursive structure nesting is forbidden",
             Self::BadValue => "the value is not acceptable",
             Self::NoBitmask => "the bitmask was not found",
             Self::BadBitmask => "bad enum member mask",
@@ -1255,7 +1275,7 @@ impl TypeEditCode {
             Self::BadTah => "bad type-attribute bits",
             Self::BadBase => "bad base class",
             Self::BadGap => "bad gap",
-            Self::Nested => "recursive structure nesting is forbidden",
+            Self::BadSubtype | Self::Nested => "recursive structure nesting is forbidden",
             Self::NotCompatible => "the new type is not compatible with the old type",
             Self::BadLayout => "failed to calculate the structure/union layout",
             Self::BadGroups => "bad group sizes for a bitmask enum",

@@ -192,13 +192,13 @@ impl Database {
                     Ok(TypeApplyCode::Ok) => Ok(()),
                     Ok(TypeApplyCode::ErrInput) => Err(TypeWriteError::ParseFailed {
                         decl: decl.clone(),
-                        reason: reason_or(result.reason, "the declaration is not valid"),
+                        reason: reason_or(&result.reason, "the declaration is not valid"),
                     }
                     .into()),
                     Ok(TypeApplyCode::ErrApply) | Err(_) => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: reason_or(
-                            result.reason,
+                            &result.reason,
                             "the kernel could not apply the parsed type",
                         ),
                     }
@@ -214,7 +214,7 @@ impl Database {
                     Ok(TypeApplyCode::Ok) => Ok(()),
                     Ok(TypeApplyCode::ErrInput) => Err(TypeWriteError::BuildFailed {
                         reason: reason_or(
-                            result.reason,
+                            &result.reason,
                             &format!(
                                 "could not build `{other}` (an unknown named type or invalid \
                                  declaration within it)"
@@ -225,7 +225,7 @@ impl Database {
                     Ok(TypeApplyCode::ErrApply) | Err(_) => Err(TypeWriteError::ApplyRejected {
                         address: address.get(),
                         reason: reason_or(
-                            result.reason,
+                            &result.reason,
                             &format!("the kernel could not apply the built type `{other}`"),
                         ),
                     }
@@ -242,12 +242,12 @@ impl Database {
 ///
 /// A pre-built handle is never a parse or build failure, so the only non-OK outcome is the kernel
 /// refusing to reshape the item: [`TypeWriteError::ApplyRejected`].
-pub(crate) fn tinfo_apply_result(res: sys::TypeWriteResult, address: Address) -> Result<()> {
+pub(crate) fn tinfo_apply_result(res: &sys::TypeWriteResult, address: Address) -> Result<()> {
     match TypeApplyCode::try_from(res.code) {
         Ok(TypeApplyCode::Ok) => Ok(()),
         _ => Err(TypeWriteError::ApplyRejected {
             address: address.get(),
-            reason: reason_or(res.reason, "the kernel could not apply the built type"),
+            reason: reason_or(&res.reason, "the kernel could not apply the built type"),
         }
         .into()),
     }
@@ -264,7 +264,7 @@ pub struct Location<'db> {
     address: Address,
 }
 
-impl<'db> Location<'db> {
+impl Location<'_> {
     location_reads!();
 
     /// Lazily iterates cross-references targeting this address.
@@ -301,7 +301,7 @@ pub struct LocationMut<'db> {
     pending: PendingInvalidation,
 }
 
-impl<'db> LocationMut<'db> {
+impl LocationMut<'_> {
     /// The database this cursor holds exclusively.
     #[inline]
     pub(crate) fn db(&self) -> &Database {
@@ -451,7 +451,7 @@ impl LocationMut<'_> {
     #[doc(alias("apply_tinfo"))]
     pub fn apply_type(&mut self, ty: &TypeInfo) -> Result<()> {
         let res = self.db.apply_tinfo(self.address, ty.tinfo(), 0);
-        let out = tinfo_apply_result(res, self.address);
+        let out = tinfo_apply_result(&res, self.address);
         self.queued(out, PendingInvalidation::Dependents)
     }
 

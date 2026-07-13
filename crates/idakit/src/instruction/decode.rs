@@ -35,13 +35,13 @@ fn register(r: &sys::RegisterData) -> Option<Register> {
 
 fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeError> {
     let kind = match o.kind {
-        sys::IDAKIT_OP_REG => {
-            OperandKind::Register(register(&o.reg).ok_or(DecodeError::MalformedOperand {
+        sys::IDAKIT_OP_REG => OperandKind::Register(register(&o.reg).ok_or_else(|| {
+            DecodeError::MalformedOperand {
                 address: address.get(),
                 op: o.idx,
                 reason: "register operand carries no register",
-            })?)
-        }
+            }
+        })?),
         sys::IDAKIT_OP_MEM => OperandKind::Memory(Memory {
             base: register(&o.base),
             index: register(&o.index),
@@ -51,13 +51,13 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
             target: Address::try_new(o.addr),
         }),
         sys::IDAKIT_OP_IMM => OperandKind::Immediate { value: o.value },
-        sys::IDAKIT_OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or(
+        sys::IDAKIT_OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or_else(|| {
             DecodeError::MalformedOperand {
                 address: address.get(),
                 op: o.idx,
                 reason: "near operand has no resolved target",
-            },
-        )?),
+            }
+        })?),
         sys::IDAKIT_OP_FAR => OperandKind::Far {
             selector: o.sel,
             offset: o.value,

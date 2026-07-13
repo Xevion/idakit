@@ -62,7 +62,7 @@ impl Persist for String {
     }
     #[inline]
     fn from_netnode_bytes(bytes: &[u8]) -> Option<Self> {
-        String::from_utf8(bytes.to_vec()).ok()
+        Self::from_utf8(bytes.to_vec()).ok()
     }
 }
 
