@@ -4,8 +4,8 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
+use super::domains::domains;
 use super::model::*;
-use super::spec::domains;
 
 impl FieldTy {
     pub(crate) fn rust(&self) -> TokenStream {
@@ -670,7 +670,10 @@ impl VisitorBridge {
 /// Build the whole `#[cxx::bridge] mod` token stream from every domain. Fed to both the Rust side
 /// (written out and `include!`d) and `cxx-gen` (C++ side), so the two stay in lockstep.
 pub(crate) fn bridge_tokens() -> TokenStream {
-    let extern_types = domains().iter().flat_map(|d| d.externs.iter()).map(ExternTy::tokens);
+    let extern_types = domains()
+        .iter()
+        .flat_map(|d| d.externs.iter())
+        .map(ExternTy::tokens);
     let domain_toks = domains().iter().map(|d| d.ffi_tokens());
     quote! {
         #(#extern_types)*

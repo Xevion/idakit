@@ -118,7 +118,13 @@ pub struct FnSpec {
 impl FnSpec {
     /// One free function with a rendered C++ body, built from owned strings and leaked to `'static`
     /// for the engine. The imperative constructor a matrix-built domain (netnode) uses per cell.
-    pub(crate) fn rendered(name: String, args: Vec<Arg>, ret: RetKind, doc: String, body: String) -> Self {
+    pub(crate) fn rendered(
+        name: String,
+        args: Vec<Arg>,
+        ret: RetKind,
+        doc: String,
+        body: String,
+    ) -> Self {
         Self {
             name: name.leak(),
             receiver: None,
@@ -241,7 +247,7 @@ pub enum BodyKind {
 }
 
 /// One `extern "Rust"` opaque-visitor sub-bridge: a sink trait plus the opaque visitor that
-/// forwards every call into it. [`visitor_spec::VISITOR_BRIDGE`] pairs two of these (ctree,
+/// forwards every call into it. [`visitors::VISITOR_BRIDGE`] pairs two of these (ctree,
 /// tinfo type walk) into one shared bridge module.
 pub struct VisitorSink {
     /// The sink trait's name, e.g. `"CtreeSink"`.

@@ -16,8 +16,8 @@
 //!
 //! This module is the engine only, split into three sibling files: `dsl` (the authoring macros),
 //! `model` (the spec data vocabulary), and `emit` (the token/string emitters). The declarative
-//! manifest of hand-written domains lives in the sibling `spec` module ([`domains`]); the
-//! matrix-generated netnode domain lives in `netnode`.
+//! manifest of domains lives in the sibling `domains` submodule ([`domains`]), one file per
+//! domain; the matrix-generated netnode domain lives in `domains::netnode`.
 //!
 //! Files written to `$OUT_DIR`:
 //!
@@ -35,17 +35,11 @@ mod dsl;
 mod emit;
 mod model;
 
-#[path = "netnode.rs"]
-mod netnode;
-#[path = "spec.rs"]
-mod spec;
-#[path = "visitor_spec.rs"]
-mod visitor_spec;
+mod domains;
+mod visitors;
 
-pub use model::*;
-
+use domains::domains;
 use emit::bridge_tokens;
-use spec::domains;
 
 /// The generated body TUs (the `cxx-gen` glue plus each domain's templated bodies) that build.rs
 /// must compile.
@@ -81,7 +75,7 @@ pub fn generate(out_dir: &Path) {
     // re-exports are appended here only, outside the bridge module, so cxx-gen never sees them.
     let mut rust = tokens.to_string();
     rust.push('\n');
-    rust.push_str(&netnode::reexport_tokens().to_string());
+    rust.push_str(&domains::netnode::reexport_tokens().to_string());
     std::fs::write(out_dir.join("gen_bridge.rs"), rust).expect("write gen_bridge.rs");
 
     // C++ side: same tokens => matching shim symbol names on both sides.
@@ -104,7 +98,7 @@ pub fn generate(out_dir: &Path) {
     // The ctree/tinfo extern "Rust" opaque-visitor bridge, generated the same way as the domain
     // bridge above: one token stream feeds both the Rust side (include!d by bridge_visitors.rs)
     // and cxx-gen (the C++ shim glue, compiled alongside the domain bodies in build.rs).
-    let visitor_tokens = visitor_spec::VISITOR_BRIDGE.tokens();
+    let visitor_tokens = visitors::VISITOR_BRIDGE.tokens();
     let visitor_rust = visitor_tokens.to_string();
     std::fs::write(out_dir.join("gen_visitors.rs"), visitor_rust).expect("write gen_visitors.rs");
     let visitor_code = cxx_gen::generate_header_and_cc(visitor_tokens, &opt)

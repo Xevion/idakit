@@ -258,8 +258,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bridge_probe_ext.rs");
     println!("cargo:rerun-if-changed=src/bridge_probe.rs");
     println!("cargo:rerun-if-changed=src/bridge_gen.rs");
-    println!("cargo:rerun-if-changed=build_support/gen.rs");
-    println!("cargo:rerun-if-changed=build_support/visitor_spec.rs");
+    println!("cargo:rerun-if-changed=build_support");
     println!("cargo:rerun-if-changed=facade/custom_escape_hatch.cc");
     println!("cargo:rerun-if-changed=facade/import_custom.cc");
     println!("cargo:rerun-if-changed=facade/range_custom.cc");

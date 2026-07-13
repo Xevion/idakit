@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::{Arg, ArgTy, BodyKind, Domain, FnSpec, RetKind};
+use super::super::model::{Arg, ArgTy, BodyKind, Domain, FnSpec, RetKind};
 
 /// C++ helpers the generated bodies and the hand-written `custom_tu` both call, emitted `inline`
 /// into the domain header so both translation units share one definition.

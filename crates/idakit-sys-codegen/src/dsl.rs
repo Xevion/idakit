@@ -1,4 +1,4 @@
-//! The `macro_rules!` authoring DSL for [`super::spec`]/[`super::netnode`]/[`super::visitor_spec`]:
+//! The `macro_rules!` authoring DSL for [`super::spec`]/[`super::netnode`]/[`super::visitors`]:
 //! terse row syntax that expands into the [`super::model`] spec types.
 
 /// `&[Arg]` from `name: Variant` pairs; a `("Name")` suffix supplies a tuple variant's payload
