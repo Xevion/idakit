@@ -114,11 +114,16 @@ pub struct FnSpec {
     pub ret: RetKind,
     pub body: BodyKind,
     pub doc: &'static str,
+    /// The SDK member this binding mirrors (e.g. `"netnode::altval"`), for a `#[doc(alias)]` a
+    /// reader of the IDA SDK can search by. `None` when the binding needs no alias (its own name
+    /// already reads as the SDK symbol, or it has none).
+    pub sdk_alias: Option<&'static str>,
 }
 
 impl FnSpec {
     /// One free function with a rendered C++ body, built from owned strings and leaked to `'static`
-    /// for the engine. The imperative constructor a matrix-built domain (netnode) uses per cell.
+    /// for the engine. The imperative constructor a matrix-built domain uses per cell of its own
+    /// family x keying x op grid (see `domains::netnode`, the one domain built this way).
     pub(crate) fn rendered(
         name: String,
         args: Vec<Arg>,
@@ -133,6 +138,7 @@ impl FnSpec {
             ret,
             body: BodyKind::Rendered(body.leak()),
             doc: doc.leak(),
+            sdk_alias: None,
         }
     }
 }
@@ -184,43 +190,51 @@ pub enum ArgTy {
     VisitorMut(&'static str),
 }
 
-/// The return shapes the spec can express. `Result<T>` variants surface a thrown C++ exception as
-/// a Rust `Err`; the non-`Result` twins are for infallible calls.
-// The allow covers taxonomy slots no current spec constructs.
-#[allow(dead_code)]
+/// The value shape a return carries, independent of whether the call may throw (see [`RetKind`]).
 #[derive(Clone)]
-pub enum RetKind {
+pub enum RetShape {
     Unit,
     Bool,
     I32,
+    U8,
+    U16,
     U32,
     U64,
     Usize,
-    ResultUsize,
-    ResultU8,
-    ResultU16,
-    ResultU32,
-    ResultU64,
     String,
-    ResultString,
     /// A by-value `Trivial` `ExternType`, by Rust name.
     Extern(&'static str),
-    ResultExtern(&'static str),
     /// A shared struct by value, by name.
     Shared(&'static str),
-    ResultShared(&'static str),
     /// `UniquePtr<T>` over an opaque `ExternType`, by Rust name.
     UniquePtr(&'static str),
-    ResultUniquePtr(&'static str),
     /// An owned `Vec` of a `Trivial` `ExternType` or a shared struct, by name.
     Vec(&'static str),
-    ResultVec(&'static str),
     /// An owned `Vec` of a scalar (`u32`).
     VecU32,
-    ResultVecU32,
     /// An owned `Vec<u8>` (a raw byte-range snapshot, or an alignment-id list).
     VecU8,
-    ResultVecU8,
+}
+
+/// A function's return: a [`RetShape`] plus whether the call may throw a C++ exception, surfaced
+/// as a Rust `Err`. `cxx` maps a throwing fn's C++ return type straight to the `Ok` payload's
+/// type, so a shape's C++ spelling serves both variants alike; only the Rust side diverges,
+/// wrapping `Fallible`'s shape in a `Result`.
+#[derive(Clone)]
+pub enum RetKind {
+    /// An infallible call; the Rust return is the shape itself.
+    Value(RetShape),
+    /// A call that may throw; the Rust return is `Result<Shape>`.
+    Fallible(RetShape),
+}
+
+impl RetKind {
+    /// The value shape, independent of fallibility.
+    pub(crate) fn shape(&self) -> &RetShape {
+        match self {
+            RetKind::Value(s) | RetKind::Fallible(s) => s,
+        }
+    }
 }
 
 /// How a function's C++ body is produced. The templated variants exist for segment's trivial

@@ -96,86 +96,77 @@ impl ArgTy {
     }
 }
 
-impl RetKind {
-    pub(crate) fn rust(&self) -> TokenStream {
+impl RetShape {
+    /// This shape's plain Rust type (no `Result` wrapper); [`RetKind::rust`] adds that.
+    fn rust(&self) -> TokenStream {
         fn named(name: &str) -> TokenStream {
             let id = format_ident!("{name}");
             quote!(#id)
         }
         match self {
-            RetKind::Unit => quote!(),
-            RetKind::Bool => quote!(-> bool),
-            RetKind::I32 => quote!(-> i32),
-            RetKind::U32 => quote!(-> u32),
-            RetKind::U64 => quote!(-> u64),
-            RetKind::Usize => quote!(-> usize),
-            RetKind::ResultUsize => quote!(-> Result<usize>),
-            RetKind::ResultU8 => quote!(-> Result<u8>),
-            RetKind::ResultU16 => quote!(-> Result<u16>),
-            RetKind::ResultU32 => quote!(-> Result<u32>),
-            RetKind::ResultU64 => quote!(-> Result<u64>),
-            RetKind::String => quote!(-> String),
-            RetKind::ResultString => quote!(-> Result<String>),
-            RetKind::Extern(n) => {
+            RetShape::Unit => quote!(()),
+            RetShape::Bool => quote!(bool),
+            RetShape::I32 => quote!(i32),
+            RetShape::U8 => quote!(u8),
+            RetShape::U16 => quote!(u16),
+            RetShape::U32 => quote!(u32),
+            RetShape::U64 => quote!(u64),
+            RetShape::Usize => quote!(usize),
+            RetShape::String => quote!(String),
+            RetShape::Extern(n) | RetShape::Shared(n) => named(n),
+            RetShape::UniquePtr(n) => {
                 let t = named(n);
-                quote!(-> #t)
+                quote!(UniquePtr<#t>)
             }
-            RetKind::ResultExtern(n) => {
+            RetShape::Vec(n) => {
                 let t = named(n);
-                quote!(-> Result<#t>)
+                quote!(Vec<#t>)
             }
-            RetKind::Shared(n) => {
-                let t = named(n);
-                quote!(-> #t)
-            }
-            RetKind::ResultShared(n) => {
-                let t = named(n);
-                quote!(-> Result<#t>)
-            }
-            RetKind::UniquePtr(n) => {
-                let t = named(n);
-                quote!(-> UniquePtr<#t>)
-            }
-            RetKind::ResultUniquePtr(n) => {
-                let t = named(n);
-                quote!(-> Result<UniquePtr<#t>>)
-            }
-            RetKind::Vec(n) => {
-                let t = named(n);
-                quote!(-> Vec<#t>)
-            }
-            RetKind::ResultVec(n) => {
-                let t = named(n);
-                quote!(-> Result<Vec<#t>>)
-            }
-            RetKind::VecU32 => quote!(-> Vec<u32>),
-            RetKind::ResultVecU32 => quote!(-> Result<Vec<u32>>),
-            RetKind::VecU8 => quote!(-> Vec<u8>),
-            RetKind::ResultVecU8 => quote!(-> Result<Vec<u8>>),
+            RetShape::VecU32 => quote!(Vec<u32>),
+            RetShape::VecU8 => quote!(Vec<u8>),
         }
     }
-    /// The C++ return type. `cxx` maps a `Result<T>` to a C++ function returning `T` that throws,
-    /// so both twins share one C++ type.
-    pub(crate) fn cxx(&self) -> String {
+
+    /// The C++ return type, shared by [`RetKind::Value`] and [`RetKind::Fallible`] (`cxx` maps a
+    /// throwing fn's C++ type straight to the `Ok` payload's type).
+    fn cxx(&self) -> String {
         match self {
-            RetKind::Unit => "void".into(),
-            RetKind::Bool => "bool".into(),
-            RetKind::I32 => "int32_t".into(),
-            RetKind::ResultU8 => "uint8_t".into(),
-            RetKind::ResultU16 => "uint16_t".into(),
-            RetKind::U32 | RetKind::ResultU32 => "uint32_t".into(),
-            RetKind::U64 | RetKind::ResultU64 => "uint64_t".into(),
-            RetKind::Usize | RetKind::ResultUsize => "size_t".into(),
-            RetKind::String | RetKind::ResultString => "rust::String".into(),
-            RetKind::Extern(n) | RetKind::ResultExtern(n) => format!("::{}", extern_cxx_name(n)),
-            RetKind::Shared(n) | RetKind::ResultShared(n) => (*n).into(),
-            RetKind::UniquePtr(n) | RetKind::ResultUniquePtr(n) => {
-                format!("std::unique_ptr<::{}>", extern_cxx_name(n))
-            }
-            RetKind::Vec(n) | RetKind::ResultVec(n) => format!("rust::Vec<{}>", vec_elem_cxx(n)),
-            RetKind::VecU32 | RetKind::ResultVecU32 => "rust::Vec<uint32_t>".into(),
-            RetKind::VecU8 | RetKind::ResultVecU8 => "rust::Vec<uint8_t>".into(),
+            RetShape::Unit => "void".into(),
+            RetShape::Bool => "bool".into(),
+            RetShape::I32 => "int32_t".into(),
+            RetShape::U8 => "uint8_t".into(),
+            RetShape::U16 => "uint16_t".into(),
+            RetShape::U32 => "uint32_t".into(),
+            RetShape::U64 => "uint64_t".into(),
+            RetShape::Usize => "size_t".into(),
+            RetShape::String => "rust::String".into(),
+            RetShape::Extern(n) => format!("::{}", extern_cxx_name(n)),
+            RetShape::Shared(n) => (*n).into(),
+            RetShape::UniquePtr(n) => format!("std::unique_ptr<::{}>", extern_cxx_name(n)),
+            RetShape::Vec(n) => format!("rust::Vec<{}>", vec_elem_cxx(n)),
+            RetShape::VecU32 => "rust::Vec<uint32_t>".into(),
+            RetShape::VecU8 => "rust::Vec<uint8_t>".into(),
         }
+    }
+}
+
+impl RetKind {
+    pub(crate) fn rust(&self) -> TokenStream {
+        match self {
+            RetKind::Value(RetShape::Unit) => quote!(),
+            RetKind::Value(shape) => {
+                let t = shape.rust();
+                quote!(-> #t)
+            }
+            RetKind::Fallible(shape) => {
+                let t = shape.rust();
+                quote!(-> Result<#t>)
+            }
+        }
+    }
+    /// The C++ return type; both variants share [`RetShape::cxx`].
+    pub(crate) fn cxx(&self) -> String {
+        self.shape().cxx()
     }
 }
 
@@ -189,22 +180,24 @@ fn vec_elem_cxx(name: &str) -> String {
     }
 }
 
+/// Find the domain-declared [`ExternTy`] a Rust name refers to, the shared lookup behind
+/// [`extern_cxx_name`] and [`is_extern`].
+fn find_extern(rust_name: &str) -> Option<&'static ExternTy> {
+    domains()
+        .iter()
+        .flat_map(|d| d.externs.iter())
+        .find(|e| e.rust_name == rust_name)
+}
+
 /// The C++ symbol behind an `ExternType`'s Rust name, e.g. `RangeT` -> `range_t`.
 fn extern_cxx_name(rust_name: &str) -> &'static str {
-    for d in domains() {
-        for e in d.externs {
-            if e.rust_name == rust_name {
-                return e.cxx_name;
-            }
-        }
-    }
-    panic!("unknown ExternType `{rust_name}` referenced in a spec");
+    find_extern(rust_name)
+        .unwrap_or_else(|| panic!("unknown ExternType `{rust_name}` referenced in a spec"))
+        .cxx_name
 }
 
 fn is_extern(rust_name: &str) -> bool {
-    domains()
-        .iter()
-        .any(|d| d.externs.iter().any(|e| e.rust_name == rust_name))
+    find_extern(rust_name).is_some()
 }
 
 impl ExternTy {
@@ -312,8 +305,8 @@ impl Domain {
         });
 
         // Container glue for hand-written ExternTypes: cxx auto-generates UniquePtr/Vec support
-        // only for an in-bridge `type X;`, so force it for each opaque/trivial extern this domain
-        // returns.
+        // for a type declared directly in the bridge (`type X;`), not one merely aliased in from
+        // outside (the extern_aliases above), so force it here for each extern this domain returns.
         let impls = self.container_impls();
 
         quote! {
@@ -333,9 +326,9 @@ impl Domain {
         let mut unique = Vec::new();
         let mut vecs = Vec::new();
         for f in self.fns {
-            match &f.ret {
-                RetKind::UniquePtr(n) | RetKind::ResultUniquePtr(n) => unique.push(*n),
-                RetKind::Vec(n) | RetKind::ResultVec(n) if is_extern(n) => vecs.push(*n),
+            match f.ret.shape() {
+                RetShape::UniquePtr(n) => unique.push(*n),
+                RetShape::Vec(n) if is_extern(n) => vecs.push(*n),
                 _ => {}
             }
         }
@@ -683,4 +676,23 @@ pub(crate) fn bridge_tokens() -> TokenStream {
             #(#domain_toks)*
         }
     }
+}
+
+/// The crate-root re-exports carrying a `#[doc(alias)]` for every [`FnSpec::sdk_alias`] set across
+/// every domain, so a reader of the IDA SDK can find the flat binding by its SDK member name. `cxx`
+/// rejects `#[doc(alias)]` inside the bridge (only `#[doc = ...]` and `#[doc(hidden)]` pass), so the
+/// alias rides a second, named `pub use` instead; it coexists with `bridge_gen.rs`'s glob re-export
+/// (an explicit import shadows a glob one for the same name, so this is not a duplicate-item error)
+/// and survives into rustdoc search. A domain with no aliased fns contributes nothing here, since
+/// the glob re-export already exposes its names.
+pub(crate) fn reexport_tokens() -> TokenStream {
+    let uses = domains().iter().flat_map(|d| d.fns.iter()).filter_map(|f| {
+        let alias = f.sdk_alias?;
+        let name = format_ident!("{}", f.name);
+        Some(quote! {
+            #[doc(alias = #alias)]
+            pub use ffi::#name;
+        })
+    });
+    quote! { #(#uses)* }
 }

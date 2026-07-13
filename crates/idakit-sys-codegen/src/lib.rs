@@ -5,9 +5,9 @@
 //!
 //! `cxx_build::bridge()` parses bridge source textually with `syn`, so a `macro_rules!` can never
 //! author a `#[cxx::bridge] mod`: its symbols would be invisible to the parser and undefined at
-//! link. `cxx-gen` is the escape hatch. `generate_header_and_cc` takes a `TokenStream` that already
-//! contains a `#[cxx::bridge] mod` and returns the C++ header + impl, so build.rs can build the
-//! module's tokens from a declarative spec and drive every face off it.
+//! link. `cxx-gen` is the escape hatch: its `generate_header_and_cc` takes a `TokenStream` that
+//! already contains a `#[cxx::bridge] mod` and returns the C++ header + impl, so build.rs can build
+//! the module's tokens from a declarative spec and drive every face off it.
 //!
 //! One [`Domain`] is one slice of the facade (segment, function, ...). Every domain feeds one
 //! unified `#[cxx::bridge] mod ffi` (namespace `idakit_gen`): the generator emits all three
@@ -20,7 +20,7 @@
 //! The engine is split into three sibling files: `dsl` (the authoring macros), `model` (the spec
 //! data vocabulary), and `emit` (the token/string emitters). The declarative manifest of domains
 //! lives in the sibling `domains` submodule ([`domains`]), one file per domain; the
-//! matrix-generated netnode domain lives in `domains::netnode`.
+//! matrix-generated netnode domain lives in `domains`'s private `netnode` submodule.
 //!
 //! Files written to `$OUT_DIR`:
 //!
@@ -42,7 +42,7 @@ mod domains;
 mod visitors;
 
 use domains::domains;
-use emit::bridge_tokens;
+use emit::{bridge_tokens, reexport_tokens};
 
 /// The generated body TUs (the `cxx-gen` glue plus each domain's templated bodies) that build.rs
 /// must compile.
@@ -74,11 +74,11 @@ pub fn generate(out_dir: &Path) {
     let tokens = bridge_tokens();
 
     // Rust side: the proc-macro expands this on `include!`. `TokenStream`'s Display is valid (if
-    // unformatted) Rust; OUT_DIR files are never formatted, so that is fine. The aliased netnode
-    // re-exports are appended here only, outside the bridge module, so cxx-gen never sees them.
+    // unformatted) Rust; OUT_DIR files are never formatted, so that is fine. The aliased re-exports
+    // are appended here only, outside the bridge module, so cxx-gen never sees them.
     let mut rust = tokens.to_string();
     rust.push('\n');
-    rust.push_str(&domains::netnode::reexport_tokens().to_string());
+    rust.push_str(&reexport_tokens().to_string());
     std::fs::write(out_dir.join("gen_bridge.rs"), rust).expect("write gen_bridge.rs");
 
     // C++ side: same tokens => matching shim symbol names on both sides.

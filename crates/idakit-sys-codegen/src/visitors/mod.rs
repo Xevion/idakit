@@ -29,7 +29,7 @@ const DRIVERS: &[VisitorDriverFn] = &[
               `type_visitor` must be a live `TypeWalkVisitor*`, cast to `usize`, that outlives \
               the call.",
         args: args!(cfunc: ExternRef("CFunc"), nodes: VisitorMut("CtreeVisitor"), type_visitor: Usize),
-        ret: RetKind::U32,
+        ret: ret!(U32),
         unsafe_: true,
     },
     VisitorDriverFn {
@@ -37,7 +37,7 @@ const DRIVERS: &[VisitorDriverFn] = &[
         doc: "Walk the local type named `name`, driving `visitor`'s methods per node; returns the \
               root handle. `Err` when no such type exists (or a thrown SDK error).",
         args: args!(name: Str, visitor: VisitorMut("TypeWalkVisitor")),
-        ret: RetKind::ResultU32,
+        ret: ret!(ResultU32),
         unsafe_: false,
     },
     VisitorDriverFn {
@@ -45,7 +45,7 @@ const DRIVERS: &[VisitorDriverFn] = &[
         doc: "Walk the local type at `ordinal`, driving `visitor`'s methods per node; returns the \
               root handle. `Err` when no type occupies the ordinal (or a thrown SDK error).",
         args: args!(ordinal: U32, visitor: VisitorMut("TypeWalkVisitor")),
-        ret: RetKind::ResultU32,
+        ret: ret!(ResultU32),
         unsafe_: false,
     },
     VisitorDriverFn {
@@ -53,7 +53,7 @@ const DRIVERS: &[VisitorDriverFn] = &[
         doc: "Walk the stored prototype of the function at `ea`, driving `visitor`; returns the \
               root handle. `Err` when the function has no type info.",
         args: args!(ea: U64, visitor: VisitorMut("TypeWalkVisitor")),
-        ret: RetKind::ResultU32,
+        ret: ret!(ResultU32),
         unsafe_: false,
     },
     VisitorDriverFn {
@@ -62,7 +62,7 @@ const DRIVERS: &[VisitorDriverFn] = &[
               `visitor`, returning the frame size and variables. `Err` when there is no function \
               or frame at `ea`.",
         args: args!(ea: U64, visitor: VisitorMut("TypeWalkVisitor")),
-        ret: RetKind::ResultShared("FrameWalk"),
+        ret: ret!(ResultShared("FrameWalk")),
         unsafe_: false,
     },
 ];
