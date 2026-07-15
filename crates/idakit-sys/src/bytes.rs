@@ -1,4 +1,4 @@
-//! The `idakit_get_bytes` read-into twin, the `set_cmt` comment write, and the
+//! The `get_bytes_into` read-into twin, the `set_cmt` comment write, and the
 //! item-classification / pattern-search flag constants (`bytes.hpp`).
 
 use std::ffi::{c_char, c_int, c_void};
@@ -11,7 +11,8 @@ use crate::Address;
 unsafe extern "C" {
     /// Read `size` bytes starting at `address` into `buf`; returns the count read, or negative
     /// on failure.
-    pub fn idakit_get_bytes(address: Address, buf: *mut c_void, size: usize) -> i64;
+    #[link_name = "idakit_get_bytes"]
+    pub fn get_bytes_into(address: Address, buf: *mut c_void, size: usize) -> i64;
 }
 
 bitflags! {

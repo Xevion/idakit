@@ -279,7 +279,7 @@ fn bring_up_kernel(cfg: &IdaConfig) -> Result<(), InitError> {
     claim::steal_main().map_err(|reason| InitError::Claim { reason })?;
     if !KERNEL_INITED.swap(true, Ordering::AcqRel) {
         // SAFETY: on the (now) kernel thread, once, before any other kernel call.
-        let rc = unsafe { sys::idakit_init_library() };
+        let rc = unsafe { sys::init_headless() };
         if rc != 0 {
             KERNEL_INITED.store(false, Ordering::Release); // let a retry re-init
             return Err(InitError::InitLibrary { code: rc });
@@ -287,6 +287,6 @@ fn bring_up_kernel(cfg: &IdaConfig) -> Result<(), InitError> {
     }
     // `batch` is a process global; the current request's choice wins on every bring-up.
     // SAFETY: kernel thread, after init.
-    unsafe { sys::idakit_set_batch(cfg.batch as c_int) };
+    unsafe { sys::set_batch(cfg.batch as c_int) };
     Ok(())
 }

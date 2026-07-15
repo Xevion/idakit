@@ -385,7 +385,7 @@ struct BannerFilter {
 // libidalib reads TVHEADLESS to stay off the GUI/Qt path but never sets it, so set it here
 // before init runs. Setting it in C (not the Rust env API) keeps this off the edition-2024
 // unsafe set_var race and colocates it with init.
-extern "C" int idakit_init_library(void) {
+extern "C" int init_headless(void) {
 #if defined(_WIN32)
   _putenv_s("TVHEADLESS", "1");
 #else
@@ -395,32 +395,32 @@ extern "C" int idakit_init_library(void) {
 }
 
 // nonzero -> suppress dialogs / auto-answer prompts (headless default); zero -> interactive.
-extern "C" void idakit_set_batch(int on) { batch = on != 0; }
+extern "C" void set_batch(int on) { batch = on != 0; }
 
 // Returns open_database's rc, or IDAKIT_EXIT_TRAPPED if the kernel tried to exit() during
-// the call (then idakit_last_exit_code()/idakit_last_output() carry the detail).
-extern "C" int idakit_guarded_open(const char *file_path, int run_auto) {
+// the call (then last_exit_code()/last_output() carry the detail).
+extern "C" int guarded_open(const char *file_path, int run_auto) {
   return guarded<int>(IDAKIT_EXIT_TRAPPED, true,
                       [&] { return open_database(file_path, run_auto != 0, nullptr); });
 }
 
 // Guarded auto-analysis wait: 1 on success, 0 on failure, IDAKIT_EXIT_TRAPPED on a trapped
 // fatal. Analysis can run arbitrary kernel code, so it gets the same protection as open.
-extern "C" int idakit_guarded_auto_wait(void) {
+extern "C" int guarded_auto_wait(void) {
   return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [] { return auto_wait() ? 1 : 0; });
 }
 
 // Guarded close: 0 normally, IDAKIT_EXIT_TRAPPED if a fatal fired while flushing/saving.
-extern "C" int idakit_guarded_close(int save) {
+extern "C" int guarded_close(int save) {
   return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [&] {
     close_database(save != 0);
     return 0;
   });
 }
 
-extern "C" int idakit_last_exit_code(void) { return g_exit_code; }
+extern "C" int last_exit_code(void) { return g_exit_code; }
 
-extern "C" int idakit_was_trapped(void) { return g_trapped ? 1 : 0; }
+extern "C" int was_trapped(void) { return g_trapped ? 1 : 0; }
 
 extern "C" int idakit_reg_read_int(const char *name, int defval) {
   return reg_read_int(name, defval, nullptr);
@@ -429,14 +429,14 @@ extern "C" int idakit_reg_read_int(const char *name, int defval) {
 // Write EULA acceptance to the registry, as the GUI does on Accept; without it headless
 // idalib refuses to open ("License not yet accepted"). Key is "EULA <version>"; 90 is what
 // IDA 9.3 checks. Idempotent; returns the value after writing (nonzero = accepted).
-extern "C" int idakit_accept_eula(void) {
+extern "C" int accept_eula(void) {
   reg_write_bool("EULA 90", 1, nullptr);
   return reg_read_int("EULA 90", 0, nullptr);
 }
 
 // Copy the last guarded call's captured stdout+stderr into buf; returns its full length
 // (which may exceed cap, like snprintf). Pass cap==0 to query the length.
-extern "C" size_t idakit_last_output(char *buf, size_t cap) {
+extern "C" size_t last_output(char *buf, size_t cap) {
   size_t n = g_output.size();
   if (buf != nullptr && cap > 0) {
     size_t copy = n < cap - 1 ? n : cap - 1;
@@ -448,7 +448,7 @@ extern "C" size_t idakit_last_output(char *buf, size_t cap) {
 
 // Run the chosen fatal inside guarded<> so the trap tests can prove it's caught: the exit/abort
 // stand-ins libida's redirected GOT slots point at (the longjmp path), or interr (the throw path).
-extern "C" int idakit_test_fatal(int kind) {
+extern "C" int test_fatal(int kind) {
   return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [kind]() -> int {
     if (kind == IDAKIT_FATAL_EXIT)
       idakit_exit(42);
@@ -460,13 +460,13 @@ extern "C" int idakit_test_fatal(int kind) {
   });
 }
 
-extern "C" int idakit_get_batch(void) { return batch ? 1 : 0; }
+extern "C" int get_batch(void) { return batch ? 1 : 0; }
 
 // Fire the chosen fatal from an arbitrary translation unit. The exit/abort stand-ins are
 // file-local to this TU, so the cxx probe body (in probe_cxx.cc, a separate archive) can't
 // reach them directly; it calls here instead. exit/abort take the longjmp path; interr throws
 // (set_interr_throws, armed by guarded<>).
-extern "C" void idakit_trigger_fatal(int kind) {
+extern "C" void trigger_fatal(int kind) {
   if (kind == IDAKIT_FATAL_EXIT)
     idakit_exit(42);
   else if (kind == IDAKIT_FATAL_ABORT)

@@ -73,43 +73,43 @@ impl Database {
     /// trapped and surfaced as the [`sys::IDAKIT_EXIT_TRAPPED`] sentinel instead of killing
     /// the process.
     pub(crate) fn open_database(&mut self, path: *const c_char, run_auto: bool) -> c_int {
-        unsafe { sys::idakit_guarded_open(path, run_auto as c_int) }
+        unsafe { sys::guarded_open(path, run_auto as c_int) }
     }
 
     /// The exit code IDA passed to `exit()` on the last trapped fatal open.
     pub(crate) fn last_exit_code(&self) -> c_int {
-        unsafe { sys::idakit_last_exit_code() }
+        unsafe { sys::last_exit_code() }
     }
 
     /// The stdout+stderr IDA emitted during the last guarded open, captured by the
     /// facade instead of leaking to the caller's console.
     pub(crate) fn last_output(&self) -> String {
-        crate::ffi::read_string(|buf, cap| unsafe { sys::idakit_last_output(buf, cap) as i64 })
+        crate::ffi::read_string(|buf, cap| unsafe { sys::last_output(buf, cap) as i64 })
             .unwrap_or_default()
     }
 
     /// Records EULA acceptance in IDA's registry, and returns whether it now reads accepted.
     pub(crate) fn reg_accept_eula(&self) -> bool {
-        unsafe { sys::idakit_accept_eula() != 0 }
+        unsafe { sys::accept_eula() != 0 }
     }
 
     /// Blocks until the auto-analysis queue drains. Only meaningful after an
     /// `open_database(run_auto = true)`, which enables but does not await analysis.
     /// Guarded: returns [`sys::IDAKIT_EXIT_TRAPPED`] if analysis hit a fatal exit().
     pub(crate) fn auto_wait(&self) -> c_int {
-        unsafe { sys::idakit_guarded_auto_wait() }
+        unsafe { sys::guarded_auto_wait() }
     }
 
     /// Guarded close, where a fatal during a save is trapped (returns the sentinel) rather
     /// than killing the process. Best-effort, since by the time we close, the result is
     /// moot.
     pub(crate) fn close_database(&mut self, save: bool) {
-        unsafe { sys::idakit_guarded_close(save as c_int) };
+        unsafe { sys::guarded_close(save as c_int) };
     }
 
     /// Whether the most recent guarded facade call trapped a fatal exit().
     pub(crate) fn was_trapped(&self) -> bool {
-        unsafe { sys::idakit_was_trapped() != 0 }
+        unsafe { sys::was_trapped() != 0 }
     }
 
     /// Zero-alloc read into `buf`; the generated `get_bytes` returns an owned `Vec`, so it can't
@@ -118,7 +118,7 @@ impl Database {
     ///
     /// [`get_bytes_owned`]: Self::get_bytes_owned
     pub(crate) fn get_bytes(&self, address: Address, buf: *mut c_void, size: usize) -> i64 {
-        unsafe { sys::idakit_get_bytes(address.get(), buf, size) }
+        unsafe { sys::get_bytes_into(address.get(), buf, size) }
     }
 
     pub(crate) fn set_name(&mut self, address: Address, name: *const c_char) -> bool {

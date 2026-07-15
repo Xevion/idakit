@@ -1,6 +1,6 @@
 // Fault-injection probes for the cxx bridge. Two jobs:
 //
-//   * probe_fatal_through_cxx / idakit_test_fatal_through_cxx force the "dangerous topology": a
+//   * probe_fatal_through_cxx / test_fatal_through_cxx force the "dangerous topology": a
 //     guarded<> setjmp ABOVE a cxx Result-shim, with the fatal firing from C++
 //     BELOW the shim, so the trap's longjmp must unwind through the cxx-generated try/catch
 //     landing-pad frame. idakit's real code never produces this (cxx bridge fns are leaves that
@@ -21,17 +21,17 @@
 
 #include "rust/cxx.h"
 
-#include "idakit_facade.h"          // IDAKIT_FATAL_*, IDAKIT_EXIT_TRAPPED, idakit_trigger_fatal
+#include "idakit_facade.h"          // IDAKIT_FATAL_*, IDAKIT_EXIT_TRAPPED, trigger_fatal
 #include "idakit_facade_internal.hpp" // guarded<>
 #include "probe_cxx.h"
 
 namespace idakit_cxx {
 
-// Body reached through the cxx shim. On the exit/abort kinds idakit_trigger_fatal never returns
+// Body reached through the cxx shim. On the exit/abort kinds trigger_fatal never returns
 // (the trap longjmps back to the guard above); on the interr kind it throws interr_exc_t, which
 // the shim's own `catch (std::exception const&)` intercepts (interr_exc_t : std::exception).
 rust::String probe_fatal_through_cxx(int32_t kind) {
-  idakit_trigger_fatal(kind);
+  trigger_fatal(kind);
   return rust::String("probe_fatal_through_cxx: fatal did not fire");
 }
 
@@ -78,7 +78,7 @@ idakit_cxx$cxxbridge1$197$probe_fatal_through_cxx(::std::int32_t kind,
                                                   ::rust::String *ret) noexcept;
 
 // Arm the guard, then reach the fatal *through* the cxx shim.
-extern "C" int idakit_test_fatal_through_cxx(int kind) {
+extern "C" int test_fatal_through_cxx(int kind) {
   return idakit_facade::guarded<int>(IDAKIT_EXIT_TRAPPED, false, [kind]() -> int {
     // Return slot the shim placement-news into on success. Empty until then, so the longjmp path
     // (exit/abort) that never lets the shim return leaks nothing when its ~String is skipped.
