@@ -2,8 +2,10 @@ use super::super::model::*;
 
 /// The strings domain: IDA's string list plus per-literal decoding. `strlist_build` runs an
 /// O(database) scan to (re)build the list; `strlist_item` returns the nth entry as a `StrlistItem`
-/// (throws when out of range), and `strlit_contents` decodes one literal to UTF-8 (throws when
-/// undecodable). All bodies are hand-written in `facade/strings_custom.cc`.
+/// (throws when out of range). `strlit_contents` decodes one literal semantically (`STRCONV_REPLCHAR`,
+/// undecodable units to U+FFFD) and `strlit_escaped` to its display form (`STRCONV_ESCAPE`, C-escaped
+/// as in the pseudocode); both throw only when the literal cannot be read. All bodies are
+/// hand-written in `facade/strings_custom.cc`.
 pub const STRINGS: Domain = Domain {
     name: "strings",
     sdk_includes: &["<strlist.hpp>", "<bytes.hpp>", "<stdexcept>"],
@@ -26,8 +28,11 @@ pub const STRINGS: Domain = Domain {
             strlist_qty() -> Usize;
         "The `n`-th string-list entry as a `StrlistItem`; `Err` when `n` is out of range."
             strlist_item(n: Usize) -> ResultShared("StrlistItem");
-        "Decode the string literal at `ea` (given octet length and `STRTYPE`) to UTF-8; `Err` when \
-         it cannot be decoded."
+        "Decode the string literal at `ea` (given octet length and `STRTYPE`) semantically \
+         (`STRCONV_REPLCHAR`: undecodable units become U+FFFD); `Err` when it cannot be read."
             strlit_contents(ea: U64, len: Usize, strtype: I32) -> ResultString;
+        "Decode the string literal at `ea` to its C-escaped display form (`STRCONV_ESCAPE`, as the \
+         decompiler renders it); `Err` when it cannot be read."
+            strlit_escaped(ea: U64, len: Usize, strtype: I32) -> ResultString;
     },
 };

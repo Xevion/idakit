@@ -28,8 +28,8 @@ int idaapi collect_import(ea_t ea, const char *name, uval_t ord, void *param) {
   rec.ea = (uint64_t)ea;
   rec.ord = (uint64_t)ord;
   if (name != nullptr)
-    rec.name = rust::String(name);
-  rec.module = rust::String(ctx->module->c_str(), ctx->module->length());
+    rec.name = to_rust_string(name);
+  rec.module = to_rust_string(ctx->module->c_str(), ctx->module->length());
   ctx->rows->push_back(std::move(rec));
   return 1; // continue enumeration
 }

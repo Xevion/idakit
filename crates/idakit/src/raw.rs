@@ -314,6 +314,8 @@ impl Database {
         fn strlist_item(&self, n: usize) -> Option<sys::StrlistItem> = sys::strlist_item(n).ok();
         fn strlit_contents(&self, address: Address, len: usize, ty: c_int) -> Option<String>
             = sys::strlit_contents(address.get(), len, ty).ok();
+        fn strlit_escaped(&self, address: Address, len: usize, ty: c_int) -> Option<String>
+            = sys::strlit_escaped(address.get(), len, ty).ok();
     }
 
     forward! {

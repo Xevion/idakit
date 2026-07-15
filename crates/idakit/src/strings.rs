@@ -85,12 +85,25 @@ impl<'db> StringLiteral<'db> {
 
     /// The decoded string as UTF-8, or `None` if the bytes can't be read.
     ///
-    /// Undecodable units become the Unicode replacement character (U+FFFD) rather than failing.
+    /// This is the semantic form, for search, matching, and analysis: undecodable units become the
+    /// Unicode replacement character (U+FFFD) rather than failing. For the pseudocode-faithful
+    /// rendering with control bytes shown as C escapes, use [`escaped`](Self::escaped).
     #[must_use]
     #[doc(alias("get_strlit_contents"))]
     pub fn text(&self) -> Option<String> {
         self.db
             .strlit_contents(self.address, self.length, self.raw_type)
+    }
+
+    /// The string in its C-escaped display form, or `None` if the bytes can't be read.
+    ///
+    /// This is what the decompiler renders in pseudocode: non-printable and undecodable bytes show
+    /// as C escapes (`\n`, `\xNN`, `\uNNNN`). Use [`text`](Self::text) for the semantic form.
+    #[must_use]
+    #[doc(alias("get_strlit_contents"))]
+    pub fn escaped(&self) -> Option<String> {
+        self.db
+            .strlit_escaped(self.address, self.length, self.raw_type)
     }
 }
 

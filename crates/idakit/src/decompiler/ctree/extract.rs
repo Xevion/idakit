@@ -89,16 +89,6 @@ fn opt_s(raw: u32) -> Option<StatementId> {
     (raw != NONE).then(|| sid(raw))
 }
 
-/// Lossily decode a facade byte string (IDA names and literals are not guaranteed UTF-8).
-fn lossy(raw: &[u8]) -> String {
-    String::from_utf8_lossy(raw).into_owned()
-}
-
-/// Like [`lossy`], but an empty slice (an absent optional string) maps to `None`.
-fn lossy_opt(raw: &[u8]) -> Option<String> {
-    (!raw.is_empty()).then(|| lossy(raw))
-}
-
 /// Accumulates the owned ctree as the facade walks. Its methods are the safe surface the
 /// [`idakit_sys::CtreeSink`] impl below (and the unit tests) call; each returns the new node's
 /// handle as a bare `u32` for the facade to thread to the parent. Node building lives here; type
@@ -428,10 +418,10 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
     fn func(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
         idakit_sys::TypeWalkSink::func(&mut SinkAdapter(self), ret, params, vararg)
     }
-    fn opaque(&mut self, name: &str) -> u32 {
+    fn opaque(&mut self, name: String) -> u32 {
         idakit_sys::TypeWalkSink::opaque(&mut SinkAdapter(self), name)
     }
-    fn named_ref(&mut self, name: &str) -> u32 {
+    fn named_ref(&mut self, name: String) -> u32 {
         idakit_sys::TypeWalkSink::named_ref(&mut SinkAdapter(self), name)
     }
     fn anon(&mut self) -> u32 {
@@ -484,9 +474,9 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
     }
 }
 
-/// The node half of the ctree walk: each method decodes its `&[u8]` arguments with
-/// `String::from_utf8_lossy` (IDA names and string literals are not guaranteed UTF-8) and
-/// forwards into the matching safe method above.
+/// The node half of the ctree walk: each method forwards its owned arguments into the matching
+/// safe method above. Names, string literals, and comments arrive as owned `String`, decoded
+/// leniently facade-side (IDA emits UTF-8; any undecodable unit is U+FFFD).
 impl idakit_sys::CtreeSink for CallbackBuilder {
     fn e_num(&mut self, ea: u64, value: u64, ty: u32) -> u32 {
         self.num(ea, value, ty)
@@ -496,20 +486,20 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
         self.fnum(ea, value, ty)
     }
 
-    fn e_obj(&mut self, ea: u64, target: u64, name: &[u8], ty: u32) -> u32 {
-        self.obj(ea, target, lossy_opt(name), ty)
+    fn e_obj(&mut self, ea: u64, target: u64, name: String, ty: u32) -> u32 {
+        self.obj(ea, target, (!name.is_empty()).then_some(name), ty)
     }
 
     fn e_var(&mut self, ea: u64, idx: u32, ty: u32) -> u32 {
         self.var(ea, idx, ty)
     }
 
-    fn e_str(&mut self, ea: u64, bytes: &[u8], ty: u32) -> u32 {
-        self.string(ea, lossy(bytes), ty)
+    fn e_str(&mut self, ea: u64, text: String, ty: u32) -> u32 {
+        self.string(ea, text, ty)
     }
 
-    fn e_helper(&mut self, ea: u64, bytes: &[u8], ty: u32) -> u32 {
-        self.helper(ea, lossy(bytes), ty)
+    fn e_helper(&mut self, ea: u64, name: String, ty: u32) -> u32 {
+        self.helper(ea, name, ty)
     }
 
     fn e_call(&mut self, ea: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
@@ -615,11 +605,11 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
 
     fn l_lvar(
         &mut self,
-        name: &[u8],
+        name: String,
         ty: u32,
         flags: u32,
         width: u32,
-        comment: &[u8],
+        comment: String,
         atype: u32,
         reg1: u32,
         reg2: u32,
@@ -635,9 +625,9 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
             })
             .collect();
         let location = LocalLocation::from_argloc(atype, reg1, reg2, sval, pieces);
-        let comment = lossy_opt(comment);
+        let comment = (!comment.is_empty()).then_some(comment);
         let lvar = Local {
-            name: lossy(name),
+            name,
             ty: tid(ty),
             is_arg: flags & 1 != 0,
             is_result: flags & 2 != 0,

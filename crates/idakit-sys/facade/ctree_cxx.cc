@@ -3,8 +3,9 @@
 // opaque visitor's member functions (nodes->e_num(...), nodes->s_if(...), nodes->l_lvar(...)) that
 // cxx generates, not a function-pointer table and void* context. Node types are resolved through
 // the shared tinfo walker (typewalk_walker.hpp), one walker created per ctree walk and driven
-// alongside the recursion exactly as the deleted facade did. Byte strings cross as
-// rust::Slice<const uint8_t>, arrays as rust::Slice<T>, borrowed for the one call.
+// alongside the recursion exactly as the deleted facade did. Names, string literals, and comments
+// cross as owned rust::String, decoded leniently (IDA emits UTF-8, undecodable units become U+FFFD);
+// arrays cross as rust::Slice<T>, borrowed for the one call.
 
 #include <pro.h>
 
@@ -28,9 +29,9 @@ namespace idakit_cxx {
 
 namespace {
 
-rust::Slice<const uint8_t> bytes_of(const char *p, size_t n) {
-  return rust::Slice<const uint8_t>(reinterpret_cast<const uint8_t *>(p), n);
-}
+// Lenient-decode a facade C string into an owning rust::String for the one visitor call. IDA emits
+// UTF-8, so lossy never rejects, yet a stray bad byte degrades to U+FFFD instead of unwinding.
+rust::String lossy_str(const char *p, size_t n) { return rust::String::lossy(p, n); }
 
 rust::Slice<const uint32_t> slice_of(const std::vector<uint32_t> &v) {
   return v.empty() ? rust::Slice<const uint32_t>()
@@ -71,19 +72,19 @@ struct walker_t {
     case cot_obj: {
       qstring nm;
       get_name(&nm, e->obj_ea);
-      return nodes->e_obj(ea, (uint64_t)e->obj_ea, bytes_of(nm.c_str(), nm.length()), t);
+      return nodes->e_obj(ea, (uint64_t)e->obj_ea, lossy_str(nm.c_str(), nm.length()), t);
     }
     case cot_var:
       return nodes->e_var(ea, (uint32_t)e->v.idx, t);
     case cot_str:
       return nodes->e_str(ea,
-                          bytes_of(e->string != nullptr ? e->string : "",
-                                   e->string != nullptr ? strlen(e->string) : 0),
+                          lossy_str(e->string != nullptr ? e->string : "",
+                                    e->string != nullptr ? strlen(e->string) : 0),
                           t);
     case cot_helper:
       return nodes->e_helper(ea,
-                             bytes_of(e->helper != nullptr ? e->helper : "",
-                                      e->helper != nullptr ? strlen(e->helper) : 0),
+                             lossy_str(e->helper != nullptr ? e->helper : "",
+                                       e->helper != nullptr ? strlen(e->helper) : 0),
                              t);
     case cot_ptr:
       return nodes->e_deref(ea, expr(e->x), (uint32_t)e->ptrsize, t);
@@ -257,8 +258,8 @@ struct walker_t {
         break; // ALOC_NONE / ALOC_CUSTOM: atype alone carries it
       }
       uint32_t ty = idakit_cxx::visit_walker_ty(vw, l.tif);
-      nodes->l_lvar(bytes_of(l.name.c_str(), l.name.length()), ty, flags, (uint32_t)l.width,
-                    bytes_of(l.cmt.c_str(), l.cmt.length()), atype, reg1, reg2, sval,
+      nodes->l_lvar(lossy_str(l.name.c_str(), l.name.length()), ty, flags, (uint32_t)l.width,
+                    lossy_str(l.cmt.c_str(), l.cmt.length()), atype, reg1, reg2, sval,
                     slice_of(pieces));
     }
   }

@@ -30,7 +30,7 @@ rust::String file_type_name() {
   size_t n = get_file_type_name(buf, sizeof(buf));
   if (n == 0)
     throw std::runtime_error("no file type name");
-  return rust::String(buf, n);
+  return to_rust_string(buf, n);
 }
 
 rust::String input_path() {
@@ -39,7 +39,7 @@ rust::String input_path() {
   ssize_t n = get_input_file_path(buf, sizeof(buf));
   if (n <= 0)
     throw std::runtime_error("no input file path");
-  return rust::String(buf, (size_t)(n - 1));
+  return to_rust_string(buf, (size_t)(n - 1));
 }
 
 rust::String root_filename() {
@@ -47,7 +47,7 @@ rust::String root_filename() {
   ssize_t n = get_root_filename(buf, sizeof(buf));
   if (n <= 0)
     throw std::runtime_error("no root filename");
-  return rust::String(buf, (size_t)n);
+  return to_rust_string(buf, (size_t)n);
 }
 
 } // namespace idakit_gen

@@ -197,6 +197,10 @@ pub enum ArgTy {
     Bool,
     /// A borrowed string (`&str` / `rust::Str`).
     Str,
+    /// An owned lenient-decoded string (`String` / `rust::String`), built facade-side (any
+    /// undecodable unit is U+FFFD). Used where a name/literal may not be pristine UTF-8, so a
+    /// zero-copy `&str` borrow would be unsound.
+    String,
     /// A borrowed byte slice (`&[u8]` / `rust::Slice<const uint8_t>`).
     Bytes,
     /// A by-value `Trivial` `ExternType`, by Rust name.

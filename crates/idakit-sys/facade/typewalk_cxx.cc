@@ -2,8 +2,9 @@
 // typewalk_walker.hpp) does a depth-first tinfo_t recursion guarded by a placeholder plus a
 // `defined`-set dedup, so a self-referential type resolves instead of looping. It emits through the
 // extern "Rust" opaque visitor's member functions (vis->scalar(...), vis->named_ref(...),
-// vis->fill_struct(...)) that cxx generates, not a C function-pointer table. Per-call scalar names
-// cross as rust::Str; struct-member names as owned rust::String; arrays as rust::Slice.
+// vis->fill_struct(...)) that cxx generates, not a C function-pointer table. Type names and
+// struct-member names cross as owned rust::String, decoded leniently (IDA emits UTF-8, undecodable
+// units become U+FFFD); arrays cross as rust::Slice.
 
 #include <pro.h>
 
@@ -31,11 +32,11 @@ namespace idakit_cxx {
 
 namespace {
 
-// A rust::Str borrowing a qstring's buffer for the duration of one visitor call (zero-copy). The
-// qstring must outlive the call; every use below keeps it on the stack across the call.
-rust::Str borrow(const qstring &s) { return rust::Str(s.c_str(), s.length()); }
+// Lenient-decode a type name into an owning rust::String for the one visitor call. IDA emits UTF-8,
+// so lossy never rejects, yet a stray bad byte degrades to U+FFFD instead of unwinding.
+rust::String lossy_str(const qstring &s) { return rust::String::lossy(s.c_str(), s.length()); }
 
-rust::Str borrow(const char *p, size_t n) { return rust::Str(p, n); }
+rust::String lossy_str(const char *p, size_t n) { return rust::String::lossy(p, n); }
 
 // Whether a value_repr_t FRB_* nibble falls in idakit's modeled numeric subset (binary, octal,
 // hex, decimal, char); false for FRB_UNK and every info-carrying/float/segment nibble.
@@ -120,16 +121,16 @@ uint32_t visit_walker_t::ty_bitfield(const tinfo_t &t) {
 uint32_t visit_walker_t::ty_opaque(const tinfo_t &t) {
   qstring nm;
   if (t.get_type_name(&nm) && !nm.empty())
-    return vis->opaque(borrow(nm));
+    return vis->opaque(lossy_str(nm));
   if (t.print(&nm) && !nm.empty())
-    return vis->opaque(borrow(nm));
-  return vis->opaque(borrow("?", 1));
+    return vis->opaque(lossy_str(nm));
+  return vis->opaque(lossy_str("?", 1));
 }
 
 uint32_t visit_walker_t::placeholder(const tinfo_t &t, bool *first) {
   qstring nm;
   if (t.get_type_name(&nm) && !nm.empty()) {
-    uint32_t id = vis->named_ref(borrow(nm));
+    uint32_t id = vis->named_ref(lossy_str(nm));
     *first = defined.insert(std::string(nm.c_str(), nm.length())).second;
     return id;
   }

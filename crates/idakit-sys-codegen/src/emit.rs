@@ -145,6 +145,7 @@ impl ArgTy {
             Self::Usize => quote!(usize),
             Self::Bool => quote!(bool),
             Self::Str => quote!(&str),
+            Self::String => quote!(String),
             Self::Bytes => quote!(&[u8]),
             Self::Extern(name) => {
                 let id = format_ident!("{name}");
@@ -176,6 +177,7 @@ impl ArgTy {
             Self::Usize => "size_t".into(),
             Self::Bool => "bool".into(),
             Self::Str => "rust::Str".into(),
+            Self::String => "rust::String".into(),
             Self::Bytes => "rust::Slice<const uint8_t>".into(),
             Self::Extern(name) => format!("::{}", ExternTy::cxx_name_of(name)),
             Self::ExternRef(name) => format!("const ::{}&", ExternTy::cxx_name_of(name)),
@@ -572,7 +574,7 @@ impl FnSpec {
                 } else {
                     let _ = writeln!(b, "  {getter}(&out, s);");
                 }
-                b.push_str("  return rust::String(out.c_str(), out.length());\n");
+                b.push_str("  return to_rust_string(out);\n");
                 b
             }
             BodyKind::Rendered(body) => (*body).to_string(),
@@ -838,8 +840,13 @@ pub(crate) fn facade_consts_tokens() -> TokenStream {
 /// them at most once yet links to one body. Both the generated bodies and the hand-written
 /// `custom_tu`s call these to copy a filled `qstring` / byte buffer out as its owning Rust type.
 const HELPERS: &str = "\
-// Copy a filled qstring / byte buffer out as the owning Rust type in one crossing.
-inline rust::String to_rust_string(const qstring &s) { return rust::String(s.c_str(), s.length()); }
+// Copy a filled qstring / C string out as an owning Rust String in one crossing, decoding
+// leniently: IDA emits UTF-8, and get_strlit_contents already replaces any undecodable unit with
+// U+FFFD, so `lossy` never rejects yet a stray bad byte degrades instead of unwinding across the
+// extern \"C\"/cxx boundary (the throwing rust::String ctor would std::terminate here).
+inline rust::String to_rust_string(const char *s, size_t n) { return rust::String::lossy(s, n); }
+inline rust::String to_rust_string(const char *s) { return rust::String::lossy(s); }
+inline rust::String to_rust_string(const qstring &s) { return to_rust_string(s.c_str(), s.length()); }
 
 inline rust::Vec<uint8_t> to_rust_bytes(const uint8_t *data, size_t n) {
   rust::Vec<uint8_t> out;

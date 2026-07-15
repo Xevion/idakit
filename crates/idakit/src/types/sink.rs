@@ -107,11 +107,11 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
     fn func(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
         self.0.function(ret, params, vararg)
     }
-    fn opaque(&mut self, name: &str) -> u32 {
-        self.0.opaque(name.to_owned())
+    fn opaque(&mut self, name: String) -> u32 {
+        self.0.opaque(name)
     }
-    fn named_ref(&mut self, name: &str) -> u32 {
-        self.0.named_ref(name.to_owned())
+    fn named_ref(&mut self, name: String) -> u32 {
+        self.0.named_ref(name)
     }
     fn anon(&mut self) -> u32 {
         self.0.anon()

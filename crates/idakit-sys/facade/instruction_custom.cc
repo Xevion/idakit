@@ -92,7 +92,7 @@ void fill_reg(RegisterData &r, int num, uint8_t cls, int width) {
     if (get_reg_name(&nm, num, width > 0 ? (size_t)width : 8) > 0)
       r.name = to_rust_string(nm);
   } else if (num >= 0 && num < PH.regs_num && PH.reg_names[num] != nullptr) {
-    r.name = rust::String(PH.reg_names[num]);
+    r.name = to_rust_string(PH.reg_names[num]);
   }
 }
 
@@ -106,7 +106,7 @@ void fill_special_reg(RegisterData &r, char prefix, int index, uint8_t cls, bool
   r.width = 0;
   char buf[16];
   qsnprintf(buf, sizeof(buf), "%cr%d%s", prefix, index, d_suffix ? "d" : "");
-  r.name = rust::String(buf);
+  r.name = to_rust_string(buf);
 }
 
 // A memory operand's effective address width (for naming its base/index registers).
@@ -240,7 +240,7 @@ InstructionData decode_insn(uint64_t ea) {
   out.itype = insn.itype;
   const char *mnem = insn.get_canon_mnem(PH);
   if (mnem != nullptr)
-    out.mnemonic = rust::String(mnem);
+    out.mnemonic = to_rust_string(mnem);
 
   uint32 feature = insn.get_canon_feature(PH);
   ea_t tgt = BADADDR;

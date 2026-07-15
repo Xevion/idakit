@@ -47,7 +47,7 @@ rust::String nlist_name(size_t idx) {
   const char *nm = ::get_nlist_name(idx);
   if (nm == nullptr)
     throw std::runtime_error("no name at nlist index");
-  return rust::String(nm, qstrlen(nm));
+  return to_rust_string(nm, qstrlen(nm));
 }
 
 // Name classification over an address's flags word: pure bit tests (inline in bytes.hpp, no kernel

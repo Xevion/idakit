@@ -27,7 +27,8 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
                will reference; children are visited before parents (post-order), so a method's \
                array/slice arguments are already-minted handles. [`l_lvar`](Self::l_lvar) is void \
                and appended in index order, the order [`e_var`](Self::e_var)'s `idx` refers to. \
-               Byte slices (names, string literals, comments) are borrowed for the one call only.",
+               Names, string literals, and comments cross as owned `String`, decoded leniently \
+               facade-side (IDA emits UTF-8; any undecodable unit is U+FFFD).",
     visitor_name: "CtreeVisitor",
     visitor_doc: "The `cxx` `extern \"Rust\"` opaque the C++ ctree walk drives by calling its \
                   `&mut self` methods, each forwarding into the [`CtreeSink`] it was built over.\n\n\
@@ -43,14 +44,15 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
         "A floating-point literal; returns its handle."
             e_fnum(ea: U64, value: F64, ty: U32);
         "A reference to the global object at `target`, named `name`; returns its handle."
-            e_obj(ea: U64, target: U64, name: Bytes, ty: U32);
+            e_obj(ea: U64, target: U64, name: String, ty: U32);
         "A reference to local variable `idx` (the [`l_lvar`](Self::l_lvar) append order); returns \
          its handle."
             e_var(ea: U64, idx: U32, ty: U32);
-        "A string literal; returns its handle."
-            e_str(ea: U64, bytes: Bytes, ty: U32);
+        "A string literal, as IDA's escaped display form (`e->string`, already C-escaped); returns \
+         its handle."
+            e_str(ea: U64, text: String, ty: U32);
         "A decompiler-synthesized helper name; returns its handle."
-            e_helper(ea: U64, bytes: Bytes, ty: U32);
+            e_helper(ea: U64, name: String, ty: U32);
         "A call to the already-visited `callee` with the already-visited `args`; returns its \
          handle."
             e_call(ea: U64, callee: U32, args: SliceU32, ty: U32);
@@ -104,7 +106,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
          `atype`/`reg1`/`reg2`/`sval` are the flattened `argloc_t` scalars; `pieces` is the \
          scattered-location fragments, empty unless `atype` marks a scattered (`ALOC_DIST`) \
          location."
-            l_lvar(name: Bytes, ty: U32, flags: U32, width: U32, comment: Bytes, atype: U32,
+            l_lvar(name: String, ty: U32, flags: U32, width: U32, comment: String, atype: U32,
                    reg1: U32, reg2: U32, sval: I64, pieces: SliceStruct("LocPiece")) -> Unit;
     },
 };

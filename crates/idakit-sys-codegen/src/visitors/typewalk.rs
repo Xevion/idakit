@@ -61,8 +61,9 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
                [`TypeWalkVisitor`] forwards every C++ call straight into it. Handle-returning \
                methods mint and return the walk-local id the parent will reference (children are \
                visited before parents); the `fill_*` methods complete a placeholder minted \
-               earlier by [`named_ref`](Self::named_ref)/[`anon`](Self::anon). Names and slices \
-               are borrowed for the one call only.",
+               earlier by [`named_ref`](Self::named_ref)/[`anon`](Self::anon). A type name crosses \
+               as an owned `String`, decoded leniently facade-side; slices are borrowed for the \
+               one call only.",
     visitor_name: "TypeWalkVisitor",
     visitor_doc: "The `cxx` `extern \"Rust\"` opaque the C++ type walk drives by calling its \
                   `&mut self` methods, each forwarding into the [`TypeWalkSink`] it was built \
@@ -84,9 +85,9 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
         "A function of the already-visited `ret` and `params`; returns its handle."
             func(ret: U32, params: SliceU32, vararg: U32);
         "A named-but-bodyless / unresolved leaf carrying its resolved `name`; returns its handle."
-            opaque(name: Str);
+            opaque(name: String);
         "A by-name placeholder for a named aggregate/typedef; returns its handle."
-            named_ref(name: Str);
+            named_ref(name: String);
         "An anonymous-aggregate placeholder; returns its handle."
             anon();
         "Fills the struct/union placeholder `id` with its `members`."

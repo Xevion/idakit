@@ -32,9 +32,11 @@ namespace idakit_gen {
 namespace {
 
 // The last guarded call's captured diagnostics (IDA's messages, caught off the msg channel by the
-// HT_UI hook) as an owned string; empty when nothing was captured.
+// HT_UI hook) as an owned string; empty when nothing was captured. This is the one genuinely
+// untrusted byte source (arbitrary msg() text, not a sanitized database string), so it decodes
+// leniently: the throwing ctor would std::terminate inside these by-value, non-Result bodies.
 rust::String captured_reason() {
-  return rust::String(g_output.c_str(), g_output.length());
+  return to_rust_string(g_output.c_str(), g_output.length());
 }
 
 // Map a scalar integer leaf (width in bytes, signedness) onto the SDK's sized int types. False for
