@@ -4,10 +4,9 @@
 //! the trap fails only that test.
 
 use idakit_sys::{
-    IDAKIT_EXIT_TRAPPED, IDAKIT_FATAL_ABORT, IDAKIT_FATAL_EXIT, IDAKIT_FATAL_INTERR, WriteOutcome,
-    drop_probe_count, drop_probe_make, ext_classify, ext_throw_coded, ext_throw_interr,
-    ext_throw_plain_int, idakit_test_fatal, idakit_test_fatal_through_cxx, make_addr_cursor,
-    probe_throw,
+    IDAKIT_EXIT_TRAPPED, IDAKIT_FATAL_ABORT, IDAKIT_FATAL_EXIT, IDAKIT_FATAL_INTERR,
+    drop_probe_count, drop_probe_make, ext_throw_coded, ext_throw_interr, ext_throw_plain_int,
+    idakit_test_fatal, idakit_test_fatal_through_cxx, probe_throw,
 };
 
 #[test]
@@ -139,53 +138,6 @@ fn cxx_exception_only_carries_a_string_code_must_be_encoded() {
         .parse()
         .expect("code parses back out of the message");
     assert_eq!(code, 7, "the only channel is the what() string");
-}
-
-// A `self: Pin<&mut Self>` receiver on a cxx opaque type binds to a NON-const
-// C++ member and mutates. The generated shim takes `&AddrCursor::advance` as a non-const member
-// pointer; here the mutation persists across separate calls (advance then seek then read back).
-#[test]
-fn pin_mut_self_mutates_opaque_across_calls() {
-    let mut cursor = make_addr_cursor(0x1000);
-    assert_eq!(
-        cursor.pos(),
-        0x1000,
-        "&self const member reads initial state"
-    );
-
-    cursor.pin_mut().advance(0x10);
-    assert_eq!(cursor.pos(), 0x1010, "Pin<&mut Self> advance persisted");
-
-    cursor.pin_mut().advance(0x08);
-    assert_eq!(
-        cursor.pos(),
-        0x1018,
-        "a second mutation stacks on the first"
-    );
-
-    cursor.pin_mut().seek(0x2000);
-    assert_eq!(cursor.pos(), 0x2000, "Pin<&mut Self> seek persisted");
-}
-
-// A cxx shared enum returned by value. cxx emits its own C++ enum and, on the
-// Rust side, a `#[repr(transparent)] struct { repr: i32 }` with associated consts; it can hold
-// any i32, so this match REQUIRES the wildcard arm (there is no exhaustive variant set to match).
-#[test]
-fn shared_enum_crosses_by_value_and_needs_a_wildcard() {
-    fn label(o: WriteOutcome) -> &'static str {
-        match o {
-            WriteOutcome::Applied => "applied",
-            WriteOutcome::Rejected => "rejected",
-            WriteOutcome::NoChange => "nochange",
-            _ => "unknown", // mandatory: the type is a newtype over i32, not a closed enum
-        }
-    }
-    assert_eq!(label(ext_classify(0)), "applied");
-    assert_eq!(label(ext_classify(1)), "rejected");
-    assert_eq!(label(ext_classify(2)), "nochange");
-    assert_eq!(label(ext_classify(99)), "nochange");
-    // The raw discriminant is directly readable, which is what idakit's num_enum layer consumes.
-    assert_eq!(ext_classify(1).repr, 1);
 }
 
 // Dropping a cxx `UniquePtr<T>` runs the C++ deleter. DropProbe's destructor bumps a

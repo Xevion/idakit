@@ -65,7 +65,6 @@ pub type Address = u64;
 /// "no address".
 pub const BADADDR: Address = u64::MAX;
 
-mod bridge_cfg_check;
 mod bridge_cfunc;
 mod bridge_gen;
 mod bridge_probe;
@@ -83,8 +82,6 @@ mod segment_flags;
 mod strings;
 mod ty_build;
 
-#[doc(hidden)]
-pub use bridge_cfg_check::*;
 #[doc(hidden)]
 pub use bridge_cfunc::*;
 pub use bridge_gen::*;

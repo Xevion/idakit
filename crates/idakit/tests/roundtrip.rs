@@ -182,9 +182,9 @@ fn run(idb: &mut Database) {
 
     // cxx opaque-handle bridge: the cxx `FlowChart` path (opaque type owned by UniquePtr, BlockInfo
     // shared struct, Result-shaped bounds) walked through the generated bridge. The per-index
-    // accessors are cross-checked against the whole-edge-list copy and the Opaque intvec_t
-    // container, the sibling cfg_check bridge, and the `self:`-member `size()`. The
-    // `UniquePtr<FlowChart>` frees the qflow_chart_t via cxx's generated deleter glue on drop.
+    // accessors are cross-checked against the whole-edge-list copy, the Opaque intvec_t container,
+    // and the `self:`-member `size()`. The `UniquePtr<FlowChart>` frees the qflow_chart_t via
+    // cxx's generated deleter glue on drop.
     {
         use idakit_sys as sys;
 
@@ -276,16 +276,6 @@ fn run(idb: &mut Database) {
             fc.size() as usize,
             n,
             "member-fn size() disagrees with free-fn cfg_nblocks()"
-        );
-
-        // The sibling `bridge_cfg_check` bridge accepts the *same* `&FlowChart` built here (one
-        // shared ExternType across two bridges) and sums every block's successor count. Cross-
-        // check it against the per-block `cfg_nsucc` totals from this bridge.
-        let edge_total: usize = (0..n).map(|b| sys::cfg_nsucc(&fc, b)).sum();
-        assert_eq!(
-            sys::cfg_total_edges_check(&fc),
-            edge_total,
-            "cross-bridge cfg_total_edges_check disagrees with summed cfg_nsucc"
         );
 
         // `fc` drops here: cxx's UniquePtr glue runs qflow_chart_t's destructor, no manual free.
@@ -654,53 +644,6 @@ fn run(idb: &mut Database) {
             );
             println!("decompile-failure reason propagated: {msg}");
         }
-    }
-
-    // cxx real-database-write cross-check: a mutation crossing the cxx boundary
-    // (libida `set_name`/`set_cmt` wrapped as bridge fns) must land and read back through idakit's
-    // existing read path. Follows roundtrip.rs's mutate-then-restore discipline exactly: the name is
-    // restored to `original` and the DB is closed `save = false`, so the fixture never changes on
-    // disk. Rejection surfaces as a Rust `Err` via the custom trycatch, treated as a bare signal.
-    {
-        use idakit_sys as sys;
-
-        let ea = address.get();
-        let cxx_name = "idakit_cxx_write_probe";
-
-        // Write the name THROUGH cxx, read it back through idakit -> the write landed across cxx.
-        sys::ext_set_name(ea, cxx_name)
-            .expect("cxx ext_set_name should succeed on a real function");
-        assert_eq!(
-            idb.function(address).name().as_str(),
-            cxx_name,
-            "cxx set_name did not land (read back through idakit)"
-        );
-
-        // Write a comment THROUGH cxx, read it back through idakit.
-        let cxx_cmt = "touched by idakit cxx write probe";
-        sys::ext_set_cmt(ea, cxx_cmt, false).expect("cxx ext_set_cmt should succeed");
-        assert_eq!(
-            idb.comment(address, false).as_deref(),
-            Some(cxx_cmt),
-            "cxx set_cmt did not land (read back through idakit)"
-        );
-
-        // The Err path: writing a name at an unmapped address is rejected; cxx surfaces it as Err
-        // (a bare failure signal; idakit re-derives qerrno/reason kernel-side, not from what()).
-        assert!(
-            sys::ext_set_name(0xffff_ffff_f000, "nope").is_err(),
-            "cxx set_name at an unmapped address should Err"
-        );
-
-        // Restore the original name through cxx and clear the probe comment; confirm the restore.
-        sys::ext_set_name(ea, original.as_str()).expect("cxx restore ext_set_name");
-        sys::ext_set_cmt(ea, "", false).expect("cxx clear ext_set_cmt");
-        assert_eq!(
-            idb.function(address).name().as_str(),
-            original.as_str(),
-            "name should be restored to the original after the cxx write probe"
-        );
-        println!("cxx real-DB write cross-check OK: set_name/set_cmt landed and restored via cxx");
     }
 
     // Rename via the write cursor (first's borrow has ended), then confirm.

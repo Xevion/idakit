@@ -5,18 +5,12 @@
 
 #include <ida.hpp>
 
-#include <bytes.hpp>
-#include <name.hpp>
-
 #include <stdexcept>
 #include <string>
 
 #include "rust/cxx.h"
 
 #include "probe_ext_cxx.h"
-// The cxx-generated header carries the full definition of the WriteOutcome shared enum (forward-
-// declared in probe_ext_cxx.h), so ext_classify below can name its variants.
-#include "idakit-sys/src/bridge_probe_ext.rs.h"
 
 namespace idakit_cxx {
 
@@ -39,37 +33,6 @@ rust::String ext_throw_interr(int32_t code) {
 rust::String ext_throw_coded(int32_t code) {
   throw std::runtime_error("idakit:qerrno=" + std::to_string(code));
   return rust::String("unreachable");
-}
-
-std::unique_ptr<AddrCursor> make_addr_cursor(uint64_t init) {
-  return std::unique_ptr<AddrCursor>(new AddrCursor{init});
-}
-
-// rust::Str is not NUL-terminated; copy into a std::string for the C API. set_name returns
-// false on rejection -> throw, which cxx maps to a Rust Err (the failure SIGNAL; the Rust caller
-// re-derives qerrno/reason from last_reason(), it is not read off the message).
-void ext_set_name(uint64_t ea, rust::Str name) {
-  std::string owned(name.data(), name.size());
-  if (!set_name((ea_t)ea, owned.c_str(), 0))
-    throw std::runtime_error("set_name rejected");
-}
-
-void ext_set_cmt(uint64_t ea, rust::Str comment, bool repeatable) {
-  std::string owned(comment.data(), comment.size());
-  if (!set_cmt((ea_t)ea, owned.c_str(), repeatable))
-    throw std::runtime_error("set_cmt rejected");
-}
-
-// Return the generated shared enum by value; the Rust side matches it with a wildcard arm.
-WriteOutcome ext_classify(int32_t code) {
-  switch (code) {
-  case 0:
-    return WriteOutcome::Applied;
-  case 1:
-    return WriteOutcome::Rejected;
-  default:
-    return WriteOutcome::NoChange;
-  }
 }
 
 } // namespace idakit_cxx

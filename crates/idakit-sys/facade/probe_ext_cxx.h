@@ -1,12 +1,10 @@
-// Declarations for the cxx spike bridge. Proves three findings: a custom
-// rust::behavior::trycatch, a Pin<&mut Self> mutation path, and a real database write crossing the
-// bridge. Bodies live in probe_ext_cxx.cc; the
+// Declarations for the cxx spike bridge. Proves a custom rust::behavior::trycatch widens what the
+// generated shim catches. Bodies live in probe_ext_cxx.cc; the
 // cxx-generated shim (from src/bridge_probe_ext.rs) calls them by their idakit_cxx-namespaced name.
 #pragma once
 
 #include <cstdint>
 #include <exception>
-#include <memory>
 #include <string>
 
 // interr_exc_t (a std::exception subclass that does NOT override what(), so the base what() is the
@@ -43,40 +41,11 @@ template <typename Try, typename Fail> static void trycatch(Try &&func, Fail &&f
 } // namespace behavior
 } // namespace rust
 
-// A tiny opaque cursor: a mutable address, proven to change through a Pin<&mut Self> receiver
-// (non-const member) and read back through a &self receiver (const member). Defined completely
-// (not forward-declared) so cxx's UniquePtr glue can instantiate std::unique_ptr<AddrCursor> in its
-// own generated TU. Named at global scope and aliased into idakit_cxx (the DropProbe pattern), so
-// cxx's own `using AddrCursor = ::idakit_cxx::AddrCursor;` is a legal identical re-typedef.
-struct idakit_addr_cursor_t {
-  uint64_t at;
-  uint64_t pos() const { return at; }
-  void advance(uint64_t delta) { at += delta; }
-  void seek(uint64_t value) { at = value; }
-};
-
 namespace idakit_cxx {
-
-using AddrCursor = ::idakit_addr_cursor_t;
-
-// The cxx shared enum, generated into both languages. Forward-declared here so ext_classify can
-// name it by value; probe_ext_cxx.cc includes the generated header for the full definition.
-enum class WriteOutcome : int32_t;
 
 // Throwing probes exercising the three trycatch arms above.
 rust::String ext_throw_plain_int();
 rust::String ext_throw_interr(int32_t code);
 rust::String ext_throw_coded(int32_t code);
-
-// The Pin<&mut Self> cursor.
-std::unique_ptr<AddrCursor> make_addr_cursor(uint64_t init);
-
-// Real database writes crossing the bridge (implicit-current-DB libida calls). Each throws
-// on rejection, so cxx surfaces it as a Rust Err, a bare failure signal, per idakit's strategy.
-void ext_set_name(uint64_t ea, rust::Str name);
-void ext_set_cmt(uint64_t ea, rust::Str comment, bool repeatable);
-
-// A cxx shared enum returned by value.
-WriteOutcome ext_classify(int32_t code);
 
 } // namespace idakit_cxx

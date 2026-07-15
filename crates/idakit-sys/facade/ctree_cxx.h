@@ -8,8 +8,8 @@
 #include <cstdint>
 
 // Full SDK definition of cfuncptr_t (qrefcnt_t<cfunc_t>): the visitor bridge's own CFunc alias
-// re-emits cxx's layout check against ::cfuncptr_t (see bridge_cfg_check's FlowChart precedent), so
-// the type must be complete here, not just forward declared.
+// re-emits cxx's layout check against ::cfuncptr_t (as bridge_qvec does for its aliased FlowChart),
+// so the type must be complete here, not just forward declared.
 #include <pro.h>
 
 #include <ida.hpp>

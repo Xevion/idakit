@@ -1,5 +1,6 @@
 //! Instruction-decode sentinels shared with the generated decode bridge: semantic operand
-//! kinds, control-flow flags, the absent-register sentinel, and the ABI-alignment counts.
+//! kinds, control-flow flags, operand access bits, the absent-register sentinel, and the
+//! ABI-alignment counts.
 
 use bitflags::bitflags;
 
@@ -48,6 +49,20 @@ bitflags! {
     }
 }
 
+bitflags! {
+    /// `OperandData::access` bits for a decoded operand: `bit0` read, `bit1` written.
+    ///
+    /// Accepts any bit pattern (`from_bits_retain`), since `OperandData::access` is a raw `u8`
+    /// field the C++ decoder writes.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+    pub struct OperandAccess: u8 {
+        /// The operand is read.
+        const READ = 1;
+        /// The operand is written.
+        const WRITTEN = 2;
+    }
+}
+
 /// Number of idakit RegisterClass codes (the `reg_class_ids` alignment-source length).
 pub const IDAKIT_REG_CLASS_COUNT: usize = 13;
 /// Number of `op_dtype_t` values idakit mirrors (the `op_dtype_ids` alignment-source length).
@@ -74,5 +89,19 @@ mod tests {
         let flow = FlowFlags::from_bits_retain(raw);
         assert!(flow.contains(FlowFlags::CALL | FlowFlags::STOPS));
         assert!(flow.bits() == raw);
+    }
+
+    #[test]
+    fn operand_access_flags_pin_the_raw_values() {
+        assert!(OperandAccess::READ.bits() == 1);
+        assert!(OperandAccess::WRITTEN.bits() == 2);
+    }
+
+    #[test]
+    fn operand_access_from_bits_retain_preserves_unknown_bits() {
+        let raw = OperandAccess::READ.bits() | 0x04;
+        let access = OperandAccess::from_bits_retain(raw);
+        assert!(access.contains(OperandAccess::READ));
+        assert!(access.bits() == raw);
     }
 }

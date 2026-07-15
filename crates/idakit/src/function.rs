@@ -211,21 +211,24 @@ impl<'db> Function<'db> {
     #[must_use]
     #[doc(alias("FUNC_LIB"))]
     pub fn is_lib(&self) -> bool {
-        self.db.func_flags(self.address) & sys::FUNC_LIB != 0
+        sys::FuncFlags::from_bits_retain(self.db.func_flags(self.address))
+            .contains(sys::FuncFlags::LIB)
     }
 
     /// Whether this is a thunk, a trampoline that jumps straight to another function.
     #[must_use]
     #[doc(alias("FUNC_THUNK"))]
     pub fn is_thunk(&self) -> bool {
-        self.db.func_flags(self.address) & sys::FUNC_THUNK != 0
+        sys::FuncFlags::from_bits_retain(self.db.func_flags(self.address))
+            .contains(sys::FuncFlags::THUNK)
     }
 
     /// Whether this function does not return, e.g. `exit`, `abort`.
     #[must_use]
     #[doc(alias("FUNC_NORET"))]
     pub fn is_noreturn(&self) -> bool {
-        self.db.func_flags(self.address) & sys::FUNC_NORET != 0
+        sys::FuncFlags::from_bits_retain(self.db.func_flags(self.address))
+            .contains(sys::FuncFlags::NORET)
     }
 
     /// Iterates cross-references targeting this function's entry.

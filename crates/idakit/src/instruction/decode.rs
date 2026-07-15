@@ -76,9 +76,12 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
         idx: o.idx,
         kind,
         data_type,
-        access: Access {
-            read: o.access & 1 != 0,
-            written: o.access & 2 != 0,
+        access: {
+            let access = sys::OperandAccess::from_bits_retain(o.access);
+            Access {
+                read: access.contains(sys::OperandAccess::READ),
+                written: access.contains(sys::OperandAccess::WRITTEN),
+            }
         },
     })
 }

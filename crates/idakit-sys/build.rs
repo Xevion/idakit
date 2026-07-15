@@ -151,15 +151,6 @@ fn main() {
     // The cxx signature-bridge spine coexists with the raw facade rather than replacing it; each
     // bridge is its own static archive (see `cxx_bridge`).
     //
-    // A hand-written bridge over the *generated* qflow_chart_t ExternType, proving a hand bridge
-    // can share a spec-generated ExternType with the CFG domain.
-    cxx_bridge(
-        "src/bridge_cfg_check.rs",
-        &["facade/cfg_check_cxx.cc"],
-        "idakit_cxx_cfg_check_bridge",
-        sdk_include_str,
-        &[],
-    );
     // qvector<T> bound per-instantiation (the KDAB recipe), read by copy and zero-copy.
     cxx_bridge(
         "src/bridge_qvec.rs",
@@ -243,9 +234,6 @@ fn emit_rerun_directives() {
     for src in FACADE_SOURCES {
         println!("cargo:rerun-if-changed={src}");
     }
-    println!("cargo:rerun-if-changed=facade/cfg_check_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/cfg_check_cxx.h");
-    println!("cargo:rerun-if-changed=src/bridge_cfg_check.rs");
     println!("cargo:rerun-if-changed=facade/qvec_cxx.cc");
     println!("cargo:rerun-if-changed=facade/qvec_cxx.h");
     println!("cargo:rerun-if-changed=src/bridge_qvec.rs");
