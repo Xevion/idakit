@@ -3,11 +3,61 @@
 
 use std::fmt::Write as _;
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 
 use super::domains::domains;
 use super::model::*;
+
+impl ConstTy {
+    pub(crate) fn rust(self) -> TokenStream {
+        match self {
+            Self::U8 => quote!(u8),
+            Self::U16 => quote!(u16),
+            Self::U32 => quote!(u32),
+            Self::U64 => quote!(u64),
+            Self::Usize => quote!(usize),
+            Self::I32 => quote!(i32),
+            Self::I64 => quote!(i64),
+        }
+    }
+    pub(crate) fn cxx(self) -> &'static str {
+        match self {
+            Self::U8 => "uint8_t",
+            Self::U16 => "uint16_t",
+            Self::U32 => "uint32_t",
+            Self::U64 => "uint64_t",
+            Self::Usize => "size_t",
+            Self::I32 => "int32_t",
+            Self::I64 => "int64_t",
+        }
+    }
+}
+
+impl ConstDef {
+    /// This const's Rust literal, narrowed to `ty`'s exact width (an `as` truncation of `value`)
+    /// so it round-trips through the `: <ty>` annotation on the generated `pub const`.
+    fn rust_literal(&self) -> Literal {
+        match self.ty {
+            ConstTy::U8 => Literal::u8_unsuffixed(self.value as u8),
+            ConstTy::U16 => Literal::u16_unsuffixed(self.value as u16),
+            ConstTy::U32 => Literal::u32_unsuffixed(self.value as u32),
+            ConstTy::U64 => Literal::u64_unsuffixed(self.value as u64),
+            ConstTy::Usize => Literal::usize_unsuffixed(self.value as usize),
+            ConstTy::I32 => Literal::i32_unsuffixed(self.value as i32),
+            ConstTy::I64 => Literal::i64_unsuffixed(self.value as i64),
+        }
+    }
+
+    /// This const's C++ literal: a `ULL` suffix on `U64` (plain decimal overflows `int` in C++
+    /// otherwise), plain decimal for every narrower width.
+    fn cxx_literal(&self) -> String {
+        match self.ty {
+            ConstTy::U64 => format!("{}ULL", self.value),
+            _ => self.value.to_string(),
+        }
+    }
+}
 
 impl FieldTy {
     pub(crate) fn rust(&self) -> TokenStream {
@@ -372,6 +422,19 @@ impl Domain {
             s.push_str(helpers);
             s.push('\n');
         }
+        for c in self.consts {
+            let _ = writeln!(s, "// {}", c.doc);
+            let _ = writeln!(
+                s,
+                "constexpr {} {} = {};",
+                c.ty.cxx(),
+                c.name,
+                c.cxx_literal()
+            );
+        }
+        if !self.consts.is_empty() {
+            s.push('\n');
+        }
         // Shared structs are defined by the cxx-generated header; forward-declare so a decl may
         // name one by value (the body TU includes the generated header for the full definition).
         for st in self.structs {
@@ -701,4 +764,21 @@ pub(crate) fn reexport_tokens() -> TokenStream {
         })
     });
     quote! { #(#uses)* }
+}
+
+/// The crate-root `pub const`s for every domain's [`Domain::consts`], one bare Rust item per
+/// spec'd sentinel. Lives outside the bridge module (`cxx` bridges can't hold `const` items),
+/// appended to `gen_bridge.rs` alongside [`reexport_tokens`].
+pub(crate) fn consts_tokens() -> TokenStream {
+    let consts = domains().iter().flat_map(|d| d.consts.iter()).map(|c| {
+        let name = format_ident!("{}", c.name);
+        let ty = c.ty.rust();
+        let lit = c.rust_literal();
+        let doc = c.doc;
+        quote! {
+            #[doc = #doc]
+            pub const #name: #ty = #lit;
+        }
+    });
+    quote! { #(#consts)* }
 }

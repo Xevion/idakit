@@ -17,6 +17,9 @@ pub struct Domain {
     pub externs: &'static [ExternTy],
     /// `cxx` shared structs this domain declares and returns by value.
     pub structs: &'static [SharedStruct],
+    /// Integer sentinels this domain declares, emitted as both a bare Rust `pub const` and a C++
+    /// `constexpr` in the domain header.
+    pub consts: &'static [ConstDef],
     /// Raw C++ emitted `inline` into this domain's header, ahead of the fn decls: shared helpers
     /// that both the generated bodies and the `custom_tu` call. `None` for self-contained bodies.
     pub body_helpers: Option<&'static str>,
@@ -69,6 +72,34 @@ pub struct SharedStruct {
     pub doc: &'static str,
     /// Its fields, in declaration order.
     pub fields: &'static [Field],
+}
+
+/// One generated integer sentinel, emitted to both faces from one spec: a bare Rust `pub const`
+/// (crate-root re-exported) and a C++ `constexpr` in the `idakit_gen` namespace of the domain
+/// header.
+pub struct ConstDef {
+    /// Bare name, no `IDAKIT_` prefix, e.g. `"FLOW_CALL"`.
+    pub name: &'static str,
+    /// The const's integer width and signedness.
+    pub ty: ConstTy,
+    /// The value, wide enough to hold `u64::MAX` or a negative `i32`.
+    pub value: i128,
+    /// One-line summary for the generated Rust `pub const`'s doc comment.
+    pub doc: &'static str,
+}
+
+/// The integer width/signedness a [`ConstDef`] may declare.
+// The allow covers taxonomy slots no current spec constructs.
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub enum ConstTy {
+    U8,
+    U16,
+    U32,
+    U64,
+    Usize,
+    I32,
+    I64,
 }
 
 /// One field of a [`SharedStruct`] or a `Trivial` [`ExternTy`] mirror.

@@ -8,6 +8,7 @@ pub const EXPORT: Domain = Domain {
     sdk_includes: &["<entry.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
+    consts: &[],
     custom_tu: Some("facade/export_custom.cc"),
     body_helpers: None,
     fns: fns! {

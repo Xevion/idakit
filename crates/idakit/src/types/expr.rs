@@ -594,15 +594,15 @@ impl TypeExpr {
 
     fn encode(&self, buf: &mut Vec<u8>) {
         match self {
-            Self::Void => buf.push(sys::IDAKIT_RECIPE_VOID),
-            Self::Bool => buf.push(sys::IDAKIT_RECIPE_BOOL),
+            Self::Void => buf.push(sys::RECIPE_VOID),
+            Self::Bool => buf.push(sys::RECIPE_BOOL),
             Self::Int { bytes, signed } => {
-                buf.push(sys::IDAKIT_RECIPE_INT);
+                buf.push(sys::RECIPE_INT);
                 buf.push(*bytes);
                 buf.push(u8::from(*signed));
             }
             Self::Float { bytes } => {
-                buf.push(sys::IDAKIT_RECIPE_FLOAT);
+                buf.push(sys::RECIPE_FLOAT);
                 buf.push(*bytes);
             }
             Self::Bitfield {
@@ -610,29 +610,29 @@ impl TypeExpr {
                 width,
                 signed,
             } => {
-                buf.push(sys::IDAKIT_RECIPE_BITFIELD);
+                buf.push(sys::RECIPE_BITFIELD);
                 buf.push(*nbytes);
                 buf.push(*width);
                 buf.push(u8::from(*signed));
             }
-            Self::Named(name) => encode_str(buf, sys::IDAKIT_RECIPE_NAMED, name),
-            Self::Decl(text) => encode_str(buf, sys::IDAKIT_RECIPE_DECL, text),
+            Self::Named(name) => encode_str(buf, sys::RECIPE_NAMED, name),
+            Self::Decl(text) => encode_str(buf, sys::RECIPE_DECL, text),
             Self::Pointer(inner) => {
                 inner.encode(buf);
-                buf.push(sys::IDAKIT_RECIPE_PTR);
+                buf.push(sys::RECIPE_PTR);
             }
             Self::Array { elem, len } => {
                 elem.encode(buf);
-                buf.push(sys::IDAKIT_RECIPE_ARRAY);
+                buf.push(sys::RECIPE_ARRAY);
                 buf.extend_from_slice(&len.to_le_bytes());
             }
             Self::Const(inner) => {
                 inner.encode(buf);
-                buf.push(sys::IDAKIT_RECIPE_CONST);
+                buf.push(sys::RECIPE_CONST);
             }
             Self::Volatile(inner) => {
                 inner.encode(buf);
-                buf.push(sys::IDAKIT_RECIPE_VOLATILE);
+                buf.push(sys::RECIPE_VOLATILE);
             }
             Self::Function {
                 ret,
@@ -646,7 +646,7 @@ impl TypeExpr {
                 for p in params {
                     p.ty.encode(buf);
                 }
-                buf.push(sys::IDAKIT_RECIPE_FUNCTION);
+                buf.push(sys::RECIPE_FUNCTION);
                 let count = u32::try_from(params.len()).unwrap_or(u32::MAX);
                 buf.extend_from_slice(&count.to_le_bytes());
                 buf.push(u8::from(*varargs));
@@ -987,17 +987,17 @@ mod tests {
     fn recipe_opcodes_pin_the_facade_mirror() {
         // The opcode values are a wire contract with the facade; pin the Rust mirror so a drift
         // trips here (the facade side is pinned by the write-path round-trip test).
-        assert!(sys::IDAKIT_RECIPE_VOID == 0);
-        assert!(sys::IDAKIT_RECIPE_BOOL == 1);
-        assert!(sys::IDAKIT_RECIPE_INT == 2);
-        assert!(sys::IDAKIT_RECIPE_FLOAT == 3);
-        assert!(sys::IDAKIT_RECIPE_NAMED == 4);
-        assert!(sys::IDAKIT_RECIPE_DECL == 5);
-        assert!(sys::IDAKIT_RECIPE_PTR == 6);
-        assert!(sys::IDAKIT_RECIPE_ARRAY == 7);
-        assert!(sys::IDAKIT_RECIPE_CONST == 8);
-        assert!(sys::IDAKIT_RECIPE_VOLATILE == 9);
-        assert!(sys::IDAKIT_RECIPE_BITFIELD == 11);
+        assert!(sys::RECIPE_VOID == 0);
+        assert!(sys::RECIPE_BOOL == 1);
+        assert!(sys::RECIPE_INT == 2);
+        assert!(sys::RECIPE_FLOAT == 3);
+        assert!(sys::RECIPE_NAMED == 4);
+        assert!(sys::RECIPE_DECL == 5);
+        assert!(sys::RECIPE_PTR == 6);
+        assert!(sys::RECIPE_ARRAY == 7);
+        assert!(sys::RECIPE_CONST == 8);
+        assert!(sys::RECIPE_VOLATILE == 9);
+        assert!(sys::RECIPE_BITFIELD == 11);
     }
 
     // A leaf emits its op then inline operands; a composite is postfix (inner before its wrap op); a

@@ -28,6 +28,7 @@ pub const CFG: Domain = Domain {
             kind: I32 = "Raw `fc_block_type_t` discriminant (`fcb_normal`, `fcb_ret`, ...).";
         },
     }],
+    consts: &[],
     custom_tu: Some("facade/cfg_custom.cc"),
     body_helpers: None,
     fns: fns! {

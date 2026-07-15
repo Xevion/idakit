@@ -18,6 +18,7 @@ pub const REFERENCE: Domain = Domain {
             user: Bool = "`true` when user-defined, `false` when IDA's analysis generated it.";
         },
     }],
+    consts: &[],
     custom_tu: Some("facade/reference_custom.cc"),
     body_helpers: None,
     fns: fns! {

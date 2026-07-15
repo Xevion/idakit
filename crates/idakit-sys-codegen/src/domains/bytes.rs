@@ -27,6 +27,7 @@ pub const BYTES: Domain = Domain {
             anchors: Usize = "Count of concrete (non-wildcard) bytes; `0` means nothing to match on.";
         },
     }],
+    consts: &[],
     custom_tu: Some("facade/bytes_custom.cc"),
     body_helpers: None,
     fns: fns! {

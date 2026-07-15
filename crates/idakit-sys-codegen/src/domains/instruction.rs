@@ -57,10 +57,84 @@ pub const INSTRUCTION: Domain = Domain {
                 len: U8 = "Encoded length in bytes.";
                 isa: U8 = "0 = x86, 1 = x64.";
                 nops: U8 = "Number of populated operands (matches `ops.len()`).";
-                flow: U8 = "`IDAKIT_FLOW_*` bit flags.";
+                flow: U8 = "`FLOW_*` bit flags.";
                 mnemonic: Str = "Canonical mnemonic.";
                 ops: VecStruct("OperandData") = "Decoded operands; only meaningful when `status == 0`.";
             },
+        },
+    ],
+    consts: &[
+        ConstDef {
+            name: "MAX_OPS",
+            ty: ConstTy::Usize,
+            value: 8,
+            doc: "Maximum operands the instruction bridge fills, matching `UA_MAXOP`.",
+        },
+        ConstDef {
+            name: "OP_REG",
+            ty: ConstTy::U8,
+            value: 0,
+            doc: "Semantic operand kind: register.",
+        },
+        ConstDef {
+            name: "OP_MEM",
+            ty: ConstTy::U8,
+            value: 1,
+            doc: "Semantic operand kind: memory.",
+        },
+        ConstDef {
+            name: "OP_IMM",
+            ty: ConstTy::U8,
+            value: 2,
+            doc: "Semantic operand kind: immediate.",
+        },
+        ConstDef {
+            name: "OP_NEAR",
+            ty: ConstTy::U8,
+            value: 3,
+            doc: "Semantic operand kind: near branch/call target.",
+        },
+        ConstDef {
+            name: "OP_FAR",
+            ty: ConstTy::U8,
+            value: 4,
+            doc: "Semantic operand kind: far branch/call target.",
+        },
+        ConstDef {
+            name: "REG_NONE",
+            ty: ConstTy::U16,
+            value: 0xFFFF,
+            doc: "Sentinel for an absent base/index register in a decoded operand.",
+        },
+        ConstDef {
+            name: "FLOW_CALL",
+            ty: ConstTy::U8,
+            value: 0x01,
+            doc: "`InstructionData::flow` bit: the instruction is a call.",
+        },
+        ConstDef {
+            name: "FLOW_RET",
+            ty: ConstTy::U8,
+            value: 0x02,
+            doc: "`InstructionData::flow` bit: the instruction returns.",
+        },
+        ConstDef {
+            name: "FLOW_JUMP",
+            ty: ConstTy::U8,
+            value: 0x04,
+            doc: "`InstructionData::flow` bit: the instruction jumps.",
+        },
+        ConstDef {
+            name: "FLOW_INDIRECT",
+            ty: ConstTy::U8,
+            value: 0x08,
+            doc: "`InstructionData::flow` bit: the transfer target is indirect, not statically known.",
+        },
+        ConstDef {
+            name: "FLOW_STOPS",
+            ty: ConstTy::U8,
+            value: 0x10,
+            doc: "`InstructionData::flow` bit: sequential flow stops after this instruction.",
         },
     ],
     custom_tu: Some("facade/instruction_custom.cc"),

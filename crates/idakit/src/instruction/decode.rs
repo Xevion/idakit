@@ -20,7 +20,7 @@ use crate::address::Address;
 /// facade with `-4` and never reaches here, so a code outside the enum is pure ABI drift, not
 /// runtime data.
 fn register(r: &sys::RegisterData) -> Option<Register> {
-    if r.num == sys::IDAKIT_REG_NONE {
+    if r.num == sys::REG_NONE {
         return None;
     }
     let class = RegisterClass::try_from(r.cls)
@@ -35,14 +35,14 @@ fn register(r: &sys::RegisterData) -> Option<Register> {
 
 fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeError> {
     let kind = match o.kind {
-        sys::IDAKIT_OP_REG => OperandKind::Register(register(&o.reg).ok_or_else(|| {
+        sys::OP_REG => OperandKind::Register(register(&o.reg).ok_or_else(|| {
             DecodeError::MalformedOperand {
                 address: address.get(),
                 op: o.idx,
                 reason: "register operand carries no register",
             }
         })?),
-        sys::IDAKIT_OP_MEM => OperandKind::Memory(Memory {
+        sys::OP_MEM => OperandKind::Memory(Memory {
             base: register(&o.base),
             index: register(&o.index),
             scale: o.scale,
@@ -50,15 +50,15 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
             segment: None,
             target: Address::try_new(o.addr),
         }),
-        sys::IDAKIT_OP_IMM => OperandKind::Immediate { value: o.value },
-        sys::IDAKIT_OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or_else(|| {
+        sys::OP_IMM => OperandKind::Immediate { value: o.value },
+        sys::OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or_else(|| {
             DecodeError::MalformedOperand {
                 address: address.get(),
                 op: o.idx,
                 reason: "near operand has no resolved target",
             }
         })?),
-        sys::IDAKIT_OP_FAR => OperandKind::Far {
+        sys::OP_FAR => OperandKind::Far {
             selector: o.sel,
             offset: o.value,
         },
@@ -133,7 +133,7 @@ mod tests {
 
     fn none_reg() -> sys::RegisterData {
         sys::RegisterData {
-            num: sys::IDAKIT_REG_NONE,
+            num: sys::REG_NONE,
             cls: 0,
             width: 0,
             name: String::new(),
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn register_operand_carries_name_and_class() {
         let mut op = blank_op();
-        op.kind = sys::IDAKIT_OP_REG;
+        op.kind = sys::OP_REG;
         op.data_type = u8::from(OperandDataType::Qword);
         op.access = 0b11; // read + written
         op.reg = gpr(0, 8, "rax");
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn memory_operand_decodes_base_index_scale_disp() {
         let mut op = blank_op();
-        op.kind = sys::IDAKIT_OP_MEM;
+        op.kind = sys::OP_MEM;
         op.data_type = u8::from(OperandDataType::Dword);
         op.base = gpr(5, 8, "rbp");
         op.index = gpr(0, 8, "rax");
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn absent_base_index_map_to_none() {
         let mut op = blank_op();
-        op.kind = sys::IDAKIT_OP_MEM;
+        op.kind = sys::OP_MEM;
         op.addr = 0x40_0000; // a direct [addr] reference resolves to a target
         let mapped = operand(&op, at()).expect("valid mem operand");
         assert!(let OperandKind::Memory(m) = &mapped.kind);
@@ -245,13 +245,13 @@ mod tests {
     #[test]
     fn immediate_and_near_operands() {
         let mut imm = blank_op();
-        imm.kind = sys::IDAKIT_OP_IMM;
+        imm.kind = sys::OP_IMM;
         imm.value = 0x1234;
         assert!(let OperandKind::Immediate { value } = operand(&imm, at()).expect("imm").kind);
         assert!(value == 0x1234);
 
         let mut near = blank_op();
-        near.kind = sys::IDAKIT_OP_NEAR;
+        near.kind = sys::OP_NEAR;
         near.addr = 0x1400;
         assert!(let OperandKind::Near(t) = operand(&near, at()).expect("near").kind);
         assert!(t.get() == 0x1400);
@@ -262,7 +262,7 @@ mod tests {
         // A far pointer splits across two facade fields: `sel` the selector, `value` the offset,
         // distinct from NEAR, which lands in `addr`.
         let mut far = blank_op();
-        far.kind = sys::IDAKIT_OP_FAR;
+        far.kind = sys::OP_FAR;
         far.sel = 0x07;
         far.value = 0xdead_beef;
         assert!(let OperandKind::Far { selector, offset } = operand(&far, at()).expect("far").kind);
@@ -280,10 +280,10 @@ mod tests {
         raw.mnemonic = "lea".to_owned();
         raw.nops = 2;
         let mut op0 = blank_op();
-        op0.kind = sys::IDAKIT_OP_REG;
+        op0.kind = sys::OP_REG;
         op0.reg = gpr(0, 8, "rax");
         let mut op1 = blank_op();
-        op1.kind = sys::IDAKIT_OP_MEM;
+        op1.kind = sys::OP_MEM;
         op1.base = gpr(5, 8, "rbp");
         raw.ops = vec![op0, op1];
 
@@ -325,14 +325,14 @@ mod tests {
     #[test]
     fn reg_operand_without_register_is_rejected() {
         let mut op = blank_op();
-        op.kind = sys::IDAKIT_OP_REG; // REG kind, but the register slot is the absent sentinel
+        op.kind = sys::OP_REG; // REG kind, but the register slot is the absent sentinel
         assert!(let Err(DecodeError::MalformedOperand { .. }) = operand(&op, at()));
     }
 
     #[test]
     fn near_operand_without_target_is_rejected() {
         let mut op = blank_op();
-        op.kind = sys::IDAKIT_OP_NEAR;
+        op.kind = sys::OP_NEAR;
         op.addr = sys::BADADDR; // an unresolved near target
         assert!(let Err(DecodeError::MalformedOperand { .. }) = operand(&op, at()));
     }
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn out_of_domain_data_type_is_rejected() {
         let mut op = blank_op();
-        op.kind = sys::IDAKIT_OP_IMM;
+        op.kind = sys::OP_IMM;
         op.data_type = 200; // outside the modeled scalar/float domain
         assert!(let Err(DecodeError::UnsupportedDataType { dtype: 200, .. }) = operand(&op, at()));
     }

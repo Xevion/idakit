@@ -9,6 +9,7 @@ pub const TY: Domain = Domain {
     sdk_includes: &["<typeinf.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
+    consts: &[],
     custom_tu: Some("facade/ty_custom.cc"),
     body_helpers: None,
     fns: fns! {

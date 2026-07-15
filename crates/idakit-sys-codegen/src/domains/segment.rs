@@ -8,6 +8,7 @@ pub const SEGMENT: Domain = Domain {
     sdk_includes: &["<segment.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
+    consts: &[],
     custom_tu: Some("facade/custom_escape_hatch.cc"),
     body_helpers: None,
     fns: fns! {

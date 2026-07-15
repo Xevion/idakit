@@ -51,6 +51,7 @@ pub const HEXRAYS: Domain = Domain {
             },
         },
     ],
+    consts: &[],
     custom_tu: Some("facade/hexrays_custom.cc"),
     body_helpers: None,
     fns: fns! {

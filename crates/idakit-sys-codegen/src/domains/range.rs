@@ -27,6 +27,7 @@ pub const RANGE: Domain = Domain {
             range: Extern("RangeT") = "The chunk's address range.";
         },
     }],
+    consts: &[],
     custom_tu: Some("facade/range_custom.cc"),
     body_helpers: None,
     fns: fns! {

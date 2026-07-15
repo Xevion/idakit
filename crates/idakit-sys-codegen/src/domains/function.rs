@@ -8,6 +8,7 @@ pub const FUNCTION: Domain = Domain {
     sdk_includes: &["<funcs.hpp>", "<name.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
+    consts: &[],
     custom_tu: Some("facade/function_custom.cc"),
     body_helpers: None,
     fns: fns! {

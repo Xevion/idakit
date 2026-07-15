@@ -9,6 +9,7 @@ pub const NAME: Domain = Domain {
     sdk_includes: &["<name.hpp>", "<bytes.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
+    consts: &[],
     custom_tu: Some("facade/name_custom.cc"),
     body_helpers: None,
     fns: fns! {

@@ -25,7 +25,7 @@ pub const TYPE_BUILD: Domain = Domain {
             doc: "The outcome of a type-write call, returned by value from every type-write \
                   function except the two signature-surgery fns.",
             fields: fields! {
-                code: I32 = "Raw facade code: an `IDAKIT_TYPE_*`/`IDAKIT_TEDIT_*` sentinel, a negative \
+                code: I32 = "Raw facade code: an `TYPE_*`/`TEDIT_*` sentinel, a negative \
                           `tinfo_code_t`, or `define_type`'s parse-error count.";
                 reason: Str = "Captured IDA diagnostic, empty when the call has no error channel.";
             },
@@ -35,23 +35,178 @@ pub const TYPE_BUILD: Domain = Domain {
             doc: "The outcome of a signature-surgery call that also reports the function's \
                   parameter count.",
             fields: fields! {
-                code: I32 = "Raw facade `IDAKIT_SIG_*` code.";
+                code: I32 = "Raw facade `SIG_*` code.";
                 arity: Usize = "Parameter count of the edited function type (`0` when it has no type).";
                 reason: Str = "Captured IDA diagnostic, empty when none.";
             },
         },
     ],
+    consts: &[
+        ConstDef {
+            name: "TYPE_OK",
+            ty: ConstTy::I32,
+            value: 0,
+            doc: "Result of a successful type apply.",
+        },
+        ConstDef {
+            name: "TYPE_ERR_INPUT",
+            ty: ConstTy::I32,
+            value: 1,
+            doc: "A bad input to a type apply: an unparseable declaration, a named type that does \
+                  not exist, or a malformed recipe.",
+        },
+        ConstDef {
+            name: "TYPE_ERR_APPLY",
+            ty: ConstTy::I32,
+            value: 2,
+            doc: "`apply_tinfo` rejected the parsed/resolved/built type at the address.",
+        },
+        ConstDef {
+            name: "SIG_OK",
+            ty: ConstTy::I32,
+            value: 0,
+            doc: "A prototype-surgery edit succeeded.",
+        },
+        ConstDef {
+            name: "SIG_NO_PROTOTYPE",
+            ty: ConstTy::I32,
+            value: 1,
+            doc: "The address carries no function type to edit.",
+        },
+        ConstDef {
+            name: "SIG_ARG_RANGE",
+            ty: ConstTy::I32,
+            value: 2,
+            doc: "A parameter index was past the last parameter.",
+        },
+        ConstDef {
+            name: "SIG_BUILD",
+            ty: ConstTy::I32,
+            value: 3,
+            doc: "A replacement-type recipe did not build.",
+        },
+        ConstDef {
+            name: "SIG_APPLY",
+            ty: ConstTy::I32,
+            value: 4,
+            doc: "`create_func` or `apply_tinfo` rejected the rebuilt signature.",
+        },
+        ConstDef {
+            name: "TEDIT_NO_TYPE",
+            ty: ConstTy::I32,
+            value: 1,
+            doc: "Member-edit pre-failure: no such named type in the local til.",
+        },
+        ConstDef {
+            name: "TEDIT_NO_MEMBER",
+            ty: ConstTy::I32,
+            value: 2,
+            doc: "Member-edit pre-failure: the member (by name or bit offset) did not resolve.",
+        },
+        ConstDef {
+            name: "TEDIT_BUILD",
+            ty: ConstTy::I32,
+            value: 3,
+            doc: "Member-edit pre-failure: a member-type recipe did not build.",
+        },
+        ConstDef {
+            name: "MEMBER_APPEND",
+            ty: ConstTy::U64,
+            value: u64::MAX as i128,
+            doc: "`member_bit` value that appends a new member at the end rather than a fixed \
+                  offset.",
+        },
+        ConstDef {
+            name: "RECIPE_VOID",
+            ty: ConstTy::U8,
+            value: 0,
+            doc: "Recipe opcode: push the `void` type.",
+        },
+        ConstDef {
+            name: "RECIPE_BOOL",
+            ty: ConstTy::U8,
+            value: 1,
+            doc: "Recipe opcode: push the boolean type.",
+        },
+        ConstDef {
+            name: "RECIPE_INT",
+            ty: ConstTy::U8,
+            value: 2,
+            doc: "Recipe opcode: push an integer, followed by a `u8` width in bytes and a `u8` \
+                  signedness flag.",
+        },
+        ConstDef {
+            name: "RECIPE_FLOAT",
+            ty: ConstTy::U8,
+            value: 3,
+            doc: "Recipe opcode: push a float, followed by a `u8` width in bytes.",
+        },
+        ConstDef {
+            name: "RECIPE_NAMED",
+            ty: ConstTy::U8,
+            value: 4,
+            doc: "Recipe opcode: push a named-type reference, followed by a `u32` length and that \
+                  many name bytes.",
+        },
+        ConstDef {
+            name: "RECIPE_DECL",
+            ty: ConstTy::U8,
+            value: 5,
+            doc: "Recipe opcode: push a parsed declaration, followed by a `u32` length and that \
+                  many decl bytes.",
+        },
+        ConstDef {
+            name: "RECIPE_PTR",
+            ty: ConstTy::U8,
+            value: 6,
+            doc: "Recipe opcode: pop one type, push a pointer to it.",
+        },
+        ConstDef {
+            name: "RECIPE_ARRAY",
+            ty: ConstTy::U8,
+            value: 7,
+            doc: "Recipe opcode: pop one type, push an array of it, followed by a `u64` element \
+                  count.",
+        },
+        ConstDef {
+            name: "RECIPE_CONST",
+            ty: ConstTy::U8,
+            value: 8,
+            doc: "Recipe opcode: pop one type, push its `const`-qualified form.",
+        },
+        ConstDef {
+            name: "RECIPE_VOLATILE",
+            ty: ConstTy::U8,
+            value: 9,
+            doc: "Recipe opcode: pop one type, push its `volatile`-qualified form.",
+        },
+        ConstDef {
+            name: "RECIPE_FUNCTION",
+            ty: ConstTy::U8,
+            value: 10,
+            doc: "Recipe opcode: build a function type (`u32` param count, `u8` varargs, `u16` cc, \
+                  then that many `u32`-length-prefixed param names; pops the params then the \
+                  return type, pushes the function).",
+        },
+        ConstDef {
+            name: "RECIPE_BITFIELD",
+            ty: ConstTy::U8,
+            value: 11,
+            doc: "Recipe opcode: build a bitfield member type (`u8` container width in bytes, `u8` \
+                  field width in bits, `u8` signedness); struct-member-only, rejected in a union.",
+        },
+    ],
     custom_tu: Some("facade/type_build_custom.cc"),
     body_helpers: None,
     fns: fns! {
-        "Parse `decl` against the local til and apply it at `ea`. `code` is `IDAKIT_TYPE_OK`, \
+        "Parse `decl` against the local til and apply it at `ea`. `code` is `TYPE_OK`, \
          `_ERR_INPUT` (parse failed), or `_ERR_APPLY`."
             apply_type_decl(ea: U64, decl: Str, flags: I32) -> Shared("TypeWriteResult");
         "Resolve the existing named type `name` and apply it at `ea`. `code` distinguishes \
          not-found (`_ERR_INPUT`) from an apply rejection (`_ERR_APPLY`); `reason` is empty (no \
          error channel)."
             apply_named_type(ea: U64, name: Str) -> Shared("TypeWriteResult");
-        "Clear any type applied at `ea`. Idempotent: `code` is `IDAKIT_TYPE_OK` when there was \
+        "Clear any type applied at `ea`. Idempotent: `code` is `TYPE_OK` when there was \
          nothing to clear; `reason` is empty (no error channel)."
             clear_type(ea: U64) -> Shared("TypeWriteResult");
         "Build the `tinfo` the postfix recipe encodes and apply it at `ea`. Same codes as \
@@ -62,25 +217,25 @@ pub const TYPE_BUILD: Domain = Domain {
          (`0` = ok)."
             define_type(input: Str) -> Shared("TypeWriteResult");
         "Delete the named type `type_name` from the local til, the inverse of [`define_type`]. See \
-         the `IDAKIT_TEDIT_*` codes."
+         the `TEDIT_*` codes."
             delete_type(type_name: Str) -> Shared("TypeWriteResult");
         "Rename the named type `type_name` to `new_name` in place, preserving its ordinal. Same \
-         `IDAKIT_TEDIT_*` codes as the `udt_*`/`enum_*` fns."
+         `TEDIT_*` codes as the `udt_*`/`enum_*` fns."
             rename_type(type_name: Str, new_name: Str) -> Shared("TypeWriteResult");
         "Reserve `type_name` in the local til as an incomplete aggregate \
          (`tinfo_t::create_forward_decl`), without a body. `decl_type` is a `type_t` \
          (`BTF_STRUCT`/`BTF_UNION`/`BTF_ENUM`) selecting the aggregate kind. `code` is the raw \
-         `tinfo_code_t` (`0` = ok); no `IDAKIT_TEDIT_*` pre-failure, since there is no existing \
+         `tinfo_code_t` (`0` = ok); no `TEDIT_*` pre-failure, since there is no existing \
          type to load first."
             forward_declare_type(type_name: Str, decl_type: U32) -> Shared("TypeWriteResult");
         "Replace the return type of the function type at `ea` with the recipe type, then rebuild \
-         and re-apply. See the `IDAKIT_SIG_*` codes."
+         and re-apply. See the `SIG_*` codes."
             func_set_rettype(ea: U64, recipe: Bytes) -> Shared("TypeWriteResult");
         "Replace parameter `idx`'s type with the recipe type, then rebuild and re-apply. `arity` \
-         reports the current parameter count; `IDAKIT_SIG_ARG_RANGE` when `idx` is past it."
+         reports the current parameter count; `SIG_ARG_RANGE` when `idx` is past it."
             func_set_argtype(ea: U64, idx: Usize, recipe: Bytes) -> Shared("SigWriteResult");
         "Rename parameter `idx` to `name`, then rebuild and re-apply. `arity` reports the current \
-         parameter count; `IDAKIT_SIG_ARG_RANGE` when `idx` is past it."
+         parameter count; `SIG_ARG_RANGE` when `idx` is past it."
             func_rename_arg(ea: U64, idx: Usize, name: Str) -> Shared("SigWriteResult");
         "Set the calling convention of the function type at `ea` to the raw `CM_CC_*` code `cc`, \
          then rebuild and re-apply."
@@ -89,8 +244,8 @@ pub const TYPE_BUILD: Domain = Domain {
          re-apply."
             func_prepend_this(ea: U64, recipe: Bytes) -> Shared("TypeWriteResult");
         "Add a member of the recipe type to the named struct/union `type_name` at bit offset \
-         `member_bit` (or appended when it is `IDAKIT_MEMBER_APPEND`). An empty `member_name` adds \
-         an anonymous member. See the `IDAKIT_TEDIT_*` codes."
+         `member_bit` (or appended when it is `MEMBER_APPEND`). An empty `member_name` adds \
+         an anonymous member. See the `TEDIT_*` codes."
             udt_add_member(type_name: Str, member_name: Str, recipe: Bytes, member_bit: U64)
                 -> Shared("TypeWriteResult");
         "Replace the type of the member selected by `member_name` (or, when it is empty, by bit \
@@ -119,11 +274,11 @@ pub const TYPE_BUILD: Domain = Domain {
         "Add an enum constant named `member_name` with `value` to the named enum `type_name`, in \
          the explicit bitmask group `bmask` (`DEFMASK64` lets a bitmask enum use `value` itself as \
          the group mask; ignored by an ordinary enum), passing `etf_flags` (`etf_flag_t`, e.g. \
-         `ETF_FORCENAME`) to `add_edm`. Same `IDAKIT_TEDIT_*` codes as the `udt_*` fns."
+         `ETF_FORCENAME`) to `add_edm`. Same `TEDIT_*` codes as the `udt_*` fns."
             enum_add_member(type_name: Str, member_name: Str, value: U64, bmask: U64, etf_flags: U32)
                 -> Shared("TypeWriteResult");
         "Set whether the named enum `type_name` is a bitmask (flag) enum \
-         (`tinfo_t::set_enum_is_bitmask`). Same `IDAKIT_TEDIT_*` codes as the `udt_*`/`enum_*` fns."
+         (`tinfo_t::set_enum_is_bitmask`). Same `TEDIT_*` codes as the `udt_*`/`enum_*` fns."
             enum_set_bitmask(type_name: Str, on: Bool) -> Shared("TypeWriteResult");
         "Set the value representation on the named enum `type_name` (`tinfo_t::set_enum_repr`), the \
          enum-level twin of [`udt_set_member_repr`]. `vtype` is a `value_repr_t` FRB_* value-type \
@@ -177,7 +332,7 @@ pub const TYPE_BUILD: Domain = Domain {
         "A `volatile`-qualified copy of `inner` as a fresh handle. `inner` is not consumed."
             tinfo_volatile(inner: ExternRef("TInfo")) -> UniquePtr("TInfo");
         "Apply the built `handle` at `ea` (`apply_tinfo`, `TINFO_DEFINITE | flags`). `code` is \
-         `IDAKIT_TYPE_OK`/`_ERR_APPLY`; the handle is not consumed."
+         `TYPE_OK`/`_ERR_APPLY`; the handle is not consumed."
             tinfo_apply(ea: U64, handle: ExternRef("TInfo"), flags: I32) -> Shared("TypeWriteResult");
     },
 };

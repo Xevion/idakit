@@ -17,6 +17,7 @@ pub const STRINGS: Domain = Domain {
             type_: I32 = "`STRTYPE` code describing the encoding.";
         },
     }],
+    consts: &[],
     custom_tu: Some("facade/strings_custom.cc"),
     body_helpers: None,
     fns: fns! {

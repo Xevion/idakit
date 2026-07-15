@@ -22,26 +22,6 @@ namespace idakit_gen {
 
 namespace {
 
-// Semantic operand kinds (OperandData::kind); mirror the Rust `sys::IDAKIT_OP_*` values.
-constexpr uint8_t OP_REG = 0;
-constexpr uint8_t OP_MEM = 1;
-constexpr uint8_t OP_IMM = 2;
-constexpr uint8_t OP_NEAR = 3;
-constexpr uint8_t OP_FAR = 4;
-
-// InstructionData::flow bit flags; mirror the Rust `sys::IDAKIT_FLOW_*` values.
-constexpr uint8_t FLOW_CALL = 0x01;
-constexpr uint8_t FLOW_RET = 0x02;
-constexpr uint8_t FLOW_JUMP = 0x04;
-constexpr uint8_t FLOW_INDIRECT = 0x08;
-constexpr uint8_t FLOW_STOPS = 0x10;
-
-// RegisterData::num sentinel for an absent base/index slot; mirrors `sys::IDAKIT_REG_NONE`.
-constexpr uint16_t REG_NONE = 0xFFFF;
-
-// Cap on populated operands; mirrors `sys::IDAKIT_MAX_OPS` (UA_MAXOP).
-constexpr int MAX_OPS = 8;
-
 // idakit RegClass discriminants -- must match the Rust `RegisterClass` enum, pinned by the
 // alignment test that reg_class_ids feeds.
 constexpr uint8_t RC_GPR = 0;
@@ -265,7 +245,7 @@ InstructionData decode_insn(uint64_t ea) {
   uint32 feature = insn.get_canon_feature(PH);
   ea_t tgt = BADADDR;
   rust::Vec<OperandData> ops;
-  for (int i = 0; i < UA_MAXOP && (int)ops.size() < MAX_OPS; i++) {
+  for (int i = 0; i < UA_MAXOP && (int)ops.size() < (int)MAX_OPS; i++) {
     const op_t &op = insn.ops[i];
     if (op.type == o_void)
       continue;

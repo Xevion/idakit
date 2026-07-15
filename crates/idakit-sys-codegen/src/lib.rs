@@ -42,7 +42,7 @@ mod domains;
 mod visitors;
 
 use domains::domains;
-use emit::{bridge_tokens, reexport_tokens};
+use emit::{bridge_tokens, consts_tokens, reexport_tokens};
 
 /// The generated body TUs (the `cxx-gen` glue plus each domain's templated bodies) that build.rs
 /// must compile.
@@ -81,6 +81,8 @@ pub fn generate(out_dir: &Path) {
     let mut rust = tokens.to_string();
     rust.push('\n');
     rust.push_str(&reexport_tokens().to_string());
+    rust.push('\n');
+    rust.push_str(&consts_tokens().to_string());
     std::fs::write(out_dir.join("gen_bridge.rs"), rust).expect("write gen_bridge.rs");
 
     // C++ side: same tokens => matching shim symbol names on both sides.

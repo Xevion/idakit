@@ -13,6 +13,11 @@
     clippy::missing_errors_doc,
     reason = "false positive misattributed to `mod ffi` by cxx::bridge's generated container glue"
 )]
+#![expect(
+    clippy::unreadable_literal,
+    reason = "generated const literals mirror raw facade/SDK sentinels (e.g. u64::MAX), not \
+              hand-grouped numbers"
+)]
 
 include!(concat!(env!("OUT_DIR"), "/gen_bridge.rs"));
 

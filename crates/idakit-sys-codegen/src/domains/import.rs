@@ -17,6 +17,7 @@ pub const IMPORT: Domain = Domain {
             module: Str = "Owning module (library) name.";
         },
     }],
+    consts: &[],
     custom_tu: Some("facade/import_custom.cc"),
     body_helpers: None,
     fns: fns! {

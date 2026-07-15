@@ -564,6 +564,7 @@ pub fn domain() -> &'static Domain {
             sdk_includes: &["<netnode.hpp>", "<string>", "<stdexcept>"],
             externs: &[],
             structs: &[],
+            consts: &[],
             body_helpers: Some(BODY_HELPERS),
             custom_tu: Some("facade/netnode_custom.cc"),
             fns: Box::leak(fns.into_boxed_slice()),

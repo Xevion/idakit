@@ -19,7 +19,7 @@
 #include <nalt.hpp>    // get_tinfo, set_tinfo (address-level type note)
 #include <typeinf.hpp> // tinfo_t, parse_decl, parse_decls, apply_tinfo, create_*
 
-#include "idakit_facade_internal.hpp" // guarded<>, g_output (msg-channel capture), IDAKIT_* codes
+#include "idakit_facade_internal.hpp" // guarded<>, g_output (msg-channel capture)
 #include "gen_type_build.h"
 // The generated bridge header defines the shared structs (full definitions needed to construct them
 // below); gen_type_build.h only forward-declares them.
@@ -136,7 +136,7 @@ struct recipe_reader {
 
 // Run the postfix recipe in (buf, len) over a tinfo stack, leaving the single resulting type in
 // `out`: a leaf op pushes a type, a transform pops one and pushes the wrapped result, and a
-// well-formed recipe leaves exactly one. IDAKIT_TYPE_OK with `out` set, else IDAKIT_TYPE_ERR_INPUT
+// well-formed recipe leaves exactly one. TYPE_OK with `out` set, else TYPE_ERR_INPUT
 // (malformed buffer, unresolved named leaf, or unparseable embedded decl). Callers wrap it in
 // guarded<> (parse_decl/get_named_type/create_func may emit or trap).
 int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
@@ -145,94 +145,94 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
   while (r.has_more()) {
     uint8_t op = r.u8();
     switch (op) {
-    case IDAKIT_RECIPE_VOID: {
+    case RECIPE_VOID: {
       tinfo_t t;
       if (!t.create_simple_type(BTF_VOID))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_BOOL: {
+    case RECIPE_BOOL: {
       tinfo_t t;
       if (!t.create_simple_type(BT_BOOL))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_INT: {
+    case RECIPE_INT: {
       uint8_t bytes = r.u8();
       uint8_t is_signed = r.u8();
       tinfo_t t;
       if (!r.ok || !build_int(t, bytes, is_signed != 0))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_FLOAT: {
+    case RECIPE_FLOAT: {
       uint8_t bytes = r.u8();
       tinfo_t t;
       if (!r.ok || !build_float(t, bytes))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_NAMED: {
+    case RECIPE_NAMED: {
       std::string name;
       if (!r.str(name))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       tinfo_t t;
       if (!build_named(t, name.c_str()))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_DECL: {
+    case RECIPE_DECL: {
       std::string decl;
       if (!r.str(decl))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       tinfo_t t;
       qstring pname;
       if (!parse_decl(&t, &pname, get_idati(), decl.c_str(), PT_SEMICOLON))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_PTR: {
+    case RECIPE_PTR: {
       if (stack.empty())
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       tinfo_t inner = stack.back();
       stack.pop_back();
       tinfo_t t;
       if (!t.create_ptr(inner))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_ARRAY: {
+    case RECIPE_ARRAY: {
       uint64_t nelems = r.uint_le(8);
       if (!r.ok || nelems > 0xffffffffULL || stack.empty())
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       tinfo_t inner = stack.back();
       stack.pop_back();
       tinfo_t t;
       if (!t.create_array(inner, (uint32)nelems))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_CONST: {
+    case RECIPE_CONST: {
       if (stack.empty())
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.back().set_const();
       break;
     }
-    case IDAKIT_RECIPE_VOLATILE: {
+    case RECIPE_VOLATILE: {
       if (stack.empty())
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.back().set_volatile();
       break;
     }
-    case IDAKIT_RECIPE_FUNCTION: {
+    case RECIPE_FUNCTION: {
       uint64_t nparams = r.uint_le(4);
       uint8_t varargs = r.u8();
       uint64_t cc = r.uint_le(2);
@@ -241,7 +241,7 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
         r.str(names[(size_t)i]);
       // The return type sits just below the params on the stack (return pushed first).
       if (!r.ok || stack.size() < (size_t)nparams + 1)
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       func_type_data_t ftd;
       size_t base = stack.size() - (size_t)nparams;
       ftd.rettype = stack[base - 1];
@@ -259,28 +259,28 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
         ftd.set_cc((callcnv_t)cc);
       tinfo_t t;
       if (!t.create_func(ftd))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
-    case IDAKIT_RECIPE_BITFIELD: {
+    case RECIPE_BITFIELD: {
       uint8_t nbytes = r.u8();
       uint8_t width = r.u8();
       uint8_t is_signed = r.u8();
       tinfo_t t;
       if (!r.ok || !build_bitfield(t, nbytes, width, is_signed == 0))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
     default:
-      return IDAKIT_TYPE_ERR_INPUT;
+      return TYPE_ERR_INPUT;
     }
   }
   if (!r.ok || stack.size() != 1)
-    return IDAKIT_TYPE_ERR_INPUT;
+    return TYPE_ERR_INPUT;
   out = stack[0];
-  return IDAKIT_TYPE_OK;
+  return TYPE_OK;
 }
 
 // Read ea's function type into (tif, ftd); false if ea carries no function type to edit. Reads
@@ -290,16 +290,16 @@ bool read_func_details(ea_t ea, tinfo_t &tif, func_type_data_t &ftd) {
 }
 
 // Rebuild the function type from mutated details and re-apply it at ea. Clears any explicit arg
-// locations the edit invalidated so create_func recomputes them. IDAKIT_SIG_APPLY if create_func or
+// locations the edit invalidated so create_func recomputes them. SIG_APPLY if create_func or
 // apply_tinfo rejects the result.
 int rebuild_and_apply(ea_t ea, func_type_data_t &ftd) {
   ftd.flags &= ~(FTI_ARGLOCS | FTI_EXPLOCS);
   tinfo_t nt;
   if (!nt.create_func(ftd))
-    return IDAKIT_SIG_APPLY;
+    return SIG_APPLY;
   if (!apply_tinfo(ea, nt, TINFO_DEFINITE))
-    return IDAKIT_SIG_APPLY;
-  return IDAKIT_SIG_OK;
+    return SIG_APPLY;
+  return SIG_OK;
 }
 
 // Link `tif` to the named type in the local til for editing. Edits to the returned typeref save
@@ -353,14 +353,14 @@ TypeWriteResult apply_type_decl(uint64_t ea, rust::Str decl, int32_t flags) {
   try {
     TypeWriteResult out{};
     std::string decls(decl.data(), decl.size());
-    out.code = guarded<int>(IDAKIT_TYPE_ERR_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(TYPE_ERR_APPLY, true, [&]() -> int {
       tinfo_t tif;
       qstring name;
       if (!parse_decl(&tif, &name, get_idati(), decls.c_str(), PT_SEMICOLON))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       if (!apply_tinfo((ea_t)ea, tif, (uint32)flags | TINFO_DEFINITE))
-        return IDAKIT_TYPE_ERR_APPLY;
-      return IDAKIT_TYPE_OK;
+        return TYPE_ERR_APPLY;
+      return TYPE_OK;
     });
     out.reason = captured_reason();
     return out;
@@ -373,13 +373,13 @@ TypeWriteResult apply_named_type(uint64_t ea, rust::Str name) {
   try {
     TypeWriteResult out{};
     std::string names(name.data(), name.size());
-    out.code = guarded<int>(IDAKIT_TYPE_ERR_APPLY, false, [&]() -> int {
+    out.code = guarded<int>(TYPE_ERR_APPLY, false, [&]() -> int {
       tinfo_t tif;
       if (!tif.get_named_type(get_idati(), names.c_str()))
-        return IDAKIT_TYPE_ERR_INPUT;
+        return TYPE_ERR_INPUT;
       if (!apply_tinfo((ea_t)ea, tif, TINFO_DEFINITE))
-        return IDAKIT_TYPE_ERR_APPLY;
-      return IDAKIT_TYPE_OK;
+        return TYPE_ERR_APPLY;
+      return TYPE_OK;
     });
     return out;
   } catch (...) {
@@ -390,11 +390,11 @@ TypeWriteResult apply_named_type(uint64_t ea, rust::Str name) {
 TypeWriteResult clear_type(uint64_t ea) {
   try {
     TypeWriteResult out{};
-    out.code = guarded<int>(IDAKIT_TYPE_ERR_APPLY, false, [&]() -> int {
+    out.code = guarded<int>(TYPE_ERR_APPLY, false, [&]() -> int {
       tinfo_t cur;
       if (!get_tinfo(&cur, (ea_t)ea) || cur.empty())
-        return IDAKIT_TYPE_OK;
-      return set_tinfo((ea_t)ea, nullptr) ? IDAKIT_TYPE_OK : IDAKIT_TYPE_ERR_APPLY;
+        return TYPE_OK;
+      return set_tinfo((ea_t)ea, nullptr) ? TYPE_OK : TYPE_ERR_APPLY;
     });
     return out;
   } catch (...) {
@@ -405,14 +405,14 @@ TypeWriteResult clear_type(uint64_t ea) {
 TypeWriteResult apply_type_recipe(uint64_t ea, rust::Slice<const uint8_t> recipe, int32_t flags) {
   try {
     TypeWriteResult out{};
-    out.code = guarded<int>(IDAKIT_TYPE_ERR_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(TYPE_ERR_APPLY, true, [&]() -> int {
       tinfo_t t;
       int rc = build_recipe(recipe.data(), recipe.size(), t);
-      if (rc != IDAKIT_TYPE_OK)
+      if (rc != TYPE_OK)
         return rc;
       if (!apply_tinfo((ea_t)ea, t, (uint32)flags | TINFO_DEFINITE))
-        return IDAKIT_TYPE_ERR_APPLY;
-      return IDAKIT_TYPE_OK;
+        return TYPE_ERR_APPLY;
+      return TYPE_OK;
     });
     out.reason = captured_reason();
     return out;
@@ -442,11 +442,11 @@ TypeWriteResult delete_type(rust::Str type_name) {
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       // NTF_TYPE selects the type namespace; without it del_named_type looks up a symbol name
       // instead and reports the type as not found.
       bool deleted = del_named_type(get_idati(), tn.c_str(), NTF_TYPE);
-      return deleted ? IDAKIT_TYPE_OK : (int)TERR_SAVE_ERROR;
+      return deleted ? TYPE_OK : (int)TERR_SAVE_ERROR;
     });
     out.reason = captured_reason();
     return out;
@@ -463,7 +463,7 @@ TypeWriteResult rename_type(rust::Str type_name, rust::Str new_name) {
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       return (int)tif.rename_type(nn.c_str());
     });
     out.reason = captured_reason();
@@ -491,14 +491,14 @@ TypeWriteResult forward_declare_type(rust::Str type_name, uint32_t decl_type) {
 TypeWriteResult func_set_rettype(uint64_t ea, rust::Slice<const uint8_t> recipe) {
   try {
     TypeWriteResult out{};
-    out.code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(SIG_APPLY, true, [&]() -> int {
       tinfo_t tif;
       func_type_data_t ftd;
       if (!read_func_details((ea_t)ea, tif, ftd))
-        return IDAKIT_SIG_NO_PROTOTYPE;
+        return SIG_NO_PROTOTYPE;
       tinfo_t rt;
-      if (build_recipe(recipe.data(), recipe.size(), rt) != IDAKIT_TYPE_OK)
-        return IDAKIT_SIG_BUILD;
+      if (build_recipe(recipe.data(), recipe.size(), rt) != TYPE_OK)
+        return SIG_BUILD;
       ftd.rettype = rt;
       return rebuild_and_apply((ea_t)ea, ftd);
     });
@@ -513,17 +513,17 @@ SigWriteResult func_set_argtype(uint64_t ea, size_t idx, rust::Slice<const uint8
   try {
     SigWriteResult out{};
     size_t arity = 0;
-    out.code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(SIG_APPLY, true, [&]() -> int {
       tinfo_t tif;
       func_type_data_t ftd;
       if (!read_func_details((ea_t)ea, tif, ftd))
-        return IDAKIT_SIG_NO_PROTOTYPE;
+        return SIG_NO_PROTOTYPE;
       arity = ftd.size();
       if (idx >= ftd.size())
-        return IDAKIT_SIG_ARG_RANGE;
+        return SIG_ARG_RANGE;
       tinfo_t at;
-      if (build_recipe(recipe.data(), recipe.size(), at) != IDAKIT_TYPE_OK)
-        return IDAKIT_SIG_BUILD;
+      if (build_recipe(recipe.data(), recipe.size(), at) != TYPE_OK)
+        return SIG_BUILD;
       ftd[idx].type = at;
       return rebuild_and_apply((ea_t)ea, ftd);
     });
@@ -540,14 +540,14 @@ SigWriteResult func_rename_arg(uint64_t ea, size_t idx, rust::Str name) {
     SigWriteResult out{};
     std::string names(name.data(), name.size());
     size_t arity = 0;
-    out.code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(SIG_APPLY, true, [&]() -> int {
       tinfo_t tif;
       func_type_data_t ftd;
       if (!read_func_details((ea_t)ea, tif, ftd))
-        return IDAKIT_SIG_NO_PROTOTYPE;
+        return SIG_NO_PROTOTYPE;
       arity = ftd.size();
       if (idx >= ftd.size())
-        return IDAKIT_SIG_ARG_RANGE;
+        return SIG_ARG_RANGE;
       ftd[idx].name = names.c_str();
       return rebuild_and_apply((ea_t)ea, ftd);
     });
@@ -562,11 +562,11 @@ SigWriteResult func_rename_arg(uint64_t ea, size_t idx, rust::Str name) {
 TypeWriteResult func_set_cc(uint64_t ea, int32_t cc) {
   try {
     TypeWriteResult out{};
-    out.code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(SIG_APPLY, true, [&]() -> int {
       tinfo_t tif;
       func_type_data_t ftd;
       if (!read_func_details((ea_t)ea, tif, ftd))
-        return IDAKIT_SIG_NO_PROTOTYPE;
+        return SIG_NO_PROTOTYPE;
       ftd.set_cc((callcnv_t)cc);
       return rebuild_and_apply((ea_t)ea, ftd);
     });
@@ -580,14 +580,14 @@ TypeWriteResult func_set_cc(uint64_t ea, int32_t cc) {
 TypeWriteResult func_prepend_this(uint64_t ea, rust::Slice<const uint8_t> recipe) {
   try {
     TypeWriteResult out{};
-    out.code = guarded<int>(IDAKIT_SIG_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(SIG_APPLY, true, [&]() -> int {
       tinfo_t tif;
       func_type_data_t ftd;
       if (!read_func_details((ea_t)ea, tif, ftd))
-        return IDAKIT_SIG_NO_PROTOTYPE;
+        return SIG_NO_PROTOTYPE;
       tinfo_t pt;
-      if (build_recipe(recipe.data(), recipe.size(), pt) != IDAKIT_TYPE_OK)
-        return IDAKIT_SIG_BUILD;
+      if (build_recipe(recipe.data(), recipe.size(), pt) != TYPE_OK)
+        return SIG_BUILD;
       funcarg_t self_arg;
       self_arg.type = pt;
       self_arg.name = "this";
@@ -612,14 +612,14 @@ TypeWriteResult udt_add_member(rust::Str type_name, rust::Str member_name,
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       tinfo_t mt;
-      if (build_recipe(recipe.data(), recipe.size(), mt) != IDAKIT_TYPE_OK)
-        return IDAKIT_TEDIT_BUILD;
+      if (build_recipe(recipe.data(), recipe.size(), mt) != TYPE_OK)
+        return TEDIT_BUILD;
       // Append means "past the last member": offset 0 for a union (all members share it), the
       // current byte size in bits for a struct.
       uint64_t offset = member_bit;
-      if (offset == IDAKIT_MEMBER_APPEND) {
+      if (offset == MEMBER_APPEND) {
         asize_t sz = tif.is_union() ? 0 : tif.get_size();
         offset = (sz == BADSIZE ? 0 : (uint64_t)sz) * 8;
       }
@@ -651,13 +651,13 @@ TypeWriteResult udt_set_member_type(rust::Str type_name, rust::Str member_name, 
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       int idx = resolve_member(tif, mnp, member_bit);
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       tinfo_t mt;
-      if (build_recipe(recipe.data(), recipe.size(), mt) != IDAKIT_TYPE_OK)
-        return IDAKIT_TEDIT_BUILD;
+      if (build_recipe(recipe.data(), recipe.size(), mt) != TYPE_OK)
+        return TEDIT_BUILD;
       return (int)tif.set_udm_type((size_t)idx, mt, etf_flags);
     });
     out.reason = captured_reason();
@@ -678,10 +678,10 @@ TypeWriteResult udt_rename_member(rust::Str type_name, rust::Str member_name, ui
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       int idx = resolve_member(tif, mnp, member_bit);
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       return (int)tif.rename_udm((size_t)idx, nn.c_str());
     });
     out.reason = captured_reason();
@@ -702,10 +702,10 @@ TypeWriteResult udt_set_member_comment(rust::Str type_name, rust::Str member_nam
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       int idx = resolve_member(tif, mnp, member_bit);
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       return (int)tif.set_udm_cmt((size_t)idx, cn.c_str());
     });
     out.reason = captured_reason();
@@ -728,10 +728,10 @@ TypeWriteResult udt_set_member_repr(rust::Str type_name, rust::Str member_name, 
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       int idx = resolve_member(tif, mnp, member_bit);
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       value_repr_t repr;
       repr.set_vtype(vtype);
       repr.set_signed(is_signed);
@@ -754,10 +754,10 @@ TypeWriteResult udt_del_member(rust::Str type_name, rust::Str member_name, uint6
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       int idx = resolve_member(tif, mnp, member_bit);
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       return (int)tif.del_udm((size_t)idx);
     });
     out.reason = captured_reason();
@@ -776,7 +776,7 @@ TypeWriteResult enum_add_member(rust::Str type_name, rust::Str member_name, uint
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       return (int)tif.add_edm(mn.c_str(), value, (bmask64_t)bmask, etf_flags);
     });
     out.reason = captured_reason();
@@ -793,7 +793,7 @@ TypeWriteResult enum_set_bitmask(rust::Str type_name, bool on) {
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       return (int)tif.set_enum_is_bitmask(on ? tinfo_t::ENUMBM_ON : tinfo_t::ENUMBM_OFF);
     });
     out.reason = captured_reason();
@@ -812,7 +812,7 @@ TypeWriteResult enum_set_repr(rust::Str type_name, uint32_t vtype, bool is_signe
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       value_repr_t repr;
       repr.set_vtype(vtype);
       repr.set_signed(is_signed);
@@ -833,7 +833,7 @@ TypeWriteResult enum_set_width(rust::Str type_name, int32_t nbytes) {
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       return (int)tif.set_enum_width(nbytes);
     });
     out.reason = captured_reason();
@@ -851,10 +851,10 @@ TypeWriteResult enum_set_member_value(rust::Str type_name, rust::Str member_name
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, mn.c_str());
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       return (int)tif.edit_edm((size_t)idx, value);
     });
     out.reason = captured_reason();
@@ -874,10 +874,10 @@ TypeWriteResult enum_rename_member(rust::Str type_name, rust::Str member_name, r
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, mn.c_str());
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       return (int)tif.rename_edm((size_t)idx, nn.c_str(), etf_flags);
     });
     out.reason = captured_reason();
@@ -895,10 +895,10 @@ TypeWriteResult enum_del_member(rust::Str type_name, rust::Str member_name) {
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, mn.c_str());
       if (idx < 0)
-        return IDAKIT_TEDIT_NO_MEMBER;
+        return TEDIT_NO_MEMBER;
       return (int)tif.del_edm((size_t)idx);
     });
     out.reason = captured_reason();
@@ -915,7 +915,7 @@ TypeWriteResult enum_del_member_by_value(rust::Str type_name, uint64_t value) {
     out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
-        return IDAKIT_TEDIT_NO_TYPE;
+        return TEDIT_NO_TYPE;
       return (int)tif.del_edm_by_value(value, 0, DEFMASK64, 0);
     });
     out.reason = captured_reason();
@@ -1047,10 +1047,10 @@ std::unique_ptr<::tinfo_t> tinfo_volatile(const ::tinfo_t &inner) {
 TypeWriteResult tinfo_apply(uint64_t ea, const ::tinfo_t &handle, int32_t flags) {
   try {
     TypeWriteResult out{};
-    out.code = guarded<int>(IDAKIT_TYPE_ERR_APPLY, true, [&]() -> int {
+    out.code = guarded<int>(TYPE_ERR_APPLY, true, [&]() -> int {
       if (!apply_tinfo((ea_t)ea, handle, (uint32)flags | TINFO_DEFINITE))
-        return IDAKIT_TYPE_ERR_APPLY;
-      return IDAKIT_TYPE_OK;
+        return TYPE_ERR_APPLY;
+      return TYPE_OK;
     });
     out.reason = captured_reason();
     return out;

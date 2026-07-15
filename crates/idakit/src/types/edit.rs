@@ -231,7 +231,7 @@ impl TypeEdit<'_> {
     /// (e.g. a duplicate name); or [`Error::InteriorNul`] for a NUL byte in a name.
     #[doc(alias("add_udm"))]
     pub fn add_member(&mut self, name: impl AsRef<str>, ty: impl Into<TypeExpr>) -> Result<()> {
-        self.add_member_impl(name.as_ref(), &ty.into(), sys::IDAKIT_MEMBER_APPEND)
+        self.add_member_impl(name.as_ref(), &ty.into(), sys::MEMBER_APPEND)
     }
 
     /// Add a member named `name` of type `ty` at `bit_offset` from the start of the aggregate.
@@ -1000,16 +1000,16 @@ impl fmt::Display for MemberKey {
 fn edit_result(code: c_int, reason: &str, type_name: &str, key: Option<&MemberKey>) -> Result<()> {
     match code {
         0 => Ok(()),
-        sys::IDAKIT_TEDIT_NO_TYPE => Err(TypeWriteError::NoType {
+        sys::TEDIT_NO_TYPE => Err(TypeWriteError::NoType {
             name: type_name.to_owned(),
         }
         .into()),
-        sys::IDAKIT_TEDIT_NO_MEMBER => Err(TypeWriteError::NoMember {
+        sys::TEDIT_NO_MEMBER => Err(TypeWriteError::NoMember {
             type_name: type_name.to_owned(),
             key: key.map(MemberKey::to_string).unwrap_or_default(),
         }
         .into()),
-        sys::IDAKIT_TEDIT_BUILD => Err(TypeWriteError::BuildFailed {
+        sys::TEDIT_BUILD => Err(TypeWriteError::BuildFailed {
             reason: reason_or(
                 reason,
                 "an unknown named type or invalid declaration within it",

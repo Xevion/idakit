@@ -8,6 +8,7 @@ pub const META: Domain = Domain {
     sdk_includes: &["<nalt.hpp>", "<loader.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
+    consts: &[],
     custom_tu: Some("facade/meta_custom.cc"),
     body_helpers: None,
     fns: fns! {
