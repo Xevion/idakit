@@ -203,13 +203,13 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
     case RECIPE_CONST: {
       if (stack.empty())
         return TYPE_ERR_INPUT;
-      stack.back().set_const();
+      stack.back().set_const(); // mutates top-of-stack in place, no pop/push needed
       break;
     }
     case RECIPE_VOLATILE: {
       if (stack.empty())
         return TYPE_ERR_INPUT;
-      stack.back().set_volatile();
+      stack.back().set_volatile(); // same in-place mutation as RECIPE_CONST
       break;
     }
     case RECIPE_FUNCTION: {

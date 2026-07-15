@@ -13,6 +13,7 @@
 
 namespace gen {
 
+// One-line, semicolon-terminated prototype text for the function at addr; throws if it has no type.
 rust::String func_type(uint64_t addr) {
   qstring out;
   if (!print_type(&out, static_cast<ea_t>(addr), PRTYPE_1LINE | PRTYPE_SEMI))
@@ -20,6 +21,7 @@ rust::String func_type(uint64_t addr) {
   return to_rust_string(out);
 }
 
+// Name of the local type numbered ordinal in this database's type library; throws if none exists.
 rust::String type_name_at(uint32_t ordinal) {
   const char *name = get_numbered_type_name(get_idati(), ordinal);
   if (name == nullptr)

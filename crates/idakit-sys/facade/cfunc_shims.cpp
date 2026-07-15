@@ -31,9 +31,7 @@ bool ensure_hexrays() {
 }
 
 // Decompile addr's function into a heap cfuncptr_t (one owned ref), or nullptr on any failure.
-// NOT wrapped in the setjmp/longjmp guard: a decompiler fatal would abort here rather than trap
-// (gen::decompile in hexrays.cpp guards the production path; this spike path stays deliberately
-// simple since callers only ever drive a known-decompilable function).
+// Not wrapped in a decompiler-fatal trap, so a fatal exit aborts here instead of being caught.
 ::cfuncptr_t *decompile_heap(std::uint64_t addr) {
   if (!ensure_hexrays())
     return nullptr;

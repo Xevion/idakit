@@ -20,7 +20,7 @@ namespace facade {
 // exit. An interr unwinds as an ordinary C++ throw, so this destructor runs on the catch path too;
 // it is trivially destructible bar the flag write, so it is safe there (unlike a longjmp trap).
 struct interr_scope {
-  bool prev;
+  bool prev; // prior throwing-interr setting, restored on scope exit
   interr_scope() : prev(set_interr_throws(true)) {}
   ~interr_scope() { set_interr_throws(prev); }
   interr_scope(const interr_scope &) = delete;

@@ -36,6 +36,7 @@ namespace {
 // so lossy never rejects, yet a stray bad byte degrades to U+FFFD instead of unwinding.
 rust::String lossy_str(const qstring &s) { return rust::String::lossy(s.c_str(), s.length()); }
 
+// Same lossy decode, for a name materialized as a raw C string rather than a qstring.
 rust::String lossy_str(const char *p, size_t n) { return rust::String::lossy(p, n); }
 
 // Whether a value_repr_t FRB_* nibble falls in idakit's modeled numeric subset (binary, octal,
@@ -83,12 +84,15 @@ struct visit_walker_t {
   uint32_t ty_opaque(const tinfo_t &t);
 };
 
+// Walk any tinfo_t into a handle, peeling off one typedef indirection before resolving.
 uint32_t visit_walker_t::ty(const tinfo_t &t) {
   if (!t.empty() && t.is_typedef())
     return ty_typedef(t);
   return ty_resolved(t);
 }
 
+// Dispatch a non-typedef tinfo_t to its kind-specific walker by the SDK's own predicates,
+// falling back to ty_opaque for anything this facade doesn't model.
 uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
   size_t sz = t.get_size();
   uint32_t has_size = (sz != BADSIZE && sz != 0) ? 1 : 0;
@@ -121,6 +125,8 @@ uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
   return ty_opaque(t);
 }
 
+// A bitfield member's scalar shape (width, signedness); falls back to ty_opaque if the SDK
+// can't report its details.
 uint32_t visit_walker_t::ty_bitfield(const tinfo_t &t) {
   bitfield_type_data_t bi;
   if (t.get_bitfield_details(&bi)) {
@@ -130,6 +136,8 @@ uint32_t visit_walker_t::ty_bitfield(const tinfo_t &t) {
   return ty_opaque(t);
 }
 
+// Last-resort emission for a type this facade can't structure: its declared name, else its
+// printed representation, else a bare "?".
 uint32_t visit_walker_t::ty_opaque(const tinfo_t &t) {
   qstring nm;
   if (t.get_type_name(&nm) && !nm.empty())
@@ -139,6 +147,8 @@ uint32_t visit_walker_t::ty_opaque(const tinfo_t &t) {
   return vis->opaque(lossy_str("?", 1));
 }
 
+// Mint a placeholder id for t before recursing into its body, so a self-referential type's cycle
+// resolves against an id that already exists; `*first` says whether t's name is newly seen.
 uint32_t visit_walker_t::placeholder(const tinfo_t &t, bool *first) {
   qstring nm;
   if (t.get_type_name(&nm) && !nm.empty()) {
@@ -150,6 +160,8 @@ uint32_t visit_walker_t::placeholder(const tinfo_t &t, bool *first) {
   return vis->anon();
 }
 
+// Struct/union: mint the placeholder id, then on first sight only, walk its members and fill
+// the body through fill_struct.
 uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_size) {
   bool first;
   uint32_t id = placeholder(t, &first);
@@ -182,6 +194,8 @@ uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_si
   return id;
 }
 
+// Enum: mint the placeholder id, then on first sight only, walk its constants and fill the body
+// through fill_enum.
 uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_size) {
   bool first;
   uint32_t id = placeholder(t, &first);
@@ -215,6 +229,8 @@ uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_s
   return id;
 }
 
+// Typedef: mint the placeholder id, then on first sight only, resolve one step to the next named
+// type in the chain (or straight to the resolved type if there is none) and fill_typedef it.
 uint32_t visit_walker_t::ty_typedef(const tinfo_t &t) {
   bool first;
   uint32_t id = placeholder(t, &first);
@@ -232,6 +248,8 @@ uint32_t visit_walker_t::ty_typedef(const tinfo_t &t) {
   return id;
 }
 
+// A function type's return and parameter handles; falls back to an unknown-scalar return with no
+// params if the SDK can't report the signature's details.
 uint32_t visit_walker_t::ty_func(const tinfo_t &t) {
   func_type_data_t fd;
   std::vector<uint32_t> params;
@@ -252,16 +270,21 @@ uint32_t visit_walker_t::ty_func(const tinfo_t &t) {
   return vis->func(ret, slice, vararg);
 }
 
+// Create a walker bound to the opaque TypeWalkVisitor* at `visitor`, owned by the caller through
+// type_walker.h's handle until visit_walker_free.
 visit_walker_t *visit_walker_new(void *visitor) {
   visit_walker_t *walker = new visit_walker_t;
   walker->vis = reinterpret_cast<TypeWalkVisitor *>(visitor);
   return walker;
 }
 
+// Walk one tinfo_t through an existing walker, reusing its `defined` dedup set.
 uint32_t visit_walker_ty(visit_walker_t *walker, const tinfo_t &t) { return walker->ty(t); }
 
+// Release a walker created by visit_walker_new.
 void visit_walker_free(visit_walker_t *walker) { delete walker; }
 
+// Look up a named type by spelling and walk it into a fresh, single-use walker.
 uint32_t type_walk_visit_named(rust::Str name, TypeWalkVisitor &visitor) {
   tinfo_t tif;
   // rust::Str is not NUL-terminated; get_named_type wants a C string, so materialize one.
@@ -273,6 +296,7 @@ uint32_t type_walk_visit_named(rust::Str name, TypeWalkVisitor &visitor) {
   return walker.ty(tif);
 }
 
+// Look up a type by its local type library ordinal and walk it into a fresh, single-use walker.
 uint32_t type_walk_visit_ordinal(uint32_t ordinal, TypeWalkVisitor &visitor) {
   tinfo_t tif;
   if (!tif.get_numbered_type(get_idati(), ordinal))
@@ -282,6 +306,7 @@ uint32_t type_walk_visit_ordinal(uint32_t ordinal, TypeWalkVisitor &visitor) {
   return walker.ty(tif);
 }
 
+// Read a function's declared type at addr and walk it into a fresh, single-use walker.
 uint32_t func_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
   tinfo_t tif;
   if (!get_tinfo(&tif, static_cast<ea_t>(addr)) || tif.empty())
@@ -291,6 +316,8 @@ uint32_t func_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
   return walker.ty(tif);
 }
 
+// Walk the function at addr's stack frame member by member into a FrameWalk, resolving each
+// real variable's type through a fresh walker (reserved slots and untyped members skip it).
 FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
   func_t *pfn = get_func(static_cast<ea_t>(addr));
   if (pfn == nullptr)

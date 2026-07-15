@@ -2,7 +2,8 @@
 // prototype-surgery on a function's type at an address, replacing the return type, one parameter's
 // type or name, the calling convention, or prepending an implicit `this`. Reports an int result
 // code plus captured diagnostic and parameter count through a SigWriteResult/TypeWriteResult shared
-// struct, as the sibling type-write TUs do.
+// struct, as the sibling type-write TUs do. Shared helpers (recipe building, the
+// captured-diagnostic reader) live in type_write_common.
 
 #include <string>
 
@@ -49,6 +50,9 @@ int rebuild_and_apply(ea_t addr, func_type_data_t &ftd) {
 
 } // namespace
 
+// Replace the return type of the function type at `addr` with the recipe type, then rebuild
+// and re-apply. SIG_NO_PROTOTYPE if addr carries no function type, SIG_BUILD if the recipe
+// doesn't build, SIG_APPLY if the rebuilt signature is rejected.
 TypeWriteResult func_set_rettype(uint64_t addr, rust::Slice<const uint8_t> recipe) {
   try {
     TypeWriteResult out{};
@@ -70,6 +74,9 @@ TypeWriteResult func_set_rettype(uint64_t addr, rust::Slice<const uint8_t> recip
   }
 }
 
+// Replace parameter `idx`'s type with the recipe type, then rebuild and re-apply. `arity`
+// reports the current parameter count; SIG_ARG_RANGE when idx is past it, SIG_BUILD/SIG_APPLY
+// as in func_set_rettype.
 SigWriteResult func_set_argtype(uint64_t addr, size_t idx, rust::Slice<const uint8_t> recipe) {
   try {
     SigWriteResult out{};
@@ -96,6 +103,8 @@ SigWriteResult func_set_argtype(uint64_t addr, size_t idx, rust::Slice<const uin
   }
 }
 
+// Rename parameter `idx` to `name`, then rebuild and re-apply. Same arity/SIG_ARG_RANGE
+// contract as func_set_argtype.
 SigWriteResult func_rename_arg(uint64_t addr, size_t idx, rust::Str name) {
   try {
     SigWriteResult out{};
@@ -120,6 +129,8 @@ SigWriteResult func_rename_arg(uint64_t addr, size_t idx, rust::Str name) {
   }
 }
 
+// Set the calling convention of the function type at `addr` to the raw CM_CC_* code `cc`,
+// then rebuild and re-apply.
 TypeWriteResult func_set_cc(uint64_t addr, int32_t cc) {
   try {
     TypeWriteResult out{};
@@ -138,6 +149,8 @@ TypeWriteResult func_set_cc(uint64_t addr, int32_t cc) {
   }
 }
 
+// Insert an implicit `this` parameter of the recipe type at index 0, then rebuild and
+// re-apply.
 TypeWriteResult func_prepend_this(uint64_t addr, rust::Slice<const uint8_t> recipe) {
   try {
     TypeWriteResult out{};

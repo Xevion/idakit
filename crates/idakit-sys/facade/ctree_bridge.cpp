@@ -33,16 +33,20 @@ namespace {
 // UTF-8, so lossy never rejects, yet a stray bad byte degrades to U+FFFD instead of unwinding.
 rust::String lossy_str(const char *p, size_t n) { return rust::String::lossy(p, n); }
 
+// Borrow a node-handle vector as a slice; an empty vector becomes an empty slice, never a
+// dangling data() pointer.
 rust::Slice<const uint32_t> slice_of(const std::vector<uint32_t> &v) {
   return v.empty() ? rust::Slice<const uint32_t>()
                    : rust::Slice<const uint32_t>(v.data(), v.size());
 }
 
+// Same borrow, for the uint64_t vectors (switch-case values, cit_asm instruction addresses).
 rust::Slice<const uint64_t> slice_of(const std::vector<uint64_t> &v) {
   return v.empty() ? rust::Slice<const uint64_t>()
                    : rust::Slice<const uint64_t>(v.data(), v.size());
 }
 
+// Same borrow, for a scattered local's LocPiece fragments.
 rust::Slice<const LocPiece> slice_of(const std::vector<LocPiece> &v) {
   return v.empty() ? rust::Slice<const LocPiece>()
                    : rust::Slice<const LocPiece>(v.data(), v.size());
@@ -63,6 +67,8 @@ struct walker_t {
   // type_walker.h); created/freed around the walk in cfunc_walk_ctree below.
   bridge::visit_walker_t *type_walker;
 
+  // Convert one cexpr_t into a node id, recursing into operands first so each child is minted
+  // before the parent node that references it.
   uint32_t expr(const cexpr_t *cexpr) {
     ea_t addr = cexpr->ea;
     uint32_t t = bridge::visit_walker_ty(type_walker, cexpr->type);
@@ -119,10 +125,12 @@ struct walker_t {
     }
   }
 
+  // NONE for a null or cot_empty expression (an absent optional operand), else expr's own handle.
   uint32_t opt_expr(const cexpr_t *cexpr) {
     return (cexpr == nullptr || cexpr->op == cot_empty) ? gen::NONE : expr(cexpr);
   }
 
+  // Walk a statement list into an s_block node, children in list order.
   uint32_t block(const cinsn_list_t &list, ea_t addr) {
     std::vector<uint32_t> kids;
     kids.reserve(list.size());
@@ -131,6 +139,7 @@ struct walker_t {
     return nodes->s_block(addr, slice_of(kids));
   }
 
+  // Convert one cinsn_t into a node id, recursing into nested statements and expressions.
   uint32_t stmt(const cinsn_t *cinsn) {
     ea_t addr = cinsn->ea;
     switch (cinsn->op) {
@@ -166,6 +175,8 @@ struct walker_t {
       bodies.reserve(cinsn->cswitch->cases.size());
       value_counts.reserve(cinsn->cswitch->cases.size());
       for (const ccase_t &case_ : cinsn->cswitch->cases) {
+        // Each case's values flatten into one shared `values` vector; value_counts[i] tells
+        // the Rust side how many trailing values belong to bodies[i].
         value_counts.push_back(static_cast<uint32_t>(case_.values.size()));
         for (uint64 val : case_.values)
           values.push_back(val);
@@ -222,6 +233,8 @@ struct walker_t {
       uint32_t reg2 = 0;
       int64_t sval = 0;
       std::vector<LocPiece> pieces;
+      // vdloc_t is a tagged union over storage kind; only the fields the matching ALOC_*
+      // below populates are meaningful, the rest stay at their zero default.
       switch (loc.atype()) {
       case ALOC_STACK:
         sval = static_cast<int64_t>(lvar.get_stkoff());
@@ -243,6 +256,8 @@ struct walker_t {
         sval = static_cast<int64_t>(loc.get_ea());
         break;
       case ALOC_DIST: {
+        // A value scattered across multiple registers/stack slots; flatten each fragment into
+        // its own LocPiece instead of the single reg1/reg2/sval triple above.
         const scattered_aloc_t &sc = loc.scattered();
         pieces.reserve(sc.size());
         for (const argpart_t &part : sc) {
@@ -274,7 +289,11 @@ struct walker_t {
   }
 };
 
+// Entry point cxx calls: walk cfunc's ctree body and lvar table into `nodes`, minting types
+// through the walker at `type_visitor`. Returns the root statement's handle.
 uint32_t cfunc_walk_ctree(const ::cfuncptr_t &cfunc, CtreeVisitor &nodes, size_t type_visitor) {
+  // The visitor callbacks are all noexcept; this catches exceptions from the raw kernel calls
+  // instead, since a plain uint32_t return has no Result channel to carry an error through.
   try {
     cfunc_t *decompiled = cfunc;
     walker_t walker;

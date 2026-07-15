@@ -23,10 +23,10 @@ void set_batch(int on);
  * gen_facade_consts.h, instead of an open_database rc) when the kernel tried to terminate the
  * process mid-call; the intercepted exit code is then available from last_exit_code(). */
 int guarded_open(const char *file_path, int run_auto);
-int guarded_auto_wait(void); /* 1 ok / 0 fail / EXIT_TRAPPED */
+int guarded_auto_wait(void); /* wait for auto-analysis: 1 ok / 0 fail / EXIT_TRAPPED */
 int guarded_close(int save); /* 0 ok / EXIT_TRAPPED */
-int last_exit_code(void);
-int was_trapped(void);                     /* 1 if the last guarded call trapped a fatal exit */
+int last_exit_code(void);    /* exit/abort code from the last trapped fatal */
+int was_trapped(void);       /* 1 if the last guarded call trapped a fatal (exit/abort/interr) */
 size_t last_output(char *buf, size_t cap); /* captured stdout+stderr; len, snprintf-style */
 
 int idakit_reg_read_int(const char *name, int defval); /* read an int/bool registry value */

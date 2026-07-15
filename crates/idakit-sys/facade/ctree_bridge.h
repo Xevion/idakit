@@ -1,7 +1,8 @@
-// Declarations for the cxx extern "Rust" opaque-visitor ctree walk (namespace bridge). cxx
-// emits the shim that calls cfunc_walk_ctree and expects this header (named by the bridge's
-// include!) to declare it; the generated glue and the hand-written driver in ctree_bridge.cpp both
-// include it.
+// Declarations for the cxx extern "Rust" opaque-visitor ctree walk (namespace bridge). cxx emits
+// the shim that calls cfunc_walk_ctree and expects this header (named by the bridge's include!) to
+// declare it; the generated glue and the hand-written driver in ctree_bridge.cpp both include it.
+// Node types resolve through the shared tinfo walker in type_walker.h, driven here only through
+// its opaque handle.
 #pragma once
 
 #include <cstddef>
@@ -27,9 +28,9 @@ namespace bridge {
 // name it by reference; ctree_bridge.cpp includes the generated header for the full class.
 struct CtreeVisitor;
 
-// Walk cfunc's ctree, minting nodes and locals through `nodes` and node types through the shared
-// tinfo walker at `type_visitor` (an address, since cxx has no c_void); returns the root statement
-// handle.
+// Walk cfunc's ctree, minting a node or local through `nodes` for each ctree item and a type
+// through the shared tinfo walker at `type_visitor` (an address, since cxx has no c_void).
+// Returns the root statement's handle.
 uint32_t cfunc_walk_ctree(const ::cfuncptr_t &cfunc, CtreeVisitor &nodes, size_t type_visitor);
 
 } // namespace bridge

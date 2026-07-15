@@ -1,7 +1,7 @@
-// Hand-written Custom body for the generated reference domain (namespace gen). One walk of
-// an xrefblk_t collects every cross-reference edge at an address into an owned rust::Vec<XrefRec>
-// returned by value in a single crossing. XrefRec is a cxx
-// shared struct, defined by the cxx-generated gen_bridge.h.
+// Hand-written Custom body for the generated reference domain (namespace gen). One walk of an
+// xrefblk_t collects every cross-reference edge at an address into an owned rust::Vec<XrefRec>,
+// returned by value in a single crossing. XrefRec is a cxx shared struct, defined by the
+// cxx-generated gen_bridge.h.
 
 #include <ida.hpp>
 #include <pro.h>
@@ -17,6 +17,8 @@
 
 namespace gen {
 
+// Every cross-reference edge to (is_to) or from addr, collected into an owned Vec; empty if there
+// are none.
 rust::Vec<XrefRec> xrefs_build(uint64_t addr, bool is_to) {
   rust::Vec<XrefRec> rows;
   xrefblk_t xrefs;

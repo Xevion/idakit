@@ -1,7 +1,8 @@
 // Hand-written Custom bodies for the generated type-write domain (namespace gen): parse C
 // declarations into the local til, delete/rename a named type, or reserve a forward-declared
 // aggregate. Reports an int result code plus captured diagnostic through a TypeWriteResult shared
-// struct, as the sibling type-write TUs do.
+// struct, as the sibling type-write TUs do. Shared helpers (named-type resolution, the
+// captured-diagnostic reader) live in type_write_common.
 
 #include <string>
 
@@ -23,6 +24,8 @@ using namespace facade;
 
 namespace gen {
 
+// Parse the C declaration(s) in `input` into the local til. `code` is parse_decls's error
+// count, not a TYPE_*/TEDIT_* sentinel: 0 means every declaration parsed.
 TypeWriteResult define_type(rust::Str input) {
   try {
     TypeWriteResult out{};
@@ -37,6 +40,8 @@ TypeWriteResult define_type(rust::Str input) {
   }
 }
 
+// Delete the named type `type_name` from the local til, the inverse of define_type.
+// TEDIT_NO_TYPE if no such type, TERR_SAVE_ERROR if del_named_type itself fails.
 TypeWriteResult delete_type(rust::Str type_name) {
   try {
     TypeWriteResult out{};
@@ -57,6 +62,9 @@ TypeWriteResult delete_type(rust::Str type_name) {
   }
 }
 
+// Rename the named type `type_name` to `new_name` in place, preserving its ordinal.
+// TEDIT_NO_TYPE if no such type, else the raw (negative on failure) tinfo_code_t from
+// tinfo_t::rename_type.
 TypeWriteResult rename_type(rust::Str type_name, rust::Str new_name) {
   try {
     TypeWriteResult out{};
@@ -75,6 +83,9 @@ TypeWriteResult rename_type(rust::Str type_name, rust::Str new_name) {
   }
 }
 
+// Reserve `type_name` in the local til as an incomplete aggregate, without a body.
+// `decl_type` selects BTF_STRUCT/BTF_UNION/BTF_ENUM. No TEDIT_NO_TYPE pre-check here, since
+// there is no existing type to load first: `code` is create_forward_decl's raw tinfo_code_t.
 TypeWriteResult forward_declare_type(rust::Str type_name, uint32_t decl_type) {
   try {
     TypeWriteResult out{};

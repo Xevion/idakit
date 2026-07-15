@@ -1,7 +1,8 @@
 // Hand-written Custom bodies for the generated type-write domain (namespace gen): add,
-// retype, rename, comment, reprise, or delete one member of a named struct/union in the local til.
-// Reports an int result code plus captured diagnostic through a TypeWriteResult shared struct, as
-// the sibling type-write TUs do.
+// retype, rename, comment on, restyle the display of, or delete one member of a named
+// struct/union in the local til. Reports an int result code plus captured diagnostic through
+// a TypeWriteResult shared struct, as the sibling type-write TUs do. Shared helpers (recipe
+// building, named-type resolution, the captured-diagnostic reader) live in type_write_common.
 
 #include <cstdint>
 #include <string>
@@ -57,6 +58,10 @@ bool bitfield_width_bits(const tinfo_t &member_type, uint16 &width) {
 
 } // namespace
 
+// Add a member built from `recipe` to the named struct/union `type_name` at bit offset
+// `member_bit` (or appended past the last member when it is MEMBER_APPEND). An empty
+// `member_name` adds an anonymous member. TEDIT_NO_TYPE/TEDIT_BUILD pre-failures, else
+// add_udm's raw tinfo_code_t.
 TypeWriteResult udt_add_member(rust::Str type_name, rust::Str member_name,
                                rust::Slice<const uint8_t> recipe, uint64_t member_bit) {
   try {
@@ -97,6 +102,9 @@ TypeWriteResult udt_add_member(rust::Str type_name, rust::Str member_name,
   }
 }
 
+// Replace the type of the member resolved by name (or, when empty, by bit offset) with the
+// recipe type. TEDIT_NO_TYPE/TEDIT_NO_MEMBER/TEDIT_BUILD pre-failures, else set_udm_type's
+// raw tinfo_code_t.
 TypeWriteResult udt_set_member_type(rust::Str type_name, rust::Str member_name, uint64_t member_bit,
                                     rust::Slice<const uint8_t> recipe, uint32_t etf_flags) {
   try {
@@ -123,6 +131,8 @@ TypeWriteResult udt_set_member_type(rust::Str type_name, rust::Str member_name, 
   }
 }
 
+// Rename the member resolved by name (or, when empty, by bit offset) to `new_name`.
+// TEDIT_NO_TYPE/TEDIT_NO_MEMBER pre-failures, else rename_udm's raw tinfo_code_t.
 TypeWriteResult udt_rename_member(rust::Str type_name, rust::Str member_name, uint64_t member_bit,
                                   rust::Str new_name) {
   try {
@@ -147,6 +157,9 @@ TypeWriteResult udt_rename_member(rust::Str type_name, rust::Str member_name, ui
   }
 }
 
+// Set a plain (non-repeatable) comment on the member resolved by name (or, when empty, by
+// bit offset). TEDIT_NO_TYPE/TEDIT_NO_MEMBER pre-failures, else set_udm_cmt's raw
+// tinfo_code_t.
 TypeWriteResult udt_set_member_comment(rust::Str type_name, rust::Str member_name,
                                        uint64_t member_bit, rust::Str comment) {
   try {
@@ -171,9 +184,11 @@ TypeWriteResult udt_set_member_comment(rust::Str type_name, rust::Str member_nam
   }
 }
 
-// vtype is a value_repr_t FRB_* value-type nibble (FRB_NUMB/NUMO/NUMH/NUMD/CHAR); idakit maps its
-// own NumberFormat enum onto it and never forwards an info-carrying nibble (FRB_ENUM, FRB_OFFSET,
-// ...) here.
+// Set the numeric display (vtype/sign/leading zeros) on the member resolved by name or bit
+// offset. TEDIT_NO_TYPE/TEDIT_NO_MEMBER pre-failures, else set_udm_repr's raw tinfo_code_t.
+// vtype is a value_repr_t FRB_* value-type nibble (FRB_NUMB/NUMO/NUMH/NUMD/CHAR); idakit maps
+// its own NumberFormat enum onto it and never forwards an info-carrying nibble (FRB_ENUM,
+// FRB_OFFSET, ...) here.
 TypeWriteResult udt_set_member_repr(rust::Str type_name, rust::Str member_name, uint64_t member_bit,
                                     uint32_t vtype, bool is_signed, bool leading_zeros) {
   try {
@@ -201,6 +216,8 @@ TypeWriteResult udt_set_member_repr(rust::Str type_name, rust::Str member_name, 
   }
 }
 
+// Delete the member resolved by name (or, when empty, by bit offset) from `type_name`.
+// TEDIT_NO_TYPE/TEDIT_NO_MEMBER pre-failures, else del_udm's raw tinfo_code_t.
 TypeWriteResult udt_del_member(rust::Str type_name, rust::Str member_name, uint64_t member_bit) {
   try {
     TypeWriteResult out{};

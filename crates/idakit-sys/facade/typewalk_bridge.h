@@ -20,9 +20,16 @@ struct TypeWalkVisitor;
 // definition and call sites both see the full struct through the generated header.
 struct FrameWalk;
 
+// Walk the named type `name` into `visitor`; throws if no such named type exists.
 uint32_t type_walk_visit_named(rust::Str name, TypeWalkVisitor &visitor);
+// Walk the type at local type library ordinal `ordinal` into `visitor`; throws if the ordinal is
+// unused.
 uint32_t type_walk_visit_ordinal(uint32_t ordinal, TypeWalkVisitor &visitor);
+// Walk the type of the function at `addr` into `visitor`; throws if the function has no type
+// info.
 uint32_t func_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor);
+// Walk the stack frame of the function at `addr` into a FrameWalk, resolving each variable's type
+// through `visitor`; throws if the function has no frame.
 FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor);
 
 } // namespace bridge

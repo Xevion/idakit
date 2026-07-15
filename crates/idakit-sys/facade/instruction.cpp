@@ -1,9 +1,9 @@
 // Hand-written Custom bodies for the generated instruction-decode domain (namespace gen).
-// decode_insn folds one x86/x64 insn_t into an owned InstructionData shared struct: operands land
-// in a right-sized rust::Vec<OperandData>, register slots nest RegisterData by value, and the raw
-// result code rides InstructionData::status instead of a return code (the -3/-4 failures carry
-// structured payloads a string-only cxx exception could not). reg_class_ids/op_dtype_ids expose the
-// facade's discriminants as rust::Vec<uint8_t> for idakit's mirror tests.
+// decode_insn folds one x86/x64 insn_t into an owned InstructionData shared struct. Unlike the rest
+// of the generated bridges, failure rides InstructionData::status rather than a thrown exception,
+// since the -3/-4 cases need to carry a structured operand index and raw code that a string-only
+// cxx exception cannot. reg_class_ids/op_dtype_ids expose the facade's own discriminants so idakit
+// can pin its RegisterClass/DataType mirrors to this SDK build in a test.
 
 #include <pro.h>
 
@@ -22,7 +22,7 @@ namespace gen {
 
 namespace {
 
-// idakit RegClass discriminants -- must match the Rust `RegisterClass` enum, pinned by the
+// idakit RegClass discriminants, must match the Rust `RegisterClass` enum, pinned by the
 // alignment test that reg_class_ids feeds.
 constexpr uint8_t RC_GPR = 0;
 constexpr uint8_t RC_SEGMENT = 1;
@@ -37,7 +37,7 @@ constexpr uint8_t RC_DEBUG = 9;
 constexpr uint8_t RC_TEST = 10;
 constexpr uint8_t RC_IP = 11;
 constexpr uint8_t RC_BND = 12;
-// Sentinel: a register idakit does not model as an operand class. Never emitted to Rust --
+// Sentinel: a register idakit does not model as an operand class. Never emitted to Rust;
 // classify_op turns it into the -4 status so the decoder rejects it loudly.
 constexpr uint8_t RC_BAD = 0xFF;
 
@@ -49,12 +49,10 @@ RegisterData none_reg() {
   return r;
 }
 
-// Classify an x86 RegNo by its authoritative range (intel.hpp `RegNo`). Used for plain o_reg
-// operands and a memory operand's base/index (incl. a VSIB vector index). The GPR case is the tight
-// R_ax..R_dil block, not a catch-all residual: a number that lands in no modelled class (flags
-// cf..efl, fpctrl/fpstat/fptags, mxcsr, or out of range) returns RC_BAD so classify_op can reject
-// it loudly rather than mislabel it GPR.
+// Classify an x86 RegNo into idakit's RegisterClass by its authoritative range (intel.hpp `RegNo`).
+// Used for plain o_reg operands and a memory operand's base/index, including a VSIB vector index.
 uint8_t reg_class_of(int r) {
+  // Tight R_ax..R_dil block, not a catch-all residual.
   if (r >= R_ax && r <= R_dil)
     return RC_GPR;
   if (r == R_ip)
@@ -75,36 +73,38 @@ uint8_t reg_class_of(int r) {
     return RC_MASK;
   if (r >= R_bnd0 && r <= R_bnd3)
     return RC_BND;
+  // No modelled class: flags cf..efl, fpctrl/fpstat/fptags, mxcsr, or out of range. Reject rather
+  // than mislabel it GPR.
   return RC_BAD;
 }
 
-// Spell a register from its global RegNo. The wide integer GPRs and the instruction pointer alias
-// by width (rax/eax/ax/al, rip/eip/ip), so those go through get_reg_name(reg, width); every other
-// register has a single spelling in the processor's own name table, which is width-independent and
-// robust where get_reg_name's width match is finicky (st is catalogued at 8 bytes, not its 10-byte
-// extent; byte regs resolve only at width 1).
+// Spell a register from its global RegNo and width into RegisterData.
 void fill_reg(RegisterData &r, int num, uint8_t cls, int width) {
   r.num = static_cast<uint16_t>(num);
   r.cls = cls;
   r.width = static_cast<uint8_t>(width);
   if ((num >= R_ax && num <= R_r15) || num == R_ip) {
+    // The wide integer GPRs and the instruction pointer alias by width (rax/eax/ax/al, rip/eip/ip),
+    // so only these need get_reg_name(reg, width) rather than a fixed spelling.
     qstring nm;
     if (get_reg_name(&nm, num, width > 0 ? static_cast<size_t>(width) : 8) > 0)
       r.name = to_rust_string(nm);
   } else if (num >= 0 && num < PH.regs_num && PH.reg_names[num] != nullptr) {
+    // Every other register has one spelling in the processor's own name table, width-independent
+    // and robust where get_reg_name's width match is finicky (st is catalogued at 8 bytes, not its
+    // 10-byte extent; byte regs resolve only at width 1).
     r.name = to_rust_string(PH.reg_names[num]);
   }
 }
 
-// Name a control/debug/test register. These carry a class-relative index in op.reg and have no
-// global RegNo or name-table entry: their text exists only in IDA's out routine, so reconstruct the
-// canonical "cr2"/"dr4"/"tr7" spelling from the index. `prefix` is the class letter ('c'/'d'/'t');
-// cr8 (only) takes a "d" suffix via the cr_suff flag ("cr8d").
+// Synthesize a control/debug/test register's name from its class-relative index. These have no
+// global RegNo or name-table entry; their text exists only in IDA's out routine.
 void fill_special_reg(RegisterData &r, char prefix, int index, uint8_t cls, bool d_suffix) {
   r.num = static_cast<uint16_t>(index);
   r.cls = cls;
   r.width = 0;
   char buf[16];
+  // prefix is the class letter ('c'/'d'/'t'); cr8 alone takes a "d" suffix ("cr8d").
   qsnprintf(buf, sizeof(buf), "%cr%d%s", prefix, index, d_suffix ? "d" : "");
   r.name = to_rust_string(buf);
 }
@@ -112,6 +112,7 @@ void fill_special_reg(RegisterData &r, char prefix, int index, uint8_t cls, bool
 // A memory operand's effective address width (for naming its base/index registers).
 int addr_width(const insn_t &insn) { return ad64(insn) ? 8 : (ad32(insn) ? 4 : 2); }
 
+// Fill a memory operand's base/index registers, scale, displacement, and resolved address.
 void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
   int aw = addr_width(insn);
   int base = x86_base_reg(insn, op);
@@ -130,12 +131,11 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
 // Fold one raw op_t into a semantic OperandData. Returns 0, -3 for a raw operand type this decoder
 // does not model (unreachable for x86, which enumerates all of its operand types), or -4 for an
 // o_reg whose register lands in no modelled class (reg_class_of -> RC_BAD).
-// `dst` arrives value-initialized ({}), so the fields that stay zero for a given operand (value,
-// sel, scale, disp, and addr for a non-mem/non-near operand) are already zero here; only the
-// register slots need the REG_NONE sentinel that a zeroed RegisterData would not carry.
 int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
   dst.idx = static_cast<uint8_t>(idx);
   dst.data_type = op.dtype;
+  // dst arrives value-initialized, so every field that stays zero for this operand already is;
+  // only the register slots need the REG_NONE sentinel a zeroed RegisterData wouldn't carry.
   dst.reg = none_reg();
   dst.base = none_reg();
   dst.index = none_reg();
@@ -176,7 +176,7 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
     dst.kind = OP_REG;
     fill_reg(dst.reg, R_k0 + op.reg, RC_MASK, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
-  // Control/debug/test registers have no global RegNo -- synthesize their canonical spelling.
+  // Control/debug/test registers have no global RegNo, so synthesize their canonical spelling.
   case o_crreg:
     dst.kind = OP_REG;
     fill_special_reg(dst.reg, 'c', op.reg, RC_CONTROL, op.specflag1 != 0);
@@ -215,6 +215,8 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
 
 } // namespace
 
+// Decode the instruction at addr into an owned InstructionData; status carries decode or
+// classification failure instead of a thrown exception.
 InstructionData decode_insn(uint64_t addr) {
   // Value-initialized: status/err_op/err_optype and every scalar start at 0 (so the success path
   // reports status 0 without an explicit set), mnemonic empty, ops empty.

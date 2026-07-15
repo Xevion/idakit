@@ -1,10 +1,9 @@
-// Hand-written Custom bodies for the generated strings domain (namespace gen). Wraps IDA's
-// string list: build_strlist (an O(database) scan), its
-// length, and the nth entry filled into the StrlistItem shared struct (throw when out of range).
-// strlit_contents decodes the string at (addr,len,type) semantically (STRCONV_REPLCHAR);
-// strlit_escaped decodes it to its C-escaped display form (STRCONV_ESCAPE). Both throw only when
-// the literal cannot be read; STRCONV_REPLCHAR/ESCAPE guarantee the decoded bytes are valid UTF-8.
-// StrlistItem is a cxx shared struct, defined by the cxx-generated gen_bridge.h.
+// Hand-written Custom bodies for the generated strings domain (namespace gen). Two independent
+// pieces: IDA's cached string list (build/query/index into StrlistItem, a cxx shared struct
+// defined by the cxx-generated gen_bridge.h), and strlit_contents/strlit_escaped, which decode a
+// string literal at a given address directly, list or not. Every out-of-range index or unreadable
+// literal throws, surfacing as a Rust Err; STRCONV_REPLCHAR/STRCONV_ESCAPE both guarantee the
+// decoded bytes are valid UTF-8.
 
 #include <ida.hpp>
 #include <pro.h>
@@ -21,10 +20,13 @@
 
 namespace gen {
 
+// Rebuilds IDA's cached string list; an O(database) scan.
 void strlist_build() { build_strlist(); }
 
+// The number of entries in the cached string list.
 size_t strlist_qty() { return get_strlist_qty(); }
 
+// The n-th entry of the cached string list; throws if n is out of range.
 StrlistItem strlist_item(size_t n) {
   string_info_t info;
   if (!get_strlist_item(&info, n))
@@ -36,6 +38,8 @@ StrlistItem strlist_item(size_t n) {
   return item;
 }
 
+// The string literal at addr, decoded with undecodable bytes replaced by U+FFFD; throws if the
+// literal can't be read.
 rust::String strlit_contents(uint64_t addr, size_t len, int32_t strtype) {
   qstring out;
   ssize_t r =
@@ -45,6 +49,8 @@ rust::String strlit_contents(uint64_t addr, size_t len, int32_t strtype) {
   return to_rust_string(out);
 }
 
+// The string literal at addr, decoded to its C-escaped display form (\n, \xNN, ...); throws if
+// the literal can't be read.
 rust::String strlit_escaped(uint64_t addr, size_t len, int32_t strtype) {
   qstring out;
   ssize_t r =

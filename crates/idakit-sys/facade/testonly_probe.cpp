@@ -29,6 +29,7 @@
 
 namespace bridge {
 
+// Throws a different exception per kind; anything else returns normally.
 rust::String probe_throw(int32_t kind) {
   if (kind == 0)
     throw std::runtime_error("probe_throw: runtime_error from C++");
@@ -40,11 +41,13 @@ rust::String probe_throw(int32_t kind) {
 }
 
 namespace {
-std::atomic<uint32_t> g_drop_probe_count{0};
+std::atomic<uint32_t> g_drop_probe_count{0}; // bumped by drop_probe_t's destructor
 } // namespace
 
+// Allocates a DropProbe for Rust to hold as a UniquePtr and later drop.
 std::unique_ptr<DropProbe> drop_probe_make() { return std::make_unique<DropProbe>(); }
 
+// Current count of DropProbe destructions, to verify a Rust-side drop reached the C++ deleter.
 uint32_t drop_probe_count() { return g_drop_probe_count.load(); }
 
 } // namespace bridge

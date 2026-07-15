@@ -13,24 +13,24 @@
 
 namespace facade {
 
-extern thread_local jmp_buf g_exit_jmp;
-extern thread_local bool g_exit_guarded;
-extern thread_local bool g_trapped;
-extern thread_local int g_exit_code;
-extern thread_local std::string g_output;
+extern thread_local jmp_buf g_exit_jmp;   // setjmp target for the fatal-exit trap
+extern thread_local bool g_exit_guarded;  // true while a guarded<> call is armed
+extern thread_local bool g_trapped;       // true if the last guarded call trapped a fatal
+extern thread_local int g_exit_code;      // exit/abort code from the last trapped fatal
+extern thread_local std::string g_output; // captured stdout+stderr from the last guarded call
 
 // stdout+stderr capture over a guarded call via an in-memory pipe (no temp file). `rd < 0`
 // means capture is off or setup failed, so end_capture is a no-op.
 struct capture_t {
-  int rd = -1; // pipe read end, drained into g_output at the end
-  int wr = -1; // pipe write end; fd 1+2 are dup2'd onto it for the call
-  int saved_out = -1;
-  int saved_err = -1;
+  int rd = -1;        // pipe read end, drained into g_output at the end
+  int wr = -1;        // pipe write end; fd 1+2 are dup2'd onto it for the call
+  int saved_out = -1; // original fd 1, restored by end_capture
+  int saved_err = -1; // original fd 2, restored by end_capture
 };
 
-void install_fatal_traps();
-capture_t begin_capture();
-void end_capture(capture_t &cap);
+void install_fatal_traps(); // idempotent; redirects libida's exit/abort GOT slots (Linux only)
+capture_t begin_capture();  // redirect fd 1+2 into a pipe; see capture_t
+void end_capture(capture_t &cap); // restore fds, drain the pipe into g_output
 // msg()-channel capture: an HT_UI hook that catches ui_msg text the fd capture can't see (headless
 // routes msg() to a no-op sink). Paired like begin/end_capture; end_ui_capture folds the text into
 // g_output only when the stderr capture stayed empty. See runtime.cpp.

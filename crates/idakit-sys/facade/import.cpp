@@ -1,7 +1,7 @@
-// Hand-written Custom body for the generated import domain (namespace gen). One walk of
-// every module's enum_import_names collects the whole import table into an owned
-// rust::Vec<ImportRec> returned by value in a single crossing. ImportRec is a cxx shared struct
-// (name/module are rust::String), defined by the cxx-generated gen_bridge.h.
+// Hand-written Custom body for the generated import domain (namespace gen): one walk of every
+// module's enum_import_names collects the whole import table into an owned rust::Vec<ImportRec>,
+// returned by value in a single crossing. ImportRec is a cxx shared struct (name/module are
+// rust::String) defined by the cxx-generated gen_bridge.h.
 
 #include <ida.hpp>
 #include <pro.h>
@@ -22,6 +22,7 @@ struct collect_ctx_t {
   const qstring *module;
 };
 
+// enum_import_names callback: appends one row for (addr, name, ord) to ctx->rows.
 int idaapi collect_import(ea_t addr, const char *name, uval_t ord, void *param) {
   collect_ctx_t *ctx = reinterpret_cast<collect_ctx_t *>(param);
   ImportRec rec;
@@ -36,6 +37,7 @@ int idaapi collect_import(ea_t addr, const char *name, uval_t ord, void *param) 
 
 } // namespace
 
+// Every import across all modules, collected into one owned snapshot.
 rust::Vec<ImportRec> imports_build() {
   rust::Vec<ImportRec> rows;
   uint nmods = get_import_module_qty();

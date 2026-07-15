@@ -63,9 +63,9 @@ namespace facade {
 // libida's frames carry no unwind info, so a C++ throw from our stand-in can't propagate
 // through them; longjmp can (it just restores the stack pointer). It must reach a setjmp
 // in the same C call chain, with no Rust frame between (Rust can't be longjmped over).
-thread_local jmp_buf g_exit_jmp;
-thread_local bool g_exit_guarded = false;
-thread_local int g_exit_code = 0;
+thread_local jmp_buf g_exit_jmp;          // setjmp target the trap longjmps back to
+thread_local bool g_exit_guarded = false; // true while a guarded<> call is armed
+thread_local int g_exit_code = 0;         // exit/abort code from the last trapped fatal
 // True if the most recent guarded call trapped a fatal exit() rather than completing.
 thread_local bool g_trapped = false;
 // Captured stdout+stderr from the last guarded call.
@@ -75,17 +75,17 @@ thread_local std::string g_output;
 thread_local std::string g_ui_output;
 
 namespace {
-typedef void (*exit_fn)(int);
-typedef void (*abort_fn)(void);
-exit_fn g_real_exit = nullptr;
-abort_fn g_real_abort = nullptr;
-bool g_trap_installed = false;
+typedef void (*exit_fn)(int);        // signature of libc's exit()
+typedef void (*abort_fn)(void);      // signature of libc's abort()
+exit_fn g_real_exit = nullptr;       // real libc exit(), resolved once via dlsym
+abort_fn g_real_abort = nullptr;     // real libc abort(), resolved once via dlsym
+bool g_trap_installed = false;       // guards one-time GOT redirection
 constexpr int ABORT_EXIT_CODE = 134; // 128 + SIGABRT
 
 // Our stand-in for libida's exit(): jump back to the armed guard if a guarded kernel call
 // is on the stack, else fall through to the real libc exit so normal teardown still works.
-// Off Linux nothing installs it into the GOT, so it's only reached (inside a guard) by the
-// test shim -- hence maybe_unused there.
+// Off Linux nothing installs it into the GOT, so only the test shim reaches it (inside a
+// guard); it is marked maybe_unused here.
 [[maybe_unused]] void trap_exit(int status) {
   if (g_exit_guarded) {
     g_exit_guarded = false;
@@ -383,7 +383,8 @@ void swallow_exit_banner() {
 struct BannerFilter {
   BannerFilter() { (void)atexit(swallow_exit_banner); }
 };
-[[maybe_unused]] BannerFilter g_banner_filter;
+[[maybe_unused]] BannerFilter
+    g_banner_filter; // constructed at load time to register the atexit hook
 } // namespace
 
 // libidalib reads TVHEADLESS to stay off the GUI/Qt path but never sets it, so set it here
@@ -422,10 +423,13 @@ extern "C" int guarded_close(int save) {
   });
 }
 
+// Exit/abort code captured by the last trapped fatal; meaningful only if was_trapped() is true.
 extern "C" int last_exit_code(void) { return g_exit_code; }
 
+// Whether the last guarded call trapped a fatal instead of completing normally.
 extern "C" int was_trapped(void) { return g_trapped ? 1 : 0; }
 
+// Read an int (or bool) value from the IDA registry, returning defval if absent.
 extern "C" int idakit_reg_read_int(const char *name, int defval) {
   return reg_read_int(name, defval, nullptr);
 }
@@ -464,6 +468,7 @@ extern "C" int test_fatal(int kind) {
   });
 }
 
+// Read back IDA's `batch` global, to verify set_batch wired it correctly.
 extern "C" int get_batch(void) { return batch ? 1 : 0; }
 
 // Fire the chosen fatal from an arbitrary translation unit. The exit/abort stand-ins are

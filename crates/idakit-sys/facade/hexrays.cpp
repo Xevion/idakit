@@ -1,10 +1,8 @@
-// Hand-written Custom bodies for the generated Hex-Rays domain (namespace gen). decompile
-// hands back a cfuncptr_t owned by std::unique_ptr, so cxx's deleter runs ~cfuncptr_t (release())
-// on drop, retiring the raw new/delete + dispose. It wraps decompile_func in guarded<> so a
-// decompiler fatal exit() surfaces as a trap (g_trapped) instead of a crash, then throws on failure
-// so cxx maps it to a Rust Err; idakit re-checks was_trapped() to split a trapped exit from an
-// ordinary miss. The read accessors take a borrowed &CFunc and cross the cfunc_t* the qrefcnt
-// holds.
+// Hand-written Custom bodies for the generated Hex-Rays domain (namespace gen).
+// Every read accessor takes a borrowed &CFunc and crosses the cfunc_t* pointer the qrefcnt owns; an
+// absent SDK value throws std::runtime_error, which cxx maps to a Rust Err. decompile is the one
+// function that hands back an owned handle, a cfuncptr_t under std::unique_ptr, instead of reading
+// through an existing one.
 
 #include <pro.h>
 
@@ -40,10 +38,12 @@ struct ctree_counter_t : public ctree_visitor_t {
   int n_expr = 0;
   int n_calls = 0;
   ctree_counter_t() : ctree_visitor_t(CV_FAST) {}
+  // idaapi callback per statement visited.
   int idaapi visit_insn(cinsn_t *) override {
     ++n_insn;
     return 0;
   }
+  // idaapi callback per expression visited; a cot_call expression also counts as a call site.
   int idaapi visit_expr(cexpr_t *expr) override {
     ++n_expr;
     if (expr->op == cot_call)
@@ -61,6 +61,8 @@ struct expr_gap_visitor_t : public ctree_visitor_t {
   int *materialized;
   expr_gap_visitor_t(int *visited, int *materialized)
       : ctree_visitor_t(CV_PARENTS), visited(visited), materialized(materialized) {}
+  // True for a cot_empty placeholder in an optional slot (a for-loop init/cond/step, or a bare
+  // return/throw) that the extraction walker elides to None rather than materializing.
   bool elided_empty(const cexpr_t *expr) {
     if (expr->op != cot_empty)
       return false;
@@ -78,6 +80,8 @@ struct expr_gap_visitor_t : public ctree_visitor_t {
       return false;
     }
   }
+  // idaapi callback per expression visited; tallies both the raw visit and, unless elided, the
+  // post-extraction materialized count.
   int idaapi visit_expr(cexpr_t *expr) override {
     visited[expr->op]++;
     if (!elided_empty(expr))
@@ -102,6 +106,8 @@ rust::String render_pseudocode(cfunc_t *cfunc) {
 
 } // namespace
 
+// Decompile the function at addr; throws (mapped to a Rust Err) on a missing function, a Hex-Rays
+// failure, or a trapped decompiler fatal exit.
 std::unique_ptr<::cfuncptr_t> decompile(uint64_t addr) {
   std::string reason;
   // guarded<> traps a decompiler fatal exit() into g_trapped (returns nullptr) instead of crashing.
@@ -130,17 +136,20 @@ std::unique_ptr<::cfuncptr_t> decompile(uint64_t addr) {
   return std::unique_ptr<::cfuncptr_t>(result);
 }
 
+// Tag-stripped pseudocode text for an already-decompiled cfunc.
 rust::String cfunc_pseudocode(const ::cfuncptr_t &cfunc) {
   cfunc_t *p = cfunc;
   return render_pseudocode(p);
 }
 
+// Force ctext regeneration (e.g. after a rename or comment) and return the refreshed pseudocode.
 rust::String cfunc_refresh_text(const ::cfuncptr_t &cfunc) {
   cfunc_t *p = cfunc;
   p->refresh_func_ctext();
   return render_pseudocode(p);
 }
 
+// Count statements, expressions, and call sites in cfunc's ctree body.
 CtreeCounts cfunc_counts(const ::cfuncptr_t &cfunc) {
   cfunc_t *p = cfunc;
   ctree_counter_t vis;
@@ -152,6 +161,7 @@ CtreeCounts cfunc_counts(const ::cfuncptr_t &cfunc) {
   return out;
 }
 
+// Per-op visited vs materialized expression histograms, for idakit's extraction-completeness test.
 ExprGap cfunc_expr_gap(const ::cfuncptr_t &cfunc) {
   cfunc_t *p = cfunc;
   int visited_hist[CTYPE_SLOTS] = {0};
@@ -170,6 +180,8 @@ ExprGap cfunc_expr_gap(const ::cfuncptr_t &cfunc) {
   return out;
 }
 
+// Initialize Hex-Rays, loading the decompiler plugin first if it is not already resident; false if
+// no decompiler is available for this arch.
 bool hexrays_init() {
   if (init_hexrays_plugin())
     return true;
@@ -177,18 +189,22 @@ bool hexrays_init() {
   return init_hexrays_plugin();
 }
 
+// Erase addr's cached decompilation, forcing a re-decompile on next access; false if Hex-Rays isn't
+// loaded (get_hexdsp() is null before init) or there was no cache entry.
 bool mark_cfunc_dirty(uint64_t addr, bool close_views) {
   if (get_hexdsp() == nullptr)
     return false;
   return ::mark_cfunc_dirty(static_cast<ea_t>(addr), close_views);
 }
 
+// Drop every cached cfunc; a no-op if Hex-Rays isn't loaded.
 void clear_cached_cfuncs() {
   if (get_hexdsp() == nullptr)
     return;
   ::clear_cached_cfuncs();
 }
 
+// Whether addr already has a cached decompilation; false if Hex-Rays isn't loaded.
 bool has_cached_cfunc(uint64_t addr) {
   if (get_hexdsp() == nullptr)
     return false;

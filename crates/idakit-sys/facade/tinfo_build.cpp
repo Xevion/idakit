@@ -2,7 +2,8 @@
 // tinfo_t construction. Each builder mints a fresh heap tinfo_t owned by a UniquePtr, whose cxx
 // deleter (~tinfo_t) frees it on drop. A build failure returns a null handle (an Err only for the
 // parse-driven tinfo_decl). The transform builders copy the borrowed `inner`, never consuming it,
-// so the caller's input handle stays live.
+// so the caller's input handle stays live. Shared helpers (scalar leaf builders, the
+// captured-diagnostic reader) live in type_write_common.
 
 #include <memory>
 #include <stdexcept>
@@ -25,6 +26,7 @@ using namespace facade;
 
 namespace gen {
 
+// The void type as a fresh handle.
 std::unique_ptr<::tinfo_t> tinfo_void() {
   try {
     auto t = std::make_unique<::tinfo_t>();
@@ -36,6 +38,7 @@ std::unique_ptr<::tinfo_t> tinfo_void() {
   }
 }
 
+// The boolean type as a fresh handle.
 std::unique_ptr<::tinfo_t> tinfo_bool() {
   try {
     auto t = std::make_unique<::tinfo_t>();
@@ -47,6 +50,8 @@ std::unique_ptr<::tinfo_t> tinfo_bool() {
   }
 }
 
+// A bytes-wide integer (1/2/4/8/16), signed when is_signed, as a fresh handle; null if the
+// width has no matching SDK int type.
 std::unique_ptr<::tinfo_t> tinfo_int(uint32_t bytes, bool is_signed) {
   try {
     auto t = std::make_unique<::tinfo_t>();
@@ -58,6 +63,7 @@ std::unique_ptr<::tinfo_t> tinfo_int(uint32_t bytes, bool is_signed) {
   }
 }
 
+// A bytes-wide float (4 or 8) as a fresh handle; null for any other width.
 std::unique_ptr<::tinfo_t> tinfo_float(uint32_t bytes) {
   try {
     auto t = std::make_unique<::tinfo_t>();
@@ -69,6 +75,8 @@ std::unique_ptr<::tinfo_t> tinfo_float(uint32_t bytes) {
   }
 }
 
+// The named type `name` as a fresh handle, an unresolved typedef ref. Non-null even when
+// `name` is absent from the local til (see build_named); the caller checks existence itself.
 std::unique_ptr<::tinfo_t> tinfo_named(rust::Str name) {
   try {
     std::string names(name.data(), name.size());
@@ -81,8 +89,9 @@ std::unique_ptr<::tinfo_t> tinfo_named(rust::Str name) {
   }
 }
 
-// The one builder with a parse step: throw the captured reason on failure so cxx maps it to a Rust
-// Err (hence no abort shell, matching the decompile body in hexrays.cpp).
+// The type `decl` parses to, as a fresh handle. The one builder with a parse step: throws
+// the captured reason on failure so cxx maps it to a Rust Err, hence no catch-all abort
+// shell like the other builders in this file use.
 std::unique_ptr<::tinfo_t> tinfo_decl(rust::Str decl) {
   std::string decls(decl.data(), decl.size());
   auto t = std::make_unique<::tinfo_t>();
@@ -95,6 +104,8 @@ std::unique_ptr<::tinfo_t> tinfo_decl(rust::Str decl) {
   return t;
 }
 
+// A pointer to inner as a fresh handle; inner is copied, not consumed, so the caller's
+// handle stays live. Null if create_ptr rejects it.
 std::unique_ptr<::tinfo_t> tinfo_ptr(const ::tinfo_t &inner) {
   try {
     auto t = std::make_unique<::tinfo_t>();
@@ -106,6 +117,8 @@ std::unique_ptr<::tinfo_t> tinfo_ptr(const ::tinfo_t &inner) {
   }
 }
 
+// An nelems-element array of inner as a fresh handle; inner is copied, not consumed. Null
+// when nelems exceeds u32 or create_array rejects it.
 std::unique_ptr<::tinfo_t> tinfo_array(const ::tinfo_t &inner, uint64_t nelems) {
   try {
     // create_array's count param is a uint32, so a wider element count can't fit it.
@@ -121,6 +134,7 @@ std::unique_ptr<::tinfo_t> tinfo_array(const ::tinfo_t &inner, uint64_t nelems) 
   }
 }
 
+// A const-qualified copy of inner as a fresh handle; inner is not consumed.
 std::unique_ptr<::tinfo_t> tinfo_const(const ::tinfo_t &inner) {
   try {
     auto t = std::make_unique<::tinfo_t>(inner);
@@ -131,6 +145,7 @@ std::unique_ptr<::tinfo_t> tinfo_const(const ::tinfo_t &inner) {
   }
 }
 
+// A volatile-qualified copy of inner as a fresh handle; inner is not consumed.
 std::unique_ptr<::tinfo_t> tinfo_volatile(const ::tinfo_t &inner) {
   try {
     auto t = std::make_unique<::tinfo_t>(inner);
@@ -141,6 +156,8 @@ std::unique_ptr<::tinfo_t> tinfo_volatile(const ::tinfo_t &inner) {
   }
 }
 
+// Apply the built `handle` at `addr`; TYPE_OK/TYPE_ERR_APPLY, marking it definite (user-set,
+// not guessed) as every other apply path here does. The handle itself is not consumed.
 TypeWriteResult tinfo_apply(uint64_t addr, const ::tinfo_t &handle, int32_t flags) {
   try {
     TypeWriteResult out{};
