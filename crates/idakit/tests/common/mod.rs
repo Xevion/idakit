@@ -1,8 +1,11 @@
 //! Shared helpers for the kernel-touching integration tests.
 // Each test binary pulls in this whole module but uses only a subset of it.
-#![allow(dead_code, unused_imports)]
+#![allow(dead_code, unused_imports, unused_macros)]
 
 pub mod checks;
+mod macros;
+
+pub(crate) use macros::assert_type_write_err;
 
 // Corpus resolution lives in the crate's shared `idakit::corpus` (one source of truth with the
 // doctest harness); re-export the test-facing surface so callers reach it through `common`.
