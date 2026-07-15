@@ -66,7 +66,8 @@ pedantic:
     IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
     cd crates/idakit-sys
     sdk_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-isystem")) + 1]' compile_commands.json)"
-    extra_args=(-isystem "$sdk_include")
+    out_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-Ifacade")) + 1]' compile_commands.json)"
+    extra_args=(-isystem "$sdk_include" "$out_include")
     if [ "$(uname -s)" = Darwin ]; then
       extra_args+=(-isysroot "$(xcrun --show-sdk-path)")
     fi
