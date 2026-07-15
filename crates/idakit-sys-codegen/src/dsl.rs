@@ -131,7 +131,7 @@ macro_rules! methods {
 ///
 /// | suffix                 | [`BodyKind`] variant | behavior                                      |
 /// |------------------------|-----------------------|-----------------------------------------------|
-/// | *(none)*               | `Custom`              | hand-written in the domain's `custom_tu`       |
+/// | *(none)*               | `Custom`              | hand-written in one of the domain's `custom_tus` |
 /// | `= scalar(call)`       | `ScalarCall`          | `return (ret)CALL;`                            |
 /// | `= seg_scalar(a, s)`   | `SegScalar`           | `getnseg(n)`, read scalar field, `s` when null |
 /// | `= seg_string(g)`      | `SegString`           | `getnseg(n)`, fill a `qstring` via `g`         |

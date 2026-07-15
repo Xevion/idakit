@@ -137,7 +137,7 @@ pub const INSTRUCTION: Domain = Domain {
             doc: "`InstructionData::flow` bit: sequential flow stops after this instruction.",
         },
     ],
-    custom_tu: Some("facade/instruction.cpp"),
+    custom_tus: &["facade/instruction.cpp"],
     fns: fns! {
         "Decode the instruction at `ea`, folding raw operands into semantic kinds with resolved \
          register names and control-flow facts. Infallible at the boundary: the result code lands \

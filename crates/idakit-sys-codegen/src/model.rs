@@ -22,8 +22,9 @@ pub struct Domain {
     pub consts: &'static [ConstDef],
     /// The domain's functions.
     pub fns: &'static [FnSpec],
-    /// A hand-written TU defining this domain's [`BodyKind::Custom`] bodies, if any.
-    pub custom_tu: Option<&'static str>,
+    /// The hand-written TUs defining this domain's [`BodyKind::Custom`] bodies. A domain may split
+    /// its bodies across several TUs (empty when it has none).
+    pub custom_tus: &'static [&'static str],
 }
 
 impl Domain {
@@ -277,8 +278,8 @@ impl RetKind {
 
 /// How a function's C++ body is produced. The templated variants exist for segment's trivial
 /// scalar/string shapes; the netnode matrix supplies its own [`Rendered`](BodyKind::Rendered)
-/// bodies; every other body is [`Custom`](BodyKind::Custom) and hand-written in the domain's
-/// `custom_tu`.
+/// bodies; every other body is [`Custom`](BodyKind::Custom) and hand-written in one of the
+/// domain's `custom_tus`.
 #[derive(Clone)]
 pub enum BodyKind {
     /// Nullary scalar passthrough: `return (ret)CALL;`.
@@ -297,7 +298,7 @@ pub enum BodyKind {
         getter: &'static str,
         require_positive: bool,
     },
-    /// Declaration only; the body is hand-written in the domain's `custom_tu`.
+    /// Declaration only; the body is hand-written in one of the domain's `custom_tus`.
     Custom,
 }
 

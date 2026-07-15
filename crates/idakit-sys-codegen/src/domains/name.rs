@@ -10,7 +10,7 @@ pub const NAME: Domain = Domain {
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: Some("facade/name.cpp"),
+    custom_tus: &["facade/name.cpp"],
     fns: fns! {
         "Name at address `ea`; `Err` when the address has none."
             get_ea_name(ea: U64) -> ResultString;

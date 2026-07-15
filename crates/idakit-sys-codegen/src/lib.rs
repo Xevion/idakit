@@ -70,7 +70,10 @@ pub fn body_tus(out_dir: &Path) -> Vec<PathBuf> {
 /// The hand-written `Custom`-body TUs build.rs must compile alongside the generated ones.
 #[must_use]
 pub fn custom_tus() -> Vec<&'static str> {
-    domains().iter().filter_map(|d| d.custom_tu).collect()
+    domains()
+        .iter()
+        .flat_map(|d| d.custom_tus.iter().copied())
+        .collect()
 }
 
 /// Generate every artifact into `$OUT_DIR` from [`domains`].

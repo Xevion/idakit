@@ -283,7 +283,14 @@ fn emit_rerun_directives() {
     println!("cargo:rerun-if-changed=facade/bytes.cpp");
     println!("cargo:rerun-if-changed=facade/instruction.cpp");
     println!("cargo:rerun-if-changed=facade/hexrays.cpp");
-    println!("cargo:rerun-if-changed=facade/type_build.cpp");
+    println!("cargo:rerun-if-changed=facade/type_apply.cpp");
+    println!("cargo:rerun-if-changed=facade/type_define.cpp");
+    println!("cargo:rerun-if-changed=facade/udt_edit.cpp");
+    println!("cargo:rerun-if-changed=facade/enum_edit.cpp");
+    println!("cargo:rerun-if-changed=facade/func_sig.cpp");
+    println!("cargo:rerun-if-changed=facade/tinfo_build.cpp");
+    println!("cargo:rerun-if-changed=facade/type_write_common.cpp");
+    println!("cargo:rerun-if-changed=facade/type_write_common.h");
     println!("cargo:rerun-if-changed=facade/local_types.cpp");
     println!("cargo:rerun-if-changed=facade/netnode.cpp");
     println!("cargo:rerun-if-changed=facade/abi.h");

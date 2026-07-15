@@ -550,7 +550,7 @@ pub fn domain() -> &'static Domain {
             externs: &[],
             structs: &[],
             consts: &[],
-            custom_tu: Some("facade/netnode.cpp"),
+            custom_tus: &["facade/netnode.cpp"],
             fns: Box::leak(fns.into_boxed_slice()),
         }
     })

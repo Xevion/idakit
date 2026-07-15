@@ -469,7 +469,7 @@ impl Domain {
         // The custom trycatch (an idalib interr or a non-std throw becomes a Rust Err, not a
         // terminate) must be in scope in the generated .cc, which includes this header, so cxx's
         // default is disabled; it pulls in rust/cxx.h itself. gen_helpers.h carries the shared
-        // qstring/byte marshalling helpers every body and custom_tu may call.
+        // qstring/byte marshalling helpers every body and custom_tus TU may call.
         s.push_str("\n#include \"trycatch.h\"\n");
         s.push_str("#include \"gen_helpers.h\"\n\n");
         let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
@@ -838,7 +838,7 @@ pub(crate) fn facade_consts_tokens() -> TokenStream {
 
 /// The shared marshalling helpers, `inline` so every TU that includes a domain header defines
 /// them at most once yet links to one body. Both the generated bodies and the hand-written
-/// `custom_tu`s call these to copy a filled `qstring` / byte buffer out as its owning Rust type.
+/// `custom_tus` TUs call these to copy a filled `qstring` / byte buffer out as its owning Rust type.
 const HELPERS: &str = "\
 // Copy a filled qstring / C string out as an owning Rust String in one crossing, decoding
 // leniently: IDA emits UTF-8, and get_strlit_contents already replaces any undecodable unit with
@@ -858,7 +858,7 @@ inline rust::Vec<uint8_t> to_rust_bytes(const uint8_t *data, size_t n) {
 ";
 
 /// The standalone `gen_helpers.h`: the shared [`HELPERS`] in the `idakit_gen` namespace, included
-/// by every domain header (so every generated body and `custom_tu` gets them without a per-domain
+/// by every domain header (so every generated body and `custom_tus` TU gets them without a per-domain
 /// opt-in). Self-contained: pulls in `qstring` and the `rust::` types it names.
 pub(crate) fn helpers_header_source() -> String {
     let mut s = String::from("#pragma once\n\n#include <cstddef>\n#include <cstdint>\n\n");

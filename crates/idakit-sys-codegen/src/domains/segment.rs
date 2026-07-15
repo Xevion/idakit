@@ -8,7 +8,7 @@ pub const SEGMENT: Domain = Domain {
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: None,
+    custom_tus: &[],
     fns: fns! {
         "Number of segments in the current database (`get_segm_qty`)."
             gen_seg_qty() -> Usize = scalar("get_segm_qty()");

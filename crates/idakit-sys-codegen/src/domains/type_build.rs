@@ -4,7 +4,10 @@ use super::super::model::*;
 /// the local til, and edit UDT/enum members. Every call returns a [`TypeWriteResult`] (or [`SigWriteResult`]
 /// for the two signature-surgery fns that also report the parameter count) in place of the raw
 /// facade's `int` code plus error-buffer out-param: the struct's `code` carries the same return
-/// value and `reason` the captured diagnostic. Bodies are hand-written in `facade/type_build.cpp`.
+/// value and `reason` the captured diagnostic. Bodies are hand-written across
+/// `facade/type_apply.cpp`, `facade/type_define.cpp`, `facade/udt_edit.cpp`, `facade/enum_edit.cpp`,
+/// `facade/func_sig.cpp`, and `facade/tinfo_build.cpp`, sharing helpers from
+/// `facade/type_write_common.cpp`.
 pub const TYPE_BUILD: Domain = Domain {
     name: "type_build",
     sdk_includes: &["<kernwin.hpp>", "<nalt.hpp>", "<typeinf.hpp>"],
@@ -196,7 +199,15 @@ pub const TYPE_BUILD: Domain = Domain {
                   field width in bits, `u8` signedness); struct-member-only, rejected in a union.",
         },
     ],
-    custom_tu: Some("facade/type_build.cpp"),
+    custom_tus: &[
+        "facade/type_apply.cpp",
+        "facade/type_define.cpp",
+        "facade/udt_edit.cpp",
+        "facade/enum_edit.cpp",
+        "facade/func_sig.cpp",
+        "facade/tinfo_build.cpp",
+        "facade/type_write_common.cpp",
+    ],
     fns: fns! {
         "Parse `decl` against the local til and apply it at `ea`. `code` is `TYPE_OK`, \
          `_ERR_INPUT` (parse failed), or `_ERR_APPLY`."

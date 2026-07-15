@@ -10,7 +10,7 @@ pub const TY: Domain = Domain {
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: Some("facade/local_types.cpp"),
+    custom_tus: &["facade/local_types.cpp"],
     fns: fns! {
         "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it has no type."
             func_type(ea: U64) -> ResultString;
