@@ -22,7 +22,6 @@ namespace bridge {
 
 using DropProbe = ::drop_probe_t;
 
-rust::String probe_fatal_through_cxx(int32_t kind);
 rust::String probe_throw(int32_t kind);
 std::unique_ptr<DropProbe> drop_probe_make();
 uint32_t drop_probe_count();

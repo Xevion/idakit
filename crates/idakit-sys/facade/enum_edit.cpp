@@ -41,11 +41,12 @@ TypeWriteResult enum_add_member(rust::Str type_name, rust::Str member_name, uint
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
     std::string mn(member_name.data(), member_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
-      return (int)tif.add_edm(mn.c_str(), value, (bmask64_t)bmask, etf_flags);
+      return static_cast<int>(
+          tif.add_edm(mn.c_str(), value, static_cast<bmask64_t>(bmask), etf_flags));
     });
     out.reason = captured_reason();
     return out;
@@ -58,11 +59,12 @@ TypeWriteResult enum_set_bitmask(rust::Str type_name, bool on) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
-      return (int)tif.set_enum_is_bitmask(on ? tinfo_t::ENUMBM_ON : tinfo_t::ENUMBM_OFF);
+      return static_cast<int>(
+          tif.set_enum_is_bitmask(on ? tinfo_t::ENUMBM_ON : tinfo_t::ENUMBM_OFF));
     });
     out.reason = captured_reason();
     return out;
@@ -77,7 +79,7 @@ TypeWriteResult enum_set_repr(rust::Str type_name, uint32_t vtype, bool is_signe
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
@@ -85,7 +87,7 @@ TypeWriteResult enum_set_repr(rust::Str type_name, uint32_t vtype, bool is_signe
       repr.set_vtype(vtype);
       repr.set_signed(is_signed);
       repr.set_lzeroes(leading_zeros);
-      return (int)tif.set_enum_repr(repr);
+      return static_cast<int>(tif.set_enum_repr(repr));
     });
     out.reason = captured_reason();
     return out;
@@ -98,11 +100,11 @@ TypeWriteResult enum_set_width(rust::Str type_name, int32_t nbytes) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
-      return (int)tif.set_enum_width(nbytes);
+      return static_cast<int>(tif.set_enum_width(nbytes));
     });
     out.reason = captured_reason();
     return out;
@@ -116,14 +118,14 @@ TypeWriteResult enum_set_member_value(rust::Str type_name, rust::Str member_name
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
     std::string mn(member_name.data(), member_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, mn.c_str());
       if (idx < 0)
         return TEDIT_NO_MEMBER;
-      return (int)tif.edit_edm((size_t)idx, value);
+      return static_cast<int>(tif.edit_edm(static_cast<size_t>(idx), value));
     });
     out.reason = captured_reason();
     return out;
@@ -139,14 +141,14 @@ TypeWriteResult enum_rename_member(rust::Str type_name, rust::Str member_name, r
     std::string tn(type_name.data(), type_name.size());
     std::string mn(member_name.data(), member_name.size());
     std::string nn(new_name.data(), new_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, mn.c_str());
       if (idx < 0)
         return TEDIT_NO_MEMBER;
-      return (int)tif.rename_edm((size_t)idx, nn.c_str(), etf_flags);
+      return static_cast<int>(tif.rename_edm(static_cast<size_t>(idx), nn.c_str(), etf_flags));
     });
     out.reason = captured_reason();
     return out;
@@ -160,14 +162,14 @@ TypeWriteResult enum_del_member(rust::Str type_name, rust::Str member_name) {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
     std::string mn(member_name.data(), member_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
       ssize_t idx = resolve_edm(tif, mn.c_str());
       if (idx < 0)
         return TEDIT_NO_MEMBER;
-      return (int)tif.del_edm((size_t)idx);
+      return static_cast<int>(tif.del_edm(static_cast<size_t>(idx)));
     });
     out.reason = captured_reason();
     return out;
@@ -180,11 +182,11 @@ TypeWriteResult enum_del_member_by_value(rust::Str type_name, uint64_t value) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
-    out.code = guarded<int>((int)TERR_SAVE_ERROR, true, [&]() -> int {
+    out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
       if (!load_named_type(tn.c_str(), tif))
         return TEDIT_NO_TYPE;
-      return (int)tif.del_edm_by_value(value, 0, DEFMASK64, 0);
+      return static_cast<int>(tif.del_edm_by_value(value, 0, DEFMASK64, 0));
     });
     out.reason = captured_reason();
     return out;

@@ -32,10 +32,10 @@ static_assert(sizeof(int) == sizeof(std::int32_t), "intvec_t element is not 32-b
 
 namespace bridge {
 
-const intvec_t &cfg_succ_vec(const ::qflow_chart_t &fc, size_t n) {
-  if (n >= fc.blocks.size())
+const intvec_t &cfg_succ_vec(const ::qflow_chart_t &flow, size_t n) {
+  if (n >= flow.blocks.size())
     throw std::out_of_range("block index out of range");
-  return fc.blocks[n].succ;
+  return flow.blocks[n].succ;
 }
 
 size_t intvec_len(const intvec_t &v) { return v.size(); }
@@ -44,7 +44,7 @@ rust::Vec<std::int32_t> intvec_copy(const intvec_t &v) {
   rust::Vec<std::int32_t> out;
   out.reserve(v.size());
   for (int x : v)
-    out.push_back((std::int32_t)x);
+    out.push_back(static_cast<std::int32_t>(x));
   return out;
 }
 
@@ -57,8 +57,8 @@ rust::Slice<const std::int32_t> intvec_slice(const intvec_t &v) {
                                          v.size());
 }
 
-std::unique_ptr<rangevec_t> rangevec_build_chunks(std::uint64_t ea) {
-  func_t *pfn = get_func((ea_t)ea);
+std::unique_ptr<rangevec_t> rangevec_build_chunks(std::uint64_t addr) {
+  func_t *pfn = get_func(static_cast<ea_t>(addr));
   if (pfn == nullptr)
     throw std::out_of_range("no function at address");
   auto out = std::make_unique<rangevec_t>();

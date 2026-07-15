@@ -53,6 +53,17 @@ bool is_modeled_frb_vtype(uint64 vtype) {
   }
 }
 
+// TypeWalkVisitor::scalar's `kind` tag: opaque/unknown, void, bool, integral, floating.
+constexpr uint32_t SCALAR_UNKNOWN = 0;
+constexpr uint32_t SCALAR_VOID = 1;
+constexpr uint32_t SCALAR_BOOL = 2;
+constexpr uint32_t SCALAR_INTEGRAL = 3;
+constexpr uint32_t SCALAR_FLOAT = 4;
+
+// FrameVar flag bits: reserved return-address slot, reserved saved-registers slot.
+constexpr uint32_t FRAME_VAR_RETADDR = 1u;
+constexpr uint32_t FRAME_VAR_SAVED_REGS = 2u;
+
 } // namespace
 
 // Full definition of the walker the opaque handle in type_walker.h fronts. Holds the visitor
@@ -81,15 +92,16 @@ uint32_t visit_walker_t::ty(const tinfo_t &t) {
 uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
   size_t sz = t.get_size();
   uint32_t has_size = (sz != BADSIZE && sz != 0) ? 1 : 0;
-  uint64_t size = has_size ? (uint64_t)sz : 0;
-  uint32_t bytes = has_size ? (uint32_t)sz : 0;
+  uint64_t size = has_size ? static_cast<uint64_t>(sz) : 0;
+  uint32_t bytes = has_size ? static_cast<uint32_t>(sz) : 0;
 
   if (t.empty())
     return ty_opaque(t);
   if (t.is_ptr())
     return vis->ptr(ty(t.get_pointed_object()), size, has_size);
   if (t.is_array())
-    return vis->array(ty(t.get_array_element()), (uint64_t)t.get_array_nelems(), size, has_size);
+    return vis->array(ty(t.get_array_element()), static_cast<uint64_t>(t.get_array_nelems()), size,
+                      has_size);
   if (t.is_func())
     return ty_func(t);
   if (t.is_udt())
@@ -97,13 +109,13 @@ uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
   if (t.is_enum())
     return ty_enum(t, size, has_size);
   if (t.is_bool())
-    return vis->scalar(2, 0, 0, size, has_size);
+    return vis->scalar(SCALAR_BOOL, 0, 0, size, has_size);
   if (t.is_void())
-    return vis->scalar(1, 0, 0, size, has_size);
+    return vis->scalar(SCALAR_VOID, 0, 0, size, has_size);
   if (t.is_floating())
-    return vis->scalar(4, bytes, 0, size, has_size);
+    return vis->scalar(SCALAR_FLOAT, bytes, 0, size, has_size);
   if (t.is_integral())
-    return vis->scalar(3, bytes, t.is_signed() ? 1 : 0, size, has_size);
+    return vis->scalar(SCALAR_INTEGRAL, bytes, t.is_signed() ? 1 : 0, size, has_size);
   if (t.is_bitfield())
     return ty_bitfield(t);
   return ty_opaque(t);
@@ -112,8 +124,8 @@ uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
 uint32_t visit_walker_t::ty_bitfield(const tinfo_t &t) {
   bitfield_type_data_t bi;
   if (t.get_bitfield_details(&bi)) {
-    uint32_t nb = (uint32_t)bi.nbytes;
-    return vis->scalar(3, nb, bi.is_unsigned ? 0 : 1, nb, nb != 0 ? 1 : 0);
+    uint32_t nb = static_cast<uint32_t>(bi.nbytes);
+    return vis->scalar(SCALAR_INTEGRAL, nb, bi.is_unsigned ? 0 : 1, nb, nb != 0 ? 1 : 0);
   }
   return ty_opaque(t);
 }
@@ -153,10 +165,10 @@ uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_si
         md.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
         md.bit_offset = m.offset;
         md.ty = ty(m.type);
-        md.bitfield_width = m.is_bitfield() ? (uint32_t)m.size : 0;
+        md.bitfield_width = m.is_bitfield() ? static_cast<uint32_t>(m.size) : 0;
         uint64 vtype = m.repr.get_vtype();
         bool modeled = is_modeled_frb_vtype(vtype);
-        md.repr_vtype = modeled ? (uint32_t)vtype : 0;
+        md.repr_vtype = modeled ? static_cast<uint32_t>(vtype) : 0;
         md.repr_signed = modeled && m.repr.is_signed();
         md.repr_leading_zeros = modeled && m.repr.has_lzeroes();
         ms.push_back(md);
@@ -187,14 +199,14 @@ uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_s
         cs.push_back(ec);
       }
     }
-    uint32_t base_bytes = has_size ? (uint32_t)size : 4;
-    uint32_t underlying = vis->scalar(3, base_bytes, sgn ? 1 : 0, size, has_size);
+    uint32_t base_bytes = has_size ? static_cast<uint32_t>(size) : 4;
+    uint32_t underlying = vis->scalar(SCALAR_INTEGRAL, base_bytes, sgn ? 1 : 0, size, has_size);
     rust::Slice<const EnumConstInfo> slice =
         cs.empty() ? rust::Slice<const EnumConstInfo>()
                    : rust::Slice<const EnumConstInfo>(cs.data(), cs.size());
     value_repr_t repr;
     bool modeled = t.get_enum_repr(&repr) == TERR_OK && is_modeled_frb_vtype(repr.get_vtype());
-    uint32_t repr_vtype = modeled ? (uint32_t)repr.get_vtype() : 0;
+    uint32_t repr_vtype = modeled ? static_cast<uint32_t>(repr.get_vtype()) : 0;
     bool repr_signed = modeled && repr.is_signed();
     bool repr_leading_zeros = modeled && repr.has_lzeroes();
     vis->fill_enum(id, underlying, slice, size, has_size, t.is_bitmask_enum(), repr_vtype,
@@ -232,7 +244,7 @@ uint32_t visit_walker_t::ty_func(const tinfo_t &t) {
       params.push_back(ty(a.type));
     vararg = fd.is_vararg_cc() ? 1 : 0;
   } else {
-    ret = vis->scalar(0, 0, 0, 0, 0);
+    ret = vis->scalar(SCALAR_UNKNOWN, 0, 0, 0, 0);
   }
   rust::Slice<const uint32_t> slice =
       params.empty() ? rust::Slice<const uint32_t>()
@@ -241,14 +253,14 @@ uint32_t visit_walker_t::ty_func(const tinfo_t &t) {
 }
 
 visit_walker_t *visit_walker_new(void *visitor) {
-  visit_walker_t *w = new visit_walker_t;
-  w->vis = reinterpret_cast<TypeWalkVisitor *>(visitor);
-  return w;
+  visit_walker_t *walker = new visit_walker_t;
+  walker->vis = reinterpret_cast<TypeWalkVisitor *>(visitor);
+  return walker;
 }
 
-uint32_t visit_walker_ty(visit_walker_t *w, const tinfo_t &t) { return w->ty(t); }
+uint32_t visit_walker_ty(visit_walker_t *walker, const tinfo_t &t) { return walker->ty(t); }
 
-void visit_walker_free(visit_walker_t *w) { delete w; }
+void visit_walker_free(visit_walker_t *walker) { delete walker; }
 
 uint32_t type_walk_visit_named(rust::Str name, TypeWalkVisitor &visitor) {
   tinfo_t tif;
@@ -256,31 +268,31 @@ uint32_t type_walk_visit_named(rust::Str name, TypeWalkVisitor &visitor) {
   std::string nm(name.data(), name.size());
   if (!tif.get_named_type(get_idati(), nm.c_str()))
     throw std::runtime_error("no such named type");
-  visit_walker_t w;
-  w.vis = &visitor;
-  return w.ty(tif);
+  visit_walker_t walker;
+  walker.vis = &visitor;
+  return walker.ty(tif);
 }
 
 uint32_t type_walk_visit_ordinal(uint32_t ordinal, TypeWalkVisitor &visitor) {
   tinfo_t tif;
   if (!tif.get_numbered_type(get_idati(), ordinal))
     throw std::runtime_error("no type at ordinal");
-  visit_walker_t w;
-  w.vis = &visitor;
-  return w.ty(tif);
+  visit_walker_t walker;
+  walker.vis = &visitor;
+  return walker.ty(tif);
 }
 
-uint32_t func_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
+uint32_t func_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
   tinfo_t tif;
-  if (!get_tinfo(&tif, (ea_t)ea) || tif.empty())
+  if (!get_tinfo(&tif, static_cast<ea_t>(addr)) || tif.empty())
     throw std::runtime_error("function has no type info");
-  visit_walker_t w;
-  w.vis = &visitor;
-  return w.ty(tif);
+  visit_walker_t walker;
+  walker.vis = &visitor;
+  return walker.ty(tif);
 }
 
-FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
-  func_t *pfn = get_func((ea_t)ea);
+FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
+  func_t *pfn = get_func(static_cast<ea_t>(addr));
   if (pfn == nullptr)
     throw std::runtime_error("no function at ea");
   tinfo_t tif;
@@ -289,19 +301,20 @@ FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
     throw std::runtime_error("function has no frame");
 
   FrameWalk out;
-  out.size = (uint64_t)get_frame_size(pfn);
-  visit_walker_t w;
-  w.vis = &visitor;
+  out.size = static_cast<uint64_t>(get_frame_size(pfn));
+  visit_walker_t walker;
+  walker.vis = &visitor;
   for (const udm_t &m : udt) {
-    // bit0 = return address, bit1 = saved registers; both clear = an ordinary variable/argument.
-    uint32_t flags = (m.is_retaddr() ? 1u : 0u) | (m.is_savregs() ? 2u : 0u);
+    // Both clear = an ordinary variable/argument.
+    uint32_t flags =
+        (m.is_retaddr() ? FRAME_VAR_RETADDR : 0u) | (m.is_savregs() ? FRAME_VAR_SAVED_REGS : 0u);
     // Only a real, typed variable carries a structured type; reserved and untyped slots report
     // NONE, so the table holds only types a variable references.
-    uint32_t ty = (flags == 0 && !m.type.empty()) ? w.ty(m.type) : gen::NONE;
+    uint32_t ty = (flags == 0 && !m.type.empty()) ? walker.ty(m.type) : gen::NONE;
     FrameVar fv;
     fv.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
     // udm offset/size are in bits; soff_to_fpoff wants the byte struct offset.
-    fv.offset = (int64_t)soff_to_fpoff(pfn, (uval_t)(m.offset / 8));
+    fv.offset = static_cast<int64_t>(soff_to_fpoff(pfn, static_cast<uval_t>(m.offset / 8)));
     fv.size = m.size / 8;
     fv.flags = flags;
     fv.ty = ty;

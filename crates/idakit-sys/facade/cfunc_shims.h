@@ -20,10 +20,10 @@ extern "C" {
 // Placement copy-construct: run cfuncptr_t's copy-ctor from *src into dst (intrusive refcnt++).
 void cfuncptr_copy_ctor(void *dst, const void *src);
 
-// Placement-construct a cfuncptr_t into dst from decompiling the function at ea. dst is ALWAYS
+// Placement-construct a cfuncptr_t into dst from decompiling the function at addr. dst is ALWAYS
 // initialized (a null qrefcnt on any failure), so a later destructor/copy is always sound.
 // Returns 1 if a cfunc was obtained, 0 otherwise.
-int cfuncptr_decompile_into(void *dst, std::uint64_t ea);
+int cfuncptr_decompile_into(void *dst, std::uint64_t addr);
 
 // Run cfuncptr_t's destructor in place (intrusive refcnt--/release at zero); the inline CfuncVal
 // Drop.

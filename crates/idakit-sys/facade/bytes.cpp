@@ -28,84 +28,93 @@ namespace gen {
 
 namespace {
 // A typed read must fail cleanly on a partly-mapped range, so gate on every covered byte.
-bool range_loaded(ea_t ea, size_t n) {
+bool range_loaded(ea_t addr, size_t n) {
   for (size_t i = 0; i < n; i++)
-    if (!is_loaded(ea + i))
+    if (!is_loaded(addr + i))
       return false;
   return true;
 }
 } // namespace
 
-rust::Vec<uint8_t> get_bytes(uint64_t ea, size_t size) {
+rust::Vec<uint8_t> get_bytes(uint64_t addr, size_t size) {
   std::vector<uint8_t> buf(size);
-  int64_t r = (int64_t)::get_bytes(buf.data(), (ssize_t)size, (ea_t)ea, GMB_READALL);
+  int64_t r = static_cast<int64_t>(
+      ::get_bytes(buf.data(), static_cast<ssize_t>(size), static_cast<ea_t>(addr), GMB_READALL));
   if (r < 0)
     throw std::runtime_error("get_bytes failed: unmapped range");
   return to_rust_bytes(buf.data(), size);
 }
 
-uint8_t get_u8(uint64_t ea) {
-  if (!range_loaded((ea_t)ea, 1))
+uint8_t get_u8(uint64_t addr) {
+  if (!range_loaded(static_cast<ea_t>(addr), 1))
     throw std::runtime_error("get_u8: byte uninitialized");
-  return (uint8_t)get_byte((ea_t)ea);
+  return static_cast<uint8_t>(get_byte(static_cast<ea_t>(addr)));
 }
 
-uint16_t get_u16(uint64_t ea) {
-  if (!range_loaded((ea_t)ea, 2))
+uint16_t get_u16(uint64_t addr) {
+  if (!range_loaded(static_cast<ea_t>(addr), 2))
     throw std::runtime_error("get_u16: covered byte uninitialized");
-  return (uint16_t)get_word((ea_t)ea);
+  return static_cast<uint16_t>(get_word(static_cast<ea_t>(addr)));
 }
 
-uint32_t get_u32(uint64_t ea) {
-  if (!range_loaded((ea_t)ea, 4))
+uint32_t get_u32(uint64_t addr) {
+  if (!range_loaded(static_cast<ea_t>(addr), 4))
     throw std::runtime_error("get_u32: covered byte uninitialized");
-  return (uint32_t)get_dword((ea_t)ea);
+  return static_cast<uint32_t>(get_dword(static_cast<ea_t>(addr)));
 }
 
-uint64_t get_u64(uint64_t ea) {
-  if (!range_loaded((ea_t)ea, 8))
+uint64_t get_u64(uint64_t addr) {
+  if (!range_loaded(static_cast<ea_t>(addr), 8))
     throw std::runtime_error("get_u64: covered byte uninitialized");
-  return (uint64_t)get_qword((ea_t)ea);
+  return static_cast<uint64_t>(get_qword(static_cast<ea_t>(addr)));
 }
 
-rust::String get_strlit(uint64_t ea, int32_t strtype) {
-  size_t len = get_max_strlit_length((ea_t)ea, strtype, ALOPT_IGNHEADS);
+rust::String get_strlit(uint64_t addr, int32_t strtype) {
+  size_t len = get_max_strlit_length(static_cast<ea_t>(addr), strtype, ALOPT_IGNHEADS);
   if (len == 0)
     throw std::runtime_error("no string literal at address");
   qstring out;
-  ssize_t r = get_strlit_contents(&out, (ea_t)ea, len, strtype, nullptr, STRCONV_REPLCHAR);
+  ssize_t r =
+      get_strlit_contents(&out, static_cast<ea_t>(addr), len, strtype, nullptr, STRCONV_REPLCHAR);
   if (r < 0)
     throw std::runtime_error("undecodable string literal");
   return to_rust_string(out);
 }
 
-uint64_t get_flags(uint64_t ea) { return (uint64_t)::get_flags((ea_t)ea); }
-
-uint64_t get_item_head(uint64_t ea) { return (uint64_t)::get_item_head((ea_t)ea); }
-
-uint64_t get_item_end(uint64_t ea) { return (uint64_t)::get_item_end((ea_t)ea); }
-
-uint64_t get_next_head(uint64_t ea, uint64_t maxea) {
-  return (uint64_t)next_head((ea_t)ea, (ea_t)maxea);
+uint64_t get_flags(uint64_t addr) {
+  return static_cast<uint64_t>(::get_flags(static_cast<ea_t>(addr)));
 }
 
-uint64_t get_prev_head(uint64_t ea, uint64_t minea) {
-  return (uint64_t)prev_head((ea_t)ea, (ea_t)minea);
+uint64_t get_item_head(uint64_t addr) {
+  return static_cast<uint64_t>(::get_item_head(static_cast<ea_t>(addr)));
 }
 
-rust::String get_cmt(uint64_t ea, bool rptble) {
+uint64_t get_item_end(uint64_t addr) {
+  return static_cast<uint64_t>(::get_item_end(static_cast<ea_t>(addr)));
+}
+
+uint64_t get_next_head(uint64_t addr, uint64_t max_addr) {
+  return static_cast<uint64_t>(next_head(static_cast<ea_t>(addr), static_cast<ea_t>(max_addr)));
+}
+
+uint64_t get_prev_head(uint64_t addr, uint64_t min_addr) {
+  return static_cast<uint64_t>(prev_head(static_cast<ea_t>(addr), static_cast<ea_t>(min_addr)));
+}
+
+rust::String get_cmt(uint64_t addr, bool rptble) {
   qstring out;
-  if (::get_cmt(&out, (ea_t)ea, rptble) < 0)
+  if (::get_cmt(&out, static_cast<ea_t>(addr), rptble) < 0)
     throw std::runtime_error("no comment at address");
   return to_rust_string(out);
 }
 
-std::unique_ptr<::compiled_binpat_vec_t> binpat_compile(uint64_t ea, rust::Str pattern,
+std::unique_ptr<::compiled_binpat_vec_t> binpat_compile(uint64_t addr, rust::Str pattern,
                                                         int32_t radix) {
   auto out = std::make_unique<compiled_binpat_vec_t>();
   std::string pat(pattern.data(), pattern.size());
   qstring err;
-  if (!parse_binpat_str(out.get(), (ea_t)ea, pat.c_str(), radix, PBSENC_DEF1BPU, &err))
+  if (!parse_binpat_str(out.get(), static_cast<ea_t>(addr), pat.c_str(), radix, PBSENC_DEF1BPU,
+                        &err))
     throw std::runtime_error(err.empty() ? "unparseable pattern" : err.c_str());
   return out;
 }
@@ -139,24 +148,24 @@ BinpatStats binpat_stats(const ::compiled_binpat_vec_t &pat) {
 uint64_t bin_search(uint64_t start, uint64_t end, const ::compiled_binpat_vec_t &pat,
                     int32_t flags) {
   // NOBREAK/NOSHOW are mandatory headless: no Ctrl-Break polling, no UI progress.
-  ea_t hit =
-      ::bin_search((ea_t)start, (ea_t)end, pat, flags | BIN_SEARCH_NOBREAK | BIN_SEARCH_NOSHOW);
-  return (uint64_t)hit;
+  ea_t hit = ::bin_search(static_cast<ea_t>(start), static_cast<ea_t>(end), pat,
+                          flags | BIN_SEARCH_NOBREAK | BIN_SEARCH_NOSHOW);
+  return static_cast<uint64_t>(hit);
 }
 
-bool patch_bytes(uint64_t ea, rust::Slice<const uint8_t> bytes) {
+bool patch_bytes(uint64_t addr, rust::Slice<const uint8_t> bytes) {
   if (bytes.empty())
     return true;
-  // Reject a write whose last byte wraps past 2^64: unsigned `ea + i` would otherwise fold to a low
-  // address and silently patch the wrong region.
-  if (ea + (bytes.size() - 1) < ea)
+  // Reject a write whose last byte wraps past 2^64: unsigned `addr + i` would otherwise fold to a
+  // low address and silently patch the wrong region.
+  if (addr + (bytes.size() - 1) < addr)
     return false;
   // Reject the whole write if any target byte is outside the address space, so a bad address fails
   // cleanly instead of silently patching a truncated prefix.
   for (size_t i = 0; i < bytes.size(); i++)
-    if (!is_mapped((ea_t)ea + i))
+    if (!is_mapped(static_cast<ea_t>(addr) + i))
       return false;
-  ::patch_bytes((ea_t)ea, bytes.data(), bytes.size());
+  ::patch_bytes(static_cast<ea_t>(addr), bytes.data(), bytes.size());
   return true;
 }
 
@@ -164,6 +173,7 @@ bool patch_bytes(uint64_t ea, rust::Slice<const uint8_t> bytes) {
 
 // The raw zero-copy read into a caller buffer, a plain extern "C" ABI companion to the
 // gen::get_bytes cxx binding above.
-extern "C" int64_t idakit_get_bytes(uint64_t ea, void *buf, size_t size) {
-  return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);
+extern "C" int64_t idakit_get_bytes(uint64_t addr, void *buf, size_t size) {
+  return static_cast<int64_t>(
+      get_bytes(buf, static_cast<ssize_t>(size), static_cast<ea_t>(addr), GMB_READALL));
 }

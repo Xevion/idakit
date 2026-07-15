@@ -14,9 +14,9 @@
 
 namespace gen {
 
-int32_t bitness() { return (int32_t)inf_get_app_bitness(); }
+int32_t bitness() { return static_cast<int32_t>(inf_get_app_bitness()); }
 
-uint64_t image_base() { return (uint64_t)get_imagebase(); }
+uint64_t image_base() { return static_cast<uint64_t>(get_imagebase()); }
 
 rust::String proc_name() {
   qstring out = inf_get_procname();
@@ -25,8 +25,11 @@ rust::String proc_name() {
   return to_rust_string(out);
 }
 
+// No SDK constant bounds a processor's file-type text; comfortably above any real name.
+constexpr size_t FILE_TYPE_NAME_BUF_SIZE = 256;
+
 rust::String file_type_name() {
-  char buf[256];
+  char buf[FILE_TYPE_NAME_BUF_SIZE];
   size_t n = get_file_type_name(buf, sizeof(buf));
   if (n == 0)
     throw std::runtime_error("no file type name");
@@ -39,7 +42,7 @@ rust::String input_path() {
   ssize_t n = get_input_file_path(buf, sizeof(buf));
   if (n <= 0)
     throw std::runtime_error("no input file path");
-  return to_rust_string(buf, (size_t)(n - 1));
+  return to_rust_string(buf, static_cast<size_t>(n - 1));
 }
 
 rust::String root_filename() {
@@ -47,7 +50,7 @@ rust::String root_filename() {
   ssize_t n = get_root_filename(buf, sizeof(buf));
   if (n <= 0)
     throw std::runtime_error("no root filename");
-  return to_rust_string(buf, (size_t)n);
+  return to_rust_string(buf, static_cast<size_t>(n));
 }
 
 } // namespace gen

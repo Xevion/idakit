@@ -17,20 +17,6 @@ mod ffi {
     unsafe extern "C++" {
         include!("testonly_probe.h");
 
-        /// Its C++ body triggers a guarded fatal (`kind` = `crate::FATAL_*`), so a test can drive
-        /// a `longjmp` across this `Result`-returning shim's `try/catch` landing-pad frame. Never
-        /// returns on the `exit`/`abort` kinds.
-        ///
-        /// # Errors
-        /// `Err` when the trap catches an `interr` (a `std::exception`) instead of longjmp-ing.
-        // Never called from Rust: `facade/testonly_probe.cpp`'s test_fatal_through_cxx reaches the
-        // cxx-generated shim by its mangled symbol directly, bypassing this binding. The
-        // declaration must still exist so cxx generates that shim in the first place. cxx's
-        // foreign-block attribute parser only recognizes allow/warn/deny/forbid (not expect), so
-        // this stays a plain allow.
-        #[allow(dead_code)]
-        fn probe_fatal_through_cxx(kind: i32) -> Result<String>;
-
         /// Throws the C++ exception selected by `kind` (`0` = `runtime_error`, `1` =
         /// `out_of_range`, `2` = a non-`std::exception`), so a test can observe how `cxx` surfaces
         /// (or fails to surface) each as a Rust `Err`.

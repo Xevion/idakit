@@ -84,12 +84,12 @@ uint8_t reg_class_of(int r) {
 // robust where get_reg_name's width match is finicky (st is catalogued at 8 bytes, not its 10-byte
 // extent; byte regs resolve only at width 1).
 void fill_reg(RegisterData &r, int num, uint8_t cls, int width) {
-  r.num = (uint16_t)num;
+  r.num = static_cast<uint16_t>(num);
   r.cls = cls;
-  r.width = (uint8_t)width;
+  r.width = static_cast<uint8_t>(width);
   if ((num >= R_ax && num <= R_r15) || num == R_ip) {
     qstring nm;
-    if (get_reg_name(&nm, num, width > 0 ? (size_t)width : 8) > 0)
+    if (get_reg_name(&nm, num, width > 0 ? static_cast<size_t>(width) : 8) > 0)
       r.name = to_rust_string(nm);
   } else if (num >= 0 && num < PH.regs_num && PH.reg_names[num] != nullptr) {
     r.name = to_rust_string(PH.reg_names[num]);
@@ -101,7 +101,7 @@ void fill_reg(RegisterData &r, int num, uint8_t cls, int width) {
 // canonical "cr2"/"dr4"/"tr7" spelling from the index. `prefix` is the class letter ('c'/'d'/'t');
 // cr8 (only) takes a "d" suffix via the cr_suff flag ("cr8d").
 void fill_special_reg(RegisterData &r, char prefix, int index, uint8_t cls, bool d_suffix) {
-  r.num = (uint16_t)index;
+  r.num = static_cast<uint16_t>(index);
   r.cls = cls;
   r.width = 0;
   char buf[16];
@@ -120,11 +120,11 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
     fill_reg(dst.base, base, reg_class_of(base), aw);
   if (index != R_none)
     fill_reg(dst.index, index, reg_class_of(index), aw);
-  dst.scale = (uint8_t)(1 << x86_scale(op));
+  dst.scale = static_cast<uint8_t>(1 << x86_scale(op));
   // o_phrase is [reg(+reg)] with no displacement; o_mem/o_displ keep it in op.addr.
-  dst.disp = op.type == o_phrase ? 0 : (int64_t)op.addr;
+  dst.disp = op.type == o_phrase ? 0 : static_cast<int64_t>(op.addr);
   // o_mem resolves to a static address (incl. RIP-relative IDA already folded).
-  dst.addr = op.type == o_mem ? (uint64_t)op.addr : (uint64_t)BADADDR;
+  dst.addr = op.type == o_mem ? static_cast<uint64_t>(op.addr) : static_cast<uint64_t>(BADADDR);
 }
 
 // Fold one raw op_t into a semantic OperandData. Returns 0, -3 for a raw operand type this decoder
@@ -134,7 +134,7 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
 // sel, scale, disp, and addr for a non-mem/non-near operand) are already zero here; only the
 // register slots need the REG_NONE sentinel that a zeroed RegisterData would not carry.
 int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
-  dst.idx = (uint8_t)idx;
+  dst.idx = static_cast<uint8_t>(idx);
   dst.data_type = op.dtype;
   dst.reg = none_reg();
   dst.base = none_reg();
@@ -145,7 +145,7 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
     if (rc == RC_BAD)
       return -4;
     dst.kind = OP_REG;
-    fill_reg(dst.reg, op.reg, rc, (int)get_dtype_size(op.dtype));
+    fill_reg(dst.reg, op.reg, rc, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
   }
   // Register operands whose op.reg is a class-relative index into a global RegNo block: map it to
@@ -154,27 +154,27 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
   // does not fall through to the -3 reject.
   case o_fpreg:
     dst.kind = OP_REG;
-    fill_reg(dst.reg, R_st0 + op.reg, RC_ST, (int)get_dtype_size(op.dtype));
+    fill_reg(dst.reg, R_st0 + op.reg, RC_ST, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
   case o_mmxreg:
     dst.kind = OP_REG;
-    fill_reg(dst.reg, R_mm0 + op.reg, RC_MMX, (int)get_dtype_size(op.dtype));
+    fill_reg(dst.reg, R_mm0 + op.reg, RC_MMX, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
   case o_xmmreg:
     dst.kind = OP_REG;
-    fill_reg(dst.reg, R_xmm0 + op.reg, RC_XMM, (int)get_dtype_size(op.dtype));
+    fill_reg(dst.reg, R_xmm0 + op.reg, RC_XMM, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
   case o_ymmreg:
     dst.kind = OP_REG;
-    fill_reg(dst.reg, R_ymm0 + op.reg, RC_YMM, (int)get_dtype_size(op.dtype));
+    fill_reg(dst.reg, R_ymm0 + op.reg, RC_YMM, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
   case o_zmmreg:
     dst.kind = OP_REG;
-    fill_reg(dst.reg, R_zmm0 + op.reg, RC_ZMM, (int)get_dtype_size(op.dtype));
+    fill_reg(dst.reg, R_zmm0 + op.reg, RC_ZMM, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
   case o_kreg:
     dst.kind = OP_REG;
-    fill_reg(dst.reg, R_k0 + op.reg, RC_MASK, (int)get_dtype_size(op.dtype));
+    fill_reg(dst.reg, R_k0 + op.reg, RC_MASK, static_cast<int>(get_dtype_size(op.dtype)));
     return 0;
   // Control/debug/test registers have no global RegNo -- synthesize their canonical spelling.
   case o_crreg:
@@ -197,16 +197,16 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
     return 0;
   case o_imm:
     dst.kind = OP_IMM;
-    dst.value = (uint64_t)op.value;
+    dst.value = static_cast<uint64_t>(op.value);
     return 0;
   case o_near:
     dst.kind = OP_NEAR;
-    dst.addr = (uint64_t)op.addr;
+    dst.addr = static_cast<uint64_t>(op.addr);
     return 0;
   case o_far:
     dst.kind = OP_FAR;
-    dst.value = (uint64_t)op.addr;
-    dst.sel = (uint16_t)op.segsel;
+    dst.value = static_cast<uint64_t>(op.addr);
+    dst.sel = static_cast<uint16_t>(op.segsel);
     return 0;
   default:
     return -3;
@@ -215,12 +215,12 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
 
 } // namespace
 
-InstructionData decode_insn(uint64_t ea) {
+InstructionData decode_insn(uint64_t addr) {
   // Value-initialized: status/err_op/err_optype and every scalar start at 0 (so the success path
   // reports status 0 without an explicit set), mnemonic empty, ops empty.
   InstructionData out{};
-  out.address = ea;
-  out.target = (uint64_t)BADADDR;
+  out.address = addr;
+  out.target = static_cast<uint64_t>(BADADDR);
 
   // Only the x86 module's operand encoding is modelled; refuse other processors loudly rather than
   // fabricate operands from a foreign op_t layout.
@@ -230,12 +230,12 @@ InstructionData decode_insn(uint64_t ea) {
   }
 
   insn_t insn;
-  if (::decode_insn(&insn, (ea_t)ea) <= 0) {
+  if (::decode_insn(&insn, static_cast<ea_t>(addr)) <= 0) {
     out.status = -1;
     return out;
   }
 
-  out.len = (uint8_t)insn.size;
+  out.len = static_cast<uint8_t>(insn.size);
   out.isa = inf_is_64bit() ? 1 : 0;
   out.itype = insn.itype;
   const char *mnem = insn.get_canon_mnem(PH);
@@ -245,7 +245,7 @@ InstructionData decode_insn(uint64_t ea) {
   uint32 feature = insn.get_canon_feature(PH);
   ea_t tgt = BADADDR;
   rust::Vec<OperandData> ops;
-  for (int i = 0; i < UA_MAXOP && (int)ops.size() < (int)MAX_OPS; i++) {
+  for (int i = 0; i < UA_MAXOP && static_cast<int>(ops.size()) < static_cast<int>(MAX_OPS); i++) {
     const op_t &op = insn.ops[i];
     if (op.type == o_void)
       continue;
@@ -253,9 +253,9 @@ InstructionData decode_insn(uint64_t ea) {
     int rc = classify_op(insn, op, i, dst);
     if (rc != 0) {
       out.status = rc;
-      out.err_op = (uint8_t)i;
+      out.err_op = static_cast<uint8_t>(i);
       // -3 reports the raw operand type; -4 reports the unmodelled register number.
-      out.err_optype = rc == -4 ? (uint8_t)op.reg : (uint8_t)op.type;
+      out.err_optype = rc == -4 ? static_cast<uint8_t>(op.reg) : static_cast<uint8_t>(op.type);
       return out;
     }
     dst.access = (has_cf_use(feature, i) ? 1 : 0) | (has_cf_chg(feature, i) ? 2 : 0);
@@ -263,7 +263,7 @@ InstructionData decode_insn(uint64_t ea) {
       tgt = op.addr;
     ops.push_back(std::move(dst));
   }
-  out.nops = (uint8_t)ops.size();
+  out.nops = static_cast<uint8_t>(ops.size());
 
   bool call = is_call_insn(insn);
   bool ret = is_ret_insn(insn);
@@ -288,7 +288,7 @@ InstructionData decode_insn(uint64_t ea) {
   if (stops)
     flow |= FLOW_STOPS;
   out.flow = flow;
-  out.target = has_tgt ? (uint64_t)tgt : (uint64_t)BADADDR;
+  out.target = has_tgt ? static_cast<uint64_t>(tgt) : static_cast<uint64_t>(BADADDR);
   out.ops = std::move(ops);
   return out;
 }

@@ -14,9 +14,9 @@
 
 namespace gen {
 
-uint64_t export_ea(size_t idx) { return (uint64_t)get_entry(get_entry_ordinal(idx)); }
+uint64_t export_ea(size_t idx) { return static_cast<uint64_t>(get_entry(get_entry_ordinal(idx))); }
 
-uint64_t export_ordinal(size_t idx) { return (uint64_t)get_entry_ordinal(idx); }
+uint64_t export_ordinal(size_t idx) { return static_cast<uint64_t>(get_entry_ordinal(idx)); }
 
 rust::String export_name(size_t idx) {
   qstring out;

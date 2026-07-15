@@ -22,11 +22,11 @@ struct collect_ctx_t {
   const qstring *module;
 };
 
-int idaapi collect_import(ea_t ea, const char *name, uval_t ord, void *param) {
-  collect_ctx_t *ctx = (collect_ctx_t *)param;
+int idaapi collect_import(ea_t addr, const char *name, uval_t ord, void *param) {
+  collect_ctx_t *ctx = reinterpret_cast<collect_ctx_t *>(param);
   ImportRec rec;
-  rec.ea = (uint64_t)ea;
-  rec.ord = (uint64_t)ord;
+  rec.ea = static_cast<uint64_t>(addr);
+  rec.ord = static_cast<uint64_t>(ord);
   if (name != nullptr)
     rec.name = to_rust_string(name);
   rec.module = to_rust_string(ctx->module->c_str(), ctx->module->length());
@@ -41,9 +41,9 @@ rust::Vec<ImportRec> imports_build() {
   uint nmods = get_import_module_qty();
   for (uint m = 0; m < nmods; m++) {
     qstring module;
-    get_import_module_name(&module, (int)m);
+    get_import_module_name(&module, static_cast<int>(m));
     collect_ctx_t ctx{&rows, &module};
-    enum_import_names((int)m, collect_import, &ctx);
+    enum_import_names(static_cast<int>(m), collect_import, &ctx);
   }
   return rows;
 }

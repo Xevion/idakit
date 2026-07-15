@@ -46,18 +46,18 @@ bool build_int(tinfo_t &out, uint32_t bytes, bool is_signed) {
 }
 
 bool build_float(tinfo_t &out, uint32_t bytes) {
-  type_t mt;
+  type_t mod;
   switch (bytes) {
   case 4:
-    mt = BTMT_FLOAT;
+    mod = BTMT_FLOAT;
     break;
   case 8:
-    mt = BTMT_DOUBLE;
+    mod = BTMT_DOUBLE;
     break;
   default:
     return false;
   }
-  return out.create_simple_type(BT_FLOAT | mt);
+  return out.create_simple_type(BT_FLOAT | mod);
 }
 
 bool build_named(tinfo_t &out, const char *name) {
@@ -98,19 +98,19 @@ struct recipe_reader {
     }
     uint64_t v = 0;
     for (size_t i = 0; i < n; i++)
-      v |= (uint64_t)p[pos++] << (8 * i);
+      v |= static_cast<uint64_t>(p[pos++]) << (8 * i);
     return v;
   }
 
   // A u32-length-prefixed byte string (a type name or a decl; neither carries an interior NUL).
   bool str(std::string &out) {
     uint64_t n = uint_le(4);
-    if (!ok || pos + (size_t)n > len) {
+    if (!ok || pos + static_cast<size_t>(n) > len) {
       ok = false;
       return false;
     }
-    out.assign((const char *)(p + pos), (size_t)n);
-    pos += (size_t)n;
+    out.assign(reinterpret_cast<const char *>(p + pos), static_cast<size_t>(n));
+    pos += static_cast<size_t>(n);
     return true;
   }
 };
@@ -118,10 +118,10 @@ struct recipe_reader {
 } // namespace
 
 int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
-  recipe_reader r{buf, len};
+  recipe_reader reader{buf, len};
   std::vector<tinfo_t> stack;
-  while (r.has_more()) {
-    uint8_t op = r.u8();
+  while (reader.has_more()) {
+    uint8_t op = reader.u8();
     switch (op) {
     case RECIPE_VOID: {
       tinfo_t t;
@@ -138,25 +138,25 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       break;
     }
     case RECIPE_INT: {
-      uint8_t bytes = r.u8();
-      uint8_t is_signed = r.u8();
+      uint8_t bytes = reader.u8();
+      uint8_t is_signed = reader.u8();
       tinfo_t t;
-      if (!r.ok || !build_int(t, bytes, is_signed != 0))
+      if (!reader.ok || !build_int(t, bytes, is_signed != 0))
         return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
     case RECIPE_FLOAT: {
-      uint8_t bytes = r.u8();
+      uint8_t bytes = reader.u8();
       tinfo_t t;
-      if (!r.ok || !build_float(t, bytes))
+      if (!reader.ok || !build_float(t, bytes))
         return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
     }
     case RECIPE_NAMED: {
       std::string name;
-      if (!r.str(name))
+      if (!reader.str(name))
         return TYPE_ERR_INPUT;
       tinfo_t t;
       if (!build_named(t, name.c_str()))
@@ -166,7 +166,7 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
     }
     case RECIPE_DECL: {
       std::string decl;
-      if (!r.str(decl))
+      if (!reader.str(decl))
         return TYPE_ERR_INPUT;
       tinfo_t t;
       qstring pname;
@@ -187,13 +187,15 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       break;
     }
     case RECIPE_ARRAY: {
-      uint64_t nelems = r.uint_le(8);
-      if (!r.ok || nelems > 0xffffffffULL || stack.empty())
+      // create_array's count param is a uint32, so a wider recipe value can't fit it.
+      constexpr uint64_t MAX_ARRAY_ELEMS = 0xffffffffULL;
+      uint64_t nelems = reader.uint_le(8); // element count is an 8-byte field
+      if (!reader.ok || nelems > MAX_ARRAY_ELEMS || stack.empty())
         return TYPE_ERR_INPUT;
       tinfo_t inner = stack.back();
       stack.pop_back();
       tinfo_t t;
-      if (!t.create_array(inner, (uint32)nelems))
+      if (!t.create_array(inner, static_cast<uint32>(nelems)))
         return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
@@ -211,19 +213,19 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       break;
     }
     case RECIPE_FUNCTION: {
-      uint64_t nparams = r.uint_le(4);
-      uint8_t varargs = r.u8();
-      uint64_t cc = r.uint_le(2);
-      std::vector<std::string> names((size_t)nparams);
-      for (uint64_t i = 0; i < nparams && r.ok; i++)
-        r.str(names[(size_t)i]);
+      uint64_t nparams = reader.uint_le(4); // param count is a 4-byte field
+      uint8_t varargs = reader.u8();
+      uint64_t cc = reader.uint_le(2); // calling-convention code is a 2-byte field
+      std::vector<std::string> names(static_cast<size_t>(nparams));
+      for (uint64_t i = 0; i < nparams && reader.ok; i++)
+        reader.str(names[static_cast<size_t>(i)]);
       // The return type sits just below the params on the stack (return pushed first).
-      if (!r.ok || stack.size() < (size_t)nparams + 1)
+      if (!reader.ok || stack.size() < static_cast<size_t>(nparams) + 1)
         return TYPE_ERR_INPUT;
       func_type_data_t ftd;
-      size_t base = stack.size() - (size_t)nparams;
+      size_t base = stack.size() - static_cast<size_t>(nparams);
       ftd.rettype = stack[base - 1];
-      for (size_t i = 0; i < (size_t)nparams; i++) {
+      for (size_t i = 0; i < static_cast<size_t>(nparams); i++) {
         funcarg_t arg;
         arg.type = stack[base + i];
         arg.name = names[i].c_str();
@@ -234,7 +236,7 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       if (varargs != 0)
         ftd.set_cc(CM_CC_ELLIPSIS);
       else if (cc != 0)
-        ftd.set_cc((callcnv_t)cc);
+        ftd.set_cc(static_cast<callcnv_t>(cc));
       tinfo_t t;
       if (!t.create_func(ftd))
         return TYPE_ERR_INPUT;
@@ -242,11 +244,11 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       break;
     }
     case RECIPE_BITFIELD: {
-      uint8_t nbytes = r.u8();
-      uint8_t width = r.u8();
-      uint8_t is_signed = r.u8();
+      uint8_t nbytes = reader.u8();
+      uint8_t width = reader.u8();
+      uint8_t is_signed = reader.u8();
       tinfo_t t;
-      if (!r.ok || !build_bitfield(t, nbytes, width, is_signed == 0))
+      if (!reader.ok || !build_bitfield(t, nbytes, width, is_signed == 0))
         return TYPE_ERR_INPUT;
       stack.push_back(t);
       break;
@@ -255,7 +257,7 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       return TYPE_ERR_INPUT;
     }
   }
-  if (!r.ok || stack.size() != 1)
+  if (!reader.ok || stack.size() != 1)
     return TYPE_ERR_INPUT;
   out = stack[0];
   return TYPE_OK;

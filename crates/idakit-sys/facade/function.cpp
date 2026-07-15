@@ -15,39 +15,39 @@
 namespace gen {
 
 uint64_t func_ea(size_t n) {
-  func_t *f = getn_func(n);
-  return f != nullptr ? (uint64_t)f->start_ea : (uint64_t)BADADDR;
+  func_t *func = getn_func(n);
+  return func != nullptr ? static_cast<uint64_t>(func->start_ea) : static_cast<uint64_t>(BADADDR);
 }
 
-uint64_t func_start(uint64_t ea) {
-  func_t *f = get_func((ea_t)ea);
-  return f != nullptr ? (uint64_t)f->start_ea : (uint64_t)BADADDR;
+uint64_t func_start(uint64_t addr) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  return func != nullptr ? static_cast<uint64_t>(func->start_ea) : static_cast<uint64_t>(BADADDR);
 }
 
-uint64_t func_end(uint64_t ea) {
-  func_t *f = get_func((ea_t)ea);
-  return f != nullptr ? (uint64_t)f->end_ea : (uint64_t)BADADDR;
+uint64_t func_end(uint64_t addr) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  return func != nullptr ? static_cast<uint64_t>(func->end_ea) : static_cast<uint64_t>(BADADDR);
 }
 
-uint64_t func_flags(uint64_t ea) {
-  func_t *f = get_func((ea_t)ea);
-  return f != nullptr ? (uint64_t)f->flags : 0;
+uint64_t func_flags(uint64_t addr) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  return func != nullptr ? static_cast<uint64_t>(func->flags) : 0;
 }
 
-int32_t func_chunk_qty(uint64_t ea) {
-  func_t *pfn = get_func((ea_t)ea);
-  if (pfn == nullptr)
+int32_t func_chunk_qty(uint64_t addr) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  if (func == nullptr)
     return 0;
   int32_t n = 0;
-  func_tail_iterator_t fti(pfn);
+  func_tail_iterator_t fti(func);
   for (bool ok = fti.main(); ok; ok = fti.next())
     n++;
   return n;
 }
 
-rust::String func_name(uint64_t ea) {
+rust::String func_name(uint64_t addr) {
   qstring out;
-  if (get_func_name(&out, (ea_t)ea) <= 0)
+  if (get_func_name(&out, static_cast<ea_t>(addr)) <= 0)
     throw std::runtime_error("no function name at address");
   return to_rust_string(out);
 }

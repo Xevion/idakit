@@ -13,9 +13,9 @@
 
 namespace gen {
 
-rust::String func_type(uint64_t ea) {
+rust::String func_type(uint64_t addr) {
   qstring out;
-  if (!print_type(&out, (ea_t)ea, PRTYPE_1LINE | PRTYPE_SEMI))
+  if (!print_type(&out, static_cast<ea_t>(addr), PRTYPE_1LINE | PRTYPE_SEMI))
     throw std::runtime_error("function has no type");
   return to_rust_string(out);
 }

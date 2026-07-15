@@ -22,7 +22,7 @@ struct FrameWalk;
 
 uint32_t type_walk_visit_named(rust::Str name, TypeWalkVisitor &visitor);
 uint32_t type_walk_visit_ordinal(uint32_t ordinal, TypeWalkVisitor &visitor);
-uint32_t func_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor);
-FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor);
+uint32_t func_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor);
+FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor);
 
 } // namespace bridge

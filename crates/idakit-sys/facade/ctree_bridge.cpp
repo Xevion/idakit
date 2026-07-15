@@ -48,6 +48,11 @@ rust::Slice<const LocPiece> slice_of(const std::vector<LocPiece> &v) {
                    : rust::Slice<const LocPiece>(v.data(), v.size());
 }
 
+// l_lvar flag bits: argument, return-value slot, captured by reference.
+constexpr uint32_t LVAR_IS_ARG = 1u;
+constexpr uint32_t LVAR_IS_RESULT = 2u;
+constexpr uint32_t LVAR_IS_USED_BYREF = 4u;
+
 } // namespace
 
 // Full recursion driving the extern "Rust" CtreeVisitor, mirroring the deleted C-vtbl walker_t
@@ -56,210 +61,214 @@ struct walker_t {
   CtreeVisitor *nodes;
   // Walks node types into the shared type table via the cxx opaque visitor (see
   // type_walker.h); created/freed around the walk in cfunc_walk_ctree below.
-  bridge::visit_walker_t *vw;
+  bridge::visit_walker_t *type_walker;
 
-  uint32_t expr(const cexpr_t *e) {
-    ea_t ea = e->ea;
-    uint32_t t = bridge::visit_walker_ty(vw, e->type);
-    switch (e->op) {
+  uint32_t expr(const cexpr_t *cexpr) {
+    ea_t addr = cexpr->ea;
+    uint32_t t = bridge::visit_walker_ty(type_walker, cexpr->type);
+    switch (cexpr->op) {
     case cot_num:
-      return nodes->e_num(ea, e->n->value(e->type), t);
+      return nodes->e_num(addr, cexpr->n->value(cexpr->type), t);
     case cot_fnum: {
       double d = 0.0;
-      e->fpc->fnum.to_double(&d);
-      return nodes->e_fnum(ea, d, t);
+      cexpr->fpc->fnum.to_double(&d);
+      return nodes->e_fnum(addr, d, t);
     }
     case cot_obj: {
       qstring nm;
-      get_name(&nm, e->obj_ea);
-      return nodes->e_obj(ea, (uint64_t)e->obj_ea, lossy_str(nm.c_str(), nm.length()), t);
+      get_name(&nm, cexpr->obj_ea);
+      return nodes->e_obj(addr, static_cast<uint64_t>(cexpr->obj_ea),
+                          lossy_str(nm.c_str(), nm.length()), t);
     }
     case cot_var:
-      return nodes->e_var(ea, (uint32_t)e->v.idx, t);
+      return nodes->e_var(addr, static_cast<uint32_t>(cexpr->v.idx), t);
     case cot_str:
-      return nodes->e_str(ea,
-                          lossy_str(e->string != nullptr ? e->string : "",
-                                    e->string != nullptr ? strlen(e->string) : 0),
+      return nodes->e_str(addr,
+                          lossy_str(cexpr->string != nullptr ? cexpr->string : "",
+                                    cexpr->string != nullptr ? strlen(cexpr->string) : 0),
                           t);
     case cot_helper:
-      return nodes->e_helper(ea,
-                             lossy_str(e->helper != nullptr ? e->helper : "",
-                                       e->helper != nullptr ? strlen(e->helper) : 0),
+      return nodes->e_helper(addr,
+                             lossy_str(cexpr->helper != nullptr ? cexpr->helper : "",
+                                       cexpr->helper != nullptr ? strlen(cexpr->helper) : 0),
                              t);
     case cot_ptr:
-      return nodes->e_deref(ea, expr(e->x), (uint32_t)e->ptrsize, t);
+      return nodes->e_deref(addr, expr(cexpr->x), static_cast<uint32_t>(cexpr->ptrsize), t);
     case cot_memref:
-      return nodes->e_memref(ea, expr(e->x), e->m, t);
+      return nodes->e_memref(addr, expr(cexpr->x), cexpr->m, t);
     case cot_memptr:
-      return nodes->e_memptr(ea, expr(e->x), e->m, t);
+      return nodes->e_memptr(addr, expr(cexpr->x), cexpr->m, t);
     case cot_call: {
-      uint32_t callee = expr(e->x);
+      uint32_t callee = expr(cexpr->x);
       std::vector<uint32_t> args;
-      if (e->a != nullptr) {
-        args.reserve(e->a->size());
-        for (const carg_t &arg : *e->a)
+      if (cexpr->a != nullptr) {
+        args.reserve(cexpr->a->size());
+        for (const carg_t &arg : *cexpr->a)
           args.push_back(expr(&arg));
       }
-      return nodes->e_call(ea, callee, slice_of(args), t);
+      return nodes->e_call(addr, callee, slice_of(args), t);
     }
     default: {
       // Binary/assign/unary/ternary/cast/index/sizeof/empty/type/insn: operands by the
       // SDK's own predicates, ctype passed raw for the Rust side to classify.
-      uint32_t x = op_uses_x(e->op) ? expr(e->x) : gen::NONE;
-      uint32_t y = op_uses_y(e->op) ? expr(e->y) : gen::NONE;
-      uint32_t z = op_uses_z(e->op) ? expr(e->z) : gen::NONE;
-      return nodes->e_op(ea, (uint32_t)e->op, x, y, z, t);
+      uint32_t x = op_uses_x(cexpr->op) ? expr(cexpr->x) : gen::NONE;
+      uint32_t y = op_uses_y(cexpr->op) ? expr(cexpr->y) : gen::NONE;
+      uint32_t z = op_uses_z(cexpr->op) ? expr(cexpr->z) : gen::NONE;
+      return nodes->e_op(addr, static_cast<uint32_t>(cexpr->op), x, y, z, t);
     }
     }
   }
 
-  uint32_t opt_expr(const cexpr_t *e) {
-    return (e == nullptr || e->op == cot_empty) ? gen::NONE : expr(e);
+  uint32_t opt_expr(const cexpr_t *cexpr) {
+    return (cexpr == nullptr || cexpr->op == cot_empty) ? gen::NONE : expr(cexpr);
   }
 
-  uint32_t block(const cinsn_list_t &list, ea_t ea) {
+  uint32_t block(const cinsn_list_t &list, ea_t addr) {
     std::vector<uint32_t> kids;
     kids.reserve(list.size());
     for (const cinsn_t &child : list)
       kids.push_back(stmt(&child));
-    return nodes->s_block(ea, slice_of(kids));
+    return nodes->s_block(addr, slice_of(kids));
   }
 
-  uint32_t stmt(const cinsn_t *i) {
-    ea_t ea = i->ea;
-    switch (i->op) {
+  uint32_t stmt(const cinsn_t *cinsn) {
+    ea_t addr = cinsn->ea;
+    switch (cinsn->op) {
     case cit_block:
-      return block(*i->cblock, ea);
+      return block(*cinsn->cblock, addr);
     case cit_expr:
-      return nodes->s_expr(ea, expr(i->cexpr));
+      return nodes->s_expr(addr, expr(cinsn->cexpr));
     case cit_if: {
-      uint32_t c = expr(&i->cif->expr);
-      uint32_t th = stmt(i->cif->ithen);
-      uint32_t el = i->cif->ielse != nullptr ? stmt(i->cif->ielse) : gen::NONE;
-      return nodes->s_if(ea, c, th, el);
+      uint32_t cond = expr(&cinsn->cif->expr);
+      uint32_t then_branch = stmt(cinsn->cif->ithen);
+      uint32_t else_branch = cinsn->cif->ielse != nullptr ? stmt(cinsn->cif->ielse) : gen::NONE;
+      return nodes->s_if(addr, cond, then_branch, else_branch);
     }
     case cit_for: {
-      uint32_t in = opt_expr(&i->cfor->init);
-      uint32_t co = opt_expr(&i->cfor->expr);
-      uint32_t st = opt_expr(&i->cfor->step);
-      return nodes->s_for(ea, in, co, st, stmt(i->cfor->body));
+      uint32_t init = opt_expr(&cinsn->cfor->init);
+      uint32_t cond = opt_expr(&cinsn->cfor->expr);
+      uint32_t step = opt_expr(&cinsn->cfor->step);
+      return nodes->s_for(addr, init, cond, step, stmt(cinsn->cfor->body));
     }
     case cit_while: {
-      uint32_t c = expr(&i->cwhile->expr);
-      return nodes->s_while(ea, c, stmt(i->cwhile->body));
+      uint32_t cond = expr(&cinsn->cwhile->expr);
+      return nodes->s_while(addr, cond, stmt(cinsn->cwhile->body));
     }
     case cit_do: {
-      uint32_t b = stmt(i->cdo->body);
-      return nodes->s_do(ea, b, expr(&i->cdo->expr));
+      uint32_t block = stmt(cinsn->cdo->body);
+      return nodes->s_do(addr, block, expr(&cinsn->cdo->expr));
     }
     case cit_switch: {
-      uint32_t ex = expr(&i->cswitch->expr);
+      uint32_t cond = expr(&cinsn->cswitch->expr);
       std::vector<uint32_t> bodies;
       std::vector<uint32_t> value_counts;
       std::vector<uint64_t> values;
-      bodies.reserve(i->cswitch->cases.size());
-      value_counts.reserve(i->cswitch->cases.size());
-      for (const ccase_t &c : i->cswitch->cases) {
-        value_counts.push_back((uint32_t)c.values.size());
-        for (uint64 val : c.values)
+      bodies.reserve(cinsn->cswitch->cases.size());
+      value_counts.reserve(cinsn->cswitch->cases.size());
+      for (const ccase_t &case_ : cinsn->cswitch->cases) {
+        value_counts.push_back(static_cast<uint32_t>(case_.values.size()));
+        for (uint64 val : case_.values)
           values.push_back(val);
-        bodies.push_back(stmt(&c)); // ccase_t is-a cinsn_t
+        bodies.push_back(stmt(&case_)); // ccase_t is-a cinsn_t
       }
-      return nodes->s_switch(ea, ex, slice_of(bodies), slice_of(value_counts), slice_of(values));
+      return nodes->s_switch(addr, cond, slice_of(bodies), slice_of(value_counts),
+                             slice_of(values));
     }
     case cit_return:
-      return nodes->s_return(ea, opt_expr(&i->creturn->expr));
+      return nodes->s_return(addr, opt_expr(&cinsn->creturn->expr));
     case cit_goto:
-      return nodes->s_goto(ea, (int32_t)i->cgoto->label_num);
+      return nodes->s_goto(addr, static_cast<int32_t>(cinsn->cgoto->label_num));
     case cit_asm: {
       std::vector<uint64_t> addrs;
-      addrs.reserve(i->casm->size());
-      for (ea_t a : *i->casm)
-        addrs.push_back((uint64_t)a);
-      return nodes->s_asm(ea, slice_of(addrs));
+      addrs.reserve(cinsn->casm->size());
+      for (ea_t insn_addr : *cinsn->casm)
+        addrs.push_back(static_cast<uint64_t>(insn_addr));
+      return nodes->s_asm(addr, slice_of(addrs));
     }
     case cit_throw:
-      return nodes->s_throw(ea, opt_expr(&i->cthrow->expr));
+      return nodes->s_throw(addr, opt_expr(&cinsn->cthrow->expr));
     case cit_try: {
       // ctry is-a cblock (the guarded body); each catch is a cblock too.
-      uint32_t body = block(*i->ctry, ea);
+      uint32_t body = block(*cinsn->ctry, addr);
       std::vector<uint32_t> catches;
-      catches.reserve(i->ctry->catchs.size());
-      for (const ccatch_t &cat : i->ctry->catchs)
-        catches.push_back(block(cat, ea));
-      return nodes->s_try(ea, body, slice_of(catches));
+      catches.reserve(cinsn->ctry->catchs.size());
+      for (const ccatch_t &cat : cinsn->ctry->catchs)
+        catches.push_back(block(cat, addr));
+      return nodes->s_try(addr, body, slice_of(catches));
     }
     case cit_break:
-      return nodes->s_break(ea);
+      return nodes->s_break(addr);
     case cit_continue:
-      return nodes->s_continue(ea);
+      return nodes->s_continue(addr);
     // cit_empty and any statement kind this facade doesn't model both emit an empty stmt.
     case cit_empty:
     default:
-      return nodes->s_empty(ea);
+      return nodes->s_empty(addr);
     }
   }
 
   // Emit the lvar table in index order, so `e_var.idx` resolves against it.
-  void lvars(cfunc_t *cf) {
-    lvars_t *lv = cf->get_lvars();
+  void lvars(cfunc_t *decompiled) {
+    lvars_t *lv = decompiled->get_lvars();
     if (lv == nullptr)
       return;
-    for (const lvar_t &l : *lv) {
-      uint32_t flags = (l.is_arg_var() ? 1u : 0u) | (l.is_result_var() ? 2u : 0u) |
-                       (l.is_used_byref() ? 4u : 0u);
-      const vdloc_t &loc = l.location;
-      uint32_t atype = (uint32_t)loc.atype();
+    for (const lvar_t &lvar : *lv) {
+      uint32_t flags = (lvar.is_arg_var() ? LVAR_IS_ARG : 0u) |
+                       (lvar.is_result_var() ? LVAR_IS_RESULT : 0u) |
+                       (lvar.is_used_byref() ? LVAR_IS_USED_BYREF : 0u);
+      const vdloc_t &loc = lvar.location;
+      uint32_t atype = static_cast<uint32_t>(loc.atype());
       uint32_t reg1 = 0;
       uint32_t reg2 = 0;
       int64_t sval = 0;
       std::vector<LocPiece> pieces;
       switch (loc.atype()) {
       case ALOC_STACK:
-        sval = (int64_t)l.get_stkoff();
+        sval = static_cast<int64_t>(lvar.get_stkoff());
         break;
       case ALOC_REG1:
-        reg1 = (uint32_t)loc.reg1();
+        reg1 = static_cast<uint32_t>(loc.reg1());
         break;
       case ALOC_REG2:
-        reg1 = (uint32_t)loc.reg1();
-        reg2 = (uint32_t)loc.reg2();
+        reg1 = static_cast<uint32_t>(loc.reg1());
+        reg2 = static_cast<uint32_t>(loc.reg2());
         break;
       case ALOC_RREL: {
         const rrel_t &rr = loc.get_rrel();
-        reg1 = (uint32_t)rr.reg;
-        sval = (int64_t)rr.off;
+        reg1 = static_cast<uint32_t>(rr.reg);
+        sval = static_cast<int64_t>(rr.off);
         break;
       }
       case ALOC_STATIC:
-        sval = (int64_t)loc.get_ea();
+        sval = static_cast<int64_t>(loc.get_ea());
         break;
       case ALOC_DIST: {
         const scattered_aloc_t &sc = loc.scattered();
         pieces.reserve(sc.size());
-        for (const argpart_t &p : sc) {
-          LocPiece pc;
-          pc.atype = (uint32_t)p.atype();
-          pc.reg = 0;
-          pc.sval = 0;
-          if (p.is_reg1())
-            pc.reg = (uint32_t)p.reg1();
-          else if (p.is_stkoff())
-            pc.sval = (int64_t)p.stkoff();
-          else if (p.is_ea())
-            pc.sval = (int64_t)p.get_ea();
-          pc.off = p.off;
-          pc.size = p.size;
-          pieces.push_back(pc);
+        for (const argpart_t &part : sc) {
+          LocPiece piece;
+          piece.atype = static_cast<uint32_t>(part.atype());
+          piece.reg = 0;
+          piece.sval = 0;
+          if (part.is_reg1())
+            piece.reg = static_cast<uint32_t>(part.reg1());
+          else if (part.is_stkoff())
+            piece.sval = static_cast<int64_t>(part.stkoff());
+          else if (part.is_ea())
+            piece.sval = static_cast<int64_t>(part.get_ea());
+          piece.off = part.off;
+          piece.size = part.size;
+          pieces.push_back(piece);
         }
         break;
       }
       default:
         break; // ALOC_NONE / ALOC_CUSTOM: atype alone carries it
       }
-      uint32_t ty = bridge::visit_walker_ty(vw, l.tif);
-      nodes->l_lvar(lossy_str(l.name.c_str(), l.name.length()), ty, flags, (uint32_t)l.width,
-                    lossy_str(l.cmt.c_str(), l.cmt.length()), atype, reg1, reg2, sval,
+      uint32_t ty = bridge::visit_walker_ty(type_walker, lvar.tif);
+      nodes->l_lvar(lossy_str(lvar.name.c_str(), lvar.name.length()), ty, flags,
+                    static_cast<uint32_t>(lvar.width),
+                    lossy_str(lvar.cmt.c_str(), lvar.cmt.length()), atype, reg1, reg2, sval,
                     slice_of(pieces));
     }
   }
@@ -267,17 +276,17 @@ struct walker_t {
 
 uint32_t cfunc_walk_ctree(const ::cfuncptr_t &cfunc, CtreeVisitor &nodes, size_t type_visitor) {
   try {
-    cfunc_t *cf = cfunc;
-    walker_t w;
-    w.nodes = &nodes;
+    cfunc_t *decompiled = cfunc;
+    walker_t walker;
+    walker.nodes = &nodes;
     // The guard frees the type walker on the normal return and on the exception path below.
-    w.vw = bridge::visit_walker_new(reinterpret_cast<void *>(type_visitor));
+    walker.type_walker = bridge::visit_walker_new(reinterpret_cast<void *>(type_visitor));
     struct walker_guard {
-      bridge::visit_walker_t *w;
-      ~walker_guard() { bridge::visit_walker_free(w); }
-    } guard{w.vw};
-    w.lvars(cf);
-    return w.stmt(&cf->body);
+      bridge::visit_walker_t *type_walker;
+      ~walker_guard() { bridge::visit_walker_free(type_walker); }
+    } guard{walker.type_walker};
+    walker.lvars(decompiled);
+    return walker.stmt(&decompiled->body);
   } catch (...) {
     std::abort();
   }

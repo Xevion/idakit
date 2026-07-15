@@ -167,7 +167,7 @@ fn main() {
     cxx_bridge(
         "src/bridge_qvec.rs",
         &["facade/qvec_bridge.cpp"],
-        "bridge_qvec_bridge",
+        "qvec_bridge",
         sdk_include_str,
         &out_dir,
         &[],
@@ -205,14 +205,14 @@ fn main() {
     }
     gen_bridge.file("facade/ctree_bridge.cpp");
     gen_bridge.file("facade/typewalk_bridge.cpp");
-    gen_bridge.compile("bridge_gen_bridge");
+    gen_bridge.compile("gen_bridge");
 
     // The cxx fault-injection and boundary probe bridges. Each is its own static archive, like the
     // production bridges above; their Rust bindings are `#[doc(hidden)]`, keeping them off the API.
     cxx_bridge(
         "src/bridge_probe.rs",
         &["facade/testonly_probe.cpp"],
-        "bridge_probe",
+        "probe_bridge",
         sdk_include_str,
         &out_dir,
         &[],
@@ -220,7 +220,7 @@ fn main() {
     cxx_bridge(
         "src/bridge_probe_ext.rs",
         &["facade/testonly_probe_ext.cpp"],
-        "bridge_probe_ext_bridge",
+        "probe_ext_bridge",
         sdk_include_str,
         &out_dir,
         &[],

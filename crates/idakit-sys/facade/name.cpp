@@ -18,15 +18,16 @@
 
 namespace gen {
 
-rust::String get_ea_name(uint64_t ea) {
+rust::String get_ea_name(uint64_t addr) {
   qstring out;
-  if (::get_ea_name(&out, (ea_t)ea) <= 0)
+  if (::get_ea_name(&out, static_cast<ea_t>(addr)) <= 0)
     throw std::runtime_error("no name at address");
   return to_rust_string(out);
 }
 
 uint64_t get_name_ea(rust::Str name) {
-  return (uint64_t)::get_name_ea(BADADDR, std::string(name.data(), name.size()).c_str());
+  return static_cast<uint64_t>(
+      ::get_name_ea(BADADDR, std::string(name.data(), name.size()).c_str()));
 }
 
 // Full demangle (disable_mask 0). An unmangled name leaves `out` empty; throw so the caller sees
@@ -41,7 +42,7 @@ rust::String demangle_name(rust::Str name) {
 
 size_t nlist_size() { return ::get_nlist_size(); }
 
-uint64_t nlist_ea(size_t idx) { return (uint64_t)::get_nlist_ea(idx); }
+uint64_t nlist_ea(size_t idx) { return static_cast<uint64_t>(::get_nlist_ea(idx)); }
 
 rust::String nlist_name(size_t idx) {
   const char *nm = ::get_nlist_name(idx);
@@ -52,10 +53,10 @@ rust::String nlist_name(size_t idx) {
 
 // Name classification over an address's flags word: pure bit tests (inline in bytes.hpp, no kernel
 // state), exposed so the Rust side can pin its FF_NAME/FF_LABL derivation against IDA's own logic.
-bool has_user_name(uint64_t flags) { return ::has_user_name((flags64_t)flags); }
+bool has_user_name(uint64_t flags) { return ::has_user_name(static_cast<flags64_t>(flags)); }
 
-bool has_auto_name(uint64_t flags) { return ::has_auto_name((flags64_t)flags); }
+bool has_auto_name(uint64_t flags) { return ::has_auto_name(static_cast<flags64_t>(flags)); }
 
-bool has_dummy_name(uint64_t flags) { return ::has_dummy_name((flags64_t)flags); }
+bool has_dummy_name(uint64_t flags) { return ::has_dummy_name(static_cast<flags64_t>(flags)); }
 
 } // namespace gen

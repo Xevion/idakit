@@ -18,23 +18,23 @@
 
 namespace gen {
 
-::range_t range_entry_chunk(uint64_t ea) {
-  func_t *pfn = get_func((ea_t)ea);
-  if (pfn == nullptr)
+::range_t range_entry_chunk(uint64_t addr) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  if (func == nullptr)
     throw std::out_of_range("no function at address");
-  func_tail_iterator_t fti(pfn);
+  func_tail_iterator_t fti(func);
   if (!fti.main())
     throw std::out_of_range("function has no entry chunk");
   return fti.chunk(); // const range_t& -> by-value copy across the bridge
 }
 
-uint64_t range_size(::range_t r) { return (uint64_t)r.size(); }
+uint64_t range_size(::range_t range) { return static_cast<uint64_t>(range.size()); }
 
-ChunkInfo range_chunk_info(uint64_t ea, size_t n) {
-  func_t *pfn = get_func((ea_t)ea);
-  if (pfn == nullptr)
+ChunkInfo range_chunk_info(uint64_t addr, size_t n) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  if (func == nullptr)
     throw std::out_of_range("no function at address");
-  func_tail_iterator_t fti(pfn);
+  func_tail_iterator_t fti(func);
   size_t i = 0;
   for (bool ok = fti.main(); ok; ok = fti.next(), i++) {
     if (i == n) {
@@ -47,12 +47,12 @@ ChunkInfo range_chunk_info(uint64_t ea, size_t n) {
   throw std::out_of_range("chunk index out of range");
 }
 
-rust::Vec<::range_t> range_all_chunks(uint64_t ea) {
-  func_t *pfn = get_func((ea_t)ea);
-  if (pfn == nullptr)
+rust::Vec<::range_t> range_all_chunks(uint64_t addr) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  if (func == nullptr)
     throw std::out_of_range("no function at address");
   rust::Vec<::range_t> out;
-  func_tail_iterator_t fti(pfn);
+  func_tail_iterator_t fti(func);
   for (bool ok = fti.main(); ok; ok = fti.next())
     out.push_back(fti.chunk());
   return out;

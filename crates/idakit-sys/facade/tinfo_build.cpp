@@ -108,10 +108,12 @@ std::unique_ptr<::tinfo_t> tinfo_ptr(const ::tinfo_t &inner) {
 
 std::unique_ptr<::tinfo_t> tinfo_array(const ::tinfo_t &inner, uint64_t nelems) {
   try {
-    if (nelems > 0xffffffffULL)
+    // create_array's count param is a uint32, so a wider element count can't fit it.
+    constexpr uint64_t MAX_ARRAY_ELEMS = 0xffffffffULL;
+    if (nelems > MAX_ARRAY_ELEMS)
       return nullptr;
     auto t = std::make_unique<::tinfo_t>();
-    if (!t->create_array(inner, (uint32)nelems))
+    if (!t->create_array(inner, static_cast<uint32>(nelems)))
       return nullptr;
     return t;
   } catch (...) {
@@ -139,11 +141,12 @@ std::unique_ptr<::tinfo_t> tinfo_volatile(const ::tinfo_t &inner) {
   }
 }
 
-TypeWriteResult tinfo_apply(uint64_t ea, const ::tinfo_t &handle, int32_t flags) {
+TypeWriteResult tinfo_apply(uint64_t addr, const ::tinfo_t &handle, int32_t flags) {
   try {
     TypeWriteResult out{};
     out.code = guarded<int>(TYPE_ERR_APPLY, true, [&]() -> int {
-      if (!apply_tinfo((ea_t)ea, handle, (uint32)flags | TINFO_DEFINITE))
+      if (!apply_tinfo(static_cast<ea_t>(addr), handle,
+                       static_cast<uint32>(flags) | TINFO_DEFINITE))
         return TYPE_ERR_APPLY;
       return TYPE_OK;
     });

@@ -23,8 +23,8 @@ struct visit_walker_t;
 // visit_walker_free.
 visit_walker_t *visit_walker_new(void *visitor);
 // Walk `t` into the visitor, returning the handle it minted for the type.
-uint32_t visit_walker_ty(visit_walker_t *w, const tinfo_t &t);
-void visit_walker_free(visit_walker_t *w);
+uint32_t visit_walker_ty(visit_walker_t *walker, const tinfo_t &t);
+void visit_walker_free(visit_walker_t *walker);
 
 } // namespace bridge
 

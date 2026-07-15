@@ -30,6 +30,9 @@ namespace gen {
 
 namespace {
 
+// One histogram bucket per possible ctype_t byte value (cot_*).
+constexpr int CTYPE_SLOTS = 256;
+
 // Read-only ctree traversal: count statements, expressions, and call sites. CV_FAST = no parent
 // stack (unneeded here).
 struct ctree_counter_t : public ctree_visitor_t {
@@ -41,55 +44,56 @@ struct ctree_counter_t : public ctree_visitor_t {
     ++n_insn;
     return 0;
   }
-  int idaapi visit_expr(cexpr_t *e) override {
+  int idaapi visit_expr(cexpr_t *expr) override {
     ++n_expr;
-    if (e->op == cot_call)
+    if (expr->op == cot_call)
       ++n_calls;
     return 0;
   }
 };
 
-// Per-op expression histograms. v counts every cexpr the SDK visits (ground truth); w counts every
-// cexpr the extraction walker materializes, i.e. all except a cot_empty placeholder in an
-// *optional* operand slot (a for(;;) init/cond/step or a bare return;/throw;) that the walker
-// elides to None.
+// Per-op expression histograms. `visited` counts every cexpr the SDK visits (ground truth);
+// `materialized` counts every cexpr the extraction walker materializes, i.e. all except a
+// cot_empty placeholder in an *optional* operand slot (a for(;;) init/cond/step or a bare
+// return;/throw;) that the walker elides to None.
 struct expr_gap_visitor_t : public ctree_visitor_t {
-  int *v;
-  int *w;
-  expr_gap_visitor_t(int *vh, int *wh) : ctree_visitor_t(CV_PARENTS), v(vh), w(wh) {}
-  bool elided_empty(const cexpr_t *e) {
-    if (e->op != cot_empty)
+  int *visited;
+  int *materialized;
+  expr_gap_visitor_t(int *visited, int *materialized)
+      : ctree_visitor_t(CV_PARENTS), visited(visited), materialized(materialized) {}
+  bool elided_empty(const cexpr_t *expr) {
+    if (expr->op != cot_empty)
       return false;
     const cinsn_t *p = parent_insn();
     if (p == nullptr)
       return false;
     switch (p->op) {
     case cit_for:
-      return e == &p->cfor->init || e == &p->cfor->expr || e == &p->cfor->step;
+      return expr == &p->cfor->init || expr == &p->cfor->expr || expr == &p->cfor->step;
     case cit_return:
-      return e == &p->creturn->expr;
+      return expr == &p->creturn->expr;
     case cit_throw:
-      return e == &p->cthrow->expr;
+      return expr == &p->cthrow->expr;
     default:
       return false;
     }
   }
-  int idaapi visit_expr(cexpr_t *e) override {
-    v[e->op]++;
-    if (!elided_empty(e))
-      w[e->op]++;
+  int idaapi visit_expr(cexpr_t *expr) override {
+    visited[expr->op]++;
+    if (!elided_empty(expr))
+      materialized[expr->op]++;
     return 0;
   }
 };
 
-// Tag-stripped pseudocode text from cf's already-generated ctext (get_pseudocode generates it on
-// first use, so this is a no-op after the first call unless refresh_func_ctext invalidated it).
-rust::String render_pseudocode(cfunc_t *cf) {
-  const strvec_t &sv = cf->get_pseudocode();
+// Tag-stripped pseudocode text from cfunc's already-generated ctext (get_pseudocode generates it
+// on first use, so this is a no-op after the first call unless refresh_func_ctext invalidated it).
+rust::String render_pseudocode(cfunc_t *cfunc) {
+  const strvec_t &lines = cfunc->get_pseudocode();
   qstring out;
-  for (size_t i = 0; i < sv.size(); ++i) {
+  for (size_t i = 0; i < lines.size(); ++i) {
     qstring line;
-    tag_remove(&line, sv[i].line);
+    tag_remove(&line, lines[i].line);
     out.append(line);
     out.append('\n');
   }
@@ -98,24 +102,24 @@ rust::String render_pseudocode(cfunc_t *cf) {
 
 } // namespace
 
-std::unique_ptr<::cfuncptr_t> decompile(uint64_t ea) {
+std::unique_ptr<::cfuncptr_t> decompile(uint64_t addr) {
   std::string reason;
   // guarded<> traps a decompiler fatal exit() into g_trapped (returns nullptr) instead of crashing.
   ::cfuncptr_t *result = guarded<::cfuncptr_t *>(nullptr, false, [&]() -> ::cfuncptr_t * {
-    func_t *pfn = get_func((ea_t)ea);
-    if (pfn == nullptr) {
+    func_t *func = get_func(static_cast<ea_t>(addr));
+    if (func == nullptr) {
       reason = "no function at address";
       return nullptr;
     }
     hexrays_failure_t hf;
-    ::cfuncptr_t cf = decompile_func(pfn, &hf, 0);
-    if (cf == nullptr) {
+    ::cfuncptr_t cfunc = decompile_func(func, &hf, 0);
+    if (cfunc == nullptr) {
       reason = hf.desc().c_str();
       return nullptr;
     }
-    // Own a ref on the heap so the result survives past this call (the local cf's dtor then
+    // Own a ref on the heap so the result survives past this call (the local cfunc's dtor then
     // decrements, leaving exactly one ref).
-    return new ::cfuncptr_t(cf);
+    return new ::cfuncptr_t(cfunc);
   });
   if (result == nullptr) {
     // A trapped fatal is a dead kernel; idakit re-checks was_trapped() and ignores this message.
@@ -126,19 +130,19 @@ std::unique_ptr<::cfuncptr_t> decompile(uint64_t ea) {
   return std::unique_ptr<::cfuncptr_t>(result);
 }
 
-rust::String cfunc_pseudocode(const ::cfuncptr_t &cf) {
-  cfunc_t *p = cf;
+rust::String cfunc_pseudocode(const ::cfuncptr_t &cfunc) {
+  cfunc_t *p = cfunc;
   return render_pseudocode(p);
 }
 
-rust::String cfunc_refresh_text(const ::cfuncptr_t &cf) {
-  cfunc_t *p = cf;
+rust::String cfunc_refresh_text(const ::cfuncptr_t &cfunc) {
+  cfunc_t *p = cfunc;
   p->refresh_func_ctext();
   return render_pseudocode(p);
 }
 
-CtreeCounts cfunc_counts(const ::cfuncptr_t &cf) {
-  cfunc_t *p = cf;
+CtreeCounts cfunc_counts(const ::cfuncptr_t &cfunc) {
+  cfunc_t *p = cfunc;
   ctree_counter_t vis;
   vis.apply_to(&p->body, nullptr);
   CtreeCounts out{};
@@ -148,21 +152,21 @@ CtreeCounts cfunc_counts(const ::cfuncptr_t &cf) {
   return out;
 }
 
-ExprGap cfunc_expr_gap(const ::cfuncptr_t &cf) {
-  cfunc_t *p = cf;
-  int v_hist[256] = {0};
-  int w_hist[256] = {0};
-  expr_gap_visitor_t vis(v_hist, w_hist);
+ExprGap cfunc_expr_gap(const ::cfuncptr_t &cfunc) {
+  cfunc_t *p = cfunc;
+  int visited_hist[CTYPE_SLOTS] = {0};
+  int materialized_hist[CTYPE_SLOTS] = {0};
+  expr_gap_visitor_t vis(visited_hist, materialized_hist);
   vis.apply_to(&p->body, nullptr);
-  int vt = 0;
-  int ex = 0;
-  for (int k = 0; k < 256; ++k) {
-    vt += v_hist[k];
-    ex += w_hist[k];
+  int visitor_total = 0;
+  int expected = 0;
+  for (int k = 0; k < CTYPE_SLOTS; ++k) {
+    visitor_total += visited_hist[k];
+    expected += materialized_hist[k];
   }
   ExprGap out{};
-  out.visitor_total = vt;
-  out.expected = ex;
+  out.visitor_total = visitor_total;
+  out.expected = expected;
   return out;
 }
 
@@ -173,10 +177,10 @@ bool hexrays_init() {
   return init_hexrays_plugin();
 }
 
-bool mark_cfunc_dirty(uint64_t ea, bool close_views) {
+bool mark_cfunc_dirty(uint64_t addr, bool close_views) {
   if (get_hexdsp() == nullptr)
     return false;
-  return ::mark_cfunc_dirty((ea_t)ea, close_views);
+  return ::mark_cfunc_dirty(static_cast<ea_t>(addr), close_views);
 }
 
 void clear_cached_cfuncs() {
@@ -185,10 +189,10 @@ void clear_cached_cfuncs() {
   ::clear_cached_cfuncs();
 }
 
-bool has_cached_cfunc(uint64_t ea) {
+bool has_cached_cfunc(uint64_t addr) {
   if (get_hexdsp() == nullptr)
     return false;
-  return ::has_cached_cfunc((ea_t)ea);
+  return ::has_cached_cfunc(static_cast<ea_t>(addr));
 }
 
 } // namespace gen

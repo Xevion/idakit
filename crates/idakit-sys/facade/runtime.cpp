@@ -80,12 +80,13 @@ typedef void (*abort_fn)(void);
 exit_fn g_real_exit = nullptr;
 abort_fn g_real_abort = nullptr;
 bool g_trap_installed = false;
+constexpr int ABORT_EXIT_CODE = 134; // 128 + SIGABRT
 
 // Our stand-in for libida's exit(): jump back to the armed guard if a guarded kernel call
 // is on the stack, else fall through to the real libc exit so normal teardown still works.
 // Off Linux nothing installs it into the GOT, so it's only reached (inside a guard) by the
 // test shim -- hence maybe_unused there.
-[[maybe_unused]] void idakit_exit(int status) {
+[[maybe_unused]] void trap_exit(int status) {
   if (g_exit_guarded) {
     g_exit_guarded = false;
     g_exit_code = status;
@@ -96,16 +97,16 @@ bool g_trap_installed = false;
   _exit(status);
 }
 
-// Same escape as idakit_exit, for the abort() path; defer to the real abort outside a guard.
-[[maybe_unused]] [[noreturn]] void idakit_abort(void) {
+// Same escape as trap_exit, for the abort() path; defer to the real abort outside a guard.
+[[maybe_unused]] [[noreturn]] void trap_abort(void) {
   if (g_exit_guarded) {
     g_exit_guarded = false;
-    g_exit_code = 134; // 128 + SIGABRT
+    g_exit_code = ABORT_EXIT_CODE;
     longjmp(g_exit_jmp, 1);
   }
   if (g_real_abort != nullptr)
     g_real_abort();
-  _exit(134);
+  _exit(ABORT_EXIT_CODE);
 }
 
 #if defined(__linux__)
@@ -114,7 +115,7 @@ bool g_trap_installed = false;
 void overwrite_slot(void **slot, void *newval) {
   long pg = sysconf(_SC_PAGESIZE);
   uintptr_t addr = reinterpret_cast<uintptr_t>(slot);
-  uintptr_t page = addr & ~(uintptr_t)(pg - 1);
+  uintptr_t page = addr & ~static_cast<uintptr_t>(pg - 1);
   size_t len = (addr + sizeof(void *)) - page;
   if (mprotect(reinterpret_cast<void *>(page), len, PROT_READ | PROT_WRITE) != 0)
     return;
@@ -189,8 +190,8 @@ int redirect_cb(struct dl_phdr_info *info, size_t, void *) {
   if (symtab == nullptr || strtab == nullptr)
     return 0;
 
-  void *exit_trap = reinterpret_cast<void *>(&idakit_exit);
-  void *abort_trap = reinterpret_cast<void *>(&idakit_abort);
+  void *exit_trap = reinterpret_cast<void *>(&trap_exit);
+  void *abort_trap = reinterpret_cast<void *>(&trap_abort);
   if (jmprel != nullptr && pltrelsz > 0) {
     size_t n = pltrelsz / sizeof(ElfW(Rela));
     scan_rela(info->dlpi_addr, jmprel, n, symtab, strtab, "exit", exit_trap);
@@ -454,9 +455,9 @@ extern "C" size_t last_output(char *buf, size_t cap) {
 extern "C" int test_fatal(int kind) {
   return guarded<int>(gen::EXIT_TRAPPED, false, [kind]() -> int {
     if (kind == gen::FATAL_EXIT)
-      idakit_exit(42);
+      trap_exit(42);
     else if (kind == gen::FATAL_ABORT)
-      idakit_abort();
+      trap_abort();
     else if (kind == gen::FATAL_INTERR)
       interr(1);
     return 0;
@@ -471,9 +472,9 @@ extern "C" int get_batch(void) { return batch ? 1 : 0; }
 // (set_interr_throws, armed by guarded<>).
 extern "C" void trigger_fatal(int kind) {
   if (kind == gen::FATAL_EXIT)
-    idakit_exit(42);
+    trap_exit(42);
   else if (kind == gen::FATAL_ABORT)
-    idakit_abort();
+    trap_abort();
   else if (kind == gen::FATAL_INTERR)
     interr(1);
 }

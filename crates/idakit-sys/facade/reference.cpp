@@ -17,18 +17,19 @@
 
 namespace gen {
 
-rust::Vec<XrefRec> xrefs_build(uint64_t ea, bool is_to) {
+rust::Vec<XrefRec> xrefs_build(uint64_t addr, bool is_to) {
   rust::Vec<XrefRec> rows;
-  xrefblk_t xb;
+  xrefblk_t xrefs;
   // XREF_NOFLOW drops ordinary next-instruction flow edges, matching the raw cursor.
-  bool ok = is_to ? xb.first_to((ea_t)ea, XREF_NOFLOW) : xb.first_from((ea_t)ea, XREF_NOFLOW);
-  for (; ok; ok = is_to ? xb.next_to() : xb.next_from()) {
+  bool ok = is_to ? xrefs.first_to(static_cast<ea_t>(addr), XREF_NOFLOW)
+                  : xrefs.first_from(static_cast<ea_t>(addr), XREF_NOFLOW);
+  for (; ok; ok = is_to ? xrefs.next_to() : xrefs.next_from()) {
     XrefRec rec;
-    rec.from = (uint64_t)xb.from;
-    rec.to = (uint64_t)xb.to;
-    rec.type_ = (int32_t)xb.type;
-    rec.iscode = xb.iscode != 0;
-    rec.user = xb.user != 0;
+    rec.from = static_cast<uint64_t>(xrefs.from);
+    rec.to = static_cast<uint64_t>(xrefs.to);
+    rec.type_ = static_cast<int32_t>(xrefs.type);
+    rec.iscode = xrefs.iscode != 0;
+    rec.user = xrefs.user != 0;
     rows.push_back(rec);
   }
   return rows;

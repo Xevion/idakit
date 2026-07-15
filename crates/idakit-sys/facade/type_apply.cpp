@@ -23,7 +23,7 @@ using namespace facade;
 
 namespace gen {
 
-TypeWriteResult apply_type_decl(uint64_t ea, rust::Str decl, int32_t flags) {
+TypeWriteResult apply_type_decl(uint64_t addr, rust::Str decl, int32_t flags) {
   try {
     TypeWriteResult out{};
     std::string decls(decl.data(), decl.size());
@@ -32,7 +32,7 @@ TypeWriteResult apply_type_decl(uint64_t ea, rust::Str decl, int32_t flags) {
       qstring name;
       if (!parse_decl(&tif, &name, get_idati(), decls.c_str(), PT_SEMICOLON))
         return TYPE_ERR_INPUT;
-      if (!apply_tinfo((ea_t)ea, tif, (uint32)flags | TINFO_DEFINITE))
+      if (!apply_tinfo(static_cast<ea_t>(addr), tif, static_cast<uint32>(flags) | TINFO_DEFINITE))
         return TYPE_ERR_APPLY;
       return TYPE_OK;
     });
@@ -43,7 +43,7 @@ TypeWriteResult apply_type_decl(uint64_t ea, rust::Str decl, int32_t flags) {
   }
 }
 
-TypeWriteResult apply_named_type(uint64_t ea, rust::Str name) {
+TypeWriteResult apply_named_type(uint64_t addr, rust::Str name) {
   try {
     TypeWriteResult out{};
     std::string names(name.data(), name.size());
@@ -51,7 +51,7 @@ TypeWriteResult apply_named_type(uint64_t ea, rust::Str name) {
       tinfo_t tif;
       if (!tif.get_named_type(get_idati(), names.c_str()))
         return TYPE_ERR_INPUT;
-      if (!apply_tinfo((ea_t)ea, tif, TINFO_DEFINITE))
+      if (!apply_tinfo(static_cast<ea_t>(addr), tif, TINFO_DEFINITE))
         return TYPE_ERR_APPLY;
       return TYPE_OK;
     });
@@ -61,14 +61,14 @@ TypeWriteResult apply_named_type(uint64_t ea, rust::Str name) {
   }
 }
 
-TypeWriteResult clear_type(uint64_t ea) {
+TypeWriteResult clear_type(uint64_t addr) {
   try {
     TypeWriteResult out{};
     out.code = guarded<int>(TYPE_ERR_APPLY, false, [&]() -> int {
       tinfo_t cur;
-      if (!get_tinfo(&cur, (ea_t)ea) || cur.empty())
+      if (!get_tinfo(&cur, static_cast<ea_t>(addr)) || cur.empty())
         return TYPE_OK;
-      return set_tinfo((ea_t)ea, nullptr) ? TYPE_OK : TYPE_ERR_APPLY;
+      return set_tinfo(static_cast<ea_t>(addr), nullptr) ? TYPE_OK : TYPE_ERR_APPLY;
     });
     return out;
   } catch (...) {
@@ -76,15 +76,15 @@ TypeWriteResult clear_type(uint64_t ea) {
   }
 }
 
-TypeWriteResult apply_type_recipe(uint64_t ea, rust::Slice<const uint8_t> recipe, int32_t flags) {
+TypeWriteResult apply_type_recipe(uint64_t addr, rust::Slice<const uint8_t> recipe, int32_t flags) {
   try {
     TypeWriteResult out{};
     out.code = guarded<int>(TYPE_ERR_APPLY, true, [&]() -> int {
-      tinfo_t t;
-      int rc = build_recipe(recipe.data(), recipe.size(), t);
+      tinfo_t tif;
+      int rc = build_recipe(recipe.data(), recipe.size(), tif);
       if (rc != TYPE_OK)
         return rc;
-      if (!apply_tinfo((ea_t)ea, t, (uint32)flags | TINFO_DEFINITE))
+      if (!apply_tinfo(static_cast<ea_t>(addr), tif, static_cast<uint32>(flags) | TINFO_DEFINITE))
         return TYPE_ERR_APPLY;
       return TYPE_OK;
     });

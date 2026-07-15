@@ -30,23 +30,23 @@ bool ensure_hexrays() {
   return init_hexrays_plugin();
 }
 
-// Decompile ea's function into a heap cfuncptr_t (one owned ref), or nullptr on any failure.
+// Decompile addr's function into a heap cfuncptr_t (one owned ref), or nullptr on any failure.
 // NOT wrapped in the setjmp/longjmp guard: a decompiler fatal would abort here rather than trap
 // (gen::decompile in hexrays.cpp guards the production path; this spike path stays deliberately
 // simple since callers only ever drive a known-decompilable function).
-::cfuncptr_t *decompile_heap(std::uint64_t ea) {
+::cfuncptr_t *decompile_heap(std::uint64_t addr) {
   if (!ensure_hexrays())
     return nullptr;
-  func_t *pfn = get_func((ea_t)ea);
+  func_t *pfn = get_func(static_cast<ea_t>(addr));
   if (pfn == nullptr)
     return nullptr;
   hexrays_failure_t hf;
-  ::cfuncptr_t cf = decompile_func(pfn, &hf, 0);
-  if (cf == nullptr)
+  ::cfuncptr_t cfunc = decompile_func(pfn, &hf, 0);
+  if (cfunc == nullptr)
     return nullptr;
-  // Copy-construct onto the heap (refcnt++); the local cf's dtor then decrements, leaving the
+  // Copy-construct onto the heap (refcnt++); the local cfunc's dtor then decrements, leaving the
   // heap object holding exactly one ref.
-  return new ::cfuncptr_t(cf);
+  return new ::cfuncptr_t(cfunc);
 }
 
 } // namespace
@@ -62,11 +62,11 @@ void cfuncptr_copy_ctor(void *dst, const void *src) {
   new (dst)::cfuncptr_t(*reinterpret_cast<const ::cfuncptr_t *>(src));
 }
 
-int cfuncptr_decompile_into(void *dst, std::uint64_t ea) {
-  ::cfuncptr_t *heap = decompile_heap(ea);
+int cfuncptr_decompile_into(void *dst, std::uint64_t addr) {
+  ::cfuncptr_t *heap = decompile_heap(addr);
   if (heap == nullptr) {
     // Always initialize dst so a later dtor/copy is sound: an explicit null qrefcnt.
-    new (dst)::cfuncptr_t((cfunc_t *)nullptr);
+    new (dst)::cfuncptr_t(static_cast<cfunc_t *>(nullptr));
     return 0;
   }
   // Move the single ref into dst without a net refcount change: copy-construct (refcnt++) then
@@ -79,13 +79,13 @@ int cfuncptr_decompile_into(void *dst, std::uint64_t ea) {
 void cfuncptr_dtor(void *p) { reinterpret_cast<::cfuncptr_t *>(p)->~qrefcnt_t(); }
 
 std::int32_t cfuncptr_refcnt_raw(const void *p) {
-  const cfunc_t *cf = *reinterpret_cast<const ::cfuncptr_t *>(p);
-  return cf != nullptr ? (std::int32_t)cf->refcnt : -1;
+  const cfunc_t *cfunc = *reinterpret_cast<const ::cfuncptr_t *>(p);
+  return cfunc != nullptr ? static_cast<std::int32_t>(cfunc->refcnt) : -1;
 }
 
 int cfuncptr_is_null_raw(const void *p) {
-  const cfunc_t *cf = *reinterpret_cast<const ::cfuncptr_t *>(p);
-  return cf == nullptr ? 1 : 0;
+  const cfunc_t *cfunc = *reinterpret_cast<const ::cfuncptr_t *>(p);
+  return cfunc == nullptr ? 1 : 0;
 }
 
 } // extern "C"
