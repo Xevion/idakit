@@ -20,6 +20,7 @@ pub type StatementId = Idx<StatementNode>;
 /// A reference to any node, an expression or a statement. Used for parent links and
 /// uniform navigation.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[doc(alias("citem_t"))]
 pub enum NodeRef {
     /// An expression node.
     Expression(ExpressionId),
@@ -412,6 +413,7 @@ expression_accessors! {
 
 /// One `case` of a `switch`: its values (empty = `default`) and body.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[doc(alias("ccase_t"))]
 pub struct Case {
     /// The case's match values; empty for the `default` case.
     pub values: Vec<u64>,

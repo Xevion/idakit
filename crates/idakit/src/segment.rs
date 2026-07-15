@@ -62,6 +62,7 @@ impl<'db> Segment<'db> {
 
     /// The whole segment's bytes (`[start, end)`), or `None` if bounds are absent.
     #[must_use]
+    #[doc(alias("get_bytes"))]
     pub fn bytes(&self) -> Option<Vec<u8>> {
         let (start, end) = (self.start()?, self.end()?);
         let len = start.distance_to(end) as usize;

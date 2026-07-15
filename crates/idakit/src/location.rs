@@ -91,7 +91,7 @@ macro_rules! location_reads {
         /// The C string at this address, decoded as UTF-8, or `None` if it holds no string.
         #[inline]
         #[must_use]
-        #[doc(alias("get_strlit"))]
+        #[doc(alias("get_strlit_contents"))]
         pub fn string_literal(&self) -> Option<String> {
             self.db.read_string(self.address)
         }
@@ -270,6 +270,7 @@ impl Location<'_> {
     /// Lazily iterates cross-references targeting this address.
     #[inline]
     #[must_use]
+    #[doc(alias("xrefblk_t", "first_to"))]
     pub fn xrefs_to(&self) -> Xrefs {
         self.db.xrefs_to(self.address)
     }
@@ -277,6 +278,7 @@ impl Location<'_> {
     /// Lazily iterates cross-references originating at this address.
     #[inline]
     #[must_use]
+    #[doc(alias("xrefblk_t", "first_from"))]
     pub fn xrefs_from(&self) -> Xrefs {
         self.db.xrefs_from(self.address)
     }

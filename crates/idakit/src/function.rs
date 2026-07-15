@@ -234,12 +234,14 @@ impl<'db> Function<'db> {
 
     /// Iterates cross-references targeting this function's entry.
     #[must_use]
+    #[doc(alias("xrefblk_t", "first_to"))]
     pub fn xrefs_to(&self) -> Xrefs {
         self.db.xrefs_to(self.address)
     }
 
     /// Iterates cross-references originating at this function's entry.
     #[must_use]
+    #[doc(alias("xrefblk_t", "first_from"))]
     pub fn xrefs_from(&self) -> Xrefs {
         self.db.xrefs_from(self.address)
     }

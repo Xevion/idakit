@@ -240,6 +240,10 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,{idadir_str}");
     }
     println!("cargo:lib_dir={idadir_str}"); // -> DEP_IDA_LIB_DIR for dependents' rpath
+    // The resolved SDK include dir, exposed to the doc-alias validity test (this crate's own
+    // tests via IDA_SDK_INCLUDE, dependents via DEP_IDA_SDK_INCLUDE re-emitted by idakit).
+    println!("cargo:rustc-env=IDA_SDK_INCLUDE={sdk_include_str}");
+    println!("cargo:sdk_include={sdk_include_str}");
     emit_rerun_directives();
 }
 

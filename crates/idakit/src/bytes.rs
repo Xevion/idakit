@@ -50,7 +50,6 @@ impl Database {
     /// Next defined item head after `address`, searching up to (but not reaching) `max`, or
     /// `None` when no head lies in that span.
     #[must_use]
-    #[doc(alias("get_next_head"))]
     pub fn next_head(&self, address: Address, max: Address) -> Option<Address> {
         Address::try_new(self.get_next_head(address, max))
     }
@@ -58,7 +57,6 @@ impl Database {
     /// Previous defined item head before `address`, searching down to `min`, or `None` when no
     /// head lies in that span.
     #[must_use]
-    #[doc(alias("get_prev_head"))]
     pub fn prev_head(&self, address: Address, min: Address) -> Option<Address> {
         Address::try_new(self.get_prev_head(address, min))
     }

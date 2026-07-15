@@ -64,7 +64,7 @@ impl Database {
     /// Unicode replacement character (U+FFFD). For wide strings and a whole-database sweep, use
     /// [`strings`](Database::strings) instead.
     #[must_use]
-    #[doc(alias("get_strlit"))]
+    #[doc(alias("get_strlit_contents"))]
     pub fn read_string(&self, address: Address) -> Option<String> {
         self.get_strlit(address, 0)
     }

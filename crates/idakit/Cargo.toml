@@ -74,6 +74,7 @@ libtest-mimic = "0.8.2"
 proptest = "1.11.0"
 rstest = "0.26.1"
 serde_json = "1.0.150"
+syn = { version = "2.0.119", features = ["full", "visit"] }
 
 [features]
 # serde-backed netnode storage (`put_serde`/`get_serde`); pulls in the postcard codec.

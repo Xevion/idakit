@@ -6,18 +6,19 @@
 use bitflags::bitflags;
 
 bitflags! {
-    /// `FrameVar::flags` bits (`FRAME_VAR_RETADDR`/`FRAME_VAR_SAVREGS`).
+    /// `FrameVar::flags` bits marking the reserved return-address and saved-registers slots.
     ///
-    /// Accepts any bit pattern (`from_bits_retain`), since `FrameVar::flags` is a raw `u32` field
-    /// the C++ walk writes.
+    /// The bits are idakit's own, set by the C++ frame walk; they correspond to the SDK's
+    /// `FPC_RETADDR`/`FPC_SAVREGS` frame parts (`frame_part_t`). Accepts any bit pattern
+    /// (`from_bits_retain`), since `FrameVar::flags` is a raw `u32` field the walk writes.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-    #[doc(alias("FRAME_VAR_RETADDR", "FRAME_VAR_SAVREGS"))]
+    #[doc(alias("FPC_RETADDR", "FPC_SAVREGS"))]
     pub struct FrameVarFlags: u32 {
-        /// The return-address slot in the frame (`FRAME_VAR_RETADDR`).
-        #[doc(alias("FRAME_VAR_RETADDR"))]
+        /// The return-address slot in the frame (SDK `FPC_RETADDR`).
+        #[doc(alias("FPC_RETADDR"))]
         const RETADDR = 1;
-        /// The saved-registers slot in the frame (`FRAME_VAR_SAVREGS`).
-        #[doc(alias("FRAME_VAR_SAVREGS"))]
+        /// The saved-registers slot in the frame (SDK `FPC_SAVREGS`).
+        #[doc(alias("FPC_SAVREGS"))]
         const SAVREGS = 2;
     }
 }

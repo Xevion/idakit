@@ -66,7 +66,7 @@ impl Database {
     /// Does not create the node. User nodes conventionally prefix their name with `"$ "` to avoid
     /// clashing with program symbol names.
     #[must_use]
-    #[doc(alias("netnode::netnode", "netnode_check"))]
+    #[doc(alias("netnode::netnode"))]
     pub fn netnode(&self, name: &str) -> Option<Netnode<'_>> {
         NodeId::try_new(self.netnode_open(name)).map(|id| Netnode { db: self, id })
     }
@@ -90,7 +90,7 @@ impl Database {
     /// If the kernel reports an internal failure creating the node (it never has been observed to
     /// for a valid name).
     #[must_use]
-    #[doc(alias("netnode::create", "netnode_check"))]
+    #[doc(alias("netnode::create"))]
     pub fn netnode_mut(&mut self, name: &str) -> NetnodeMut<'_> {
         let id = NodeId::try_new(self.netnode_create(name))
             .expect("netnode creation returned BADNODE for a valid name");
@@ -100,7 +100,7 @@ impl Database {
     /// Lazily iterate every netnode in the database, in ascending id order.
     #[inline]
     #[must_use]
-    #[doc(alias("netnode::start", "netnode_start"))]
+    #[doc(alias("netnode::start"))]
     pub fn netnodes(&self) -> Netnodes<'_> {
         Netnodes::new(self)
     }
@@ -213,7 +213,7 @@ macro_rules! netnode_reads {
         /// The node's name, or `None` if it is unnamed.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::get_name", "netnode_get_name"))]
+        #[doc(alias("netnode::get_name"))]
         pub fn name(&self) -> Option<String> {
             self.db.netnode_get_name(self.id.get())
         }
@@ -221,7 +221,7 @@ macro_rules! netnode_reads {
         /// Whether the node exists (carries a name or any data).
         #[inline]
         #[must_use]
-        #[doc(alias("netnode_exist", "netnode_exists"))]
+        #[doc(alias("netnode_exist"))]
         pub fn exists(&self) -> bool {
             self.db.netnode_exists(self.id.get())
         }
@@ -229,7 +229,7 @@ macro_rules! netnode_reads {
         /// The node value as raw bytes, or `None` if unset.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::valobj", "netnode_value"))]
+        #[doc(alias("netnode::valobj"))]
         pub fn value(&self) -> Option<Vec<u8>> {
             self.db.netnode_value(self.id.get())
         }
@@ -237,7 +237,7 @@ macro_rules! netnode_reads {
         /// The node value as a string, or `None` if unset.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::valstr", "netnode_value_str"))]
+        #[doc(alias("netnode::valstr"))]
         pub fn value_str(&self) -> Option<String> {
             self.db.netnode_value_str(self.id.get())
         }
@@ -245,7 +245,7 @@ macro_rules! netnode_reads {
         /// The alt value at `index`, or `0` when unset (the SDK does not distinguish the two).
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::altval", "netnode_altval"))]
+        #[doc(alias("netnode::altval"))]
         pub fn alt(&self, index: u64) -> u64 {
             self.db
                 .netnode_altval(self.id.get(), index, $crate::netnode::ATAG)
@@ -254,7 +254,7 @@ macro_rules! netnode_reads {
         /// The sup byte object at `index`, or `None` if unset.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::supval", "netnode_supval"))]
+        #[doc(alias("netnode::supval"))]
         pub fn sup(&self, index: u64) -> Option<Vec<u8>> {
             self.db
                 .netnode_supval(self.id.get(), index, $crate::netnode::STAG)
@@ -263,7 +263,7 @@ macro_rules! netnode_reads {
         /// The hash value for `key` as raw bytes, or `None` if the key is unset.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::hashval", "netnode_hashval"))]
+        #[doc(alias("netnode::hashval"))]
         pub fn hash(&self, key: &str) -> Option<Vec<u8>> {
             self.db
                 .netnode_hashval(self.id.get(), key, $crate::netnode::HTAG)
@@ -272,7 +272,7 @@ macro_rules! netnode_reads {
         /// The hash value for `key` decoded as an integer, or `0` when unset.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::hashval_long", "netnode_hashval_long"))]
+        #[doc(alias("netnode::hashval_long"))]
         pub fn hash_int(&self, key: &str) -> u64 {
             self.db
                 .netnode_hashval_long(self.id.get(), key, $crate::netnode::HTAG)
@@ -281,7 +281,7 @@ macro_rules! netnode_reads {
         /// The default blob (`start = 0`), or `None` if the node holds none.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::getblob", "netnode_getblob"))]
+        #[doc(alias("netnode::getblob"))]
         pub fn blob(&self) -> Option<Vec<u8>> {
             self.db
                 .netnode_getblob(self.id.get(), 0, $crate::netnode::BTAG)
@@ -290,7 +290,7 @@ macro_rules! netnode_reads {
         /// The byte length of the default blob (`start = 0`), or `0` when absent.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::blobsize", "netnode_blobsize"))]
+        #[doc(alias("netnode::blobsize"))]
         pub fn blob_size(&self) -> usize {
             self.db
                 .netnode_blobsize(self.id.get(), 0, $crate::netnode::BTAG)
@@ -299,7 +299,7 @@ macro_rules! netnode_reads {
         /// Lazily iterate the alt array as `(index, value)` pairs, in ascending index order.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::altfirst", "netnode_altfirst"))]
+        #[doc(alias("netnode::altfirst"))]
         pub fn alts(&self) -> $crate::netnode::Alts<'_> {
             $crate::netnode::Alts::new(&*self.db, self.id, $crate::netnode::ATAG)
         }
@@ -307,7 +307,7 @@ macro_rules! netnode_reads {
         /// Lazily iterate the sup array as `(index, bytes)` pairs, in ascending index order.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::supfirst", "netnode_supfirst"))]
+        #[doc(alias("netnode::supfirst"))]
         pub fn sups(&self) -> $crate::netnode::Sups<'_> {
             $crate::netnode::Sups::new(&*self.db, self.id, $crate::netnode::STAG)
         }
@@ -315,7 +315,7 @@ macro_rules! netnode_reads {
         /// Lazily iterate the hash as `(key, bytes)` pairs, in lexical key order.
         #[inline]
         #[must_use]
-        #[doc(alias("netnode::hashfirst", "netnode_hashfirst"))]
+        #[doc(alias("netnode::hashfirst"))]
         pub fn hash_entries(&self) -> $crate::netnode::HashEntries<'_> {
             $crate::netnode::HashEntries::new(&*self.db, self.id, $crate::netnode::HTAG)
         }
@@ -447,105 +447,105 @@ impl NetnodeMut<'_> {
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::set", "netnode_set_value"))]
+        #[doc(alias("netnode::set"))]
         fn set_value(this, value: &[u8]) => this.db.netnode_set_value(this.id.get(), value);
 
         /// Delete the node value.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::delvalue", "netnode_del_value"))]
+        #[doc(alias("netnode::delvalue"))]
         fn clear_value(this) => this.db.netnode_del_value(this.id.get());
 
         /// Set the alt value at `index`.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::altset", "netnode_altset"))]
+        #[doc(alias("netnode::altset"))]
         fn set_alt(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, ATAG);
 
         /// Delete the alt value at `index`.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::altdel", "netnode_altdel"))]
+        #[doc(alias("netnode::altdel"))]
         fn remove_alt(this, index: u64) => this.db.netnode_altdel(this.id.get(), index, ATAG);
 
         /// Delete every alt value.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::altdel_all", "netnode_altdel_all"))]
+        #[doc(alias("netnode::altdel_all"))]
         fn clear_alts(this) => this.db.netnode_altdel_all(this.id.get(), ATAG);
 
         /// Set the sup byte object at `index` (max 1024 bytes).
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::supset", "netnode_supset"))]
+        #[doc(alias("netnode::supset"))]
         fn set_sup(this, index: u64, value: &[u8]) => this.db.netnode_supset(this.id.get(), index, value, STAG);
 
         /// Delete the sup byte object at `index`.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::supdel", "netnode_supdel"))]
+        #[doc(alias("netnode::supdel"))]
         fn remove_sup(this, index: u64) => this.db.netnode_supdel(this.id.get(), index, STAG);
 
         /// Delete every sup byte object.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::supdel_all", "netnode_supdel_all"))]
+        #[doc(alias("netnode::supdel_all"))]
         fn clear_sups(this) => this.db.netnode_supdel_all(this.id.get(), STAG);
 
         /// Set the hash value for `key` to raw bytes (max 1024 bytes).
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::hashset", "netnode_hashset"))]
+        #[doc(alias("netnode::hashset"))]
         fn set_hash(this, key: &str, value: &[u8]) => this.db.netnode_hashset(this.id.get(), key, value, HTAG);
 
         /// Set the hash value for `key` to an integer.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::hashset", "netnode_hashset_long"))]
+        #[doc(alias("netnode::hashset"))]
         fn set_hash_int(this, key: &str, value: u64) => this.db.netnode_hashset_long(this.id.get(), key, value, HTAG);
 
         /// Delete the hash value for `key`.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::hashdel", "netnode_hashdel"))]
+        #[doc(alias("netnode::hashdel"))]
         fn remove_hash(this, key: &str) => this.db.netnode_hashdel(this.id.get(), key, HTAG);
 
         /// Delete every hash entry.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::hashdel_all", "netnode_hashdel_all"))]
+        #[doc(alias("netnode::hashdel_all"))]
         fn clear_hash(this) => this.db.netnode_hashdel_all(this.id.get(), HTAG);
 
         /// Store the default blob (`start = 0`), replacing any existing one.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::setblob", "netnode_setblob"))]
+        #[doc(alias("netnode::setblob"))]
         fn set_blob(this, value: &[u8]) => this.db.netnode_setblob(this.id.get(), value, 0, BTAG);
 
         /// Delete the default blob (`start = 0`).
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write (returning no freed slots).
-        #[doc(alias("netnode::delblob", "netnode_delblob"))]
+        #[doc(alias("netnode::delblob"))]
         fn remove_blob(this) => this.db.netnode_delblob(this.id.get(), 0, BTAG) >= 0;
 
         /// Rename the node (an empty name clears it).
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the name is already taken.
-        #[doc(alias("netnode::rename", "netnode_rename"))]
+        #[doc(alias("netnode::rename"))]
         fn rename(this, name: &str) => this.db.netnode_rename(this.id.get(), name);
     }
 
@@ -587,6 +587,7 @@ impl NetnodeMut<'_> {
     /// [`Error::SerializeFailed`] on an encoding failure, or [`Error::WriteRejected`] if the kernel
     /// rejects the write.
     #[cfg(feature = "serde")]
+    #[doc(alias("netnode::setblob"))]
     pub fn put_serde_at<T: ::serde::Serialize>(&mut self, index: u64, value: &T) -> Result<()> {
         let bytes = ::postcard::to_allocvec(value).map_err(|e| Error::SerializeFailed {
             reason: e.to_string(),
@@ -598,7 +599,7 @@ impl NetnodeMut<'_> {
     /// Delete the node and every array attached to it.
     ///
     /// The cursor is left pointing at the now-absent id; further reads return `None`.
-    #[doc(alias("netnode::kill", "netnode_kill"))]
+    #[doc(alias("netnode::kill"))]
     pub fn kill(&mut self) {
         self.db.netnode_kill(self.id.get());
     }
