@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated type-write domain (namespace idakit_gen): add,
+// Hand-written Custom bodies for the generated type-write domain (namespace gen): add,
 // reprise, rename, or delete one constant of a named enum in the local til, plus the enum-level
 // bitmask/repr/width setters. Reports an int result code plus captured diagnostic through a
 // TypeWriteResult shared struct, as the sibling type-write TUs do.
@@ -19,9 +19,9 @@
 #include "gen_bridge.h"
 #include "type_write_common.h" // captured_reason, load_named_type
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 namespace {
 
@@ -193,4 +193,4 @@ TypeWriteResult enum_del_member_by_value(rust::Str type_name, uint64_t value) {
   }
 }
 
-} // namespace idakit_gen
+} // namespace gen

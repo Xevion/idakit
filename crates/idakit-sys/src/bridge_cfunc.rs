@@ -25,11 +25,11 @@ use moveit::{CopyNew, New};
 // Raw C-ABI placement shims backing moveit's traits (facade/cfunc_shims.cpp). They operate on a
 // cfuncptr_t laid out at the given pointer, here a repr(C) Rust mirror (the inline CfuncVal path).
 unsafe extern "C" {
-    fn idakit_cfuncptr_copy_ctor(dst: *mut c_void, src: *const c_void);
-    fn idakit_cfuncptr_decompile_into(dst: *mut c_void, ea: u64) -> c_int;
-    fn idakit_cfuncptr_dtor(p: *mut c_void);
-    fn idakit_cfuncptr_refcnt_raw(p: *const c_void) -> i32;
-    fn idakit_cfuncptr_is_null_raw(p: *const c_void) -> c_int;
+    fn cfuncptr_copy_ctor(dst: *mut c_void, src: *const c_void);
+    fn cfuncptr_decompile_into(dst: *mut c_void, ea: u64) -> c_int;
+    fn cfuncptr_dtor(p: *mut c_void);
+    fn cfuncptr_refcnt_raw(p: *const c_void) -> i32;
+    fn cfuncptr_is_null_raw(p: *const c_void) -> c_int;
 }
 
 /// A `moveit`-managed value type mirroring `cfuncptr_t` **inline** (no `cxx`, no heap).
@@ -50,14 +50,14 @@ impl CfuncVal {
     #[must_use]
     pub fn refcnt(&self) -> i32 {
         // SAFETY: `self` is a live cfuncptr_t mirror; the shim reads ptr->refcnt.
-        unsafe { idakit_cfuncptr_refcnt_raw((self as *const Self).cast()) }
+        unsafe { cfuncptr_refcnt_raw((self as *const Self).cast()) }
     }
 
     /// Whether this holds a null `qrefcnt` (decompilation failed).
     #[must_use]
     pub fn is_null(&self) -> bool {
         // SAFETY: `self` is a live cfuncptr_t mirror.
-        unsafe { idakit_cfuncptr_is_null_raw((self as *const Self).cast()) != 0 }
+        unsafe { cfuncptr_is_null_raw((self as *const Self).cast()) != 0 }
     }
 }
 
@@ -68,7 +68,7 @@ unsafe impl CopyNew for CfuncVal {
         // SAFETY: `this` is writable uninitialized storage; `src` a live cfuncptr_t mirror.
         unsafe {
             let dst = this.get_unchecked_mut().as_mut_ptr();
-            idakit_cfuncptr_copy_ctor(dst.cast(), (src as *const Self).cast());
+            cfuncptr_copy_ctor(dst.cast(), (src as *const Self).cast());
         }
     }
 }
@@ -76,7 +76,7 @@ unsafe impl CopyNew for CfuncVal {
 impl Drop for CfuncVal {
     fn drop(&mut self) {
         // SAFETY: `self` is a live cfuncptr_t mirror, destructed exactly once here (release()).
-        unsafe { idakit_cfuncptr_dtor((self as *mut Self).cast()) };
+        unsafe { cfuncptr_dtor((self as *mut Self).cast()) };
     }
 }
 
@@ -93,7 +93,7 @@ unsafe impl New for DecompileVal {
         // SAFETY: `this` is uninitialized storage of one cfuncptr_t mirror.
         unsafe {
             let dst = this.get_unchecked_mut().as_mut_ptr();
-            idakit_cfuncptr_decompile_into(dst.cast(), self.ea);
+            cfuncptr_decompile_into(dst.cast(), self.ea);
         }
     }
 }

@@ -1,4 +1,4 @@
-// Shared internal helpers for the type-write domain's split TUs (namespace idakit_gen): the
+// Shared internal helpers for the type-write domain's split TUs (namespace gen): the
 // captured-diagnostic reader, the scalar leaf builders, the recipe interpreter, and the named-type
 // resolver. Each is called from two or more of type_apply.cpp/type_define.cpp/udt_edit.cpp/
 // enum_edit.cpp/func_sig.cpp/tinfo_build.cpp, so they need external linkage here rather than the
@@ -16,7 +16,7 @@
 
 #include "gen_type_build.h" // TypeWriteResult/SigWriteResult fwd decl, rust::String via gen_helpers.h
 
-namespace idakit_gen {
+namespace gen {
 
 // The last guarded call's captured diagnostics (IDA's messages, caught off the msg channel by the
 // HT_UI hook) as an owned string; empty when nothing was captured. This is the one genuinely
@@ -50,4 +50,4 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out);
 // (add_udm, get_edm, ...) already rejects a mismatched target.
 bool load_named_type(const char *type_name, tinfo_t &tif);
 
-} // namespace idakit_gen
+} // namespace gen

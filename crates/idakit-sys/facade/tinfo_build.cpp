@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated type-write domain (namespace idakit_gen): granular
+// Hand-written Custom bodies for the generated type-write domain (namespace gen): granular
 // tinfo_t construction. Each builder mints a fresh heap tinfo_t owned by a UniquePtr, whose cxx
 // deleter (~tinfo_t) frees it on drop. A build failure returns a null handle (an Err only for the
 // parse-driven tinfo_decl). The transform builders copy the borrowed `inner`, never consuming it,
@@ -21,9 +21,9 @@
 #include "gen_bridge.h"
 #include "type_write_common.h" // captured_reason, build_int, build_float, build_named
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 std::unique_ptr<::tinfo_t> tinfo_void() {
   try {
@@ -154,4 +154,4 @@ TypeWriteResult tinfo_apply(uint64_t ea, const ::tinfo_t &handle, int32_t flags)
   }
 }
 
-} // namespace idakit_gen
+} // namespace gen

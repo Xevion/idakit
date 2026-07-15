@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated function domain (namespace idakit_gen). Scalar
+// Hand-written Custom bodies for the generated function domain (namespace gen). Scalar
 // lookup accessors over get_func/getn_func, plus the name as a rust::String (Err on no name).
 // func_qty is templated (gen_function_bodies.cc), not here.
 
@@ -12,7 +12,7 @@
 
 #include "gen_function.h"
 
-namespace idakit_gen {
+namespace gen {
 
 uint64_t func_ea(size_t n) {
   func_t *f = getn_func(n);
@@ -52,4 +52,4 @@ rust::String func_name(uint64_t ea) {
   return to_rust_string(out);
 }
 
-} // namespace idakit_gen
+} // namespace gen

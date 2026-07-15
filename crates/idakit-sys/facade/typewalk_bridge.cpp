@@ -1,4 +1,4 @@
-// cxx extern "Rust" opaque-visitor type walk (namespace idakit_cxx). visit_walker_t (declared in
+// cxx extern "Rust" opaque-visitor type walk (namespace bridge). visit_walker_t (declared in
 // type_walker.h) does a depth-first tinfo_t recursion guarded by a placeholder plus a
 // `defined`-set dedup, so a self-referential type resolves instead of looping. It emits through the
 // extern "Rust" opaque visitor's member functions (vis->scalar(...), vis->named_ref(...),
@@ -25,10 +25,10 @@
 // the MemberInfo / EnumConstInfo / FrameVar / FrameWalk shared structs. OUT_DIR is on this TU's
 // include path; the ctree walk drives visit_walker_t only through the opaque handle in
 // type_walker.h.
-#include "gen_facade_consts.h" // idakit_gen::NONE
+#include "gen_facade_consts.h" // gen::NONE
 #include "gen_visitors.h"
 
-namespace idakit_cxx {
+namespace bridge {
 
 namespace {
 
@@ -297,7 +297,7 @@ FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
     uint32_t flags = (m.is_retaddr() ? 1u : 0u) | (m.is_savregs() ? 2u : 0u);
     // Only a real, typed variable carries a structured type; reserved and untyped slots report
     // NONE, so the table holds only types a variable references.
-    uint32_t ty = (flags == 0 && !m.type.empty()) ? w.ty(m.type) : idakit_gen::NONE;
+    uint32_t ty = (flags == 0 && !m.type.empty()) ? w.ty(m.type) : gen::NONE;
     FrameVar fv;
     fv.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
     // udm offset/size are in bits; soff_to_fpoff wants the byte struct offset.
@@ -310,4 +310,4 @@ FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
   return out;
 }
 
-} // namespace idakit_cxx
+} // namespace bridge

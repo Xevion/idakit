@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated local-type read domain (namespace idakit_gen).
+// Hand-written Custom bodies for the generated local-type read domain (namespace gen).
 // Render a function's prototype and name the local type at an ordinal; both throw when the SDK has
 // no value, which cxx maps to a Rust Err. The ordinal-limit passthrough is templated, not here.
 
@@ -11,7 +11,7 @@
 
 #include "gen_ty.h"
 
-namespace idakit_gen {
+namespace gen {
 
 rust::String func_type(uint64_t ea) {
   qstring out;
@@ -28,4 +28,4 @@ rust::String type_name_at(uint32_t ordinal) {
   return to_rust_string(out);
 }
 
-} // namespace idakit_gen
+} // namespace gen

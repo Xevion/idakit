@@ -1,4 +1,4 @@
-// Declarations for the cxx extern "Rust" opaque-visitor type walk (namespace idakit_cxx). cxx
+// Declarations for the cxx extern "Rust" opaque-visitor type walk (namespace bridge). cxx
 // emits the shims that call type_walk_visit_ordinal / func_type_walk_visit and expects this
 // header (named by the bridge's include!) to declare them; the generated glue and the
 // hand-written driver in typewalk_bridge.cpp both include it.
@@ -9,7 +9,7 @@
 #include "rust/cxx.h"
 #include "trycatch.h"
 
-namespace idakit_cxx {
+namespace bridge {
 
 // The extern "Rust" opaque visitor, defined by the generated header (gen_visitors.h) with a member
 // function per node kind. Forward-declared here so the driver signatures can name it by reference;
@@ -25,4 +25,4 @@ uint32_t type_walk_visit_ordinal(uint32_t ordinal, TypeWalkVisitor &visitor);
 uint32_t func_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor);
 FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor);
 
-} // namespace idakit_cxx
+} // namespace bridge

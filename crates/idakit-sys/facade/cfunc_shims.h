@@ -18,20 +18,20 @@
 extern "C" {
 
 // Placement copy-construct: run cfuncptr_t's copy-ctor from *src into dst (intrusive refcnt++).
-void idakit_cfuncptr_copy_ctor(void *dst, const void *src);
+void cfuncptr_copy_ctor(void *dst, const void *src);
 
 // Placement-construct a cfuncptr_t into dst from decompiling the function at ea. dst is ALWAYS
 // initialized (a null qrefcnt on any failure), so a later destructor/copy is always sound.
 // Returns 1 if a cfunc was obtained, 0 otherwise.
-int idakit_cfuncptr_decompile_into(void *dst, std::uint64_t ea);
+int cfuncptr_decompile_into(void *dst, std::uint64_t ea);
 
 // Run cfuncptr_t's destructor in place (intrusive refcnt--/release at zero); the inline CfuncVal
 // Drop.
-void idakit_cfuncptr_dtor(void *p);
+void cfuncptr_dtor(void *p);
 
 // Read the pointee cfunc_t's intrusive refcnt (or -1 if the qrefcnt is null); the refcount probe.
-std::int32_t idakit_cfuncptr_refcnt_raw(const void *p);
+std::int32_t cfuncptr_refcnt_raw(const void *p);
 // Whether the qrefcnt at p holds a null cfunc_t pointer.
-int idakit_cfuncptr_is_null_raw(const void *p);
+int cfuncptr_is_null_raw(const void *p);
 
 } // extern "C"

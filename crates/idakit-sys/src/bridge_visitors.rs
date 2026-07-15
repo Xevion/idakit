@@ -1,5 +1,5 @@
 //! `cxx` `extern "Rust"` opaque-visitor bridges for the ctree and tinfo walks (namespace
-//! `idakit_cxx`).
+//! `bridge`).
 //!
 //! Two production walks each drive an [`extern "Rust"`] **opaque visitor** whose `&mut self`
 //! methods `cxx` exposes to C++ as callable member functions, sharing one bridge module:

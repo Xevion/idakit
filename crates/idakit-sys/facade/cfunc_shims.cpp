@@ -32,8 +32,8 @@ bool ensure_hexrays() {
 
 // Decompile ea's function into a heap cfuncptr_t (one owned ref), or nullptr on any failure.
 // NOT wrapped in the setjmp/longjmp guard: a decompiler fatal would abort here rather than trap
-// (the production idakit_decompile guards; this spike path stays deliberately simple since callers
-// only ever drive a known-decompilable function).
+// (gen::decompile in hexrays.cpp guards the production path; this spike path stays deliberately
+// simple since callers only ever drive a known-decompilable function).
 ::cfuncptr_t *decompile_heap(std::uint64_t ea) {
   if (!ensure_hexrays())
     return nullptr;
@@ -58,11 +58,11 @@ static_assert(alignof(::cfuncptr_t) == alignof(void *), "cfuncptr_t alignment un
 
 extern "C" {
 
-void idakit_cfuncptr_copy_ctor(void *dst, const void *src) {
+void cfuncptr_copy_ctor(void *dst, const void *src) {
   new (dst)::cfuncptr_t(*reinterpret_cast<const ::cfuncptr_t *>(src));
 }
 
-int idakit_cfuncptr_decompile_into(void *dst, std::uint64_t ea) {
+int cfuncptr_decompile_into(void *dst, std::uint64_t ea) {
   ::cfuncptr_t *heap = decompile_heap(ea);
   if (heap == nullptr) {
     // Always initialize dst so a later dtor/copy is sound: an explicit null qrefcnt.
@@ -76,14 +76,14 @@ int idakit_cfuncptr_decompile_into(void *dst, std::uint64_t ea) {
   return 1;
 }
 
-void idakit_cfuncptr_dtor(void *p) { reinterpret_cast<::cfuncptr_t *>(p)->~qrefcnt_t(); }
+void cfuncptr_dtor(void *p) { reinterpret_cast<::cfuncptr_t *>(p)->~qrefcnt_t(); }
 
-std::int32_t idakit_cfuncptr_refcnt_raw(const void *p) {
+std::int32_t cfuncptr_refcnt_raw(const void *p) {
   const cfunc_t *cf = *reinterpret_cast<const ::cfuncptr_t *>(p);
   return cf != nullptr ? (std::int32_t)cf->refcnt : -1;
 }
 
-int idakit_cfuncptr_is_null_raw(const void *p) {
+int cfuncptr_is_null_raw(const void *p) {
   const cfunc_t *cf = *reinterpret_cast<const ::cfuncptr_t *>(p);
   return cf == nullptr ? 1 : 0;
 }

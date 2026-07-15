@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated type-write domain (namespace idakit_gen): parse,
+// Hand-written Custom bodies for the generated type-write domain (namespace gen): parse,
 // resolve, or build a tinfo from a recipe and apply it at an address, or clear the type note
 // entirely. Reports an int result code plus captured diagnostic through a TypeWriteResult shared
 // struct, as the sibling type-write TUs do.
@@ -19,9 +19,9 @@
 #include "gen_bridge.h"
 #include "type_write_common.h" // captured_reason, build_recipe
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 TypeWriteResult apply_type_decl(uint64_t ea, rust::Str decl, int32_t flags) {
   try {
@@ -95,4 +95,4 @@ TypeWriteResult apply_type_recipe(uint64_t ea, rust::Slice<const uint8_t> recipe
   }
 }
 
-} // namespace idakit_gen
+} // namespace gen

@@ -1,5 +1,5 @@
 //! `cxx` spike bridge proving a custom `trycatch` widens the bridge's exception boundary
-//! (`idakit_cxx::ext_*`).
+//! (`bridge::ext_*`).
 //!
 //! A hand-written `cxx_build` bridge (not the `cxx-gen` one, which inlines the `trycatch`
 //! definition and complicates the override): a custom
@@ -23,7 +23,7 @@
 // The custom trycatch here is also productionized as the shared `facade/trycatch.h`, which
 // every production bridge includes (plus a scoped `set_interr_throws` arm). This spike keeps its own
 // inline copy so its throwing probes stay self-contained.
-#[cxx::bridge(namespace = "idakit_cxx")]
+#[cxx::bridge(namespace = "bridge")]
 mod ffi {
     unsafe extern "C++" {
         include!("testonly_probe_ext.h");

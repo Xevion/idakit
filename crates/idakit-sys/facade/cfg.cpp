@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated control-flow-graph domain (namespace idakit_gen).
+// Hand-written Custom bodies for the generated control-flow-graph domain (namespace gen).
 // FlowChart is the SDK's qflow_chart_t owned by std::unique_ptr, so cxx's UniquePtr deleter retires
 // the raw free + Rust Drop; cfg_block returns the BlockInfo shared struct by value, and the edge
 // lists copy into rust::Vec<uint32_t>. size() is a self:-member call bound straight to the SDK
@@ -17,7 +17,7 @@
 // construct it below); gen_cfg.h only forward-declares it.
 #include "gen_bridge.h"
 
-namespace idakit_gen {
+namespace gen {
 
 std::unique_ptr<::qflow_chart_t> cfg_build(uint64_t ea, int32_t flags) {
   func_t *pfn = get_func((ea_t)ea);
@@ -89,4 +89,4 @@ rust::Vec<uint32_t> cfg_preds(const ::qflow_chart_t &fc, size_t n) {
   return out;
 }
 
-} // namespace idakit_gen
+} // namespace gen

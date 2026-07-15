@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated export domain (namespace idakit_gen). Entry-point
+// Hand-written Custom bodies for the generated export domain (namespace gen). Entry-point
 // lookups over get_entry/get_entry_ordinal, plus the name and forwarder as a rust::String (Err when
 // absent, since most exports have no forwarder). export_qty is templated (gen_export_bodies.cc),
 // not here.
@@ -12,7 +12,7 @@
 
 #include "gen_export.h"
 
-namespace idakit_gen {
+namespace gen {
 
 uint64_t export_ea(size_t idx) { return (uint64_t)get_entry(get_entry_ordinal(idx)); }
 
@@ -32,4 +32,4 @@ rust::String export_forwarder(size_t idx) {
   return to_rust_string(out);
 }
 
-} // namespace idakit_gen
+} // namespace gen

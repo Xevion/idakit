@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated strings domain (namespace idakit_gen). Wraps IDA's
+// Hand-written Custom bodies for the generated strings domain (namespace gen). Wraps IDA's
 // string list: build_strlist (an O(database) scan), its
 // length, and the nth entry filled into the StrlistItem shared struct (throw when out of range).
 // strlit_contents decodes the string at (ea,len,type) semantically (STRCONV_REPLCHAR);
@@ -19,7 +19,7 @@
 // construct it); gen_strings.h only forward-declares it.
 #include "gen_bridge.h"
 
-namespace idakit_gen {
+namespace gen {
 
 void strlist_build() { build_strlist(); }
 
@@ -52,4 +52,4 @@ rust::String strlit_escaped(uint64_t ea, size_t len, int32_t strtype) {
   return to_rust_string(out);
 }
 
-} // namespace idakit_gen
+} // namespace gen

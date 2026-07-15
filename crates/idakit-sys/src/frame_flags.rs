@@ -1,6 +1,6 @@
 //! The typed [`FrameVarFlags`] layer over `FrameVar`'s reserved-slot flag bits.
 //!
-//! The frame walk itself is the `cxx` `idakit_cxx::frame_type_walk_visit` entry (see
+//! The frame walk itself is the `cxx` `bridge::frame_type_walk_visit` entry (see
 //! `bridge_visitors`); these flags classify the slots it returns.
 
 use bitflags::bitflags;

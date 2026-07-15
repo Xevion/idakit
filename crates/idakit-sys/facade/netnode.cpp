@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated netnode domain (namespace idakit_gen): the irregular
+// Hand-written Custom bodies for the generated netnode domain (namespace gen): the irregular
 // lifecycle and node-value functions the netnode matrix does not generate. A netnode is a value
 // type over a single nodeidx_t id, so each body reconstructs `netnode n(node)` and drives its
 // inline methods. rust::Str keys are NOT NUL-terminated, so they pass through std::string before
@@ -16,7 +16,7 @@
 
 #include "gen_netnode.h"
 
-namespace idakit_gen {
+namespace gen {
 
 // Lifecycle.
 
@@ -108,4 +108,4 @@ bool netnode_del_value(uint64_t node) {
   return n.delvalue();
 }
 
-} // namespace idakit_gen
+} // namespace gen

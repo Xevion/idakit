@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated type-write domain (namespace idakit_gen): add,
+// Hand-written Custom bodies for the generated type-write domain (namespace gen): add,
 // retype, rename, comment, reprise, or delete one member of a named struct/union in the local til.
 // Reports an int result code plus captured diagnostic through a TypeWriteResult shared struct, as
 // the sibling type-write TUs do.
@@ -19,9 +19,9 @@
 #include "gen_bridge.h"
 #include "type_write_common.h" // captured_reason, build_recipe, load_named_type
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 namespace {
 
@@ -223,4 +223,4 @@ TypeWriteResult udt_del_member(rust::Str type_name, rust::Str member_name, uint6
   }
 }
 
-} // namespace idakit_gen
+} // namespace gen

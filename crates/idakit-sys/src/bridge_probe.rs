@@ -1,7 +1,7 @@
 //! `cxx` fault-injection probes for the trap tests.
 //!
 //! A separate `#[cxx::bridge]` from the production bridges, kept off the public API by
-//! `#[doc(hidden)]` on its re-export in `lib.rs`. Shares the `idakit_cxx` namespace with them, so
+//! `#[doc(hidden)]` on its re-export in `lib.rs`. Shares the `bridge` namespace with them, so
 //! the generated shim symbols sit in the same family; the hand-written bodies and the `guarded<>`
 //! entry live in `facade/testonly_probe.cpp`.
 
@@ -12,7 +12,7 @@
     reason = "false positive misattributed to the #[cxx::bridge] attribute by its own expansion"
 )]
 
-#[cxx::bridge(namespace = "idakit_cxx")]
+#[cxx::bridge(namespace = "bridge")]
 mod ffi {
     unsafe extern "C++" {
         include!("testonly_probe.h");

@@ -22,11 +22,11 @@
 #include "rust/cxx.h"
 
 #include "abi.h"               // trigger_fatal
-#include "gen_facade_consts.h" // idakit_gen::EXIT_TRAPPED
+#include "gen_facade_consts.h" // gen::EXIT_TRAPPED
 #include "internal.h"          // guarded<>
 #include "testonly_probe.h"
 
-namespace idakit_cxx {
+namespace bridge {
 
 // Body reached through the cxx shim. On the exit/abort kinds trigger_fatal never returns
 // (the trap longjmps back to the guard above); on the interr kind it throws interr_exc_t, which
@@ -54,11 +54,11 @@ std::unique_ptr<DropProbe> drop_probe_make() { return std::make_unique<DropProbe
 
 uint32_t drop_probe_count() { return g_drop_probe_count.load(); }
 
-} // namespace idakit_cxx
+} // namespace bridge
 
 // Out-of-line so it is never elided: dropping a UniquePtr<DropProbe> must reach this.
-idakit_drop_probe_t::~idakit_drop_probe_t() {
-  idakit_cxx::g_drop_probe_count.fetch_add(1, std::memory_order_relaxed);
+drop_probe_t::~drop_probe_t() {
+  bridge::g_drop_probe_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 // The cxx-generated C-ABI shim for probe_fatal_through_cxx. cxx does not offer a supported way to
@@ -74,17 +74,16 @@ struct ProbePtrLen {
 };
 } // namespace
 
-extern "C" ProbePtrLen
-idakit_cxx$cxxbridge1$197$probe_fatal_through_cxx(::std::int32_t kind,
-                                                  ::rust::String *ret) noexcept;
+extern "C" ProbePtrLen bridge$cxxbridge1$197$probe_fatal_through_cxx(::std::int32_t kind,
+                                                                     ::rust::String *ret) noexcept;
 
 // Arm the guard, then reach the fatal *through* the cxx shim.
 extern "C" int test_fatal_through_cxx(int kind) {
-  return idakit_facade::guarded<int>(idakit_gen::EXIT_TRAPPED, false, [kind]() -> int {
+  return facade::guarded<int>(gen::EXIT_TRAPPED, false, [kind]() -> int {
     // Return slot the shim placement-news into on success. Empty until then, so the longjmp path
     // (exit/abort) that never lets the shim return leaks nothing when its ~String is skipped.
     ::rust::String ret;
-    ProbePtrLen pl = idakit_cxx$cxxbridge1$197$probe_fatal_through_cxx(kind, &ret);
+    ProbePtrLen pl = bridge$cxxbridge1$197$probe_fatal_through_cxx(kind, &ret);
     // Only reached if no longjmp fired: the interr kind, where cxx's shim caught interr_exc_t and
     // reported a Rust Err (pl.ptr != nullptr). The Err's heap allocation leaks here, acceptable
     // in a one-shot test process, and it never happens on the exit/abort (longjmp) paths.

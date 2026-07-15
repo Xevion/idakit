@@ -10,7 +10,7 @@
 //! the module's tokens from a declarative spec and drive every face off it.
 //!
 //! One [`Domain`] is one slice of the facade (segment, function, ...). Every domain feeds one
-//! unified `#[cxx::bridge] mod ffi` (namespace `idakit_gen`): the generator emits all three
+//! unified `#[cxx::bridge] mod ffi` (namespace `gen`): the generator emits all three
 //! declaration faces from the spec (the Rust bridge decl, the C++ header decl, the `cxx` glue),
 //! and the function *bodies* stay hand-written in per-domain `.cc` translation units, exactly as
 //! the raw facade's bodies are. A handful of trivial scalar/string bodies are templated from their

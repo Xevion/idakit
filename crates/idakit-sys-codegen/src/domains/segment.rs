@@ -1,6 +1,6 @@
 use super::super::model::*;
 
-/// The segment domain: mirrors the hand-written `idakit_cxx::seg_*` bridge one-for-one. Every
+/// The segment domain: mirrors the hand-written `bridge::seg_*` bridge one-for-one. Every
 /// body is templated, generated into `gen_seg_bodies.cc`.
 pub const SEGMENT: Domain = Domain {
     name: "seg",

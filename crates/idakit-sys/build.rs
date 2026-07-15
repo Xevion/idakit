@@ -144,7 +144,7 @@ fn main() {
     }
     // Emit the link directives ourselves (below) so the facade is *whole-archive* linked.
     build.cargo_metadata(false);
-    build.compile("idakit_facade");
+    build.compile("facade");
 
     // Whole-archive the facade so its load-time constructor, the idalib exit-banner filter
     // in runtime.cpp, is present in every binary, even pure unit-test binaries that call no
@@ -152,7 +152,7 @@ fn main() {
     // banner (registered at dylib load) leaks into stdout, breaking `nextest --list`. The
     // modifier maps per-linker (-force_load / --whole-archive / /WHOLEARCHIVE).
     println!("cargo:rustc-link-search=native={out_dir}");
-    println!("cargo:rustc-link-lib=static:+whole-archive=idakit_facade");
+    println!("cargo:rustc-link-lib=static:+whole-archive=facade");
     // cargo_metadata(false) also dropped cc's C++ runtime link, which the whole-archived
     // facade (std::string, exceptions, RTTI) needs; re-emit it after the facade so the
     // dependency order is right.
@@ -167,13 +167,13 @@ fn main() {
     cxx_bridge(
         "src/bridge_qvec.rs",
         &["facade/qvec_bridge.cpp"],
-        "idakit_cxx_qvec_bridge",
+        "bridge_qvec_bridge",
         sdk_include_str,
         &out_dir,
         &[],
     );
-    // The spec-driven cxx-gen bridges: namespace idakit_gen (the domain bridge) and namespace
-    // idakit_cxx (the ctree/tinfo extern "Rust" opaque-visitor bridge). Unlike every bridge above,
+    // The spec-driven cxx-gen bridges: namespace gen (the domain bridge) and namespace
+    // bridge (the ctree/tinfo extern "Rust" opaque-visitor bridge). Unlike every bridge above,
     // neither is hand-written: codegen::generate builds each `#[cxx::bridge] mod` tokens from a
     // declarative spec and emits, into OUT_DIR, the Rust side (include!d by src/bridge_gen.rs /
     // src/bridge_visitors.rs), the C++ shim glue (via cxx-gen), the templated C++ bodies, and a
@@ -205,14 +205,14 @@ fn main() {
     }
     gen_bridge.file("facade/ctree_bridge.cpp");
     gen_bridge.file("facade/typewalk_bridge.cpp");
-    gen_bridge.compile("idakit_cxx_gen_bridge");
+    gen_bridge.compile("bridge_gen_bridge");
 
     // The cxx fault-injection and boundary probe bridges. Each is its own static archive, like the
     // production bridges above; their Rust bindings are `#[doc(hidden)]`, keeping them off the API.
     cxx_bridge(
         "src/bridge_probe.rs",
         &["facade/testonly_probe.cpp"],
-        "idakit_cxx_probe",
+        "bridge_probe",
         sdk_include_str,
         &out_dir,
         &[],
@@ -220,7 +220,7 @@ fn main() {
     cxx_bridge(
         "src/bridge_probe_ext.rs",
         &["facade/testonly_probe_ext.cpp"],
-        "idakit_cxx_probe_ext_bridge",
+        "bridge_probe_ext_bridge",
         sdk_include_str,
         &out_dir,
         &[],

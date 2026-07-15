@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated name domain (namespace idakit_gen). Name lookups
+// Hand-written Custom bodies for the generated name domain (namespace gen). Name lookups
 // (get_ea_name, get_name_ea, demangle_name), the name-list accessors, and the flags-word name
 // classifiers. The string getters throw (Err on no name) rather than returning a -1 length. SDK
 // calls are ::-qualified: several generated symbols
@@ -16,7 +16,7 @@
 
 #include "gen_name.h"
 
-namespace idakit_gen {
+namespace gen {
 
 rust::String get_ea_name(uint64_t ea) {
   qstring out;
@@ -58,4 +58,4 @@ bool has_auto_name(uint64_t flags) { return ::has_auto_name((flags64_t)flags); }
 
 bool has_dummy_name(uint64_t flags) { return ::has_dummy_name((flags64_t)flags); }
 
-} // namespace idakit_gen
+} // namespace gen

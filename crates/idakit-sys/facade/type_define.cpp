@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated type-write domain (namespace idakit_gen): parse C
+// Hand-written Custom bodies for the generated type-write domain (namespace gen): parse C
 // declarations into the local til, delete/rename a named type, or reserve a forward-declared
 // aggregate. Reports an int result code plus captured diagnostic through a TypeWriteResult shared
 // struct, as the sibling type-write TUs do.
@@ -19,9 +19,9 @@
 #include "gen_bridge.h"
 #include "type_write_common.h" // captured_reason, load_named_type
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 TypeWriteResult define_type(rust::Str input) {
   try {
@@ -89,4 +89,4 @@ TypeWriteResult forward_declare_type(rust::Str type_name, uint32_t decl_type) {
   }
 }
 
-} // namespace idakit_gen
+} // namespace gen

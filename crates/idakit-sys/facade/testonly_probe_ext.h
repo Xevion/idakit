@@ -1,6 +1,6 @@
 // Declarations for the cxx spike bridge. Proves a custom rust::behavior::trycatch widens what the
 // generated shim catches. Bodies live in testonly_probe_ext.cpp; the
-// cxx-generated shim (from src/bridge_probe_ext.rs) calls them by their idakit_cxx-namespaced name.
+// cxx-generated shim (from src/bridge_probe_ext.rs) calls them by their bridge-namespaced name.
 #pragma once
 
 #include <cstdint>
@@ -41,11 +41,11 @@ template <typename Try, typename Fail> static void trycatch(Try &&func, Fail &&f
 } // namespace behavior
 } // namespace rust
 
-namespace idakit_cxx {
+namespace bridge {
 
 // Throwing probes exercising the three trycatch arms above.
 rust::String ext_throw_plain_int();
 rust::String ext_throw_interr(int32_t code);
 rust::String ext_throw_coded(int32_t code);
 
-} // namespace idakit_cxx
+} // namespace bridge

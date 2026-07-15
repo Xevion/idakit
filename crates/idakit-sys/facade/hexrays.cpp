@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated Hex-Rays domain (namespace idakit_gen). decompile
+// Hand-written Custom bodies for the generated Hex-Rays domain (namespace gen). decompile
 // hands back a cfuncptr_t owned by std::unique_ptr, so cxx's deleter runs ~cfuncptr_t (release())
 // on drop, retiring the raw new/delete + dispose. It wraps decompile_func in guarded<> so a
 // decompiler fatal exit() surfaces as a trap (g_trapped) instead of a crash, then throws on failure
@@ -24,9 +24,9 @@
 // below); gen_hexrays.h only forward-declares them.
 #include "gen_bridge.h"
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 namespace {
 
@@ -191,4 +191,4 @@ bool has_cached_cfunc(uint64_t ea) {
   return ::has_cached_cfunc((ea_t)ea);
 }
 
-} // namespace idakit_gen
+} // namespace gen

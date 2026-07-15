@@ -12,7 +12,7 @@
 
 #include "testonly_probe_ext.h"
 
-namespace idakit_cxx {
+namespace bridge {
 
 // A non-std::exception throw: cxx's default trycatch would std::terminate here; the custom
 // catch(...) arm turns it into a Rust Err instead. Never returns normally.
@@ -35,4 +35,4 @@ rust::String ext_throw_coded(int32_t code) {
   return rust::String("unreachable");
 }
 
-} // namespace idakit_cxx
+} // namespace bridge

@@ -1,5 +1,5 @@
 // Opaque handle to the shared depth-first tinfo_t walker driving an extern "Rust" TypeWalkVisitor
-// (namespace idakit_cxx). Recursion is guarded by a placeholder plus a `defined`-set dedup, so a
+// (namespace bridge). Recursion is guarded by a placeholder plus a `defined`-set dedup, so a
 // self-referential type (e.g. a struct pointing at itself) resolves instead of looping; emitting
 // happens through the cxx opaque visitor's member functions. Its full definition lives in
 // typewalk_bridge.cpp, which is compiled in the cxx bridge (with the generated visitor header on
@@ -15,17 +15,17 @@
 // or cxx-generated include.
 class tinfo_t;
 
-namespace idakit_cxx {
+namespace bridge {
 
 struct visit_walker_t;
 
-// Create a walker driving `visitor` (an opaque idakit_cxx::TypeWalkVisitor*), released with
+// Create a walker driving `visitor` (an opaque bridge::TypeWalkVisitor*), released with
 // visit_walker_free.
 visit_walker_t *visit_walker_new(void *visitor);
 // Walk `t` into the visitor, returning the handle it minted for the type.
 uint32_t visit_walker_ty(visit_walker_t *w, const tinfo_t &t);
 void visit_walker_free(visit_walker_t *w);
 
-} // namespace idakit_cxx
+} // namespace bridge
 
 #endif // TYPE_WALKER_H

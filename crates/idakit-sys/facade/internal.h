@@ -11,7 +11,7 @@
 
 #include "abi.h"
 
-namespace idakit_facade {
+namespace facade {
 
 extern thread_local jmp_buf g_exit_jmp;
 extern thread_local bool g_exit_guarded;
@@ -78,6 +78,6 @@ template <class T, class F> T guarded(T trapval, bool capture, F &&fn) {
   }
 }
 
-} // namespace idakit_facade
+} // namespace facade
 
 #endif // INTERNAL_H

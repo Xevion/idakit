@@ -14,7 +14,7 @@
 
 #include "rust/cxx.h"
 
-namespace idakit_facade {
+namespace facade {
 
 // RAII arming idalib's throwing-interr mode for the enclosing scope, restoring the prior setting on
 // exit. An interr unwinds as an ordinary C++ throw, so this destructor runs on the catch path too;
@@ -27,7 +27,7 @@ struct interr_scope {
   interr_scope &operator=(const interr_scope &) = delete;
 };
 
-} // namespace idakit_facade
+} // namespace facade
 
 namespace rust {
 namespace behavior {
@@ -37,7 +37,7 @@ namespace behavior {
 // more-derived than std::exception, so it must precede it; it formats the internal code into the
 // message (the base what() would say only "std::exception").
 template <typename Try, typename Fail> static void trycatch(Try &&func, Fail &&fail) noexcept {
-  idakit_facade::interr_scope arm;
+  facade::interr_scope arm;
   try {
     func();
   } catch (const interr_exc_t &ie) {

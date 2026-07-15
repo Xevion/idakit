@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated instruction-decode domain (namespace idakit_gen).
+// Hand-written Custom bodies for the generated instruction-decode domain (namespace gen).
 // decode_insn folds one x86/x64 insn_t into an owned InstructionData shared struct: operands land
 // in a right-sized rust::Vec<OperandData>, register slots nest RegisterData by value, and the raw
 // result code rides InstructionData::status instead of a return code (the -3/-4 failures carry
@@ -18,7 +18,7 @@
 // below); gen_instruction.h only forward-declares them.
 #include "gen_bridge.h"
 
-namespace idakit_gen {
+namespace gen {
 
 namespace {
 
@@ -316,4 +316,4 @@ rust::Vec<uint8_t> op_dtype_ids() {
   return out;
 }
 
-} // namespace idakit_gen
+} // namespace gen

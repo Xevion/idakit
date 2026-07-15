@@ -19,7 +19,7 @@
 #include "rust/cxx.h"
 #include "trycatch.h"
 
-namespace idakit_cxx {
+namespace bridge {
 
 // qvector<int> == intvec_t. Source: a flow-chart block's successor edge list
 // (qbasic_block_t::succ). cfg_succ_vec borrows the list out of the live
@@ -35,4 +35,4 @@ std::unique_ptr<rangevec_t> rangevec_build_chunks(std::uint64_t ea);
 size_t rangevec_len(const rangevec_t &v);
 rust::Slice<const ::range_t> rangevec_slice(const rangevec_t &v);
 
-} // namespace idakit_cxx
+} // namespace bridge

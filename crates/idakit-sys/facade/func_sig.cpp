@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated type-write domain (namespace idakit_gen):
+// Hand-written Custom bodies for the generated type-write domain (namespace gen):
 // prototype-surgery on a function's type at an address, replacing the return type, one parameter's
 // type or name, the calling convention, or prepending an implicit `this`. Reports an int result
 // code plus captured diagnostic and parameter count through a SigWriteResult/TypeWriteResult shared
@@ -20,9 +20,9 @@
 #include "gen_bridge.h"
 #include "type_write_common.h" // captured_reason, build_recipe
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 namespace {
 
@@ -162,4 +162,4 @@ TypeWriteResult func_prepend_this(uint64_t ea, rust::Slice<const uint8_t> recipe
   }
 }
 
-} // namespace idakit_gen
+} // namespace gen

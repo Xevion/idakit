@@ -1,4 +1,4 @@
-// Hand-written Custom body for the generated reference domain (namespace idakit_gen). One walk of
+// Hand-written Custom body for the generated reference domain (namespace gen). One walk of
 // an xrefblk_t collects every cross-reference edge at an address into an owned rust::Vec<XrefRec>
 // returned by value in a single crossing. XrefRec is a cxx
 // shared struct, defined by the cxx-generated gen_bridge.h.
@@ -15,7 +15,7 @@
 // instantiates rust::Vec<XrefRec>; gen_reference.h only forward-declares XrefRec.
 #include "gen_bridge.h"
 
-namespace idakit_gen {
+namespace gen {
 
 rust::Vec<XrefRec> xrefs_build(uint64_t ea, bool is_to) {
   rust::Vec<XrefRec> rows;
@@ -34,4 +34,4 @@ rust::Vec<XrefRec> xrefs_build(uint64_t ea, bool is_to) {
   return rows;
 }
 
-} // namespace idakit_gen
+} // namespace gen

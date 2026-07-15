@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated meta domain (namespace idakit_gen). Database-wide
+// Hand-written Custom bodies for the generated meta domain (namespace gen). Database-wide
 // metadata: bitness, image base, and four identity strings (processor, file-type text, input path,
 // root filename). The string getters throw when the SDK reports no value (Err on the Rust side).
 
@@ -12,7 +12,7 @@
 
 #include "gen_meta.h"
 
-namespace idakit_gen {
+namespace gen {
 
 int32_t bitness() { return (int32_t)inf_get_app_bitness(); }
 
@@ -50,4 +50,4 @@ rust::String root_filename() {
   return to_rust_string(buf, (size_t)n);
 }
 
-} // namespace idakit_gen
+} // namespace gen

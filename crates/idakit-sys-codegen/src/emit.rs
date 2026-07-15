@@ -724,7 +724,7 @@ impl VisitorDriverFn {
 impl VisitorBridge {
     /// The visitor bridge's `#[cxx::bridge] mod ffi { ... }`: its shared structs, both sink pairs'
     /// `extern "Rust"` blocks, and the shared `extern "C++"` driver block. The driver block reuses
-    /// the `idakit_gen` bridge's `CFunc` extern type (the `hexrays` domain's `cfuncptr_t` alias) by
+    /// the `gen` bridge's `CFunc` extern type (the `hexrays` domain's `cfuncptr_t` alias) by
     /// cross-bridge Rust path rather than redeclaring it, so the two bridges agree on one type
     /// without a conversion at the call site.
     pub(crate) fn mod_tokens(&self) -> TokenStream {
@@ -732,7 +732,7 @@ impl VisitorBridge {
         let sink_blocks = self.sinks.iter().map(VisitorSink::extern_rust_tokens);
         let driver_fns = self.drivers.iter().map(VisitorDriverFn::tokens);
         quote! {
-            #[cxx::bridge(namespace = "idakit_cxx")]
+            #[cxx::bridge(namespace = "bridge")]
             mod ffi {
                 #(#structs)*
 
@@ -742,7 +742,7 @@ impl VisitorBridge {
                     include!("ctree_bridge.h");
                     include!("typewalk_bridge.h");
 
-                    /// The same `cfuncptr_t` the `idakit_gen` bridge's `hexrays` domain bound; this
+                    /// The same `cfuncptr_t` the `gen` bridge's `hexrays` domain bound; this
                     /// is a type alias, not a fresh opaque type, so a decompiled function feeds
                     /// `cfunc_walk_ctree` with no conversion.
                     #[namespace = ""]
@@ -857,7 +857,7 @@ inline rust::Vec<uint8_t> to_rust_bytes(const uint8_t *data, size_t n) {
 }
 ";
 
-/// The standalone `gen_helpers.h`: the shared [`HELPERS`] in the `idakit_gen` namespace, included
+/// The standalone `gen_helpers.h`: the shared [`HELPERS`] in the `gen` namespace, included
 /// by every domain header (so every generated body and `custom_tus` TU gets them without a per-domain
 /// opt-in). Self-contained: pulls in `qstring` and the `rust::` types it names.
 pub(crate) fn helpers_header_source() -> String {
@@ -870,7 +870,7 @@ pub(crate) fn helpers_header_source() -> String {
 }
 
 /// The standalone `gen_facade_consts.h`: every [`super::facade_consts::FACADE_CONSTS`] and
-/// [`super::facade_consts::HIDDEN_FACADE_CONSTS`] sentinel as a `constexpr` in the `idakit_gen`
+/// [`super::facade_consts::HIDDEN_FACADE_CONSTS`] sentinel as a `constexpr` in the `gen`
 /// namespace, for the raw (non-domain) facade TUs that need one (`runtime.cpp`, `testonly_probe.cpp`,
 /// the visitor bridge's `ctree_bridge.cpp`/`typewalk_bridge.cpp`).
 pub(crate) fn facade_consts_header_source() -> String {

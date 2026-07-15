@@ -1,4 +1,4 @@
-// Shared internal helpers for the type-write domain's split TUs (namespace idakit_gen). See
+// Shared internal helpers for the type-write domain's split TUs (namespace gen). See
 // type_write_common.h.
 
 #include <cstdint>
@@ -15,9 +15,9 @@
 #include "internal.h" // g_output (msg-channel capture)
 #include "type_write_common.h"
 
-using namespace idakit_facade;
+using namespace facade;
 
-namespace idakit_gen {
+namespace gen {
 
 rust::String captured_reason() { return to_rust_string(g_output.c_str(), g_output.length()); }
 
@@ -265,4 +265,4 @@ bool load_named_type(const char *type_name, tinfo_t &tif) {
   return tif.get_named_type(get_idati(), type_name) && !tif.empty();
 }
 
-} // namespace idakit_gen
+} // namespace gen

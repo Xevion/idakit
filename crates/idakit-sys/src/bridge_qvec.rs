@@ -1,4 +1,4 @@
-//! `cxx` bindings for IDA's own generic container `qvector<T>` (`idakit_cxx::*vec_*`).
+//! `cxx` bindings for IDA's own generic container `qvector<T>` (`bridge::*vec_*`).
 //!
 //! `cxx` has no generic-template support and its built-in `CxxVector<T>` is `std::vector`-only,
 //! so it cannot match `qvector`'s `{ T* array; size_t n; size_t alloc; }` ABI. This module binds
@@ -79,7 +79,7 @@ macro_rules! qvec_opaque {
 qvec_opaque!(IntVec, "intvec_t");
 qvec_opaque!(RangeVec, "rangevec_t");
 
-#[cxx::bridge(namespace = "idakit_cxx")]
+#[cxx::bridge(namespace = "bridge")]
 mod ffi {
     unsafe extern "C++" {
         include!("qvec_bridge.h");

@@ -3,7 +3,7 @@
 //! this data into `TokenStream`/`String` live in [`super::emit`].
 
 /// The C++ namespace every generated bridge function lives in.
-pub const NAMESPACE: &str = "idakit_gen";
+pub const NAMESPACE: &str = "gen";
 
 /// One slice of the facade: its own C++ header and body TU, the SDK types it binds, the shared
 /// structs it returns, and its functions. All domains feed one unified bridge module.
@@ -73,7 +73,7 @@ pub struct SharedStruct {
 }
 
 /// One generated integer sentinel, emitted to both faces from one spec: a bare Rust `pub const`
-/// (crate-root re-exported) and a C++ `constexpr` in the `idakit_gen` namespace of the domain
+/// (crate-root re-exported) and a C++ `constexpr` in the `gen` namespace of the domain
 /// header.
 pub struct ConstDef {
     /// Bare name, no `IDAKIT_` prefix, e.g. `"FLOW_CALL"`.
@@ -341,7 +341,7 @@ pub struct VisitorDriverFn {
 }
 
 /// The whole visitor bridge: its shared structs, its sink/visitor pairs, and the `extern "C++"`
-/// driver block that shares the `CFunc` extern type with the `idakit_gen` bridge's `hexrays`
+/// driver block that shares the `CFunc` extern type with the `gen` bridge's `hexrays`
 /// domain.
 pub struct VisitorBridge {
     pub structs: &'static [SharedStruct],

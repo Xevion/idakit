@@ -1,4 +1,4 @@
-// Hand-written Custom bodies for the generated range domain (namespace idakit_gen). range_t is a
+// Hand-written Custom bodies for the generated range domain (namespace gen). range_t is a
 // Trivial ExternType, so it crosses by value: returned bare (range_entry_chunk), taken by value
 // (range_size), carried in the ChunkInfo shared struct (range_chunk_info), and collected into an
 // owned rust::Vec<range_t> (range_all_chunks). Out-of-range indices throw -> Rust Err.
@@ -16,7 +16,7 @@
 // it) and instantiates rust::Vec<range_t>; gen_range.h only forward-declares ChunkInfo.
 #include "gen_bridge.h"
 
-namespace idakit_gen {
+namespace gen {
 
 ::range_t range_entry_chunk(uint64_t ea) {
   func_t *pfn = get_func((ea_t)ea);
@@ -58,4 +58,4 @@ rust::Vec<::range_t> range_all_chunks(uint64_t ea) {
   return out;
 }
 
-} // namespace idakit_gen
+} // namespace gen

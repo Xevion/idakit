@@ -1,4 +1,4 @@
-// cxx extern "Rust" opaque-visitor ctree walk (namespace idakit_cxx). walker_t does the same
+// cxx extern "Rust" opaque-visitor ctree walk (namespace bridge). walker_t does the same
 // depth-first cfunc_t recursion the deleted C-vtbl facade did, but emits through the extern "Rust"
 // opaque visitor's member functions (nodes->e_num(...), nodes->s_if(...), nodes->l_lvar(...)) that
 // cxx generates, not a function-pointer table and void* context. Node types are resolved through
@@ -22,10 +22,10 @@
 #include "type_walker.h"
 // The generated visitor-bridge header defines the CtreeVisitor class (its member functions) and
 // the LocPiece shared struct. OUT_DIR is on this TU's include path.
-#include "gen_facade_consts.h" // idakit_gen::NONE
+#include "gen_facade_consts.h" // gen::NONE
 #include "gen_visitors.h"
 
-namespace idakit_cxx {
+namespace bridge {
 
 namespace {
 
@@ -56,11 +56,11 @@ struct walker_t {
   CtreeVisitor *nodes;
   // Walks node types into the shared type table via the cxx opaque visitor (see
   // type_walker.h); created/freed around the walk in cfunc_walk_ctree below.
-  idakit_cxx::visit_walker_t *vw;
+  bridge::visit_walker_t *vw;
 
   uint32_t expr(const cexpr_t *e) {
     ea_t ea = e->ea;
-    uint32_t t = idakit_cxx::visit_walker_ty(vw, e->type);
+    uint32_t t = bridge::visit_walker_ty(vw, e->type);
     switch (e->op) {
     case cot_num:
       return nodes->e_num(ea, e->n->value(e->type), t);
@@ -105,16 +105,16 @@ struct walker_t {
     default: {
       // Binary/assign/unary/ternary/cast/index/sizeof/empty/type/insn: operands by the
       // SDK's own predicates, ctype passed raw for the Rust side to classify.
-      uint32_t x = op_uses_x(e->op) ? expr(e->x) : idakit_gen::NONE;
-      uint32_t y = op_uses_y(e->op) ? expr(e->y) : idakit_gen::NONE;
-      uint32_t z = op_uses_z(e->op) ? expr(e->z) : idakit_gen::NONE;
+      uint32_t x = op_uses_x(e->op) ? expr(e->x) : gen::NONE;
+      uint32_t y = op_uses_y(e->op) ? expr(e->y) : gen::NONE;
+      uint32_t z = op_uses_z(e->op) ? expr(e->z) : gen::NONE;
       return nodes->e_op(ea, (uint32_t)e->op, x, y, z, t);
     }
     }
   }
 
   uint32_t opt_expr(const cexpr_t *e) {
-    return (e == nullptr || e->op == cot_empty) ? idakit_gen::NONE : expr(e);
+    return (e == nullptr || e->op == cot_empty) ? gen::NONE : expr(e);
   }
 
   uint32_t block(const cinsn_list_t &list, ea_t ea) {
@@ -135,7 +135,7 @@ struct walker_t {
     case cit_if: {
       uint32_t c = expr(&i->cif->expr);
       uint32_t th = stmt(i->cif->ithen);
-      uint32_t el = i->cif->ielse != nullptr ? stmt(i->cif->ielse) : idakit_gen::NONE;
+      uint32_t el = i->cif->ielse != nullptr ? stmt(i->cif->ielse) : gen::NONE;
       return nodes->s_if(ea, c, th, el);
     }
     case cit_for: {
@@ -257,7 +257,7 @@ struct walker_t {
       default:
         break; // ALOC_NONE / ALOC_CUSTOM: atype alone carries it
       }
-      uint32_t ty = idakit_cxx::visit_walker_ty(vw, l.tif);
+      uint32_t ty = bridge::visit_walker_ty(vw, l.tif);
       nodes->l_lvar(lossy_str(l.name.c_str(), l.name.length()), ty, flags, (uint32_t)l.width,
                     lossy_str(l.cmt.c_str(), l.cmt.length()), atype, reg1, reg2, sval,
                     slice_of(pieces));
@@ -271,10 +271,10 @@ uint32_t cfunc_walk_ctree(const ::cfuncptr_t &cfunc, CtreeVisitor &nodes, size_t
     walker_t w;
     w.nodes = &nodes;
     // The guard frees the type walker on the normal return and on the exception path below.
-    w.vw = idakit_cxx::visit_walker_new(reinterpret_cast<void *>(type_visitor));
+    w.vw = bridge::visit_walker_new(reinterpret_cast<void *>(type_visitor));
     struct walker_guard {
-      idakit_cxx::visit_walker_t *w;
-      ~walker_guard() { idakit_cxx::visit_walker_free(w); }
+      bridge::visit_walker_t *w;
+      ~walker_guard() { bridge::visit_walker_free(w); }
     } guard{w.vw};
     w.lvars(cf);
     return w.stmt(&cf->body);
@@ -283,4 +283,4 @@ uint32_t cfunc_walk_ctree(const ::cfuncptr_t &cfunc, CtreeVisitor &nodes, size_t
   }
 }
 
-} // namespace idakit_cxx
+} // namespace bridge

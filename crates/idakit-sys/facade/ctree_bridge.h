@@ -1,4 +1,4 @@
-// Declarations for the cxx extern "Rust" opaque-visitor ctree walk (namespace idakit_cxx). cxx
+// Declarations for the cxx extern "Rust" opaque-visitor ctree walk (namespace bridge). cxx
 // emits the shim that calls cfunc_walk_ctree and expects this header (named by the bridge's
 // include!) to declare it; the generated glue and the hand-written driver in ctree_bridge.cpp both
 // include it.
@@ -20,7 +20,7 @@
 #include "rust/cxx.h"
 #include "trycatch.h"
 
-namespace idakit_cxx {
+namespace bridge {
 
 // The extern "Rust" opaque ctree visitor, defined by the generated header (gen_visitors.h) with a
 // member function per node/statement/local kind. Forward-declared here so the driver signature can
@@ -32,4 +32,4 @@ struct CtreeVisitor;
 // handle.
 uint32_t cfunc_walk_ctree(const ::cfuncptr_t &cfunc, CtreeVisitor &nodes, size_t type_visitor);
 
-} // namespace idakit_cxx
+} // namespace bridge

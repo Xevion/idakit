@@ -1,4 +1,4 @@
-// cxx-bridged qvector<T> facade (namespace idakit_cxx): the KDAB per-instantiation
+// cxx-bridged qvector<T> facade (namespace bridge): the KDAB per-instantiation
 // recipe applied to two of IDA's own generic containers. intvec_t (qvector<int>)
 // and rangevec_t (qvector<range_t>) are each bound as a cxx Opaque ExternType and
 // read two ways: a copying shim to an owned rust::Vec, and a zero-copy rust::Slice
@@ -30,7 +30,7 @@
 // backing array is bit-identical to a [i32]; the zero-copy slice cast below relies on it.
 static_assert(sizeof(int) == sizeof(std::int32_t), "intvec_t element is not 32-bit");
 
-namespace idakit_cxx {
+namespace bridge {
 
 const intvec_t &cfg_succ_vec(const ::qflow_chart_t &fc, size_t n) {
   if (n >= fc.blocks.size())
@@ -76,4 +76,4 @@ rust::Slice<const ::range_t> rangevec_slice(const rangevec_t &v) {
   return rust::Slice<const ::range_t>(v.begin(), v.size());
 }
 
-} // namespace idakit_cxx
+} // namespace bridge
