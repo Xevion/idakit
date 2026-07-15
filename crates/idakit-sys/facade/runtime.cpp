@@ -309,6 +309,8 @@ ssize_t idaapi ui_msg_capture_cb(void *, int code, va_list va) {
   // Array/struct va_list: copy before use so IDA's own later walk of the args stays intact
   // (formatting them in place crashes).
   va_list args;
+  // NOLINTNEXTLINE(clang-analyzer-security.VAList) known false positive: the checker can't track
+  // va_copy from a dereferenced pointer-to-va_list (llvm/llvm-project#40656, #55009).
   va_copy(args, *reinterpret_cast<va_list *>(va_arg(va, void *)));
   qvsnprintf(tmp, sizeof(tmp), format, args);
   va_end(args);
