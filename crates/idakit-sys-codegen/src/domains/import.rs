@@ -19,7 +19,6 @@ pub const IMPORT: Domain = Domain {
     }],
     consts: &[],
     custom_tu: Some("facade/import_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "The whole import table as an owned, `Send` snapshot, built in one walk of every module's \
          `enum_import_names`."

@@ -197,7 +197,6 @@ pub const TYPE_BUILD: Domain = Domain {
         },
     ],
     custom_tu: Some("facade/type_build_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Parse `decl` against the local til and apply it at `ea`. `code` is `TYPE_OK`, \
          `_ERR_INPUT` (parse failed), or `_ERR_APPLY`."

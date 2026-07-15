@@ -49,7 +49,7 @@ rust::String func_name(uint64_t ea) {
   qstring out;
   if (get_func_name(&out, (ea_t)ea) <= 0)
     throw std::runtime_error("no function name at address");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 } // namespace idakit_gen

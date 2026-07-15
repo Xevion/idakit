@@ -20,9 +20,6 @@ pub struct Domain {
     /// Integer sentinels this domain declares, emitted as both a bare Rust `pub const` and a C++
     /// `constexpr` in the domain header.
     pub consts: &'static [ConstDef],
-    /// Raw C++ emitted `inline` into this domain's header, ahead of the fn decls: shared helpers
-    /// that both the generated bodies and the `custom_tu` call. `None` for self-contained bodies.
-    pub body_helpers: Option<&'static str>,
     /// The domain's functions.
     pub fns: &'static [FnSpec],
     /// A hand-written TU defining this domain's [`BodyKind::Custom`] bodies, if any.

@@ -39,7 +39,7 @@ rust::String strlit_contents(uint64_t ea, size_t len, int32_t strtype) {
   ssize_t r = get_strlit_contents(&out, (ea_t)ea, len, strtype, nullptr, STRCONV_REPLCHAR);
   if (r < 0)
     throw std::runtime_error("undecodable string literal");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 } // namespace idakit_gen

@@ -39,11 +39,7 @@ rust::Vec<uint8_t> get_bytes(uint64_t ea, size_t size) {
   int64_t r = (int64_t)::get_bytes(buf.data(), (ssize_t)size, (ea_t)ea, GMB_READALL);
   if (r < 0)
     throw std::runtime_error("get_bytes failed: unmapped range");
-  rust::Vec<uint8_t> out;
-  out.reserve(size);
-  for (size_t i = 0; i < size; i++)
-    out.push_back(buf[i]);
-  return out;
+  return to_rust_bytes(buf.data(), size);
 }
 
 uint8_t get_u8(uint64_t ea) {
@@ -78,7 +74,7 @@ rust::String get_strlit(uint64_t ea, int32_t strtype) {
   ssize_t r = get_strlit_contents(&out, (ea_t)ea, len, strtype, nullptr, STRCONV_REPLCHAR);
   if (r < 0)
     throw std::runtime_error("undecodable string literal");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 uint64_t get_flags(uint64_t ea) { return (uint64_t)::get_flags((ea_t)ea); }
@@ -99,7 +95,7 @@ rust::String get_cmt(uint64_t ea, bool rptble) {
   qstring out;
   if (::get_cmt(&out, (ea_t)ea, rptble) < 0)
     throw std::runtime_error("no comment at address");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 std::unique_ptr<::compiled_binpat_vec_t> binpat_compile(uint64_t ea, rust::Str pattern,

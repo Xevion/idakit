@@ -90,7 +90,7 @@ void fill_reg(RegisterData &r, int num, uint8_t cls, int width) {
   if ((num >= R_ax && num <= R_r15) || num == R_ip) {
     qstring nm;
     if (get_reg_name(&nm, num, width > 0 ? (size_t)width : 8) > 0)
-      r.name = rust::String(nm.c_str(), nm.length());
+      r.name = to_rust_string(nm);
   } else if (num >= 0 && num < PH.regs_num && PH.reg_names[num] != nullptr) {
     r.name = rust::String(PH.reg_names[num]);
   }

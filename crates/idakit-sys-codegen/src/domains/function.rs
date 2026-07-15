@@ -10,7 +10,6 @@ pub const FUNCTION: Domain = Domain {
     structs: &[],
     consts: &[],
     custom_tu: Some("facade/function_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Number of functions in the database (`get_func_qty`)."
             func_qty() -> Usize = scalar("get_func_qty()");

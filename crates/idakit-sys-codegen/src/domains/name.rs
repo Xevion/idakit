@@ -11,7 +11,6 @@ pub const NAME: Domain = Domain {
     structs: &[],
     consts: &[],
     custom_tu: Some("facade/name_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Name at address `ea`; `Err` when the address has none."
             get_ea_name(ea: U64) -> ResultString;

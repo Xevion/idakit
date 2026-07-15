@@ -19,7 +19,6 @@ pub const STRINGS: Domain = Domain {
     }],
     consts: &[],
     custom_tu: Some("facade/strings_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "(Re)build IDA's string list, an O(database) scan of the whole image."
             strlist_build();

@@ -29,7 +29,6 @@ pub const RANGE: Domain = Domain {
     }],
     consts: &[],
     custom_tu: Some("facade/range_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Entry chunk (index `0`) of the function containing `ea`, returned by value; `Err` when no \
          function is there."

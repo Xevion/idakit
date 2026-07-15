@@ -20,7 +20,6 @@ pub const REFERENCE: Domain = Domain {
     }],
     consts: &[],
     custom_tu: Some("facade/reference_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Every cross-reference edge at `ea` as an owned, `Send` snapshot: xrefs *to* `ea` when \
          `is_to`, else xrefs *from* it. Ordinary next-instruction flow edges are excluded \

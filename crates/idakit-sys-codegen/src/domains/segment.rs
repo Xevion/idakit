@@ -10,7 +10,6 @@ pub const SEGMENT: Domain = Domain {
     structs: &[],
     consts: &[],
     custom_tu: Some("facade/custom_escape_hatch.cc"),
-    body_helpers: None,
     fns: fns! {
         "Number of segments in the current database (`get_segm_qty`)."
             gen_seg_qty() -> Usize = scalar("get_segm_qty()");

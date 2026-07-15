@@ -22,7 +22,7 @@ rust::String proc_name() {
   qstring out = inf_get_procname();
   if (out.length() == 0)
     throw std::runtime_error("no processor name");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 rust::String file_type_name() {

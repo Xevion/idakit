@@ -17,7 +17,7 @@ rust::String func_type(uint64_t ea) {
   qstring out;
   if (!print_type(&out, (ea_t)ea, PRTYPE_1LINE | PRTYPE_SEMI))
     throw std::runtime_error("function has no type");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 rust::String type_name_at(uint32_t ordinal) {
@@ -25,7 +25,7 @@ rust::String type_name_at(uint32_t ordinal) {
   if (name == nullptr)
     throw std::runtime_error("no type at ordinal");
   qstring out(name);
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 } // namespace idakit_gen

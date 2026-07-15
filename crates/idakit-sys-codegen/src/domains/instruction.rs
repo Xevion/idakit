@@ -138,7 +138,6 @@ pub const INSTRUCTION: Domain = Domain {
         },
     ],
     custom_tu: Some("facade/instruction_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Decode the instruction at `ea`, folding raw operands into semantic kinds with resolved \
          register names and control-flow facts. Infallible at the boundary: the result code lands \

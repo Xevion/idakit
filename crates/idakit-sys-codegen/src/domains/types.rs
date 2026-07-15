@@ -11,7 +11,6 @@ pub const TY: Domain = Domain {
     structs: &[],
     consts: &[],
     custom_tu: Some("facade/ty_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it has no type."
             func_type(ea: U64) -> ResultString;

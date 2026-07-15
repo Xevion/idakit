@@ -30,6 +30,7 @@
 //! * `gen_<name>_bodies.cc`: one per domain with any templated bodies (omitted when all Custom).
 //! * `gen_facade_consts.h`: the `facade_consts` sentinels with no owning domain, for the raw
 //!   (non-domain) facade TUs.
+//! * `gen_helpers.h`: the shared qstring/byte marshalling helpers, included by every domain header.
 //! * `rust/cxx.h`: the `cxx` support header (`cxx_gen::HEADER`) for the body TUs.
 
 use std::path::{Path, PathBuf};
@@ -47,7 +48,7 @@ mod visitors;
 use domains::domains;
 use emit::{
     bridge_tokens, consts_tokens, facade_consts_header_source, facade_consts_tokens,
-    reexport_tokens,
+    helpers_header_source, reexport_tokens,
 };
 
 /// The generated body TUs (the `cxx-gen` glue plus each domain's templated bodies) that build.rs
@@ -100,6 +101,10 @@ pub fn generate(out_dir: &Path) {
         facade_consts_header_source(),
     )
     .expect("write gen_facade_consts.h");
+
+    // The shared qstring/byte marshalling helpers, included by every domain header.
+    std::fs::write(out_dir.join("gen_helpers.h"), helpers_header_source())
+        .expect("write gen_helpers.h");
 
     // C++ side: same tokens => matching shim symbol names on both sides.
     let opt = cxx_gen::Opt::default();

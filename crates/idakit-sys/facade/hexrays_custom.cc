@@ -91,7 +91,7 @@ rust::String render_pseudocode(cfunc_t *cf) {
     out.append(line);
     out.append('\n');
   }
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 } // namespace

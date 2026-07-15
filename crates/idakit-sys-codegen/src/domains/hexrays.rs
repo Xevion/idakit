@@ -53,7 +53,6 @@ pub const HEXRAYS: Domain = Domain {
     ],
     consts: &[],
     custom_tu: Some("facade/hexrays_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Decompile the function at `ea` into a heap `cfuncptr_t` owned by a \
          [`UniquePtr`](cxx::UniquePtr) (one owned ref); `Err` on any decompile failure. Wrapped in \

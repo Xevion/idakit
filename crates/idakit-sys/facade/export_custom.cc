@@ -26,14 +26,14 @@ rust::String export_name(size_t idx) {
   qstring out;
   if (get_entry_name(&out, get_entry_ordinal(idx)) <= 0)
     throw std::runtime_error("no export name at index");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 rust::String export_forwarder(size_t idx) {
   qstring out;
   if (get_entry_forwarder(&out, get_entry_ordinal(idx)) <= 0)
     throw std::runtime_error("no export forwarder at index");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 } // namespace idakit_gen

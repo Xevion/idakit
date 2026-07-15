@@ -3,11 +3,26 @@
 
 use std::fmt::Write as _;
 
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use super::domains::domains;
 use super::model::*;
+
+/// Group a non-negative decimal digit string into underscore-separated triples from the right
+/// (`18446744073709551615` -> `18_446_744_073_709_551_615`), so a wide generated literal reads
+/// like a hand-written one and never trips `clippy::unreadable_literal`.
+fn group_digits(digits: &str) -> String {
+    let n = digits.len();
+    let mut out = String::with_capacity(n + n / 3);
+    for (i, c) in digits.char_indices() {
+        if i > 0 && (n - i).is_multiple_of(3) {
+            out.push('_');
+        }
+        out.push(c);
+    }
+    out
+}
 
 impl ConstTy {
     pub(crate) fn rust(self) -> TokenStream {
@@ -35,30 +50,17 @@ impl ConstTy {
 }
 
 impl ConstDef {
-    /// This const's Rust magnitude literal: `value`'s absolute value, narrowed to an unsigned
-    /// width wide enough for `ty` (an `as` truncation), so a negative `I32`/`I64` value's
-    /// magnitude never overflows the signed type it's cast from (`i32::MIN`'s magnitude needs a
-    /// `u32`, not an `i32`).
-    fn rust_magnitude_literal(&self) -> Literal {
-        let magnitude = self.value.unsigned_abs();
-        match self.ty {
-            ConstTy::U8 => Literal::u8_unsuffixed(magnitude as u8),
-            ConstTy::U16 => Literal::u16_unsuffixed(magnitude as u16),
-            ConstTy::U32 | ConstTy::I32 => Literal::u32_unsuffixed(magnitude as u32),
-            ConstTy::U64 | ConstTy::I64 => Literal::u64_unsuffixed(magnitude as u64),
-            ConstTy::Usize => Literal::usize_unsuffixed(magnitude as usize),
-        }
-    }
-
-    /// This const's Rust value expression: the magnitude literal, prefixed with a unary `-`
-    /// token when negative. `proc_macro2::Literal` has no literal token for a negative number,
-    /// so the sign rides a separate token ahead of the (always non-negative) literal.
+    /// This const's Rust value expression: the magnitude's grouped-digit literal, prefixed with a
+    /// unary `-` token when negative (a bare literal token can't be negative, so the sign rides
+    /// ahead of the always-non-negative magnitude). The `: ty` annotation on the emitted item
+    /// pins the width, so an unsuffixed literal suffices.
     fn rust_value_tokens(&self) -> TokenStream {
-        let magnitude = self.rust_magnitude_literal();
+        let grouped = group_digits(&self.value.unsigned_abs().to_string());
+        let magnitude: TokenStream = grouped.parse().expect("grouped digit literal parses");
         if self.value < 0 {
             quote!(-#magnitude)
         } else {
-            quote!(#magnitude)
+            magnitude
         }
     }
 
@@ -464,15 +466,11 @@ impl Domain {
         }
         // The custom trycatch (an idalib interr or a non-std throw becomes a Rust Err, not a
         // terminate) must be in scope in the generated .cc, which includes this header, so cxx's
-        // default is disabled; it pulls in rust/cxx.h itself.
-        s.push_str("\n#include \"idakit_trycatch.h\"\n\n");
+        // default is disabled; it pulls in rust/cxx.h itself. gen_helpers.h carries the shared
+        // qstring/byte marshalling helpers every body and custom_tu may call.
+        s.push_str("\n#include \"idakit_trycatch.h\"\n");
+        s.push_str("#include \"gen_helpers.h\"\n\n");
         let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
-        // Shared body helpers, `inline` so the generated body TU and the custom_tu can both call
-        // them.
-        if let Some(helpers) = self.body_helpers {
-            s.push_str(helpers);
-            s.push('\n');
-        }
         for c in self.consts {
             s.push_str(&c.cxx_lines());
         }
@@ -834,6 +832,34 @@ pub(crate) fn facade_consts_tokens() -> TokenStream {
         .iter()
         .map(ConstDef::rust_item_tokens_hidden);
     quote! { #(#public)* #(#hidden)* }
+}
+
+/// The shared marshalling helpers, `inline` so every TU that includes a domain header defines
+/// them at most once yet links to one body. Both the generated bodies and the hand-written
+/// `custom_tu`s call these to copy a filled `qstring` / byte buffer out as its owning Rust type.
+const HELPERS: &str = "\
+// Copy a filled qstring / byte buffer out as the owning Rust type in one crossing.
+inline rust::String to_rust_string(const qstring &s) { return rust::String(s.c_str(), s.length()); }
+
+inline rust::Vec<uint8_t> to_rust_bytes(const uint8_t *data, size_t n) {
+  rust::Vec<uint8_t> out;
+  out.reserve(n);
+  for (size_t i = 0; i < n; i++)
+    out.push_back(data[i]);
+  return out;
+}
+";
+
+/// The standalone `gen_helpers.h`: the shared [`HELPERS`] in the `idakit_gen` namespace, included
+/// by every domain header (so every generated body and `custom_tu` gets them without a per-domain
+/// opt-in). Self-contained: pulls in `qstring` and the `rust::` types it names.
+pub(crate) fn helpers_header_source() -> String {
+    let mut s = String::from("#pragma once\n\n#include <cstddef>\n#include <cstdint>\n\n");
+    s.push_str("#include <pro.h>\n\n#include \"rust/cxx.h\"\n\n");
+    let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
+    s.push_str(HELPERS);
+    let _ = write!(s, "\n}} // namespace {NAMESPACE}\n");
+    s
 }
 
 /// The standalone `gen_facade_consts.h`: every [`super::facade_consts::FACADE_CONSTS`] and

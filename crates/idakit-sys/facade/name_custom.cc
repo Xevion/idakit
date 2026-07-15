@@ -22,7 +22,7 @@ rust::String get_ea_name(uint64_t ea) {
   qstring out;
   if (::get_ea_name(&out, (ea_t)ea) <= 0)
     throw std::runtime_error("no name at address");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 uint64_t get_name_ea(rust::Str name) {
@@ -36,7 +36,7 @@ rust::String demangle_name(rust::Str name) {
   ::demangle_name(&out, std::string(name.data(), name.size()).c_str(), 0);
   if (out.empty())
     throw std::runtime_error("name is not mangled");
-  return rust::String(out.c_str(), out.length());
+  return to_rust_string(out);
 }
 
 size_t nlist_size() { return ::get_nlist_size(); }

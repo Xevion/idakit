@@ -29,7 +29,6 @@ pub const BYTES: Domain = Domain {
     }],
     consts: &[],
     custom_tu: Some("facade/bytes_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "The `size` bytes at `ea` as an owned `Vec<u8>`; `Err` when the range is not fully mapped."
             get_bytes(ea: U64, size: Usize) -> ResultVecU8;

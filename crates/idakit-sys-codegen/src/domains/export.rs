@@ -10,7 +10,6 @@ pub const EXPORT: Domain = Domain {
     structs: &[],
     consts: &[],
     custom_tu: Some("facade/export_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Number of exported entry points in the database (`get_entry_qty`)."
             export_qty() -> Usize = scalar("get_entry_qty()");

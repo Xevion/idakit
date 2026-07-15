@@ -10,7 +10,6 @@ pub const META: Domain = Domain {
     structs: &[],
     consts: &[],
     custom_tu: Some("facade/meta_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Application bitness (`inf_get_app_bitness`): 16, 32, or 64."
             bitness() -> I32;

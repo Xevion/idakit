@@ -3,8 +3,8 @@
 // over a single nodeidx_t id, so each body reconstructs `netnode n(node)` and drives its inline
 // methods. rust::Str keys are NOT NUL-terminated, so they pass through std::string before reaching a
 // `const char *` parameter. The combinatorial array-family bodies live in the generated
-// gen_netnode_bodies.cc; the to_rust_string / to_rust_bytes helpers both call are inline in
-// gen_netnode.h.
+// gen_netnode_bodies.cc; the to_rust_string / to_rust_bytes helpers both call are inline in the
+// shared gen_helpers.h (pulled in by gen_netnode.h).
 
 #include <pro.h>
 #include <ida.hpp>

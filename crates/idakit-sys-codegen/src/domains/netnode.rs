@@ -12,21 +12,6 @@ use std::sync::OnceLock;
 
 use super::super::model::{Arg, ArgTy, BodyKind, Domain, FnSpec, RetKind, RetShape};
 
-/// C++ helpers the generated bodies and the hand-written `custom_tu` both call, emitted `inline`
-/// into the domain header so both translation units share one definition.
-const BODY_HELPERS: &str = "\
-// Copy a filled qstring / byte buffer out as the owning Rust type in one crossing.
-inline rust::String to_rust_string(const qstring &s) { return rust::String(s.c_str(), s.length()); }
-
-inline rust::Vec<uint8_t> to_rust_bytes(const uint8_t *data, size_t n) {
-  rust::Vec<uint8_t> out;
-  out.reserve(n);
-  for (size_t i = 0; i < n; i++)
-    out.push_back(data[i]);
-  return out;
-}
-";
-
 /// A rendered netnode body: reconstruct `n` from the `node` id, then run `stmts` (each line already
 /// indented and newline-terminated). Every generated body opens the same way.
 fn nn_body(stmts: &str) -> String {
@@ -565,7 +550,6 @@ pub fn domain() -> &'static Domain {
             externs: &[],
             structs: &[],
             consts: &[],
-            body_helpers: Some(BODY_HELPERS),
             custom_tu: Some("facade/netnode_custom.cc"),
             fns: Box::leak(fns.into_boxed_slice()),
         }

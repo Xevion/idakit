@@ -30,7 +30,6 @@ pub const CFG: Domain = Domain {
     }],
     consts: &[],
     custom_tu: Some("facade/cfg_custom.cc"),
-    body_helpers: None,
     fns: fns! {
         "Build the flow chart for the function containing `ea`; `Err` when no function is there. \
          Runs analysis, so it can also fail from a thrown SDK exception."
