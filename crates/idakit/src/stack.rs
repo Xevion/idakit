@@ -251,11 +251,11 @@ impl Database {
             .map(|v| StackSlot {
                 offset: v.offset,
                 size: v.size,
-                // A reserved/untyped slot reports IDAKIT_NONE; only a real variable carries a type.
+                // A reserved/untyped slot reports NONE; only a real variable carries a type.
                 kind: StackSlotKind::from_parts(
                     sys::FrameVarFlags::from_bits_retain(v.flags),
                     v.name,
-                    (v.ty != sys::IDAKIT_NONE).then(|| tid(v.ty)),
+                    (v.ty != sys::NONE).then(|| tid(v.ty)),
                 ),
             })
             .collect();

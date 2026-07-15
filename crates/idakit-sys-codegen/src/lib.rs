@@ -28,6 +28,8 @@
 //! * `gen_bridge.cc` / `gen_bridge.h`: the `cxx` shim glue from `cxx-gen`.
 //! * `gen_<name>.h`: one per domain, the real C++ declarations the bodies define.
 //! * `gen_<name>_bodies.cc`: one per domain with any templated bodies (omitted when all Custom).
+//! * `gen_facade_consts.h`: the `facade_consts` sentinels with no owning domain, for the raw
+//!   (non-domain) facade TUs.
 //! * `rust/cxx.h`: the `cxx` support header (`cxx_gen::HEADER`) for the body TUs.
 
 use std::path::{Path, PathBuf};
@@ -39,10 +41,14 @@ mod emit;
 mod model;
 
 mod domains;
+mod facade_consts;
 mod visitors;
 
 use domains::domains;
-use emit::{bridge_tokens, consts_tokens, reexport_tokens};
+use emit::{
+    bridge_tokens, consts_tokens, facade_consts_header_source, facade_consts_tokens,
+    reexport_tokens,
+};
 
 /// The generated body TUs (the `cxx-gen` glue plus each domain's templated bodies) that build.rs
 /// must compile.
@@ -83,7 +89,17 @@ pub fn generate(out_dir: &Path) {
     rust.push_str(&reexport_tokens().to_string());
     rust.push('\n');
     rust.push_str(&consts_tokens().to_string());
+    rust.push('\n');
+    rust.push_str(&facade_consts_tokens().to_string());
     std::fs::write(out_dir.join("gen_bridge.rs"), rust).expect("write gen_bridge.rs");
+
+    // The sentinels with no owning domain (visitor "absent child", fatal-exit trap), for the raw
+    // facade TUs that need them but include no per-domain header.
+    std::fs::write(
+        out_dir.join("gen_facade_consts.h"),
+        facade_consts_header_source(),
+    )
+    .expect("write gen_facade_consts.h");
 
     // C++ side: same tokens => matching shim symbol names on both sides.
     let opt = cxx_gen::Opt::default();

@@ -35,27 +35,78 @@ impl ConstTy {
 }
 
 impl ConstDef {
-    /// This const's Rust literal, narrowed to `ty`'s exact width (an `as` truncation of `value`)
-    /// so it round-trips through the `: <ty>` annotation on the generated `pub const`.
-    fn rust_literal(&self) -> Literal {
+    /// This const's Rust magnitude literal: `value`'s absolute value, narrowed to an unsigned
+    /// width wide enough for `ty` (an `as` truncation), so a negative `I32`/`I64` value's
+    /// magnitude never overflows the signed type it's cast from (`i32::MIN`'s magnitude needs a
+    /// `u32`, not an `i32`).
+    fn rust_magnitude_literal(&self) -> Literal {
+        let magnitude = self.value.unsigned_abs();
         match self.ty {
-            ConstTy::U8 => Literal::u8_unsuffixed(self.value as u8),
-            ConstTy::U16 => Literal::u16_unsuffixed(self.value as u16),
-            ConstTy::U32 => Literal::u32_unsuffixed(self.value as u32),
-            ConstTy::U64 => Literal::u64_unsuffixed(self.value as u64),
-            ConstTy::Usize => Literal::usize_unsuffixed(self.value as usize),
-            ConstTy::I32 => Literal::i32_unsuffixed(self.value as i32),
-            ConstTy::I64 => Literal::i64_unsuffixed(self.value as i64),
+            ConstTy::U8 => Literal::u8_unsuffixed(magnitude as u8),
+            ConstTy::U16 => Literal::u16_unsuffixed(magnitude as u16),
+            ConstTy::U32 | ConstTy::I32 => Literal::u32_unsuffixed(magnitude as u32),
+            ConstTy::U64 | ConstTy::I64 => Literal::u64_unsuffixed(magnitude as u64),
+            ConstTy::Usize => Literal::usize_unsuffixed(magnitude as usize),
+        }
+    }
+
+    /// This const's Rust value expression: the magnitude literal, prefixed with a unary `-`
+    /// token when negative. `proc_macro2::Literal` has no literal token for a negative number,
+    /// so the sign rides a separate token ahead of the (always non-negative) literal.
+    fn rust_value_tokens(&self) -> TokenStream {
+        let magnitude = self.rust_magnitude_literal();
+        if self.value < 0 {
+            quote!(-#magnitude)
+        } else {
+            quote!(#magnitude)
+        }
+    }
+
+    /// This const's crate-root Rust item: `#[doc = ...] pub const NAME: ty = value;`.
+    fn rust_item_tokens(&self) -> TokenStream {
+        self.rust_item_tokens_impl(false)
+    }
+
+    /// Like [`Self::rust_item_tokens`], but adds `#[doc(hidden)]` -- for a sentinel that exists
+    /// only for test-only fault injection and must stay off the public API, matching the
+    /// hand-written const it replaced.
+    fn rust_item_tokens_hidden(&self) -> TokenStream {
+        self.rust_item_tokens_impl(true)
+    }
+
+    fn rust_item_tokens_impl(&self, hidden: bool) -> TokenStream {
+        let name = format_ident!("{}", self.name);
+        let ty = self.ty.rust();
+        let value = self.rust_value_tokens();
+        let doc = self.doc;
+        let hidden = hidden.then(|| quote!(#[doc(hidden)]));
+        quote! {
+            #[doc = #doc]
+            #hidden
+            pub const #name: #ty = #value;
         }
     }
 
     /// This const's C++ literal: a `ULL` suffix on `U64` (plain decimal overflows `int` in C++
-    /// otherwise), plain decimal for every narrower width.
+    /// otherwise), plain decimal for every narrower width. A negative value's `-` prints as part
+    /// of `i128`'s `Display`, valid C++ as a unary minus applied to the magnitude literal.
     fn cxx_literal(&self) -> String {
         match self.ty {
             ConstTy::U64 => format!("{}ULL", self.value),
             _ => self.value.to_string(),
         }
+    }
+
+    /// This const's lines in a generated C++ header: a `//` doc comment, then the `constexpr`
+    /// declaration.
+    fn cxx_lines(&self) -> String {
+        format!(
+            "// {}\nconstexpr {} {} = {};\n",
+            self.doc,
+            self.ty.cxx(),
+            self.name,
+            self.cxx_literal()
+        )
     }
 }
 
@@ -423,14 +474,7 @@ impl Domain {
             s.push('\n');
         }
         for c in self.consts {
-            let _ = writeln!(s, "// {}", c.doc);
-            let _ = writeln!(
-                s,
-                "constexpr {} {} = {};",
-                c.ty.cxx(),
-                c.name,
-                c.cxx_literal()
-            );
+            s.push_str(&c.cxx_lines());
         }
         if !self.consts.is_empty() {
             s.push('\n');
@@ -770,15 +814,42 @@ pub(crate) fn reexport_tokens() -> TokenStream {
 /// spec'd sentinel. Lives outside the bridge module (`cxx` bridges can't hold `const` items),
 /// appended to `gen_bridge.rs` alongside [`reexport_tokens`].
 pub(crate) fn consts_tokens() -> TokenStream {
-    let consts = domains().iter().flat_map(|d| d.consts.iter()).map(|c| {
-        let name = format_ident!("{}", c.name);
-        let ty = c.ty.rust();
-        let lit = c.rust_literal();
-        let doc = c.doc;
-        quote! {
-            #[doc = #doc]
-            pub const #name: #ty = #lit;
-        }
-    });
+    let consts = domains()
+        .iter()
+        .flat_map(|d| d.consts.iter())
+        .map(ConstDef::rust_item_tokens);
     quote! { #(#consts)* }
+}
+
+/// The crate-root `pub const`s for [`super::facade_consts::FACADE_CONSTS`] and
+/// [`super::facade_consts::HIDDEN_FACADE_CONSTS`], the sentinels that belong to no single domain
+/// (the visitor bridge's absent-child marker, the fatal-exit trap). The hidden list's items carry
+/// `#[doc(hidden)]`; the C++ face (`facade_consts_header_source`) makes no such distinction.
+/// Appended to `gen_bridge.rs` alongside [`consts_tokens`].
+pub(crate) fn facade_consts_tokens() -> TokenStream {
+    let public = super::facade_consts::FACADE_CONSTS
+        .iter()
+        .map(ConstDef::rust_item_tokens);
+    let hidden = super::facade_consts::HIDDEN_FACADE_CONSTS
+        .iter()
+        .map(ConstDef::rust_item_tokens_hidden);
+    quote! { #(#public)* #(#hidden)* }
+}
+
+/// The standalone `gen_facade_consts.h`: every [`super::facade_consts::FACADE_CONSTS`] and
+/// [`super::facade_consts::HIDDEN_FACADE_CONSTS`] sentinel as a `constexpr` in the `idakit_gen`
+/// namespace, for the raw (non-domain) facade TUs that need one (`runtime.cpp`, `probe_cxx.cc`,
+/// the visitor bridge's `ctree_cxx.cc`/`typewalk_cxx.cc`).
+pub(crate) fn facade_consts_header_source() -> String {
+    let mut s = String::new();
+    s.push_str("#pragma once\n\n#include <cstdint>\n\n");
+    let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
+    for c in super::facade_consts::FACADE_CONSTS
+        .iter()
+        .chain(super::facade_consts::HIDDEN_FACADE_CONSTS)
+    {
+        s.push_str(&c.cxx_lines());
+    }
+    let _ = write!(s, "\n}} // namespace {NAMESPACE}\n");
+    s
 }

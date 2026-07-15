@@ -39,6 +39,7 @@
 #include <sys/mman.h> // mprotect
 #endif
 
+#include "gen_facade_consts.h" // idakit_gen::EXIT_TRAPPED, idakit_gen::FATAL_*
 #include "idakit_facade_internal.hpp"
 
 // pro.h poisons libc calls (#define fflush/setenv/... to dont_use_ names) to push callers
@@ -397,22 +398,22 @@ extern "C" int init_headless(void) {
 // nonzero -> suppress dialogs / auto-answer prompts (headless default); zero -> interactive.
 extern "C" void set_batch(int on) { batch = on != 0; }
 
-// Returns open_database's rc, or IDAKIT_EXIT_TRAPPED if the kernel tried to exit() during
+// Returns open_database's rc, or EXIT_TRAPPED if the kernel tried to exit() during
 // the call (then last_exit_code()/last_output() carry the detail).
 extern "C" int guarded_open(const char *file_path, int run_auto) {
-  return guarded<int>(IDAKIT_EXIT_TRAPPED, true,
+  return guarded<int>(idakit_gen::EXIT_TRAPPED, true,
                       [&] { return open_database(file_path, run_auto != 0, nullptr); });
 }
 
-// Guarded auto-analysis wait: 1 on success, 0 on failure, IDAKIT_EXIT_TRAPPED on a trapped
+// Guarded auto-analysis wait: 1 on success, 0 on failure, EXIT_TRAPPED on a trapped
 // fatal. Analysis can run arbitrary kernel code, so it gets the same protection as open.
 extern "C" int guarded_auto_wait(void) {
-  return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [] { return auto_wait() ? 1 : 0; });
+  return guarded<int>(idakit_gen::EXIT_TRAPPED, false, [] { return auto_wait() ? 1 : 0; });
 }
 
-// Guarded close: 0 normally, IDAKIT_EXIT_TRAPPED if a fatal fired while flushing/saving.
+// Guarded close: 0 normally, EXIT_TRAPPED if a fatal fired while flushing/saving.
 extern "C" int guarded_close(int save) {
-  return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [&] {
+  return guarded<int>(idakit_gen::EXIT_TRAPPED, false, [&] {
     close_database(save != 0);
     return 0;
   });
@@ -449,12 +450,12 @@ extern "C" size_t last_output(char *buf, size_t cap) {
 // Run the chosen fatal inside guarded<> so the trap tests can prove it's caught: the exit/abort
 // stand-ins libida's redirected GOT slots point at (the longjmp path), or interr (the throw path).
 extern "C" int test_fatal(int kind) {
-  return guarded<int>(IDAKIT_EXIT_TRAPPED, false, [kind]() -> int {
-    if (kind == IDAKIT_FATAL_EXIT)
+  return guarded<int>(idakit_gen::EXIT_TRAPPED, false, [kind]() -> int {
+    if (kind == idakit_gen::FATAL_EXIT)
       idakit_exit(42);
-    else if (kind == IDAKIT_FATAL_ABORT)
+    else if (kind == idakit_gen::FATAL_ABORT)
       idakit_abort();
-    else if (kind == IDAKIT_FATAL_INTERR)
+    else if (kind == idakit_gen::FATAL_INTERR)
       interr(1);
     return 0;
   });
@@ -467,10 +468,10 @@ extern "C" int get_batch(void) { return batch ? 1 : 0; }
 // reach them directly; it calls here instead. exit/abort take the longjmp path; interr throws
 // (set_interr_throws, armed by guarded<>).
 extern "C" void trigger_fatal(int kind) {
-  if (kind == IDAKIT_FATAL_EXIT)
+  if (kind == idakit_gen::FATAL_EXIT)
     idakit_exit(42);
-  else if (kind == IDAKIT_FATAL_ABORT)
+  else if (kind == idakit_gen::FATAL_ABORT)
     idakit_abort();
-  else if (kind == IDAKIT_FATAL_INTERR)
+  else if (kind == idakit_gen::FATAL_INTERR)
     interr(1);
 }

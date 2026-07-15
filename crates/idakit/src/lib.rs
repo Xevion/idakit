@@ -311,7 +311,7 @@ impl Database {
     ) -> Result<()> {
         let path = path.as_ref();
         let rc = ffi::with_cstr(path, "path", |p| self.open_database(p, run_auto))?;
-        if rc == sys::IDAKIT_EXIT_TRAPPED {
+        if rc == sys::EXIT_TRAPPED {
             // IDA hit an unrecoverable condition and tried to terminate the process; the
             // facade trapped the exit() and handed control back, with whatever it printed.
             return Err(self.kernel_exit_error());
@@ -329,7 +329,7 @@ impl Database {
         }
         // run_auto only enables the analysis queue; block until it drains so callers
         // observe a fully analyzed database. Analysis runs kernel code, so it can trap too.
-        if run_auto && self.auto_wait() == sys::IDAKIT_EXIT_TRAPPED {
+        if run_auto && self.auto_wait() == sys::EXIT_TRAPPED {
             return Err(self.kernel_exit_error());
         }
         Ok(())

@@ -14,15 +14,16 @@
 //!
 //! # Surface
 //!
-//! The declarations are split into per-domain source modules (`runtime`, `function`, `bytes`,
-//! `bridge_visitors`, ...) that mirror the facade's translation units, but every item is re-exported
-//! flat at the crate root, so the public surface is a single namespace
-//! (`idakit_sys::idakit_get_bytes`, `idakit_sys::CtreeVisitor`), not a module hierarchy. Three kinds
+//! The declarations are split into per-domain source modules (`runtime`, `bytes`, `function_flags`,
+//! `instruction`, `bridge_visitors`, ...) that mirror the facade's translation units, but every item
+//! is re-exported flat at the crate root, so the public surface is a single namespace
+//! (`idakit_sys::guarded_open`, `idakit_sys::CtreeVisitor`), not a module hierarchy. Three kinds
 //! of item live here:
 //!
-//! - **Raw C bindings**: `extern "C"` declarations of the facade's own functions (prefixed
-//!   `idakit_`) and the idalib/IDA symbols they sit beside (`open_database`, `set_name`), plus the
-//!   `#[repr(C)]` structs and sentinel constants they exchange.
+//! - **Raw C bindings**: `extern "C"` declarations of the facade's own functions (`guarded_open`,
+//!   `get_bytes_into`, ...) sharing the flat namespace with the idalib/IDA symbols they sit beside
+//!   (`open_database`, `set_name`), plus the `#[repr(C)]` structs and sentinel constants they
+//!   exchange.
 //! - **`cxx` bridges**: the spec-generated bridge (from the `idakit-sys-codegen` engine) and its
 //!   hand-written companions, returning structured values, owning handles as `UniquePtr<T>`, or
 //!   driving a walk through an opaque visitor ([`CtreeVisitor`], [`TypeWalkVisitor`]).

@@ -1,4 +1,7 @@
-//! The spec-generated `cxx` bridge, `include!`d from `$OUT_DIR/gen_bridge.rs` (written by the `idakit-sys-codegen` crate's `emit` engine from its `domains` manifest, including the `netnode` matrix).
+//! The spec-generated `cxx` bridge, `include!`d from `$OUT_DIR/gen_bridge.rs`.
+//!
+//! Written by the `idakit-sys-codegen` crate's `emit` engine from its `domains` manifest,
+//! including the `netnode` matrix.
 
 // cxx::bridge auto-derives Clone/Debug/etc. for each shared struct it declares, and that
 // generated code trips unused_qualifications on the struct's own name; scoped here since the

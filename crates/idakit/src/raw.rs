@@ -70,7 +70,7 @@ impl Database {
     /// Opens via the facade's guarded wrapper.
     ///
     /// IDA's fatal `exit()` path (an unaccepted license, a corrupt input it refuses) is
-    /// trapped and surfaced as the [`sys::IDAKIT_EXIT_TRAPPED`] sentinel instead of killing
+    /// trapped and surfaced as the [`sys::EXIT_TRAPPED`] sentinel instead of killing
     /// the process.
     pub(crate) fn open_database(&mut self, path: *const c_char, run_auto: bool) -> c_int {
         unsafe { sys::guarded_open(path, run_auto as c_int) }
@@ -95,7 +95,7 @@ impl Database {
 
     /// Blocks until the auto-analysis queue drains. Only meaningful after an
     /// `open_database(run_auto = true)`, which enables but does not await analysis.
-    /// Guarded: returns [`sys::IDAKIT_EXIT_TRAPPED`] if analysis hit a fatal exit().
+    /// Guarded: returns [`sys::EXIT_TRAPPED`] if analysis hit a fatal exit().
     pub(crate) fn auto_wait(&self) -> c_int {
         unsafe { sys::guarded_auto_wait() }
     }

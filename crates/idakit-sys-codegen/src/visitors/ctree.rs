@@ -61,16 +61,16 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
         "A pointer dereference of the already-visited `x`, `size` bytes; returns its handle."
             e_deref(ea: U64, x: U32, size: U32, ty: U32);
         "A generic operator node (binary/assign/unary/ternary/cast/index/sizeof/empty/type/insn); \
-         the raw `ctype_t` is passed for the sink to classify, absent operands as `IDAKIT_NONE`; \
+         the raw `ctype_t` is passed for the sink to classify, absent operands as `NONE`; \
          returns its handle."
             e_op(ea: U64, ctype: U32, x: U32, y: U32, z: U32, ty: U32);
         "A `{ ... }` block of the already-visited `kids`; returns its handle."
             s_block(ea: U64, kids: SliceU32);
         "An expression statement wrapping the already-visited `e`; returns its handle."
             s_expr(ea: U64, e: U32);
-        "An `if`/`then`/`else` (else is `IDAKIT_NONE` when absent); returns its handle."
+        "An `if`/`then`/`else` (else is `NONE` when absent); returns its handle."
             s_if(ea: U64, cond: U32, then_s: U32, else_s: U32);
-        "A `for` loop; any of `init`/`cond`/`step` may be `IDAKIT_NONE`; returns its handle."
+        "A `for` loop; any of `init`/`cond`/`step` may be `NONE`; returns its handle."
             s_for(ea: U64, init: U32, cond: U32, step: U32, body: U32);
         "A `while` loop; returns its handle."
             s_while(ea: U64, cond: U32, body: U32);
@@ -85,7 +85,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
             s_break(ea: U64);
         "A `continue`; returns its handle."
             s_continue(ea: U64);
-        "A `return`, or a bare `return;` when `e` is `IDAKIT_NONE`; returns its handle."
+        "A `return`, or a bare `return;` when `e` is `NONE`; returns its handle."
             s_return(ea: U64, e: U32);
         "A `goto` to `label`; returns its handle."
             s_goto(ea: U64, label: I32);
@@ -94,7 +94,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
         "A `try`/`catch`, the already-visited guarded `body` and each `catches` block; returns its \
          handle."
             s_try(ea: U64, body: U32, catches: SliceU32);
-        "A `throw`, or a bare `throw;` when `e` is `IDAKIT_NONE`; returns its handle."
+        "A `throw`, or a bare `throw;` when `e` is `NONE`; returns its handle."
             s_throw(ea: U64, e: U32);
         "An empty statement (or any statement kind the walk doesn't otherwise model); returns its \
          handle."

@@ -22,14 +22,11 @@
 // The generated visitor-bridge header defines the CtreeVisitor class (its member functions) and
 // the LocPiece shared struct. OUT_DIR is on this TU's include path.
 #include "gen_visitors.h"
+#include "gen_facade_consts.h" // idakit_gen::NONE
 
 namespace idakit_cxx {
 
 namespace {
-
-// Hand-maintained ABI sentinel, kept in lockstep with typewalk_cxx.cc's local NONE and Rust's
-// sys::IDAKIT_NONE; no shared codegen pins the three together.
-constexpr uint32_t IDAKIT_NONE = 0xFFFFFFFFu;
 
 rust::Slice<const uint8_t> bytes_of(const char *p, size_t n) {
   return rust::Slice<const uint8_t>(reinterpret_cast<const uint8_t *>(p), n);
@@ -107,16 +104,16 @@ struct walker_t {
     default: {
       // Binary/assign/unary/ternary/cast/index/sizeof/empty/type/insn: operands by the
       // SDK's own predicates, ctype passed raw for the Rust side to classify.
-      uint32_t x = op_uses_x(e->op) ? expr(e->x) : IDAKIT_NONE;
-      uint32_t y = op_uses_y(e->op) ? expr(e->y) : IDAKIT_NONE;
-      uint32_t z = op_uses_z(e->op) ? expr(e->z) : IDAKIT_NONE;
+      uint32_t x = op_uses_x(e->op) ? expr(e->x) : idakit_gen::NONE;
+      uint32_t y = op_uses_y(e->op) ? expr(e->y) : idakit_gen::NONE;
+      uint32_t z = op_uses_z(e->op) ? expr(e->z) : idakit_gen::NONE;
       return nodes->e_op(ea, (uint32_t)e->op, x, y, z, t);
     }
     }
   }
 
   uint32_t opt_expr(const cexpr_t *e) {
-    return (e == nullptr || e->op == cot_empty) ? IDAKIT_NONE : expr(e);
+    return (e == nullptr || e->op == cot_empty) ? idakit_gen::NONE : expr(e);
   }
 
   uint32_t block(const cinsn_list_t &list, ea_t ea) {
@@ -137,7 +134,7 @@ struct walker_t {
     case cit_if: {
       uint32_t c = expr(&i->cif->expr);
       uint32_t th = stmt(i->cif->ithen);
-      uint32_t el = i->cif->ielse != nullptr ? stmt(i->cif->ielse) : IDAKIT_NONE;
+      uint32_t el = i->cif->ielse != nullptr ? stmt(i->cif->ielse) : idakit_gen::NONE;
       return nodes->s_if(ea, c, th, el);
     }
     case cit_for: {

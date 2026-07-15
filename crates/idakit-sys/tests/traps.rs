@@ -1,26 +1,26 @@
 //! The fatal-trap mechanism in isolation. [`test_fatal`] runs a chosen fatal inside the
-//! facade's `guarded<>` wrapper; the trap must convert it to [`IDAKIT_EXIT_TRAPPED`] rather than
-//! terminate the process. nextest isolates each test in its own process, so a fatal that escapes
-//! the trap fails only that test.
+//! facade's `guarded<>` wrapper; the trap must convert it to [`idakit_sys::EXIT_TRAPPED`] rather
+//! than terminate the process. nextest isolates each test in its own process, so a fatal that
+//! escapes the trap fails only that test.
 
 use idakit_sys::{
-    IDAKIT_EXIT_TRAPPED, IDAKIT_FATAL_ABORT, IDAKIT_FATAL_EXIT, IDAKIT_FATAL_INTERR,
-    drop_probe_count, drop_probe_make, ext_throw_coded, ext_throw_interr, ext_throw_plain_int,
-    probe_throw, test_fatal, test_fatal_through_cxx,
+    EXIT_TRAPPED, FATAL_ABORT, FATAL_EXIT, FATAL_INTERR, drop_probe_count, drop_probe_make,
+    ext_throw_coded, ext_throw_interr, ext_throw_plain_int, probe_throw, test_fatal,
+    test_fatal_through_cxx,
 };
 
 #[test]
 fn exit_inside_guarded_call_is_trapped() {
     // SAFETY: the shim calls exit() inside guarded<>; the trap longjmps back instead of exiting.
-    let rc = unsafe { test_fatal(IDAKIT_FATAL_EXIT) };
-    assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
+    let rc = unsafe { test_fatal(FATAL_EXIT) };
+    assert_eq!(rc, EXIT_TRAPPED);
 }
 
 #[test]
 fn abort_inside_guarded_call_is_trapped() {
     // SAFETY: the shim calls abort() inside guarded<>; the trap longjmps back instead of aborting.
-    let rc = unsafe { test_fatal(IDAKIT_FATAL_ABORT) };
-    assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
+    let rc = unsafe { test_fatal(FATAL_ABORT) };
+    assert_eq!(rc, EXIT_TRAPPED);
 }
 
 // Unlike exit/abort (trapped by the shim's direct longjmp), interr relies on idalib throwing
@@ -34,8 +34,8 @@ fn abort_inside_guarded_call_is_trapped() {
 fn interr_inside_guarded_call_is_trapped() {
     // SAFETY: the shim calls interr() inside guarded<>; set_interr_throws makes it a catchable
     // interr_exc_t, so the guard returns instead of terminating.
-    let rc = unsafe { test_fatal(IDAKIT_FATAL_INTERR) };
-    assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
+    let rc = unsafe { test_fatal(FATAL_INTERR) };
+    assert_eq!(rc, EXIT_TRAPPED);
 }
 
 // Force the dangerous topology the ordinary trap tests never hit: a
@@ -49,15 +49,15 @@ fn interr_inside_guarded_call_is_trapped() {
 fn exit_longjmp_across_cxx_shim_is_trapped() {
     // SAFETY: the guard arms guarded<>, then reaches exit() through the cxx shim; the trap
     // longjmps back across that shim frame instead of exiting.
-    let rc = unsafe { test_fatal_through_cxx(IDAKIT_FATAL_EXIT) };
-    assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
+    let rc = unsafe { test_fatal_through_cxx(FATAL_EXIT) };
+    assert_eq!(rc, EXIT_TRAPPED);
 }
 
 #[test]
 fn abort_longjmp_across_cxx_shim_is_trapped() {
     // SAFETY: as above, for the abort() path.
-    let rc = unsafe { test_fatal_through_cxx(IDAKIT_FATAL_ABORT) };
-    assert_eq!(rc, IDAKIT_EXIT_TRAPPED);
+    let rc = unsafe { test_fatal_through_cxx(FATAL_ABORT) };
+    assert_eq!(rc, EXIT_TRAPPED);
 }
 
 // An interr is a *throw* (interr_exc_t : std::exception), not a longjmp. Fired below a cxx shim,
@@ -72,8 +72,8 @@ fn abort_longjmp_across_cxx_shim_is_trapped() {
 )]
 fn interr_across_cxx_shim_is_intercepted_by_cxx() {
     // SAFETY: the guard reaches interr() through the cxx shim; cxx catches the throw and the shim
-    // returns an Err, so the guard returns 1 (intercepted) rather than IDAKIT_EXIT_TRAPPED.
-    let rc = unsafe { test_fatal_through_cxx(IDAKIT_FATAL_INTERR) };
+    // returns an Err, so the guard returns 1 (intercepted) rather than EXIT_TRAPPED.
+    let rc = unsafe { test_fatal_through_cxx(FATAL_INTERR) };
     assert_eq!(
         rc, 1,
         "cxx should intercept the interr throw before the trap"

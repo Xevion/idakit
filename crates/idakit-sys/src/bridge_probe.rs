@@ -17,12 +17,18 @@ mod ffi {
     unsafe extern "C++" {
         include!("probe_cxx.h");
 
-        /// Its C++ body triggers a guarded fatal (`kind` = `IDAKIT_FATAL_*`), so a test can drive
+        /// Its C++ body triggers a guarded fatal (`kind` = `crate::FATAL_*`), so a test can drive
         /// a `longjmp` across this `Result`-returning shim's `try/catch` landing-pad frame. Never
         /// returns on the `exit`/`abort` kinds.
         ///
         /// # Errors
         /// `Err` when the trap catches an `interr` (a `std::exception`) instead of longjmp-ing.
+        // Never called from Rust: `facade/probe_cxx.cc`'s test_fatal_through_cxx reaches the
+        // cxx-generated shim by its mangled symbol directly, bypassing this binding. The
+        // declaration must still exist so cxx generates that shim in the first place. cxx's
+        // foreign-block attribute parser only recognizes allow/warn/deny/forbid (not expect), so
+        // this stays a plain allow.
+        #[allow(dead_code)]
         fn probe_fatal_through_cxx(kind: i32) -> Result<String>;
 
         /// Throws the C++ exception selected by `kind` (`0` = `runtime_error`, `1` =
@@ -48,4 +54,4 @@ mod ffi {
     }
 }
 
-pub use ffi::{drop_probe_count, drop_probe_make, probe_fatal_through_cxx, probe_throw};
+pub use ffi::{drop_probe_count, drop_probe_make, probe_throw};

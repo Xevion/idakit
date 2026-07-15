@@ -37,7 +37,7 @@ pub(super) const FRAME_VAR: SharedStruct = SharedStruct {
         size: U64 = "Size in bytes.";
         flags: U32 = "Reserved-slot flags (return address / saved registers); 0 for an ordinary \
                       variable.";
-        ty: U32 = "Walk-local handle of the variable's type, or `IDAKIT_NONE` for a \
+        ty: U32 = "Walk-local handle of the variable's type, or `NONE` for a \
                    reserved/untyped slot.";
     },
 };

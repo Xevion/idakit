@@ -51,10 +51,18 @@ const FACADE_SOURCES: &[&str] = &["facade/runtime.cpp", "facade/db.cpp"];
 // generated glue; this mirrors the facade's flags (c++17, SDK as -isystem, __EA64__, platform
 // macro), adds any bridge-specific `defines`, and appends the hand-written body TUs. No
 // whole-archive is needed (no load-time constructor) and the C++ runtime link rides on the cxx
-// crate's link-cplusplus dependency, so each bridge emits its own link directive.
-fn cxx_bridge(rs: &str, bodies: &[&str], archive: &str, sdk_include: &str, defines: &[&str]) {
+// crate's link-cplusplus dependency, so each bridge emits its own link directive. `out_dir` is on
+// the include path so a body TU can pull in a generated header (e.g. `gen_facade_consts.h`).
+fn cxx_bridge(
+    rs: &str,
+    bodies: &[&str],
+    archive: &str,
+    sdk_include: &str,
+    out_dir: &str,
+    defines: &[&str],
+) {
     let mut b = cxx_build::bridge(rs);
-    b.std("c++17").include("facade");
+    b.std("c++17").include("facade").include(out_dir);
     if b.get_compiler().is_like_msvc() {
         b.include(sdk_include);
     } else {
@@ -95,7 +103,11 @@ fn main() {
     let sdk_include_str = sdk_include.to_str().expect("SDK include path is not UTF-8");
 
     let mut build = cc::Build::new();
-    build.cpp(true).std("c++17").include("facade");
+    build
+        .cpp(true)
+        .std("c++17")
+        .include("facade")
+        .include(&out_dir);
     // Treat the SDK headers as system includes so their warning noise is suppressed while
     // the facade's own warnings still surface. `cl.exe`/`clang-cl` have no `-isystem`, so
     // there fall back to a plain include (SDK warnings stay non-fatal in this build).
@@ -157,6 +169,7 @@ fn main() {
         &["facade/qvec_cxx.cc"],
         "idakit_cxx_qvec_bridge",
         sdk_include_str,
+        &out_dir,
         &[],
     );
     // The spec-driven cxx-gen bridges: namespace idakit_gen (the domain bridge) and namespace
@@ -201,6 +214,7 @@ fn main() {
         &["facade/probe_cxx.cc"],
         "idakit_cxx_probe",
         sdk_include_str,
+        &out_dir,
         &[],
     );
     cxx_bridge(
@@ -208,11 +222,12 @@ fn main() {
         &["facade/probe_ext_cxx.cc"],
         "idakit_cxx_probe_ext_bridge",
         sdk_include_str,
+        &out_dir,
         &[],
     );
 
     if env::var_os("IDAKIT_EMIT_COMPILE_COMMANDS").is_some() {
-        emit_compile_commands(sdk_include_str);
+        emit_compile_commands(sdk_include_str, &out_dir);
     }
 
     let idadir_str = idadir.to_str().expect("IDADIR is not UTF-8");
@@ -280,8 +295,10 @@ fn emit_rerun_directives() {
 }
 
 /// Emit `compile_commands.json` for clang-tidy/clangd (opt-in via `just tidy`).
-fn emit_compile_commands(sdk_include: &str) {
+fn emit_compile_commands(sdk_include: &str, out_dir: &str) {
     let dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset");
+    // OUT_DIR carries the generated gen_*.h; a facade .cpp now includes gen_facade_consts.h.
+    let out_inc = format!("-I{out_dir}");
     let mut json = String::from("[\n");
     for (i, src) in FACADE_SOURCES.iter().enumerate() {
         if i > 0 {
@@ -291,7 +308,7 @@ fn emit_compile_commands(sdk_include: &str) {
         let _ = write!(
             json,
             "  {{\"directory\": {dir:?}, \"file\": {src:?}, \"arguments\": \
-             [\"c++\", \"-std=c++17\", \"-Ifacade\", \"-isystem\", {sdk_include:?}, \
+             [\"c++\", \"-std=c++17\", \"-Ifacade\", {out_inc:?}, \"-isystem\", {sdk_include:?}, \
              \"-D__EA64__\", {plat:?}, \"-c\", {src:?}]}}"
         );
     }

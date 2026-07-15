@@ -21,8 +21,9 @@
 
 #include "rust/cxx.h"
 
-#include "idakit_facade.h"          // IDAKIT_FATAL_*, IDAKIT_EXIT_TRAPPED, trigger_fatal
+#include "idakit_facade.h"          // trigger_fatal
 #include "idakit_facade_internal.hpp" // guarded<>
+#include "gen_facade_consts.h"      // idakit_gen::EXIT_TRAPPED
 #include "probe_cxx.h"
 
 namespace idakit_cxx {
@@ -79,7 +80,7 @@ idakit_cxx$cxxbridge1$197$probe_fatal_through_cxx(::std::int32_t kind,
 
 // Arm the guard, then reach the fatal *through* the cxx shim.
 extern "C" int test_fatal_through_cxx(int kind) {
-  return idakit_facade::guarded<int>(IDAKIT_EXIT_TRAPPED, false, [kind]() -> int {
+  return idakit_facade::guarded<int>(idakit_gen::EXIT_TRAPPED, false, [kind]() -> int {
     // Return slot the shim placement-news into on success. Empty until then, so the longjmp path
     // (exit/abort) that never lets the shim return leaks nothing when its ~String is skipped.
     ::rust::String ret;

@@ -12,7 +12,7 @@
 //! the structural [`ct`] constants; named aggregate types are interned by name with a
 //! placeholder so recursion resolves; structural types dedup through the type table.
 
-use idakit_sys::{EnumConstInfo, IDAKIT_NONE, MemberInfo};
+use idakit_sys::{EnumConstInfo, MemberInfo, NONE};
 use snafu::Snafu;
 
 use super::node::{
@@ -82,11 +82,11 @@ fn sid(raw: u32) -> StatementId {
 }
 
 fn opt_e(raw: u32) -> Option<ExpressionId> {
-    (raw != IDAKIT_NONE).then(|| eid(raw))
+    (raw != NONE).then(|| eid(raw))
 }
 
 fn opt_s(raw: u32) -> Option<StatementId> {
-    (raw != IDAKIT_NONE).then(|| sid(raw))
+    (raw != NONE).then(|| sid(raw))
 }
 
 /// Lossily decode a facade byte string (IDA names and literals are not guaranteed UTF-8).
@@ -698,7 +698,7 @@ mod tests {
         let it = int_ty(&mut cb);
         let a = cb.var(0, 0, it);
         let b = cb.var(0, 1, it);
-        let add = cb.op(0, COT_ADD, a, b, IDAKIT_NONE, it);
+        let add = cb.op(0, COT_ADD, a, b, NONE, it);
         let ret = cb.return_(0, add);
         let blk = cb.block(0, &[ret]);
         let tree = cb.finish(blk).expect("well-formed");
@@ -725,12 +725,12 @@ mod tests {
         let it = int_ty(&mut cb);
         let v0 = cb.var(0, 0, it);
         let v1 = cb.var(0, 1, it);
-        let asg = cb.op(0, COT_ASGADD, v0, v1, IDAKIT_NONE, it);
+        let asg = cb.op(0, COT_ASGADD, v0, v1, NONE, it);
         let v2 = cb.var(0, 2, it);
         let v3 = cb.var(0, 3, it);
-        let bin = cb.op(0, COT_SUB, v2, v3, IDAKIT_NONE, it);
+        let bin = cb.op(0, COT_SUB, v2, v3, NONE, it);
         let v4 = cb.var(0, 4, it);
-        let un = cb.op(0, COT_NEG, v4, IDAKIT_NONE, IDAKIT_NONE, it);
+        let un = cb.op(0, COT_NEG, v4, NONE, NONE, it);
         let s0 = cb.expression_statement(0, asg);
         let s1 = cb.expression_statement(0, bin);
         let s2 = cb.expression_statement(0, un);
@@ -797,7 +797,7 @@ mod tests {
         let t1 = cb.continue_(0);
         let els = cb.break_(0);
         let if_with = cb.if_(0, c0, t0, els);
-        let if_without = cb.if_(0, c1, t1, IDAKIT_NONE);
+        let if_without = cb.if_(0, c1, t1, NONE);
         let blk = cb.block(0, &[if_with, if_without]);
         let tree = cb.finish(blk).expect("well-formed");
 
@@ -822,7 +822,7 @@ mod tests {
         // for (; cond; ) body; only the condition present.
         let cond = cb.var(0, 0, it);
         let body = cb.break_(0);
-        let for_s = cb.for_(0, IDAKIT_NONE, cond, IDAKIT_NONE, body);
+        let for_s = cb.for_(0, NONE, cond, NONE, body);
 
         // switch (sw) { case 1, 2: b1; default: b2; }
         let sw = cb.var(0, 1, it);
@@ -959,7 +959,7 @@ mod tests {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
         let v = cb.var(0, 0, it);
-        let bad = cb.op(0, 999, v, IDAKIT_NONE, IDAKIT_NONE, it);
+        let bad = cb.op(0, 999, v, NONE, NONE, it);
         let s = cb.expression_statement(0, bad);
         let blk = cb.block(0, &[s]);
         assert!(cb.finish(blk).err() == Some(ExtractError::UnknownExpressionTag { tag: 999 }));
@@ -971,7 +971,7 @@ mod tests {
     fn cot_insn_collapses_to_internal() {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
-        let instruction = cb.op(0, ct::INSN, IDAKIT_NONE, IDAKIT_NONE, IDAKIT_NONE, it);
+        let instruction = cb.op(0, ct::INSN, NONE, NONE, NONE, it);
         let s = cb.expression_statement(0, instruction);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("internal is not an error");

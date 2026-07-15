@@ -44,14 +44,6 @@
 
 use std::ptr::NonNull;
 
-/// Absent optional child / sentinel, matching the facade's own `IDAKIT_NONE` constant.
-///
-/// A hand-maintained ABI sentinel: this value, `facade/ctree_cxx.cc`'s `IDAKIT_NONE`, and
-/// `facade/typewalk_cxx.cc`'s local `NONE` are three independent definitions kept in lockstep by
-/// hand, the same convention `ty_build.rs`'s constants follow (no shared codegen pins them
-/// together).
-pub const IDAKIT_NONE: u32 = 0xFFFF_FFFF;
-
 include!(concat!(env!("OUT_DIR"), "/gen_visitors.rs"));
 
 impl TypeWalkVisitor {

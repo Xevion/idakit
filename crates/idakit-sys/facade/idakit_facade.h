@@ -21,13 +21,12 @@ int init_headless(void);
  * default), zero restores interactive behavior (e.g. a GUI-plugin host). */
 void set_batch(int on);
 
-/* Fatal-exit trap. guarded_open returns this sentinel (instead of an
- * open_database rc) when the kernel tried to terminate the process mid-call; the
- * intercepted exit code is then available from last_exit_code(). */
-#define IDAKIT_EXIT_TRAPPED (-0x7FFFFFFF)
+/* Fatal-exit trap. guarded_open returns the generated EXIT_TRAPPED sentinel (see
+ * gen_facade_consts.h, instead of an open_database rc) when the kernel tried to terminate the
+ * process mid-call; the intercepted exit code is then available from last_exit_code(). */
 int guarded_open(const char *file_path, int run_auto);
-int guarded_auto_wait(void); /* 1 ok / 0 fail / IDAKIT_EXIT_TRAPPED */
-int guarded_close(int save); /* 0 ok / IDAKIT_EXIT_TRAPPED */
+int guarded_auto_wait(void); /* 1 ok / 0 fail / EXIT_TRAPPED */
+int guarded_close(int save); /* 0 ok / EXIT_TRAPPED */
 int last_exit_code(void);
 int was_trapped(void);                     /* 1 if the last guarded call trapped a fatal exit */
 size_t last_output(char *buf, size_t cap); /* captured stdout+stderr; len, snprintf-style */
@@ -38,17 +37,15 @@ int accept_eula(void); /* record EULA acceptance; returns its value */
 /* Fault-injection hooks for the trap and cxx tests. Inert in normal use: test_fatal arms
  * its own guarded<> so it always traps and returns rather than terminating, and
  * trigger_fatal fires a fatal only when invoked with no guard on the stack. The Rust
- * bindings are #[doc(hidden)], keeping them off the published API. */
-#define IDAKIT_FATAL_EXIT 0
-#define IDAKIT_FATAL_ABORT 1
-#define IDAKIT_FATAL_INTERR 2
+ * bindings are #[doc(hidden)], keeping them off the published API. `kind` is one of the
+ * generated FATAL_* constants (see gen_facade_consts.h). */
 int test_fatal(int kind);
 int get_batch(void); /* read back the `batch` global, to prove bring-up wired it */
-/* Fire a fatal (IDAKIT_FATAL_*) from any TU; the exit/abort stand-ins are file-local to
+/* Fire a fatal (FATAL_*) from any TU; the exit/abort stand-ins are file-local to
  * runtime.cpp, so the cxx probe body calls this to reach them. */
 void trigger_fatal(int kind);
 /* Arm guarded<>, then call the cxx-generated shim for probe_fatal_through_cxx from inside it, so
- * the fatal's longjmp must cross the shim's try/catch frame. Returns IDAKIT_EXIT_TRAPPED when the
+ * the fatal's longjmp must cross the shim's try/catch frame. Returns EXIT_TRAPPED when the
  * longjmp fired (exit/abort), or 1 when cxx caught the throw first (interr) and reported an Err. */
 int test_fatal_through_cxx(int kind);
 

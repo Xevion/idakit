@@ -25,6 +25,7 @@
 // include path; the ctree walk drives visit_walker_t only through the opaque handle in
 // typewalk_walker.hpp.
 #include "gen_visitors.h"
+#include "gen_facade_consts.h" // idakit_gen::NONE
 
 namespace idakit_cxx {
 
@@ -278,10 +279,6 @@ uint32_t func_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
 }
 
 FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
-  // Hand-maintained ABI sentinel for a reserved/untyped slot, kept in lockstep with
-  // ctree_cxx.cc's IDAKIT_NONE and Rust's sys::IDAKIT_NONE; no shared codegen pins the three
-  // together.
-  constexpr uint32_t NONE = 0xFFFFFFFFu;
   func_t *pfn = get_func((ea_t)ea);
   if (pfn == nullptr)
     throw std::runtime_error("no function at ea");
@@ -299,7 +296,7 @@ FrameWalk frame_type_walk_visit(uint64_t ea, TypeWalkVisitor &visitor) {
     uint32_t flags = (m.is_retaddr() ? 1u : 0u) | (m.is_savregs() ? 2u : 0u);
     // Only a real, typed variable carries a structured type; reserved and untyped slots report
     // NONE, so the table holds only types a variable references.
-    uint32_t ty = (flags == 0 && !m.type.empty()) ? w.ty(m.type) : NONE;
+    uint32_t ty = (flags == 0 && !m.type.empty()) ? w.ty(m.type) : idakit_gen::NONE;
     FrameVar fv;
     fv.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
     // udm offset/size are in bits; soff_to_fpoff wants the byte struct offset.
