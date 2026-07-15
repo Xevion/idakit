@@ -134,7 +134,7 @@ impl Database {
 }
 
 /// Statement, expression, and call-site counts of a decompiled function's syntax tree.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[doc(alias("ctree_visitor_t"))]
 pub struct CtreeCounts {
     /// Number of statement nodes (`StatementKind`).
@@ -238,5 +238,30 @@ impl std::fmt::Debug for DecompiledFunction<'_> {
         f.debug_struct("DecompiledFunction")
             .field("counts", &self.counts())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    /// `CtreeCounts` hashes by its fields, so it can key a `HashSet`.
+    #[test]
+    fn ctree_counts_hashes() {
+        let a = CtreeCounts {
+            insns: 3,
+            expressions: 7,
+            calls: 1,
+        };
+        let b = CtreeCounts {
+            insns: 3,
+            expressions: 7,
+            calls: 1,
+        };
+        let mut set = HashSet::new();
+        set.insert(a);
+        assert!(set.contains(&b));
     }
 }

@@ -16,6 +16,16 @@ fn index_or_end(raw: u64) -> Option<u64> {
 
 /// A lazy iterator over one netnode's alt array as `(index, value)` pairs, from
 /// [`Netnode::alts`](super::Netnode::alts).
+///
+/// ```
+/// # idakit::doctest::with_db(|db| {
+/// let id = db.netnode_mut("$ idakit-alts-debug-doctest").id();
+/// let node = db.netnode_at(id);
+/// let iter = node.alts();
+/// assert!(format!("{iter:?}").starts_with("Alts"));
+/// # Ok(())
+/// # }).unwrap();
+/// ```
 pub struct Alts<'db> {
     db: &'db Database,
     id: NodeId,
@@ -27,6 +37,15 @@ impl<'db> Alts<'db> {
     pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
         let next = index_or_end(db.netnode_altfirst(id.get(), tag));
         Self { db, id, tag, next }
+    }
+}
+
+impl std::fmt::Debug for Alts<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Alts")
+            .field("id", &self.id)
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
     }
 }
 
@@ -43,6 +62,16 @@ impl Iterator for Alts<'_> {
 
 /// A lazy iterator over one netnode's sup array as `(index, bytes)` pairs, from
 /// [`Netnode::sups`](super::Netnode::sups).
+///
+/// ```
+/// # idakit::doctest::with_db(|db| {
+/// let id = db.netnode_mut("$ idakit-sups-debug-doctest").id();
+/// let node = db.netnode_at(id);
+/// let iter = node.sups();
+/// assert!(format!("{iter:?}").starts_with("Sups"));
+/// # Ok(())
+/// # }).unwrap();
+/// ```
 pub struct Sups<'db> {
     db: &'db Database,
     id: NodeId,
@@ -54,6 +83,15 @@ impl<'db> Sups<'db> {
     pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
         let next = index_or_end(db.netnode_supfirst(id.get(), tag));
         Self { db, id, tag, next }
+    }
+}
+
+impl std::fmt::Debug for Sups<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sups")
+            .field("id", &self.id)
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
     }
 }
 
@@ -73,6 +111,16 @@ impl Iterator for Sups<'_> {
 
 /// A lazy iterator over one netnode's hash as `(key, bytes)` pairs, in lexical key order, from
 /// [`Netnode::hash_entries`](super::Netnode::hash_entries).
+///
+/// ```
+/// # idakit::doctest::with_db(|db| {
+/// let id = db.netnode_mut("$ idakit-hash-entries-debug-doctest").id();
+/// let node = db.netnode_at(id);
+/// let iter = node.hash_entries();
+/// assert!(format!("{iter:?}").starts_with("HashEntries"));
+/// # Ok(())
+/// # }).unwrap();
+/// ```
 pub struct HashEntries<'db> {
     db: &'db Database,
     id: NodeId,
@@ -84,6 +132,15 @@ impl<'db> HashEntries<'db> {
     pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
         let next = db.netnode_hashfirst(id.get(), tag);
         Self { db, id, tag, next }
+    }
+}
+
+impl std::fmt::Debug for HashEntries<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HashEntries")
+            .field("id", &self.id)
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
     }
 }
 

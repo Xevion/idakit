@@ -41,6 +41,7 @@ mod ct {
 
 /// Why a ctree walk could not be turned into a [`Ctree`].
 #[derive(Debug, Snafu, PartialEq, Eq)]
+#[snafu(visibility(pub(crate)))]
 pub enum ExtractError {
     /// A node carried an expression `ctype` the walker does not model.
     #[snafu(display("unmodeled expression ctype {tag}"))]

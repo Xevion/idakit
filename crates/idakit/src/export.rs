@@ -79,7 +79,7 @@ impl std::fmt::Debug for Export<'_> {
     }
 }
 
-key_identity!(Export, index);
+key_identity!(Export, index, ord);
 
 /// A lazy iterator over every export in the database, in kernel order, from
 /// [`Database::exports`].
@@ -121,3 +121,30 @@ impl<'db> Iterator for Exports<'db> {
 }
 
 impl ExactSizeIterator for Exports<'_> {}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    #[test]
+    fn export_identity_compares_by_index() {
+        let db = Database::new();
+        assert!(Export::new(3, &db) == Export::new(3, &db));
+        assert!(Export::new(3, &db) != Export::new(4, &db));
+    }
+
+    #[test]
+    fn export_ord_sorts_by_index() {
+        let db = Database::new();
+        let mut exports = [
+            Export::new(2, &db),
+            Export::new(0, &db),
+            Export::new(1, &db),
+        ];
+        exports.sort();
+        let indices: Vec<usize> = exports.iter().map(Export::index).collect();
+        assert!(indices == [0, 1, 2]);
+    }
+}

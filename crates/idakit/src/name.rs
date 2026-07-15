@@ -1,6 +1,8 @@
 //! Looks up and enumerates a database's names through [`Database::name`],
 //! [`Database::address_of`], [`Database::demangle`], and the [`Names`] iterator.
 
+use serde::{Deserialize, Serialize};
+
 use crate::Database;
 use crate::address::Address;
 
@@ -47,7 +49,7 @@ impl Database {
 }
 
 /// A named address from the database's name list, yielded by [`Names`].
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Name {
     /// The named address.
     pub address: Address,
@@ -98,10 +100,24 @@ impl Iterator for Names<'_> {
 
 #[cfg(test)]
 mod tests {
+    use assert2::assert;
+
     use super::Name;
+    use crate::address::Address;
 
     const fn assert_send<T: Send>() {}
 
     // A `Name` owns its string and address, so it can travel off the kernel thread.
     const _: () = assert_send::<Name>();
+
+    #[test]
+    fn serde_round_trips() {
+        let name = Name {
+            address: Address::new_const(0x1400_1000),
+            name: "main".to_owned(),
+        };
+        let json = serde_json::to_string(&name).unwrap();
+        let back: Name = serde_json::from_str(&json).unwrap();
+        assert!(back == name);
+    }
 }

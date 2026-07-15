@@ -12,12 +12,25 @@
 //! minor. Signed/unsigned/float variants are kept distinct because in decompiled code the
 //! operator is what reveals operand signedness and domain (`Sdiv` vs `Udiv` vs `Fdiv`).
 
+use std::fmt;
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 /// A binary value operator, `x OP y`.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    IntoPrimitive,
+    TryFromPrimitive,
+    VariantArray,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u16)]
 #[doc(alias("ctype_t"))]
@@ -86,7 +99,17 @@ pub enum BinaryOp {
 
 /// A compound-assignment operator, `x OP= y`. Plain `=` is [`AssignmentOp::Assign`].
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    IntoPrimitive,
+    TryFromPrimitive,
+    VariantArray,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u16)]
 #[doc(alias("ctype_t"))]
@@ -126,7 +149,17 @@ pub enum AssignmentOp {
 /// `(type)x`, `*x`, and `&x`-as-member are modeled as their own expression variants because they
 /// carry a type, an access size, or a member offset; the operators here carry nothing extra.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    IntoPrimitive,
+    TryFromPrimitive,
+    VariantArray,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u16)]
 #[doc(alias("ctype_t"))]
@@ -181,6 +214,12 @@ impl BinaryOp {
     }
 }
 
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.symbol())
+    }
+}
+
 impl AssignmentOp {
     /// The C source spelling of this assignment (`=`, `+=`, `>>=`, ...).
     #[must_use]
@@ -201,6 +240,12 @@ impl AssignmentOp {
     }
 }
 
+impl fmt::Display for AssignmentOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.symbol())
+    }
+}
+
 impl UnaryOp {
     /// The C source spelling of this operator (`-`, `!`, `~`, `&`, `++`, `--`). Pre- and
     /// post-increment share a glyph; position is the caller's concern, not this method's.
@@ -214,6 +259,12 @@ impl UnaryOp {
             Self::PreInc | Self::PostInc => "++",
             Self::PreDec | Self::PostDec => "--",
         }
+    }
+}
+
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.symbol())
     }
 }
 
@@ -316,5 +367,26 @@ mod tests {
         for op in UnaryOp::VARIANTS {
             assert!(!op.symbol().is_empty());
         }
+    }
+
+    /// `Display` renders the same glyph as `symbol()`, one representative case per group.
+    #[test]
+    fn display_matches_symbol() {
+        assert!(BinaryOp::Add.to_string() == BinaryOp::Add.symbol());
+        assert!(AssignmentOp::Assign.to_string() == AssignmentOp::Assign.symbol());
+        assert!(UnaryOp::PreInc.to_string() == UnaryOp::PreInc.symbol());
+    }
+
+    /// Each operator group round-trips through JSON.
+    #[test]
+    fn serde_round_trips() {
+        let json = serde_json::to_string(&BinaryOp::Sdiv).unwrap();
+        assert!(serde_json::from_str::<BinaryOp>(&json).unwrap() == BinaryOp::Sdiv);
+
+        let json = serde_json::to_string(&AssignmentOp::AddAssign).unwrap();
+        assert!(serde_json::from_str::<AssignmentOp>(&json).unwrap() == AssignmentOp::AddAssign);
+
+        let json = serde_json::to_string(&UnaryOp::LogNot).unwrap();
+        assert!(serde_json::from_str::<UnaryOp>(&json).unwrap() == UnaryOp::LogNot);
     }
 }

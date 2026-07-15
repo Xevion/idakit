@@ -12,6 +12,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use idakit_sys as sys;
+use serde::{Deserialize, Serialize};
 
 use super::diff::TypeKey;
 use super::{
@@ -49,13 +50,15 @@ impl Database {
 /// [`Function::prototype_type`](crate::function::Function::prototype_type), then walk it via
 /// [`shape`](Self::shape)/[`members`](Self::members) and resolve child handles with
 /// [`get`](Self::get). Detached from the kernel, so it inspects on any thread.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[doc(alias("tinfo_t"))]
 pub struct Type {
     types: TypeTable,
     root: TypeId,
-    /// Cached strict [`TypeKey`], computed once on first [`key`](Self::key) (or `==`/`Hash`).
-    /// `OnceCell<TypeKey>` keeps `Type` `Send`; see the `assert_send` proof in tests.
+    /// Cached strict [`TypeKey`], computed once on first [`key`](Self::key) (or `==`/`Hash`) and
+    /// held in a `OnceCell` so `Type` stays `Send` (see the `assert_send` proof in tests); not
+    /// real source data, so it's skipped on serialize and recomputed lazily after deserialize.
+    #[serde(skip)]
     key: OnceCell<TypeKey>,
 }
 
@@ -260,5 +263,41 @@ mod tests {
             key: OnceCell::new(),
         };
         assert!(img.members().is_none());
+    }
+
+    /// A clone is an independent value with the same structural key.
+    #[test]
+    fn type_clone_has_equal_key() {
+        let mut types = TypeTable::new();
+        let root = u32_type(&mut types);
+        let img = Type {
+            types,
+            root,
+            key: OnceCell::new(),
+        };
+        let cloned = img.clone();
+        assert!(cloned.key() == img.key());
+    }
+
+    /// A `Type` round trips through JSON: `key` is skipped (not real source data) and
+    /// recomputed lazily, landing on the same value as the original.
+    #[test]
+    fn type_serde_round_trip_recomputes_key() {
+        let mut types = TypeTable::new();
+        let root = u32_type(&mut types);
+        let img = Type {
+            types,
+            root,
+            key: OnceCell::new(),
+        };
+        // Force the cache to populate before serializing, proving `#[serde(skip)]` really
+        // drops it rather than merely leaving it unset by coincidence.
+        let original_key = img.key();
+
+        let json = serde_json::to_string(&img).unwrap();
+        let round_tripped: Type = serde_json::from_str(&json).unwrap();
+
+        assert!(round_tripped.root() == img.root());
+        assert!(round_tripped.key() == original_key);
     }
 }

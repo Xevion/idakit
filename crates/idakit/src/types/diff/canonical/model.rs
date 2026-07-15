@@ -3,13 +3,14 @@
 use std::fmt;
 use std::hash::Hash;
 
+use serde::{Deserialize, Serialize};
 use siphasher::sip128::{Hasher128, SipHasher13};
 
 use crate::types::{Type, TypeId, TypeShape, TypeTable};
 
 /// The tag namespace of a tagged aggregate, giving a named [`struct`](AggregateKind::Struct),
 /// [`union`](AggregateKind::Union), or [`enum`](AggregateKind::Enum) its nominal identity.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum AggregateKind {
     /// A `struct`.
     Struct,
@@ -32,11 +33,18 @@ impl AggregateKind {
     }
 }
 
+impl fmt::Display for AggregateKind {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
 /// One field of a canonical aggregate.
 ///
 /// Layout facets (`bit_offset`) are present only when [`CanonicalOptions`] folds sizes in;
 /// `bitfield_width` is declared structure, always kept.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct CanonicalMember {
     /// The field's name; empty if IDA gave none.
     pub name: String,
@@ -53,7 +61,7 @@ pub struct CanonicalMember {
 /// Children are inlined by value; a named aggregate is a [`Named`](CanonicalType::Named) reference
 /// rather than a nested body, so two databases produce equal values for equal types. A closed
 /// mirror of [`TypeShape`], with the table-relative [`TypeId`] handles resolved away.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum CanonicalType {
     /// `void`.
     Void,
@@ -146,7 +154,7 @@ pub enum CanonicalType {
 /// Equal types hash equal on any machine and any run (SipHash-1-3 guarantees cross-platform
 /// stability), so it keys a `HashMap` spanning databases or a persisted type index. At 128 bits a
 /// collision is negligible, so an equal key can be treated as an equal type.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct TypeKey(pub u128);
 
 impl fmt::Display for TypeKey {
@@ -160,7 +168,7 @@ impl fmt::Display for TypeKey {
 /// before their bodies are compared.
 ///
 /// `None` for an anonymous or purely structural type, which has no cross-database name to pair on.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum TypeIdentity {
     /// A tagged aggregate, identified by tag and kind.
     Tagged {
@@ -181,7 +189,7 @@ pub enum TypeIdentity {
 /// [`strict`](Self::strict) keys on the exact ABI (widths, offsets), the right lens for a
 /// same-architecture diff. [`logical`](Self::logical) drops those, matching a type by shape across
 /// architectures where `long` and pointers change width.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct CanonicalOptions {
     /// Fold concrete byte widths and bit offsets into the key.
     pub include_sizes: bool,
@@ -674,5 +682,78 @@ impl CanonicalType {
                 unreachable!("scalars written above")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use assert2::assert;
+
+    use super::*;
+
+    #[test]
+    fn canonical_type_serde_round_trips() {
+        let ty = CanonicalType::Aggregate {
+            tag: Some("point".to_owned()),
+            kind: AggregateKind::Struct,
+            members: vec![CanonicalMember {
+                name: "x".to_owned(),
+                bit_offset: Some(0),
+                bitfield_width: None,
+                ty: CanonicalType::Int {
+                    bytes: Some(4),
+                    signed: true,
+                },
+            }],
+            size: Some(8),
+        };
+        let json = serde_json::to_string(&ty).unwrap();
+        let back: CanonicalType = serde_json::from_str(&json).unwrap();
+        assert!(back == ty);
+    }
+
+    #[test]
+    fn type_key_serde_round_trips() {
+        let key = TypeKey(0x1234_5678_9abc_def0_1122_3344_5566_7788);
+        let json = serde_json::to_string(&key).unwrap();
+        let back: TypeKey = serde_json::from_str(&json).unwrap();
+        assert!(back == key);
+    }
+
+    #[test]
+    fn type_identity_serde_round_trips() {
+        let identity = TypeIdentity::Tagged {
+            tag: "point".to_owned(),
+            kind: AggregateKind::Struct,
+        };
+        let json = serde_json::to_string(&identity).unwrap();
+        let back: TypeIdentity = serde_json::from_str(&json).unwrap();
+        assert!(back == identity);
+    }
+
+    #[test]
+    fn canonical_options_serde_round_trips() {
+        let opts = CanonicalOptions::logical();
+        let json = serde_json::to_string(&opts).unwrap();
+        let back: CanonicalOptions = serde_json::from_str(&json).unwrap();
+        assert!(back == opts);
+    }
+
+    #[test]
+    fn canonical_options_hash_distinguishes_strict_and_logical() {
+        let mut set = HashSet::new();
+        set.insert(CanonicalOptions::strict());
+        set.insert(CanonicalOptions::logical());
+        set.insert(CanonicalOptions::strict());
+        assert!(set.len() == 2);
+    }
+
+    #[test]
+    fn aggregate_kind_display() {
+        assert!(AggregateKind::Struct.to_string() == "struct");
+        assert!(AggregateKind::Union.to_string() == "union");
+        assert!(AggregateKind::Enum.to_string() == "enum");
     }
 }

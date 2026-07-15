@@ -14,9 +14,11 @@
 //! blocks (`start == end`, decided purely by index past `nproper`), which idakit lifts to typed
 //! edges so the arena stays real code and out-of-function targets stay addressable.
 
+use std::fmt;
 use std::ops::Range;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 use idakit_sys as sys;
@@ -40,7 +42,17 @@ pub type BasicBlockId = Idx<BasicBlock>;
 /// [`Error::UnknownBlockKind`] at CFG build, a deliberate version-drift break) rather than
 /// absorbing it into a catch-all every downstream `match` would then have to carry.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, TryFromPrimitive, IntoPrimitive, VariantArray,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    TryFromPrimitive,
+    IntoPrimitive,
+    VariantArray,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u8)]
 #[doc(alias("fc_block_type_t"))]
@@ -83,12 +95,25 @@ impl BasicBlockKind {
     }
 }
 
+impl fmt::Display for BasicBlockKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Normal => f.write_str("normal"),
+            Self::IndirectJump => f.write_str("indirect jump"),
+            Self::Return => f.write_str("return"),
+            Self::CondReturn => f.write_str("conditional return"),
+            Self::NoReturn => f.write_str("no-return call"),
+            Self::Error => f.write_str("error"),
+        }
+    }
+}
+
 /// A control-flow edge that leaves the function, a tail-jump or tail-call from a [`BasicBlock`]
 /// to `target`, an address in no block of this graph.
 ///
 /// IDA carries these as zero-length stub blocks; idakit lifts them to edges (see the module
 /// docs). Read them with [`BasicBlock::exits`]; internal edges are [`BasicBlock::successors`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("fcb_enoret", "fcb_extern"))]
 pub struct ExternalExit {
     /// The out-of-function address this block transfers to.
@@ -101,7 +126,7 @@ pub struct ExternalExit {
 ///
 /// [`kind`](Self::kind) names how it ends. Yielded by [`FlowChart::blocks`]. The range is
 /// always non-empty, since external stubs are [`ExternalExit`]s, not blocks.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("qbasic_block_t"))]
 pub struct BasicBlock {
     range: Range<Address>,
@@ -171,7 +196,7 @@ impl BasicBlock {
 /// Also buildable via [`Function::flowchart`](crate::function::Function::flowchart). Traverse the
 /// [`BasicBlock`] arena by [`BasicBlockId`]; detached from the kernel, so it analyzes on any
 /// thread.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[doc(alias("qflow_chart_t"))]
 pub struct FlowChart {
     blocks: Arena<BasicBlock>,
@@ -442,5 +467,63 @@ mod tests {
                     | sys::FlowChartFlags::NOEXT
                     | sys::FlowChartFlags::NOPREDS
         );
+    }
+
+    /// Builds a two-block chart without a kernel: private-field literals are reachable from
+    /// this same module, matching the arena's own tests.
+    fn sample_chart() -> FlowChart {
+        let mut blocks = Arena::new();
+        let entry = blocks.alloc(BasicBlock {
+            range: Address::try_new(0x1000).unwrap()..Address::try_new(0x1010).unwrap(),
+            kind: BasicBlockKind::Normal,
+            succ: vec![],
+            pred: vec![],
+            exits: vec![ExternalExit {
+                target: Address::try_new(0x2000).unwrap(),
+                noreturn: true,
+            }],
+        });
+        FlowChart {
+            blocks,
+            entry,
+            function: Address::try_new(0x1000).unwrap(),
+        }
+    }
+
+    #[test]
+    fn flowchart_clone_and_eq() {
+        let chart = sample_chart();
+        let cloned = chart.clone();
+        assert!(cloned == chart);
+    }
+
+    #[test]
+    fn flowchart_serde_round_trip() {
+        let chart = sample_chart();
+        let json = serde_json::to_string(&chart).unwrap();
+        let round_tripped: FlowChart = serde_json::from_str(&json).unwrap();
+        assert!(round_tripped == chart);
+    }
+
+    #[rstest]
+    #[case(BasicBlockKind::Normal, "normal")]
+    #[case(BasicBlockKind::IndirectJump, "indirect jump")]
+    #[case(BasicBlockKind::Return, "return")]
+    #[case(BasicBlockKind::CondReturn, "conditional return")]
+    #[case(BasicBlockKind::NoReturn, "no-return call")]
+    #[case(BasicBlockKind::Error, "error")]
+    fn block_kind_display(#[case] kind: BasicBlockKind, #[case] expected: &str) {
+        assert!(kind.to_string() == expected);
+    }
+
+    #[test]
+    fn external_exit_serde_round_trip() {
+        let exit = ExternalExit {
+            target: Address::try_new(0x4000).unwrap(),
+            noreturn: false,
+        };
+        let json = serde_json::to_string(&exit).unwrap();
+        let round_tripped: ExternalExit = serde_json::from_str(&json).unwrap();
+        assert!(round_tripped == exit);
     }
 }

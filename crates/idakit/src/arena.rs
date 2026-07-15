@@ -7,10 +7,13 @@
 //! function's [`FlowChart`](crate::flowchart::FlowChart), move off the kernel thread to a
 //! worker.
 
+use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
+
+use serde::{Deserialize, Serialize};
 
 /// A typed handle into an [`Arena<T>`].
 ///
@@ -54,7 +57,7 @@ impl<T> Idx<T> {
 }
 
 // Hand-implemented so the bounds are on `Idx<T>` unconditionally, not on `T`:
-// a handle is `Copy`/`Eq`/`Hash` even when the payload `T` is not.
+// a handle is `Copy`/`Eq`/`Hash`/`Ord`/serde-(de)serializable even when the payload `T` is not.
 impl<T> Clone for Idx<T> {
     #[inline]
     fn clone(&self) -> Self {
@@ -75,14 +78,38 @@ impl<T> Hash for Idx<T> {
         self.raw.hash(state);
     }
 }
+impl<T> PartialOrd for Idx<T> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T> Ord for Idx<T> {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.raw.cmp(&other.raw)
+    }
+}
 impl<T> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Idx").field(&self.raw).finish()
     }
 }
+impl<T> Serialize for Idx<T> {
+    #[inline]
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u32(self.raw)
+    }
+}
+impl<'de, T> Deserialize<'de> for Idx<T> {
+    #[inline]
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        u32::deserialize(deserializer).map(Self::from_raw)
+    }
+}
 
 /// An append-only arena of `T`, addressed by [`Idx<T>`].
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Arena<T> {
     data: Vec<T>,
 }
@@ -191,5 +218,55 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         // `*const ()` is neither Send nor Sync, but a handle to it still is.
         assert_send_sync::<Idx<*const ()>>();
+    }
+
+    #[test]
+    fn arena_clone_and_eq() {
+        let mut arena = Arena::new();
+        arena.alloc("a");
+        arena.alloc("b");
+
+        let cloned = arena.clone();
+        assert!(cloned == arena);
+
+        let mut other = Arena::new();
+        other.alloc("a");
+        assert!(other != arena);
+    }
+
+    #[test]
+    fn arena_serde_round_trip() {
+        let mut arena = Arena::new();
+        arena.alloc(1);
+        arena.alloc(2);
+        arena.alloc(3);
+
+        let json = serde_json::to_string(&arena).unwrap();
+        let round_tripped: Arena<i32> = serde_json::from_str(&json).unwrap();
+        assert!(round_tripped == arena);
+    }
+
+    #[test]
+    fn idx_ord_sorts_by_raw_position() {
+        let mut arena = Arena::new();
+        let a = arena.alloc("a");
+        let b = arena.alloc("b");
+        let c = arena.alloc("c");
+
+        let mut ids = vec![c, a, b];
+        ids.sort();
+        assert!(ids == [a, b, c]);
+        assert!(a < b);
+        assert!(b < c);
+    }
+
+    #[test]
+    fn idx_serde_round_trip_without_payload_bound() {
+        // `*const ()` doesn't implement Serialize/Deserialize; the handle still does.
+        let idx: Idx<*const ()> = Idx::from_raw(7);
+
+        let json = serde_json::to_string(&idx).unwrap();
+        let round_tripped: Idx<*const ()> = serde_json::from_str(&json).unwrap();
+        assert!(round_tripped == idx);
     }
 }

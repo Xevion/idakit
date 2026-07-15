@@ -26,6 +26,8 @@ mod tagged;
 
 use std::num::NonZeroU64;
 
+use serde::{Deserialize, Serialize};
+
 use crate::Database;
 use crate::error::{Error, Result};
 
@@ -174,6 +176,24 @@ impl From<NodeId> for u64 {
     #[inline]
     fn from(id: NodeId) -> Self {
         id.get()
+    }
+}
+
+// Serialize the real id, not the inverted niche a derive would emit: a `NodeId` round-trips as
+// its `get()` value, and any non-sentinel `u64` deserializes back.
+impl Serialize for NodeId {
+    #[inline]
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u64(self.get())
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeId {
+    #[inline]
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = u64::deserialize(deserializer)?;
+        Self::try_new(raw)
+            .ok_or_else(|| serde::de::Error::custom("node id is the BADNODE sentinel"))
     }
 }
 
@@ -405,6 +425,14 @@ pub struct NetnodeMut<'db> {
     id: NodeId,
 }
 
+impl std::fmt::Debug for NetnodeMut<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetnodeMut")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+
 impl NetnodeMut<'_> {
     netnode_reads!();
 
@@ -593,6 +621,14 @@ pub struct Netnodes<'db> {
     next: Option<NodeId>,
 }
 
+impl std::fmt::Debug for Netnodes<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Netnodes")
+            .field("next", &self.next)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<'db> Netnodes<'db> {
     pub(crate) fn new(db: &'db Database) -> Self {
         Self {
@@ -609,5 +645,44 @@ impl<'db> Iterator for Netnodes<'db> {
         let id = self.next?;
         self.next = NodeId::try_new(self.db.netnode_next(id.get()));
         Some(Netnode { db: self.db, id })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    #[test]
+    fn netnode_mut_debug_renders_the_id() {
+        let mut db = Database::new();
+        let id = NodeId::try_new(1).unwrap();
+        let cursor = NetnodeMut { db: &mut db, id };
+        assert!(format!("{cursor:?}").starts_with("NetnodeMut"));
+    }
+
+    #[test]
+    fn netnodes_debug_renders_the_cursor() {
+        let db = Database::new();
+        let iter = Netnodes {
+            db: &db,
+            next: NodeId::try_new(1),
+        };
+        assert!(format!("{iter:?}").starts_with("Netnodes"));
+    }
+
+    #[test]
+    fn node_id_serde_round_trips_as_the_real_id() {
+        let id = NodeId::try_new(0x1234).unwrap();
+        let json = serde_json::to_string(&id).unwrap();
+        assert!(json == id.get().to_string());
+        let back: NodeId = serde_json::from_str(&json).unwrap();
+        assert!(back == id);
+    }
+
+    #[test]
+    fn node_id_serde_rejects_the_sentinel() {
+        assert!(serde_json::from_str::<NodeId>(&BADNODE.to_string()).is_err());
     }
 }

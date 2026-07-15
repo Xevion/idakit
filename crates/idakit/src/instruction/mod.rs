@@ -26,6 +26,7 @@ pub use register::{Register, RegisterClass};
 
 pub(crate) use decode::insn_from_data;
 
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 use crate::Database;
@@ -144,7 +145,7 @@ pub enum DecodeError {
 /// A closed set that grows only when a decoder is *implemented*, so decoding under a
 /// processor with no wired decoder is a [`DecodeError::UnsupportedProcessor`], not a
 /// variant here. Adding a decoder is a deliberate, breaking widening.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Isa {
     /// 32-bit x86.
     X86,
@@ -159,7 +160,7 @@ pub enum Isa {
 /// sequence of these. Everything the kernel had to resolve (the mnemonic, register names,
 /// control-flow classification) is already here; nothing on an [`Instruction`] calls back into
 /// the kernel.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("insn_t"))]
 pub struct Instruction {
     /// Address of the instruction.
@@ -200,7 +201,7 @@ impl Instruction {
 }
 
 /// One operand of an [`Instruction`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("op_t"))]
 pub struct Operand {
     /// The operand's original slot index (0-based). Void slots are dropped from
@@ -221,7 +222,7 @@ pub struct Operand {
 /// the SIMD/mask register types x86 encodes above the documented range) into one of
 /// these. A future operand *category* is a deliberate, breaking widening; an unknown raw
 /// byte is a [`DecodeError`], never a new variant callers must pre-guard.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("op_t"))]
 pub enum OperandKind {
     /// A register, of any class (folds every register operand type).
@@ -251,7 +252,7 @@ pub enum OperandKind {
 /// real, not parsed out of rendered text. Which fields are populated encodes the
 /// addressing form (a bare `[disp]` has no `base`/`index`; a RIP-relative reference IDA
 /// folded to an absolute address populates `target`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Memory {
     /// Base register, if any.
     pub base: Option<Register>,
@@ -277,7 +278,7 @@ pub struct Memory {
 /// account for conditional or implicit access; precise use/def analysis is a separate,
 /// deferred concern. The two bits are independent (an operand may be neither, either, or
 /// both), so they are not collapsed into a single read/write/read-write enum.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct Access {
     /// The instruction reads this operand's value.
     pub read: bool,
@@ -292,7 +293,7 @@ pub struct Access {
 /// `target` is the static destination of a *direct* branch or call, when one exists
 /// (the single fact CFG assembly needs), hoisted here so each [`Instruction`] is a
 /// self-contained CFG input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Flow {
     /// A call instruction.
     pub is_call: bool,
@@ -370,5 +371,58 @@ mod tests {
         };
         let names: Vec<&str> = insn.registers().map(|r| r.name.as_ref()).collect();
         assert!(names == ["rax", "rbx", "rcx"]);
+    }
+
+    fn sample_instruction() -> Instruction {
+        Instruction {
+            address: Address::try_new(0x1000).expect("valid"),
+            len: 4,
+            isa: Isa::X64,
+            itype: 0,
+            mnemonic: "lea".into(),
+            ops: vec![
+                op(OperandKind::Register(reg("rax"))),
+                op(OperandKind::Memory(Memory {
+                    base: Some(reg("rbx")),
+                    index: Some(reg("rcx")),
+                    scale: 1,
+                    disp: -8,
+                    segment: None,
+                    target: Some(Address::try_new(0x2000).expect("valid")),
+                })),
+                op(OperandKind::Immediate { value: 5 }),
+                op(OperandKind::Near(Address::try_new(0x3000).expect("valid"))),
+                op(OperandKind::Far {
+                    selector: 0x33,
+                    offset: 0x400,
+                }),
+            ],
+            flow: Flow {
+                is_call: false,
+                is_ret: false,
+                is_jump: true,
+                is_indirect: false,
+                stops: true,
+                target: Some(Address::try_new(0x3000).expect("valid")),
+            },
+        }
+    }
+
+    // Round-trips every OperandKind variant so the derived Serialize/Deserialize on Instruction
+    // and its components stays exercised end to end.
+    #[test]
+    fn instruction_serde_roundtrip() {
+        let insn = sample_instruction();
+        let json = serde_json::to_string(&insn).expect("serialize");
+        let back: Instruction = serde_json::from_str(&json).expect("deserialize");
+        assert!(back == insn);
+    }
+
+    #[test]
+    fn instruction_hash_usable_in_set() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        assert!(set.insert(sample_instruction()));
+        assert!(!set.insert(sample_instruction()));
     }
 }

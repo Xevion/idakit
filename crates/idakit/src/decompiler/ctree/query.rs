@@ -11,13 +11,15 @@
 //! composes them into higher-level matchers, recovering C++ vtable installs and base-ctor
 //! calls from real decompiler output, as a worked example.
 
+use serde::{Deserialize, Serialize};
+
 use super::node::{ExpressionId, ExpressionKind, LocalId};
 use super::ops::{BinaryOp, UnaryOp};
 use super::tree::Ctree;
 use crate::address::Address;
 
 /// A reference to a global/static the decompiler named, as surfaced by [`global_target`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct GlobalRef {
     /// The global's address.
     pub address: Address,
@@ -316,5 +318,56 @@ mod tests {
         let block = b.block(vec![st]);
         let tree = b.finish(block);
         assert!(let None = base_var(&tree, add));
+    }
+
+    /// `GlobalRef` hashes by its fields, so it can key a `HashSet`.
+    #[test]
+    fn global_ref_hashes() {
+        use std::collections::HashSet;
+
+        let named = GlobalRef {
+            address: Address::new_const(0x1000),
+            name: Some("foo".into()),
+        };
+        let anon = GlobalRef {
+            address: Address::new_const(0x2000),
+            name: None,
+        };
+        let mut set = HashSet::new();
+        set.insert(named.clone());
+        set.insert(anon.clone());
+        assert!(set.contains(&named));
+        assert!(set.contains(&anon));
+        assert!(!set.contains(&GlobalRef {
+            address: Address::new_const(0x3000),
+            name: None,
+        }));
+    }
+
+    /// `Ord` sorts by `address` first, since it leads the field list.
+    #[test]
+    fn global_ref_ord_sorts_by_address() {
+        let low = GlobalRef {
+            address: Address::new_const(0x1000),
+            name: Some("z".into()),
+        };
+        let high = GlobalRef {
+            address: Address::new_const(0x2000),
+            name: Some("a".into()),
+        };
+        let mut refs = vec![high.clone(), low.clone()];
+        refs.sort();
+        assert!(refs == vec![low, high]);
+    }
+
+    /// A `GlobalRef` round-trips through JSON.
+    #[test]
+    fn global_ref_serde_round_trips() {
+        let global = GlobalRef {
+            address: Address::new_const(0x1000),
+            name: Some("foo".into()),
+        };
+        let json = serde_json::to_string(&global).unwrap();
+        assert!(serde_json::from_str::<GlobalRef>(&json).unwrap() == global);
     }
 }

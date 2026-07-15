@@ -8,13 +8,15 @@
 //! of the unmodeled forms reads back as `None` from `TypeMember::repr`/`TypeShape::Enum::repr`
 //! rather than a mislabeled variant.
 
+use serde::{Deserialize, Serialize};
+
 /// How a struct/union member's numeric value displays.
 ///
 /// The non-info-carrying subset of `value_repr_t`'s value-type nibble (`FRB_*`, `typeinf.hpp`).
 /// The nibble never crosses the public API; it is folded into
 /// [`MemberEdit::set_repr`](crate::types::MemberEdit::set_repr) and read back from
 /// `TypeMember::repr` (`crate::types::TypeMember::repr`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NumberFormat {
     /// Binary.
     Binary,
@@ -84,7 +86,7 @@ impl NumberFormat {
 /// assert_eq!(repr.format, NumberFormat::Hexadecimal);
 /// assert!(repr.signed);
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("value_repr_t"))]
 pub struct ValueRepr {
     /// The display format.

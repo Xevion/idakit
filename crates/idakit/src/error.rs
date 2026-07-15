@@ -61,6 +61,20 @@ impl Qerrno {
     }
 }
 
+impl fmt::Display for Qerrno {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            Self::Ok => "no error",
+            Self::Os => "OS error (see errno)",
+            Self::DiskFull => "disk full",
+            Self::ReadError => "read error",
+            Self::FileTooLarge => "file too large",
+            Self::Other(_) => "unrecognized error",
+        };
+        write!(f, "{label} (code {})", self.code())
+    }
+}
+
 /// `": {reason}"` when present, empty otherwise.
 ///
 /// Used for the optional tail of an [`Error::WriteRejected`] message.
@@ -405,7 +419,7 @@ impl fmt::Debug for CallError {
 impl std::error::Error for CallError {}
 
 /// Why the kernel thread could not be brought up in [`run`](crate::kernel::Ida::run).
-#[derive(Debug, Snafu)]
+#[derive(Debug, Snafu, PartialEq, Eq)]
 pub enum InitError {
     /// The kernel "main" thread could not be re-claimed (unrecognized
     /// `is_main_thread` prologue, or the re-claim did not take).
@@ -503,5 +517,20 @@ mod tests {
     fn qerrno_round_trips_codes(#[case] code: i32, #[case] expect: Qerrno) {
         assert!(Qerrno::from_code(code) == expect);
         assert!(expect.code() == code);
+    }
+
+    /// `Display` names the error and carries its raw code.
+    #[test]
+    fn qerrno_display_carries_code() {
+        assert!(Qerrno::DiskFull.to_string() == "disk full (code 2)");
+        assert!(Qerrno::Other(9).to_string() == "unrecognized error (code 9)");
+    }
+
+    /// Two `InitError`s with equal payloads compare equal.
+    #[test]
+    fn init_error_eq() {
+        assert!(InitError::InitLibrary { code: 3 } == InitError::InitLibrary { code: 3 });
+        assert!(InitError::InitLibrary { code: 3 } != InitError::InitLibrary { code: 4 });
+        assert!(InitError::KernelGone == InitError::KernelGone);
     }
 }

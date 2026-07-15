@@ -15,6 +15,7 @@
 //! still representing every register x86 can encode.
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 /// The register file a [`Register`] belongs to.
@@ -24,7 +25,17 @@ use strum::VariantArray;
 /// [`DecodeError`](super::DecodeError), not a stray discriminant). Exhaustive on purpose, since
 /// adding a class is a deliberate, breaking widening, pinned to the facade by an alignment test.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    IntoPrimitive,
+    TryFromPrimitive,
+    VariantArray,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u8)]
 pub enum RegisterClass {
@@ -94,6 +105,27 @@ impl RegisterClass {
                 name.strip_prefix(prefix)
                     .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
             })
+        })
+    }
+}
+
+impl std::fmt::Display for RegisterClass {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::GeneralPurpose => "general-purpose",
+            Self::Segment => "segment",
+            Self::Xmm => "xmm",
+            Self::Ymm => "ymm",
+            Self::Zmm => "zmm",
+            Self::Mask => "mask",
+            Self::St => "st",
+            Self::Mmx => "mmx",
+            Self::Control => "control",
+            Self::Debug => "debug",
+            Self::Test => "test",
+            Self::Ip => "ip",
+            Self::Bnd => "bnd",
         })
     }
 }
@@ -191,6 +223,46 @@ mod tests {
             );
         }
     }
+
+    // Every variant renders a non-empty, stable label; an exhaustive match backs `Display`, so
+    // a missed variant fails to compile rather than falling through.
+    #[test]
+    fn display_renders_every_variant() {
+        for &c in RegisterClass::VARIANTS {
+            assert!(!c.to_string().is_empty());
+        }
+        assert!(RegisterClass::GeneralPurpose.to_string() == "general-purpose");
+        assert!(RegisterClass::Xmm.to_string() == "xmm");
+    }
+
+    #[test]
+    fn serde_roundtrips_every_variant() {
+        for &c in RegisterClass::VARIANTS {
+            let json = serde_json::to_string(&c).expect("serialize");
+            let back: RegisterClass = serde_json::from_str(&json).expect("deserialize");
+            assert!(back == c);
+        }
+    }
+
+    #[test]
+    fn hash_usable_in_set() {
+        use std::collections::HashSet;
+        let set: HashSet<RegisterClass> = RegisterClass::VARIANTS.iter().copied().collect();
+        assert!(set.len() == RegisterClass::VARIANTS.len());
+    }
+
+    #[test]
+    fn register_serde_roundtrip() {
+        let reg = Register {
+            num: 0,
+            class: RegisterClass::GeneralPurpose,
+            width: 8,
+            name: "rax".into(),
+        };
+        let json = serde_json::to_string(&reg).expect("serialize");
+        let back: Register = serde_json::from_str(&json).expect("deserialize");
+        assert!(back == reg);
+    }
 }
 
 /// A register reference within an operand.
@@ -199,7 +271,7 @@ mod tests {
 /// [`Instruction`](super::Instruction)'s [`Isa`](super::Isa). `name` is IDA's resolved spelling for the
 /// operand's width (register `0` at width 4 is `eax`, at width 8 is `rax`), copied out at
 /// decode so it travels with the value.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("op_t::reg"))]
 pub struct Register {
     /// Processor-local register number.

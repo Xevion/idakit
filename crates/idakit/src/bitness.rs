@@ -1,5 +1,9 @@
 //! The addressing width of an image or segment: 16-, 32-, or 64-bit.
 
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
 use crate::Database;
 
 impl Database {
@@ -20,7 +24,7 @@ impl Database {
 /// A closed set: IDA reports a width in bits, and a value that is not one of these three
 /// (including the `0` the facade returns for an absent segment) becomes `None` at the
 /// conversion boundary rather than a silent default.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[doc(alias("inf_get_app_bitness"))]
 pub enum Bitness {
     /// 16-bit addressing.
@@ -59,6 +63,12 @@ impl Bitness {
     }
 }
 
+impl fmt::Display for Bitness {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}-bit", self.bits())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert2::assert;
@@ -78,5 +88,22 @@ mod tests {
         assert!(Bitness::try_from_bits(0).is_none());
         assert!(Bitness::try_from_bits(8).is_none());
         assert!(Bitness::try_from_bits(128).is_none());
+    }
+
+    #[test]
+    fn ord_follows_bit_width() {
+        assert!(Bitness::Bits16 < Bitness::Bits32);
+        assert!(Bitness::Bits32 < Bitness::Bits64);
+    }
+
+    #[test]
+    fn display_shows_bit_width() {
+        assert!(Bitness::Bits32.to_string() == "32-bit");
+    }
+
+    #[test]
+    fn serde_round_trips() {
+        let json = serde_json::to_string(&Bitness::Bits64).unwrap();
+        assert!(serde_json::from_str::<Bitness>(&json).unwrap() == Bitness::Bits64);
     }
 }

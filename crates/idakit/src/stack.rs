@@ -15,6 +15,7 @@
 //! is dropped rather than surfaced as a placeholder.
 
 use idakit_sys as sys;
+use serde::{Deserialize, Serialize};
 
 use crate::Database;
 use crate::address::Address;
@@ -24,7 +25,7 @@ use crate::types::{SinkAdapter, TypeBuilder, TypeId, TypeSink, TypeTable, TypeVa
 
 /// A [`StackSlot`] is either a real stack variable, carrying its name and type, or one of the
 /// two slots IDA reserves in every frame.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StackSlotKind {
     /// A stack variable: a local (negative [`offset`](StackSlot::offset)) or a stack-passed
     /// argument (positive), with the name and type IDA gave it.
@@ -62,7 +63,7 @@ impl StackSlotKind {
 
 /// One slot in a function's stack frame, its frame-pointer-relative offset and byte size, plus a
 /// [`kind`](Self::kind) that is either a real variable (with name/type) or a reserved slot.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("udm_t"))]
 pub struct StackSlot {
     offset: i64,
@@ -133,7 +134,7 @@ impl StackSlot {
 /// Build with [`Function::frame`](crate::function::Function::frame)/[`Database::frame`], then
 /// read its [`size`](Self::size) and [`slots`](Self::slots). Detached from the kernel, so it
 /// inspects on any thread.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[doc(alias("get_func_frame"))]
 pub struct StackFrame {
     size: u64,
@@ -269,9 +270,12 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use assert2::assert;
 
     use super::*;
+    use crate::types::TypeShape;
 
     const fn assert_send<T: Send>() {}
 
@@ -331,5 +335,93 @@ mod tests {
         assert!(retaddr.is_special());
         assert!(retaddr.name().is_none());
         assert!(retaddr.ty().is_none());
+    }
+
+    /// Distinct kinds hash distinctly (dedup in a `HashSet`) and each round-trips through JSON.
+    #[test]
+    fn stack_slot_kind_hash_and_serde() {
+        let kinds = [
+            StackSlotKind::Variable {
+                name: "var_18".to_owned(),
+                ty: Some(tid(0)),
+            },
+            StackSlotKind::ReturnAddress,
+            StackSlotKind::SavedRegisters,
+        ];
+        let set: HashSet<_> = kinds.iter().cloned().collect();
+        assert!(set.len() == kinds.len());
+
+        for kind in &kinds {
+            let json = serde_json::to_string(kind).expect("serialize");
+            let back: StackSlotKind = serde_json::from_str(&json).expect("deserialize");
+            assert!(back == *kind);
+        }
+    }
+
+    /// Distinct slots hash distinctly and each round-trips through JSON.
+    #[test]
+    fn stack_slot_hash_and_serde() {
+        let slots = [
+            StackSlot {
+                offset: -0x18,
+                size: 4,
+                kind: StackSlotKind::Variable {
+                    name: "var_18".to_owned(),
+                    ty: Some(tid(0)),
+                },
+            },
+            StackSlot {
+                offset: 0,
+                size: 8,
+                kind: StackSlotKind::ReturnAddress,
+            },
+        ];
+        let set: HashSet<_> = slots.iter().cloned().collect();
+        assert!(set.len() == slots.len());
+
+        for slot in &slots {
+            let json = serde_json::to_string(slot).expect("serialize");
+            let back: StackSlot = serde_json::from_str(&json).expect("deserialize");
+            assert!(back == *slot);
+        }
+    }
+
+    /// A frame clones equal to itself and round-trips through JSON, `TypeId` handles included.
+    #[test]
+    fn stack_frame_clone_eq_and_serde() {
+        let mut types = TypeTable::new();
+        let ty = types.intern(TypeValue {
+            shape: TypeShape::Int {
+                bytes: 4,
+                signed: true,
+            },
+            size: Some(4),
+        });
+        let frame = StackFrame {
+            size: 0x20,
+            types,
+            slots: vec![
+                StackSlot {
+                    offset: -0x18,
+                    size: 4,
+                    kind: StackSlotKind::Variable {
+                        name: "var_18".to_owned(),
+                        ty: Some(ty),
+                    },
+                },
+                StackSlot {
+                    offset: 0,
+                    size: 8,
+                    kind: StackSlotKind::ReturnAddress,
+                },
+            ],
+        };
+
+        let cloned = frame.clone();
+        assert!(cloned == frame);
+
+        let json = serde_json::to_string(&frame).expect("serialize");
+        let back: StackFrame = serde_json::from_str(&json).expect("deserialize");
+        assert!(back == frame);
     }
 }

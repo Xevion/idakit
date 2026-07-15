@@ -9,6 +9,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use super::{CanonicalOptions, CanonicalType, TypeDiff, TypeKey};
 use crate::Database;
 
@@ -57,7 +59,7 @@ impl Database {
 
 /// One catalog entry: a type's canonical form plus its pre-computed [`TypeKey`], the cheap identity
 /// test a [`diff`](TypeCatalog::diff) pairs on.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Entry {
     canonical: CanonicalType,
     key: TypeKey,
@@ -68,7 +70,7 @@ struct Entry {
 /// Each type is reduced to a table-free [`CanonicalType`] and keyed by name, built under one
 /// [`CanonicalOptions`] lens. Survives the database that produced it, so two catalogs compare in
 /// memory with [`diff`](Self::diff).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeCatalog {
     types: BTreeMap<String, Entry>,
     opts: CanonicalOptions,
@@ -165,7 +167,7 @@ impl TypeCatalog {
 
 /// The name-paired partition of two catalogs' types into those that agree, those that drifted,
 /// and those unique to each side. Produced by [`TypeCatalog::diff`]; every list is name-sorted.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatalogDiff {
     identical: Vec<String>,
     drifted: Vec<(String, TypeDiff)>,
@@ -220,10 +222,113 @@ impl CatalogDiff {
 
 #[cfg(test)]
 mod tests {
+    use assert2::assert;
+
+    use super::*;
+
     #[test]
     fn type_catalog_is_send() {
         const fn assert_send<T: Send>() {}
-        assert_send::<super::TypeCatalog>();
-        assert_send::<super::CatalogDiff>();
+        assert_send::<TypeCatalog>();
+        assert_send::<CatalogDiff>();
+    }
+
+    #[test]
+    fn type_catalog_partial_eq_compares_structurally() {
+        let ty = CanonicalType::Int {
+            bytes: Some(4),
+            signed: true,
+        };
+        let mut types = BTreeMap::new();
+        types.insert(
+            "i32".to_owned(),
+            Entry {
+                canonical: ty.clone(),
+                key: ty.key(),
+            },
+        );
+        let opts = CanonicalOptions::strict();
+        let a = TypeCatalog {
+            types: types.clone(),
+            opts,
+            skipped: 0,
+        };
+        let b = TypeCatalog {
+            types,
+            opts,
+            skipped: 0,
+        };
+        assert!(a == b);
+
+        let other = CanonicalType::Bool;
+        let mut other_types = BTreeMap::new();
+        other_types.insert(
+            "i32".to_owned(),
+            Entry {
+                canonical: other.clone(),
+                key: other.key(),
+            },
+        );
+        let c = TypeCatalog {
+            types: other_types,
+            opts,
+            skipped: 0,
+        };
+        assert!(a != c);
+    }
+
+    #[test]
+    fn type_catalog_serde_round_trips() {
+        let ty = CanonicalType::Int {
+            bytes: Some(4),
+            signed: true,
+        };
+        let mut types = BTreeMap::new();
+        types.insert(
+            "i32".to_owned(),
+            Entry {
+                canonical: ty.clone(),
+                key: ty.key(),
+            },
+        );
+        let catalog = TypeCatalog {
+            types,
+            opts: CanonicalOptions::strict(),
+            skipped: 1,
+        };
+        let json = serde_json::to_string(&catalog).unwrap();
+        let back: TypeCatalog = serde_json::from_str(&json).unwrap();
+        assert!(back == catalog);
+    }
+
+    #[test]
+    fn catalog_diff_partial_eq_compares_structurally() {
+        let a = CatalogDiff::default();
+        let b = CatalogDiff::default();
+        assert!(a == b);
+
+        let c = CatalogDiff {
+            identical: vec!["point".to_owned()],
+            ..CatalogDiff::default()
+        };
+        assert!(a != c);
+    }
+
+    #[test]
+    fn catalog_diff_serde_round_trips() {
+        let left = CanonicalType::Int {
+            bytes: Some(4),
+            signed: true,
+        };
+        let right = CanonicalType::Bool;
+        let diff = CatalogDiff {
+            identical: vec!["a".to_owned()],
+            drifted: vec![("b".to_owned(), left.diff(&right))],
+            only_left: vec!["c".to_owned()],
+            only_right: vec!["d".to_owned()],
+        };
+        let json = serde_json::to_string(&diff).unwrap();
+        let back: CatalogDiff = serde_json::from_str(&json).unwrap();
+        assert!(back == diff);
     }
 }

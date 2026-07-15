@@ -1,10 +1,12 @@
 //! The array-tag selector and its reserved values.
 
+use serde::{Deserialize, Serialize};
+
 /// A netnode array tag: the `uchar` selector namespacing an alt, sup, or hash array.
 ///
 /// The default accessors use the reserved [`ALT`](Self::ALT)/[`SUP`](Self::SUP)/[`HASH`](Self::HASH)
 /// tags; [`Netnode::tag`](super::Netnode::tag) reaches the same arrays under any other tag.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Tag(u8);
 
 impl Tag {
@@ -39,5 +41,30 @@ impl Tag {
 impl std::fmt::Debug for Tag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Tag({:?})", self.0 as char)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::Tag;
+
+    #[test]
+    fn orders_by_raw_byte() {
+        assert!(Tag::ALT < Tag::HASH);
+        assert!(Tag::HASH < Tag::SUP);
+        assert!(Tag::new(b'A') == Tag::ALT);
+    }
+
+    #[test]
+    fn debug_renders_the_selector_char() {
+        assert!(format!("{:?}", Tag::ALT) == "Tag('A')");
+    }
+
+    #[test]
+    fn serde_round_trips() {
+        let json = serde_json::to_string(&Tag::new(b'X')).unwrap();
+        assert!(serde_json::from_str::<Tag>(&json).unwrap() == Tag::new(b'X'));
     }
 }

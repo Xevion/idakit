@@ -8,6 +8,7 @@ use std::num::NonZeroU64;
 use std::ops::Add;
 
 use idakit_sys::BADADDR;
+use serde::{Deserialize, Serialize};
 
 const MAX_EA: u64 = BADADDR - 1;
 
@@ -90,6 +91,24 @@ impl From<Address> for u64 {
     #[inline]
     fn from(address: Address) -> Self {
         address.get()
+    }
+}
+
+// Serialize the real address, not the inverted niche a derive would emit: an
+// `Address` round-trips as its `get()` value, and any non-sentinel `u64` deserializes back.
+impl Serialize for Address {
+    #[inline]
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u64(self.get())
+    }
+}
+
+impl<'de> Deserialize<'de> for Address {
+    #[inline]
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = u64::deserialize(deserializer)?;
+        Self::try_new(raw)
+            .ok_or_else(|| serde::de::Error::custom("address is the BADADDR sentinel"))
     }
 }
 
@@ -188,6 +207,21 @@ mod tests {
         assert!(lo.distance_to(hi) == 0x100);
         // Below-self saturates to zero rather than wrapping.
         assert!(hi.distance_to(lo) == 0);
+    }
+
+    #[test]
+    fn serde_round_trips_as_the_real_address() {
+        let a = Address::new_const(0x1400_1000);
+        let json = serde_json::to_string(&a).unwrap();
+        // Serializes the logical address, not the inverted niche.
+        assert!(json == a.get().to_string());
+        let back: Address = serde_json::from_str(&json).unwrap();
+        assert!(back == a);
+    }
+
+    #[test]
+    fn serde_rejects_the_sentinel() {
+        assert!(serde_json::from_str::<Address>(&BADADDR.to_string()).is_err());
     }
 
     #[test]

@@ -13,6 +13,7 @@
 use std::ffi::c_int;
 
 use idakit_sys as sys;
+use serde::{Deserialize, Serialize};
 
 use crate::Database;
 use crate::address::Address;
@@ -542,11 +543,20 @@ impl FunctionEdit<'_> {
     }
 }
 
+impl std::fmt::Debug for FunctionEdit<'_> {
+    // Skips the exclusively-held `&mut Database`; only the key is printable.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FunctionEdit")
+            .field("address", &self.address())
+            .finish_non_exhaustive()
+    }
+}
+
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
 ///
 /// `Function` borrows a `!Send` [`Database`]; collect snapshots inside an
 /// [`Ida::call`](crate::kernel::Ida::call) job to carry results back out.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FunctionSnapshot {
     /// Entry address.
     pub address: Address,
@@ -561,7 +571,7 @@ pub struct FunctionSnapshot {
 /// Derefs to the name text, so it reads as the `str` it carries; match the variant to branch on
 /// provenance. Every function entry has a name, since IDA names even an unnamed one with at
 /// least an address-derived placeholder, so `name()` yields this directly, never an `Option`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[doc(alias("FF_NAME", "FF_LABL"))]
 pub enum FunctionName {
     /// An explicit name: user-assigned, or an imported/mangled symbol.
@@ -699,11 +709,23 @@ impl<'db> Iterator for Functions<'db> {
     }
 }
 
+impl std::fmt::Debug for Functions<'_> {
+    // Skips the borrowed `&Database`; only cursor position is printable.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Functions")
+            .field("next", &self.next)
+            .field("count", &self.count)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A contiguous address range belonging to a function: `[start, end)`.
 ///
 /// A function is one chunk when contiguous, or several when the compiler scattered its body
 /// into tail chunks placed elsewhere. Yielded by [`Function::chunks`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+///
+/// Ordered by `start` then `end`, so a sorted list of chunks reads in address order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[doc(alias("func_tail_iterator_t"))]
 pub struct FunctionChunk {
     /// First address of the chunk.
@@ -755,6 +777,15 @@ impl Iterator for FunctionChunks {
 }
 
 impl ExactSizeIterator for FunctionChunks {}
+
+impl std::fmt::Debug for FunctionChunks {
+    // Prints the remaining chunks directly rather than the raw `vec::IntoIter` type name.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FunctionChunks")
+            .field("remaining", &self.chunks.as_slice())
+            .finish()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -836,5 +867,40 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn function_chunk_ord_sorts_by_start_then_end() {
+        let low = FunctionChunk {
+            start: Address::try_new(0x1000).unwrap(),
+            end: Address::try_new(0x1010).unwrap(),
+        };
+        let high = FunctionChunk {
+            start: Address::try_new(0x2000).unwrap(),
+            end: Address::try_new(0x2010).unwrap(),
+        };
+        let mut chunks = vec![high, low];
+        chunks.sort();
+        assert!(chunks == vec![low, high]);
+    }
+
+    #[test]
+    fn function_name_serde_round_trips() {
+        let name = FunctionName::User("main".into());
+        let json = serde_json::to_string(&name).unwrap();
+        let back: FunctionName = serde_json::from_str(&json).unwrap();
+        assert!(back == name);
+    }
+
+    #[test]
+    fn function_snapshot_serde_round_trips() {
+        let snapshot = FunctionSnapshot {
+            address: Address::try_new(0x0040_1000).unwrap(),
+            name: FunctionName::Auto("nullsub_0".into()),
+            prototype: Some("void nullsub_0(void)".into()),
+        };
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let back: FunctionSnapshot = serde_json::from_str(&json).unwrap();
+        assert!(back == snapshot);
     }
 }

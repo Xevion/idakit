@@ -211,6 +211,13 @@ impl TypesMut<'_> {
     }
 }
 
+impl fmt::Debug for TypesMut<'_> {
+    // Skips the exclusively-held `&mut Database`; a capability cursor has no other field.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TypesMut").finish_non_exhaustive()
+    }
+}
+
 /// A write cursor over one named type, from [`TypesMut::edit`].
 ///
 /// Adds struct/union members and hands out a [`MemberEdit`] sub-cursor keyed by member name or bit
@@ -653,13 +660,22 @@ impl TypeEdit<'_> {
     }
 }
 
+impl fmt::Debug for TypeEdit<'_> {
+    // Skips the exclusively-held `&mut Database`; only the key is printable.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TypeEdit")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A durable handle to a struct/union member by index, from [`TypeEdit::member_ref`].
 ///
 /// Carries a structural fingerprint of the type's layout at mint time (each member's bit offset,
 /// size, and shape kind); resolve it with [`TypeEdit::member_by_ref`], which returns
 /// [`TypeWriteError::StaleMemberRef`] once the layout has changed. Holds no borrow, so it can
 /// outlive the cursor it came from.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MemberRef {
     type_name: String,
     index: usize,
@@ -883,6 +899,16 @@ impl MemberEdit<'_> {
     }
 }
 
+impl fmt::Debug for MemberEdit<'_> {
+    // Skips the exclusively-held `&mut Database`; only the key is printable.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemberEdit")
+            .field("type_name", &self.type_name)
+            .field("key", &self.key)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A write cursor over one enum constant, from [`TypeEdit::constant`].
 ///
 /// Keyed by name, resolved fresh on each edit against the live enum (a constant that no longer
@@ -976,6 +1002,16 @@ impl ConstantEdit<'_> {
             &self.type_name,
             Some(&MemberKey::Name(self.name.clone())),
         )
+    }
+}
+
+impl fmt::Debug for ConstantEdit<'_> {
+    // Skips the exclusively-held `&mut Database`; only the key is printable.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConstantEdit")
+            .field("type_name", &self.type_name)
+            .field("name", &self.name)
+            .finish_non_exhaustive()
     }
 }
 
@@ -1331,6 +1367,29 @@ mod tests {
     fn type_edit_code_rejects_unknown() {
         assert!(TypeEditCode::try_from(-39).is_err());
         assert!(TypeEditCode::try_from(1).is_err());
+    }
+
+    /// `MemberRef` orders by type name, then index, then generation.
+    #[test]
+    fn member_ref_ord_sorts_by_type_then_index_then_generation() {
+        let a = MemberRef {
+            type_name: "Pt".to_owned(),
+            index: 0,
+            generation: 1,
+        };
+        let b = MemberRef {
+            type_name: "Pt".to_owned(),
+            index: 1,
+            generation: 0,
+        };
+        let c = MemberRef {
+            type_name: "Zz".to_owned(),
+            index: 0,
+            generation: 0,
+        };
+        assert!(a < b);
+        assert!(b < c);
+        assert!(a < c);
     }
 
     /// The member selector renders both keyings for a [`TypeWriteError::NoMember`].

@@ -3,6 +3,10 @@
 //! Nodes are allocated children-first into arenas; [`CtreeBuilder::finish`] wires every
 //! node's `parent` link once the tree is complete.
 
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
 use super::node::{
     ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef, StatementId,
     StatementKind, StatementNode,
@@ -75,7 +79,7 @@ fn for_each_child(
 /// );
 /// assert_eq!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>(), vec![arg]);
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[doc(alias("cfunc_t"))]
 pub struct Ctree {
     expressions: Arena<ExpressionNode>,
@@ -274,10 +278,24 @@ impl Ctree {
     }
 }
 
+impl fmt::Display for Ctree {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.to_pseudocode())
+    }
+}
+
 /// A lazy, pre-order depth-first iterator over a subtree, from [`Ctree::descendants`].
 pub struct Descendants<'a> {
     tree: &'a Ctree,
     stack: Vec<NodeRef>,
+}
+
+impl fmt::Debug for Descendants<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Descendants")
+            .field("stack", &self.stack)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Iterator for Descendants<'_> {
@@ -811,5 +829,40 @@ mod tests {
     fn ctree_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Ctree>();
+    }
+
+    /// A clone equals its original, and an independently-built copy of the same shape
+    /// compares equal too, since `PartialEq` is structural.
+    #[test]
+    fn ctree_clone_and_partial_eq() {
+        let (tree, ..) = sample();
+        let (other, ..) = sample();
+        assert!(tree.clone() == tree);
+        assert!(tree == other);
+    }
+
+    /// `Display` renders the same text as `to_pseudocode`.
+    #[test]
+    fn ctree_display_matches_to_pseudocode() {
+        let (tree, ..) = sample();
+        assert!(tree.to_string() == tree.to_pseudocode());
+    }
+
+    /// A ctree round-trips through JSON.
+    #[test]
+    fn ctree_serde_round_trips() {
+        let (tree, ..) = sample();
+        let json = serde_json::to_string(&tree).unwrap();
+        let back: Ctree = serde_json::from_str(&json).unwrap();
+        assert!(back == tree);
+    }
+
+    /// `Descendants`' hand-written `Debug` doesn't require formatting the borrowed tree.
+    #[test]
+    fn descendants_debug_does_not_panic() {
+        let (tree, block, ..) = sample();
+        let descendants = tree.descendants(NodeRef::Statement(block));
+        let rendered = format!("{descendants:?}");
+        assert!(rendered.contains("Descendants"));
     }
 }

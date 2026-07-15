@@ -1,6 +1,7 @@
 //! Reads a database's import table through [`Import`] and [`Imports`].
 
 use idakit_sys as sys;
+use serde::{Deserialize, Serialize};
 
 use crate::Database;
 use crate::address::Address;
@@ -25,7 +26,7 @@ impl Database {
 /// Carries a [`name`](Self::name), an [`ordinal`](Self::ordinal), or, for a by-ordinal import
 /// IDA has resolved a name for, both; they are not mutually exclusive. It outlives the
 /// snapshot it was read from.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[doc(alias("enum_import_names"))]
 pub struct Import {
     address: Address,
@@ -152,5 +153,27 @@ mod tests {
     #[test]
     fn module_is_exposed() {
         assert!(import(0, Some("f")).module() == "KERNEL32");
+    }
+
+    /// Ordering follows the address field first, matching the struct's declared field order.
+    #[test]
+    fn ord_follows_address() {
+        let low = Import {
+            address: Address::new_const(0x1000),
+            ..import(0, None)
+        };
+        let high = Import {
+            address: Address::new_const(0x2000),
+            ..import(0, None)
+        };
+        assert!(low < high);
+    }
+
+    #[test]
+    fn serde_round_trips() {
+        let i = import(12, Some("CreateFileW"));
+        let json = serde_json::to_string(&i).unwrap();
+        let back: Import = serde_json::from_str(&json).unwrap();
+        assert!(back == i);
     }
 }

@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 use crate::types::Type;
 
 use super::model::{CanonicalMember, CanonicalType};
@@ -10,7 +12,7 @@ use super::model::{CanonicalMember, CanonicalType};
 /// [`CanonicalType`]s, empty when the two are identical.
 ///
 /// Produced by [`CanonicalType::diff`] / [`Type::diff`].
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct TypeDiff {
     changes: Vec<Change>,
 }
@@ -94,7 +96,7 @@ impl TypeDiff {
 
 /// One difference, anchored at a dotted `path` from the compared root (`""` at the root itself,
 /// `Tail.Overlay` for a nested member).
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Change {
     /// Dotted path from the root to the differing node.
     pub path: String,
@@ -103,7 +105,7 @@ pub struct Change {
 }
 
 /// The nature of a single [`Change`].
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ChangeKind {
     /// A member present only on the right (added).
     Added(CanonicalType),

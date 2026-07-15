@@ -60,6 +60,9 @@ macro_rules! tagged_reads {
 
 /// A read view of one netnode's arrays under a single [`Tag`], from
 /// [`Netnode::tag`](super::Netnode::tag).
+///
+/// Identity is the `(id, tag)` pair, not the id alone: two views over the same node under
+/// different tags compare unequal.
 #[derive(Clone, Copy)]
 pub struct TaggedNetnode<'db> {
     db: &'db Database,
@@ -75,12 +78,44 @@ impl<'db> TaggedNetnode<'db> {
     tagged_reads!();
 }
 
+// Compound (id, tag) key: key_identity! only spans one field, so this is hand-written.
+impl PartialEq for TaggedNetnode<'_> {
+    fn eq(&self, o: &Self) -> bool {
+        self.id == o.id && self.tag == o.tag
+    }
+}
+impl Eq for TaggedNetnode<'_> {}
+impl std::hash::Hash for TaggedNetnode<'_> {
+    fn hash<H: std::hash::Hasher>(&self, s: &mut H) {
+        self.id.hash(s);
+        self.tag.hash(s);
+    }
+}
+
+impl std::fmt::Debug for TaggedNetnode<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TaggedNetnode")
+            .field("id", &self.id)
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A read-write view of one netnode's arrays under a single [`Tag`], from
 /// [`NetnodeMut::tag`](super::NetnodeMut::tag).
 pub struct TaggedNetnodeMut<'db> {
     db: &'db mut Database,
     id: NodeId,
     tag: Tag,
+}
+
+impl std::fmt::Debug for TaggedNetnodeMut<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TaggedNetnodeMut")
+            .field("id", &self.id)
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'db> TaggedNetnodeMut<'db> {
@@ -140,5 +175,34 @@ impl<'db> TaggedNetnodeMut<'db> {
         } else {
             Err(rejected(&*self.db, self.id.get(), op))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    #[test]
+    fn identity_is_by_id_and_tag() {
+        let db = Database::new();
+        let id = NodeId::try_new(1).unwrap();
+        let other_id = NodeId::try_new(2).unwrap();
+        let a = TaggedNetnode::new(&db, id, Tag::new(b'X'));
+        let b = TaggedNetnode::new(&db, id, Tag::new(b'X'));
+        let different_tag = TaggedNetnode::new(&db, id, Tag::new(b'Y'));
+        let different_id = TaggedNetnode::new(&db, other_id, Tag::new(b'X'));
+
+        assert!(a == b);
+        assert!(a != different_tag);
+        assert!(a != different_id);
+    }
+
+    #[test]
+    fn debug_renders_id_and_tag() {
+        let db = Database::new();
+        let view = TaggedNetnode::new(&db, NodeId::try_new(1).unwrap(), Tag::new(b'X'));
+        assert!(format!("{view:?}").starts_with("TaggedNetnode"));
     }
 }

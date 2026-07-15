@@ -15,6 +15,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::arena::{Arena, Idx};
 
 mod builder;
@@ -43,7 +45,7 @@ pub use tinfo::TypeInfo;
 pub type TypeId = Idx<TypeValue>;
 
 /// A resolved type, pairing its shape with a byte size when known.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct TypeValue {
     /// The type's shape.
     pub shape: TypeShape,
@@ -52,7 +54,7 @@ pub struct TypeValue {
 }
 
 /// One field of a struct or union.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[doc(alias("udm_t"))]
 pub struct TypeMember {
     /// The field's name; empty if IDA gave none.
@@ -69,7 +71,7 @@ pub struct TypeMember {
 }
 
 /// One member of an enum.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[doc(alias("edm_t"))]
 pub struct EnumMember {
     /// The constant's name.
@@ -84,7 +86,7 @@ pub struct EnumMember {
 /// A closed set. A named type with no structural body becomes [`Opaque`](TypeShape::Opaque)
 /// rather than a catch-all, and [`Unknown`](TypeShape::Unknown) is only the transient
 /// build-time placeholder. A new shape in a later IDA is a deliberate, breaking addition.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum TypeShape {
     /// `void`
     Void,
@@ -207,11 +209,41 @@ impl TypeShape {
 
 /// An interned arena of [`TypeValue`] that collapses structurally identical types to one
 /// [`TypeId`].
-#[derive(Debug)]
+///
+/// `PartialEq`/`Eq` are raw structural equality (arena order and intern-cache state included,
+/// since [`alloc_placeholder`](Self::alloc_placeholder) bypasses `dedup`), not canonical "same
+/// types" comparison; use [`Type::key`]/[`Type::canonical`] to compare across tables.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[doc(alias("tinfo_t"))]
 pub struct TypeTable {
     arena: Arena<TypeValue>,
+    #[serde(with = "dedup_as_pairs")]
     dedup: HashMap<TypeValue, TypeId>,
+}
+
+/// (De)serializes [`TypeTable::dedup`] as a pair list rather than a native map: `TypeValue` is a
+/// struct key, and formats such as JSON require string map keys.
+mod dedup_as_pairs {
+    use std::collections::HashMap;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::{TypeId, TypeValue};
+
+    pub(super) fn serialize<S: Serializer>(
+        map: &HashMap<TypeValue, TypeId>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        map.iter().collect::<Vec<_>>().serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<HashMap<TypeValue, TypeId>, D::Error> {
+        Ok(Vec::<(TypeValue, TypeId)>::deserialize(deserializer)?
+            .into_iter()
+            .collect())
+    }
 }
 
 impl TypeTable {
@@ -396,5 +428,71 @@ mod tests {
     fn type_table_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<TypeTable>();
+    }
+
+    /// A populated table (struct with a member, matching the recursive-struct fixture) clones
+    /// to an equal, independent copy.
+    #[test]
+    fn type_table_clone_is_equal() {
+        let mut table = TypeTable::new();
+        let field = table.intern(int(4, true));
+        table.intern(TypeValue {
+            shape: TypeShape::Struct {
+                name: Some("pt".into()),
+                members: vec![TypeMember {
+                    name: "x".into(),
+                    bit_offset: 0,
+                    ty: field,
+                    bitfield_width: None,
+                    repr: None,
+                }],
+            },
+            size: Some(4),
+        });
+
+        let cloned = table.clone();
+        assert!(cloned == table);
+        assert!(cloned.len() == table.len());
+    }
+
+    /// A `TypeTable` with a struct-and-member survives a JSON round trip intact, exercising the
+    /// [`Serialize`]/[`Deserialize`] chain through [`TypeValue`], [`TypeShape`], and
+    /// [`TypeMember`].
+    #[test]
+    fn type_table_serde_round_trip() {
+        let mut table = TypeTable::new();
+        let field = table.intern(int(4, true));
+        table.intern(TypeValue {
+            shape: TypeShape::Struct {
+                name: Some("pt".into()),
+                members: vec![TypeMember {
+                    name: "x".into(),
+                    bit_offset: 0,
+                    ty: field,
+                    bitfield_width: None,
+                    repr: Some(ValueRepr {
+                        format: NumberFormat::Hexadecimal,
+                        signed: false,
+                        leading_zeros: false,
+                    }),
+                }],
+            },
+            size: Some(4),
+        });
+
+        let json = serde_json::to_string(&table).unwrap();
+        let round_tripped: TypeTable = serde_json::from_str(&json).unwrap();
+        assert!(round_tripped == table);
+    }
+
+    /// An empty table (`dedup` included) also round trips, so the pair-list adapter handles the
+    /// zero-entry edge case, not just a populated map.
+    #[test]
+    fn empty_type_table_serde_round_trip() {
+        let table = TypeTable::new();
+
+        let json = serde_json::to_string(&table).unwrap();
+        let round_tripped: TypeTable = serde_json::from_str(&json).unwrap();
+        assert!(round_tripped == table);
     }
 }

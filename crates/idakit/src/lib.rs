@@ -285,6 +285,12 @@ pub struct Database {
     _not_send: PhantomData<*const ()>,
 }
 
+impl std::fmt::Debug for Database {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Database").finish_non_exhaustive()
+    }
+}
+
 /// Database-open builder: `idb.open(path).run_auto(true).call()`.
 ///
 /// `path` stays a positional argument; options chain before the terminal `.call()`.

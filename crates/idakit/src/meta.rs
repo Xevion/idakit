@@ -2,6 +2,8 @@
 
 use std::ops::Range;
 
+use serde::{Deserialize, Serialize};
+
 use crate::Database;
 use crate::address::Address;
 use crate::bitness::Bitness;
@@ -11,7 +13,7 @@ use crate::bitness::Bitness;
 /// Every field is resolved and copied out at snapshot time, so a `DatabaseInfo` carries no borrow
 /// on the [`Database`] and can be inspected on any thread. Reading it is a handful of kernel
 /// calls, so grab it once rather than per field.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("idainfo"))]
 pub struct DatabaseInfo {
     /// Application addressing width, or `None` if the database reports an unrecognized one.
@@ -60,10 +62,48 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    use assert2::assert;
+
     use super::DatabaseInfo;
+    use crate::address::Address;
+    use crate::bitness::Bitness;
 
     const fn assert_send<T: Send>() {}
 
     // A detached snapshot is only worth having if it can leave the kernel thread.
     const _: () = assert_send::<DatabaseInfo>();
+
+    fn sample() -> DatabaseInfo {
+        DatabaseInfo {
+            bitness: Some(Bitness::Bits64),
+            image_base: Some(Address::new_const(0x1400_0000)),
+            processor: Some("metapc".to_owned()),
+            file_type: None,
+            input_path: None,
+            root_filename: Some("sample.exe".to_owned()),
+        }
+    }
+
+    fn hash_of(info: &DatabaseInfo) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        info.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Equal snapshots hash equally.
+    #[test]
+    fn equal_snapshots_hash_equally() {
+        assert!(hash_of(&sample()) == hash_of(&sample()));
+    }
+
+    #[test]
+    fn serde_round_trips() {
+        let info = sample();
+        let json = serde_json::to_string(&info).unwrap();
+        let back: DatabaseInfo = serde_json::from_str(&json).unwrap();
+        assert!(back == info);
+    }
 }

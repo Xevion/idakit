@@ -12,11 +12,22 @@
 //! `data_type` rather than only a byte count.
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 /// The value type of an operand.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive, VariantArray,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    IntoPrimitive,
+    TryFromPrimitive,
+    VariantArray,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u8)]
 #[doc(alias("op_dtype_t"))]
@@ -114,6 +125,33 @@ impl OperandDataType {
     }
 }
 
+impl std::fmt::Display for OperandDataType {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Byte => "byte",
+            Self::Word => "word",
+            Self::Dword => "dword",
+            Self::Float => "float",
+            Self::Double => "double",
+            Self::Tbyte => "tbyte",
+            Self::PackReal => "packed real",
+            Self::Qword => "qword",
+            Self::Byte16 => "byte16",
+            Self::Code => "code pointer",
+            Self::Void => "void",
+            Self::Fword => "fword",
+            Self::BitField => "bit field",
+            Self::String => "string pointer",
+            Self::Unicode => "unicode string pointer",
+            Self::Ldbl => "long double",
+            Self::Byte32 => "byte32",
+            Self::Byte64 => "byte64",
+            Self::Half => "half",
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert2::assert;
@@ -170,5 +208,32 @@ mod tests {
         assert!(OperandDataType::Ldbl.is_float());
         assert!(!OperandDataType::Dword.is_float());
         assert!(!OperandDataType::Qword.is_float());
+    }
+
+    // Every variant renders a non-empty, stable label; stability itself is enforced by the
+    // exhaustive match in `Display` (a missed variant fails to compile).
+    #[test]
+    fn display_renders_every_variant() {
+        for &d in OperandDataType::VARIANTS {
+            assert!(!d.to_string().is_empty());
+        }
+        assert!(OperandDataType::Qword.to_string() == "qword");
+        assert!(OperandDataType::Byte.to_string() == "byte");
+    }
+
+    #[test]
+    fn serde_roundtrips_every_variant() {
+        for &d in OperandDataType::VARIANTS {
+            let json = serde_json::to_string(&d).expect("serialize");
+            let back: OperandDataType = serde_json::from_str(&json).expect("deserialize");
+            assert!(back == d);
+        }
+    }
+
+    #[test]
+    fn hash_usable_in_set() {
+        use std::collections::HashSet;
+        let set: HashSet<OperandDataType> = OperandDataType::VARIANTS.iter().copied().collect();
+        assert!(set.len() == OperandDataType::VARIANTS.len());
     }
 }

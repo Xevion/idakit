@@ -118,7 +118,7 @@ impl std::fmt::Debug for StringLiteral<'_> {
     }
 }
 
-key_identity!(StringLiteral, address);
+key_identity!(StringLiteral, address, ord);
 
 /// Bytes per character encoded in the raw string-type code: 1, 2, or 4.
 ///
@@ -224,5 +224,35 @@ mod tests {
     #[case(STRTYPE_LEN2, true)]
     fn is_pascal_reads_the_strlyt_field(#[case] raw: i32, #[case] pascal: bool) {
         assert!(is_pascal_of(raw) == pascal);
+    }
+
+    /// Identity is the address alone: two entries at the same address are equal even with
+    /// different lengths/types, and a different address is never equal.
+    #[test]
+    fn string_literal_identity_compares_by_address() {
+        let db = Database::new();
+        let a = Address::new_const(0x1000);
+        let b = Address::new_const(0x2000);
+        assert!(
+            StringLiteral::new(a, 4, STRTYPE_C, &db)
+                == StringLiteral::new(a, 8, STRTYPE_PASCAL, &db)
+        );
+        assert!(
+            StringLiteral::new(a, 4, STRTYPE_C, &db) != StringLiteral::new(b, 4, STRTYPE_C, &db)
+        );
+    }
+
+    #[test]
+    fn string_literal_ord_sorts_by_address() {
+        let db = Database::new();
+        let hi = Address::new_const(0x2000);
+        let lo = Address::new_const(0x1000);
+        let mut strings = [
+            StringLiteral::new(hi, 1, STRTYPE_C, &db),
+            StringLiteral::new(lo, 1, STRTYPE_C, &db),
+        ];
+        strings.sort();
+        assert!(strings[0].address() == lo);
+        assert!(strings[1].address() == hi);
     }
 }

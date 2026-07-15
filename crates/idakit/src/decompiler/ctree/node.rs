@@ -5,6 +5,8 @@
 //! stores its `parent`). Operators are grouped (see [`BinaryOp`]/[`UnaryOp`]/[`AssignmentOp`]);
 //! leaves carry their resolved value.
 
+use serde::{Deserialize, Serialize};
+
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use crate::address::Address;
 use crate::arena::Idx;
@@ -17,7 +19,7 @@ pub type StatementId = Idx<StatementNode>;
 
 /// A reference to any node, an expression or a statement. Used for parent links and
 /// uniform navigation.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum NodeRef {
     /// An expression node.
     Expression(ExpressionId),
@@ -63,7 +65,7 @@ impl NodeRef {
 
 /// A typed handle into a decompiled function's lvar table, resolved via
 /// [`Ctree::lvar`](super::Ctree::lvar).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 #[doc(alias("lvar_t"))]
 pub struct LocalId(
     /// The variable's index in the lvar table.
@@ -76,7 +78,7 @@ pub struct LocalId(
 /// every x86-64 local; the pair, register-relative, scattered, and static forms are artifacts of
 /// other architectures' calling conventions (AArch64 register pairs, AAPCS struct-scatter, MIPS
 /// and PPC register-relative), rare to absent on x86-64.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[doc(alias("argloc_t"))]
 pub enum LocalLocation {
     /// In a single register, by number. A decompiler register location carries no in-register
@@ -151,7 +153,7 @@ impl LocalLocation {
 
 /// One fragment of a [`Scattered`](LocalLocation::Scattered) local, naming where it lives
 /// and which byte range of the whole value it covers.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct LocationPiece {
     /// Where this fragment lives: a register or stack slot, never itself scattered.
     pub location: LocalLocation,
@@ -163,7 +165,7 @@ pub struct LocationPiece {
 
 /// One local variable of a decompiled function: its name, resolved type, and role.
 /// [`ExpressionKind::Var`] indexes the tree's lvar table to one of these.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("lvar_t"))]
 pub struct Local {
     /// The variable's name, as the decompiler named it.
@@ -188,7 +190,7 @@ pub struct Local {
 ///
 /// `address` is [`None`] for synthetic nodes the decompiler introduces with no backing
 /// instruction; [`Option<Address>`](Address) niche-optimizes to a bare [`u64`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExpressionNode {
     /// The backing instruction's address, or `None` for a synthetic node.
     pub address: Option<Address>,
@@ -203,7 +205,7 @@ pub struct ExpressionNode {
 /// A statement node with its source address, parent, and kind.
 ///
 /// `address` is [`None`] for synthetic nodes with no backing instruction.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatementNode {
     /// The backing instruction's address, or `None` for a synthetic node.
     pub address: Option<Address>,
@@ -218,7 +220,7 @@ pub struct StatementNode {
 /// A closed set covering the finalized decompiler tree. Extraction rejects an unmodelled node tag
 /// rather than widening this, so a new expression kind in a later IDA is a deliberate, breaking
 /// addition.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[doc(alias("ctype_t", "cexpr_t"))]
 pub enum ExpressionKind {
     /// A binary operation, `x OP y`.
@@ -409,7 +411,7 @@ expression_accessors! {
 }
 
 /// One `case` of a `switch`: its values (empty = `default`) and body.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Case {
     /// The case's match values; empty for the `default` case.
     pub values: Vec<u64>,
@@ -421,7 +423,7 @@ pub struct Case {
 ///
 /// A closed set on the same terms as [`ExpressionKind`]: it covers the finalized decompiler tree,
 /// and extraction rejects an unmodelled tag rather than folding it in here.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("cinsn_t"))]
 pub enum StatementKind {
     /// A block of statements, `{ ... }`.
@@ -633,6 +635,10 @@ mod tests {
         Idx::from_raw(n)
     }
 
+    fn s(n: u32) -> StatementId {
+        Idx::from_raw(n)
+    }
+
     /// Each accessor projects its own variant and yields `None` for any other.
     #[test]
     fn expression_accessors_project_their_variant() {
@@ -758,5 +764,155 @@ mod tests {
         assert!(
             LocalLocation::from_argloc(2, 0, 0, 0, vec![piece.clone()]) == Scattered(vec![piece])
         );
+    }
+
+    /// `LocalId` orders by its wrapped index.
+    #[test]
+    fn local_id_ord_sorts_by_index() {
+        let mut ids = vec![LocalId(2), LocalId(0), LocalId(1)];
+        ids.sort();
+        assert!(ids == [LocalId(0), LocalId(1), LocalId(2)]);
+        assert!(LocalId(0) < LocalId(1));
+    }
+
+    /// `NodeRef` orders all expressions before all statements (declaration order), then by
+    /// the wrapped handle's index within a variant.
+    #[test]
+    fn node_ref_ord_orders_expressions_before_statements() {
+        let mut refs = vec![
+            NodeRef::Statement(s(0)),
+            NodeRef::Expression(e(5)),
+            NodeRef::Expression(e(1)),
+        ];
+        refs.sort();
+        assert!(
+            refs == [
+                NodeRef::Expression(e(1)),
+                NodeRef::Expression(e(5)),
+                NodeRef::Statement(s(0)),
+            ]
+        );
+    }
+
+    /// `LocalLocation`, `LocationPiece`, `Local`, `Case`, and `StatementKind` all hash, so
+    /// each can key a `HashSet`/`HashMap`.
+    #[test]
+    fn hash_targets_key_a_hash_set() {
+        use std::collections::HashSet;
+
+        let mut locations = HashSet::new();
+        locations.insert(LocalLocation::Register(1));
+        locations.insert(LocalLocation::Stack(-8));
+        assert!(locations.contains(&LocalLocation::Register(1)));
+        assert!(!locations.contains(&LocalLocation::Register(2)));
+
+        let mut pieces = HashSet::new();
+        pieces.insert(LocationPiece {
+            location: LocalLocation::Stack(0),
+            offset: 0,
+            size: 4,
+        });
+        assert!(pieces.contains(&LocationPiece {
+            location: LocalLocation::Stack(0),
+            offset: 0,
+            size: 4,
+        }));
+
+        let local = Local {
+            name: "v1".into(),
+            ty: Idx::from_raw(0),
+            is_arg: true,
+            is_result: false,
+            is_byref: false,
+            width: 8,
+            comment: None,
+            location: LocalLocation::Register(0),
+        };
+        let mut locals = HashSet::new();
+        locals.insert(local.clone());
+        assert!(locals.contains(&local));
+
+        let case = Case {
+            values: vec![1, 2],
+            body: s(0),
+        };
+        let mut cases = HashSet::new();
+        cases.insert(case.clone());
+        assert!(cases.contains(&case));
+
+        let mut statements = HashSet::new();
+        statements.insert(StatementKind::Break);
+        statements.insert(StatementKind::Goto { label: 3 });
+        assert!(statements.contains(&StatementKind::Break));
+        assert!(!statements.contains(&StatementKind::Continue));
+    }
+
+    /// Each serde target round-trips through JSON.
+    #[test]
+    fn serde_round_trips() {
+        let node_ref = NodeRef::Expression(e(3));
+        let json = serde_json::to_string(&node_ref).unwrap();
+        assert!(serde_json::from_str::<NodeRef>(&json).unwrap() == node_ref);
+
+        let local_id = LocalId(7);
+        let json = serde_json::to_string(&local_id).unwrap();
+        assert!(serde_json::from_str::<LocalId>(&json).unwrap() == local_id);
+
+        let location = LocalLocation::RegisterRelative { reg: 2, offset: 16 };
+        let json = serde_json::to_string(&location).unwrap();
+        assert!(serde_json::from_str::<LocalLocation>(&json).unwrap() == location);
+
+        let piece = LocationPiece {
+            location: LocalLocation::Stack(-4),
+            offset: 4,
+            size: 4,
+        };
+        let json = serde_json::to_string(&piece).unwrap();
+        assert!(serde_json::from_str::<LocationPiece>(&json).unwrap() == piece);
+
+        let local = Local {
+            name: "arg1".into(),
+            ty: Idx::from_raw(1),
+            is_arg: true,
+            is_result: false,
+            is_byref: false,
+            width: 4,
+            comment: Some("note".into()),
+            location: LocalLocation::Stack(-4),
+        };
+        let json = serde_json::to_string(&local).unwrap();
+        assert!(serde_json::from_str::<Local>(&json).unwrap() == local);
+
+        let expression_node = ExpressionNode {
+            address: Some(Address::new_const(0x1000)),
+            ty: Idx::from_raw(0),
+            parent: None,
+            kind: ExpressionKind::Num(42),
+        };
+        let json = serde_json::to_string(&expression_node).unwrap();
+        assert!(serde_json::from_str::<ExpressionNode>(&json).unwrap() == expression_node);
+
+        let statement_node = StatementNode {
+            address: None,
+            parent: Some(NodeRef::Statement(s(0))),
+            kind: StatementKind::Break,
+        };
+        let json = serde_json::to_string(&statement_node).unwrap();
+        assert!(serde_json::from_str::<StatementNode>(&json).unwrap() == statement_node);
+
+        let expression_kind = ExpressionKind::Str("hi".into());
+        let json = serde_json::to_string(&expression_kind).unwrap();
+        assert!(serde_json::from_str::<ExpressionKind>(&json).unwrap() == expression_kind);
+
+        let statement_kind = StatementKind::Return(Some(e(0)));
+        let json = serde_json::to_string(&statement_kind).unwrap();
+        assert!(serde_json::from_str::<StatementKind>(&json).unwrap() == statement_kind);
+
+        let case = Case {
+            values: vec![1, 2, 3],
+            body: s(1),
+        };
+        let json = serde_json::to_string(&case).unwrap();
+        assert!(serde_json::from_str::<Case>(&json).unwrap() == case);
     }
 }

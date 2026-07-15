@@ -106,6 +106,16 @@ impl<'db> NamedType<'db> {
     }
 }
 
+impl std::fmt::Debug for NamedType<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NamedType")
+            .field("ordinal", &self.ordinal)
+            .finish_non_exhaustive()
+    }
+}
+
+key_identity!(NamedType, ordinal);
+
 /// A lazy iterator over a database's local named types, from [`Database::named_types`].
 #[doc(alias("get_ordinal_limit"))]
 pub struct NamedTypes<'db> {
@@ -126,6 +136,15 @@ impl<'db> NamedTypes<'db> {
     }
 }
 
+impl std::fmt::Debug for NamedTypes<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NamedTypes")
+            .field("next", &self.next)
+            .field("limit", &self.limit)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<'db> Iterator for NamedTypes<'db> {
     type Item = NamedType<'db>;
 
@@ -138,5 +157,37 @@ impl<'db> Iterator for NamedTypes<'db> {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    #[test]
+    fn named_type_identity_compares_by_ordinal() {
+        let db = Database::new();
+        assert!(NamedType::new(&db, 3) == NamedType::new(&db, 3));
+        assert!(NamedType::new(&db, 3) != NamedType::new(&db, 4));
+    }
+
+    #[test]
+    fn named_type_debug_renders_the_ordinal() {
+        let db = Database::new();
+        let ty = NamedType::new(&db, 7);
+        assert!(format!("{ty:?}") == "NamedType { ordinal: 7, .. }");
+    }
+
+    #[test]
+    fn named_types_debug_renders_progress() {
+        let db = Database::new();
+        let iter = NamedTypes {
+            db: &db,
+            next: 1,
+            limit: 5,
+        };
+        assert!(format!("{iter:?}") == "NamedTypes { next: 1, limit: 5, .. }");
     }
 }

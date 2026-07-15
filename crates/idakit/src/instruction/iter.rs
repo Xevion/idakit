@@ -1,5 +1,6 @@
 //! Lazy iterators over decoded instructions: [`Instructions`] and [`InstructionsIn`].
 
+use std::fmt;
 use std::ops::Range;
 
 use super::Instruction;
@@ -30,6 +31,16 @@ impl<'db> Instructions<'db> {
             chunks: FunctionChunks::new(address, db),
             cursor: None,
         }
+    }
+}
+
+impl fmt::Debug for Instructions<'_> {
+    // Skips the borrowed `&Database`; only the chunk cursor is printable.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Instructions")
+            .field("chunks", &self.chunks)
+            .field("cursor", &self.cursor)
+            .finish_non_exhaustive()
     }
 }
 
@@ -84,6 +95,16 @@ pub struct InstructionsIn<'db> {
     db: &'db Database,
     cursor: Address,
     end: Address,
+}
+
+impl fmt::Debug for InstructionsIn<'_> {
+    // Skips the borrowed `&Database`; only the walk bounds are printable.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InstructionsIn")
+            .field("cursor", &self.cursor)
+            .field("end", &self.end)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Iterator for InstructionsIn<'_> {

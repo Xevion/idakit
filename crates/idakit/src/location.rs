@@ -282,6 +282,16 @@ impl Location<'_> {
     }
 }
 
+impl std::fmt::Debug for Location<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Location")
+            .field("address", &self.address)
+            .finish_non_exhaustive()
+    }
+}
+
+key_identity!(Location, address);
+
 /// A write cursor at one address, from [`Database::at_mut`].
 ///
 /// Holds the database exclusively (`&mut Database`) and is read-capable: the scalar [`Location`]
@@ -483,6 +493,14 @@ impl LocationMut<'_> {
     }
 }
 
+impl std::fmt::Debug for LocationMut<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocationMut")
+            .field("address", &self.address)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Drop for LocationMut<'_> {
     /// Applies the queued decompilation-cache eviction once, after all of this cursor's writes.
     fn drop(&mut self) {
@@ -517,4 +535,34 @@ pub(crate) enum PendingInvalidation {
     /// This address and its dependents are stale (a rename or retype re-renders every reference
     /// site).
     Dependents,
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    #[test]
+    fn location_identity_compares_by_address() {
+        let db = Database::new();
+        let a = Address::new_const(0x1000);
+        let b = Address::new_const(0x2000);
+        assert!(db.at(a) == db.at(a));
+        assert!(db.at(a) != db.at(b));
+    }
+
+    #[test]
+    fn location_debug_renders_the_address() {
+        let db = Database::new();
+        let loc = db.at(Address::new_const(0xdead_beef));
+        assert!(format!("{loc:?}") == "Location { address: Address(0xdeadbeef), .. }");
+    }
+
+    #[test]
+    fn location_mut_debug_renders_the_address() {
+        let mut db = Database::new();
+        let cursor = db.at_mut(Address::new_const(0xdead_beef));
+        assert!(format!("{cursor:?}") == "LocationMut { address: Address(0xdeadbeef), .. }");
+    }
 }

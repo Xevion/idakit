@@ -322,6 +322,15 @@ impl<'p, 'db> Matches<'p, 'db> {
     }
 }
 
+impl std::fmt::Debug for Matches<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Matches")
+            .field("cur", &self.cur)
+            .field("end", &self.end)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Iterator for Matches<'_, '_> {
     type Item = Address;
 
