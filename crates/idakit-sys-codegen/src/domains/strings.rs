@@ -5,7 +5,7 @@ use super::super::model::*;
 /// (throws when out of range). `strlit_contents` decodes one literal semantically (`STRCONV_REPLCHAR`,
 /// undecodable units to U+FFFD) and `strlit_escaped` to its display form (`STRCONV_ESCAPE`, C-escaped
 /// as in the pseudocode); both throw only when the literal cannot be read. All bodies are
-/// hand-written in `facade/strings_custom.cc`.
+/// hand-written in `facade/strings.cpp`.
 pub const STRINGS: Domain = Domain {
     name: "strings",
     sdk_includes: &["<strlist.hpp>", "<bytes.hpp>", "<stdexcept>"],
@@ -20,7 +20,7 @@ pub const STRINGS: Domain = Domain {
         },
     }],
     consts: &[],
-    custom_tu: Some("facade/strings_custom.cc"),
+    custom_tu: Some("facade/strings.cpp"),
     fns: fns! {
         "(Re)build IDA's string list, an O(database) scan of the whole image."
             strlist_build();

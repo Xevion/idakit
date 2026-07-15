@@ -41,7 +41,6 @@ tidy:
     #!/usr/bin/env bash
     set -euo pipefail
     IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
-    cd crates/idakit-sys
     # clang-tidy replays compile_commands.json, which records only the flags cc passes -- not
     # the clang driver's implicit macOS -isysroot. Without it clang-tidy can't find the SDK's
     # system headers (stdlib.h), and the broken parse then misfires other checks, so supply it.
@@ -54,7 +53,7 @@ tidy:
       tidy_cmd=(clang-tidy-cache "$(command -v clang-tidy)")
     fi
     nproc_val="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-    printf '%s\n' facade/*.cpp | xargs -P "$nproc_val" -I{} "${tidy_cmd[@]}" -p . "${extra_args[@]}" {}
+    printf '%s\n' {{ facade_cpp }} | xargs -P "$nproc_val" -I{} "${tidy_cmd[@]}" -p crates/idakit-sys "${extra_args[@]}" {}
 
 # Advisory, not part of `check`: Clang's `-Weverything` minus pure-noise categories -- C++98
 # compat (the facade is C++17), buffer-hardening (it does deliberate raw-pointer work over the
@@ -64,9 +63,8 @@ pedantic:
     #!/usr/bin/env bash
     set -uo pipefail
     IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
-    cd crates/idakit-sys
-    sdk_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-isystem")) + 1]' compile_commands.json)"
-    out_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-Ifacade")) + 1]' compile_commands.json)"
+    sdk_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-isystem")) + 1]' crates/idakit-sys/compile_commands.json)"
+    out_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-Ifacade")) + 1]' crates/idakit-sys/compile_commands.json)"
     extra_args=(-isystem "$sdk_include" "$out_include")
     if [ "$(uname -s)" = Darwin ]; then
       extra_args+=(-isysroot "$(xcrun --show-sdk-path)")
@@ -77,8 +75,8 @@ pedantic:
     clangxx="clang++"
     command -v "clang++-$clang_major" >/dev/null 2>&1 && clangxx="clang++-$clang_major"
     nproc_val="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-    printf '%s\n' facade/*.cpp | xargs -P "$nproc_val" -I{} \
-      "$clangxx" -std=c++17 -Ifacade "${extra_args[@]}" -D__EA64__ -D__LINUX__ \
+    printf '%s\n' {{ facade_cpp }} | xargs -P "$nproc_val" -I{} \
+      "$clangxx" -std=c++17 -Icrates/idakit-sys/facade "${extra_args[@]}" -D__EA64__ -D__LINUX__ \
       -Weverything -Wno-c++98-compat -Wno-c++98-compat-local-type-template-args \
       -Wno-unsafe-buffer-usage -Wno-unsafe-buffer-usage-in-libc-call -Wno-padded \
       -fsyntax-only {}

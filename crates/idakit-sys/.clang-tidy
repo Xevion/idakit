@@ -13,5 +13,5 @@ Checks: >
   -cert-err52-cpp,
   -cert-err58-cpp,
   -bugprone-throwing-static-initialization
-HeaderFilterRegex: 'idakit_facade\.h$'
+HeaderFilterRegex: 'abi\.h$'
 WarningsAsErrors: '*'

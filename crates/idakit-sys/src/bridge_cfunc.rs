@@ -22,7 +22,7 @@ use std::pin::Pin;
 
 use moveit::{CopyNew, New};
 
-// Raw C-ABI placement shims backing moveit's traits (facade/cfunc_cxx.cc). They operate on a
+// Raw C-ABI placement shims backing moveit's traits (facade/cfunc_shims.cpp). They operate on a
 // cfuncptr_t laid out at the given pointer, here a repr(C) Rust mirror (the inline CfuncVal path).
 unsafe extern "C" {
     fn idakit_cfuncptr_copy_ctor(dst: *mut c_void, src: *const c_void);

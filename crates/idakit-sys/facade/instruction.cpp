@@ -52,8 +52,8 @@ RegisterData none_reg() {
 // Classify an x86 RegNo by its authoritative range (intel.hpp `RegNo`). Used for plain o_reg
 // operands and a memory operand's base/index (incl. a VSIB vector index). The GPR case is the tight
 // R_ax..R_dil block, not a catch-all residual: a number that lands in no modelled class (flags
-// cf..efl, fpctrl/fpstat/fptags, mxcsr, or out of range) returns RC_BAD so classify_op can reject it
-// loudly rather than mislabel it GPR.
+// cf..efl, fpctrl/fpstat/fptags, mxcsr, or out of range) returns RC_BAD so classify_op can reject
+// it loudly rather than mislabel it GPR.
 uint8_t reg_class_of(int r) {
   if (r >= R_ax && r <= R_dil)
     return RC_GPR;
@@ -78,8 +78,8 @@ uint8_t reg_class_of(int r) {
   return RC_BAD;
 }
 
-// Spell a register from its global RegNo. The wide integer GPRs and the instruction pointer alias by
-// width (rax/eax/ax/al, rip/eip/ip), so those go through get_reg_name(reg, width); every other
+// Spell a register from its global RegNo. The wide integer GPRs and the instruction pointer alias
+// by width (rax/eax/ax/al, rip/eip/ip), so those go through get_reg_name(reg, width); every other
 // register has a single spelling in the processor's own name table, which is width-independent and
 // robust where get_reg_name's width match is finicky (st is catalogued at 8 bytes, not its 10-byte
 // extent; byte regs resolve only at width 1).
@@ -131,8 +131,8 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
 // does not model (unreachable for x86, which enumerates all of its operand types), or -4 for an
 // o_reg whose register lands in no modelled class (reg_class_of -> RC_BAD).
 // `dst` arrives value-initialized ({}), so the fields that stay zero for a given operand (value,
-// sel, scale, disp, and addr for a non-mem/non-near operand) are already zero here; only the register
-// slots need the REG_NONE sentinel that a zeroed RegisterData would not carry.
+// sel, scale, disp, and addr for a non-mem/non-near operand) are already zero here; only the
+// register slots need the REG_NONE sentinel that a zeroed RegisterData would not carry.
 int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
   dst.idx = (uint8_t)idx;
   dst.data_type = op.dtype;
@@ -148,10 +148,10 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
     fill_reg(dst.reg, op.reg, rc, (int)get_dtype_size(op.dtype));
     return 0;
   }
-  // Register operands whose op.reg is a class-relative index into a global RegNo block: map it to the
-  // RegNo so fill_reg names it from the processor table. On x86-64 only o_fpreg actually occurs here
-  // (SIMD registers arrive as plain o_reg); the others are kept so a future/32-bit encoding does not
-  // fall through to the -3 reject.
+  // Register operands whose op.reg is a class-relative index into a global RegNo block: map it to
+  // the RegNo so fill_reg names it from the processor table. On x86-64 only o_fpreg actually occurs
+  // here (SIMD registers arrive as plain o_reg); the others are kept so a future/32-bit encoding
+  // does not fall through to the -3 reject.
   case o_fpreg:
     dst.kind = OP_REG;
     fill_reg(dst.reg, R_st0 + op.reg, RC_ST, (int)get_dtype_size(op.dtype));
@@ -309,10 +309,9 @@ rust::Vec<uint8_t> reg_class_ids() {
 // This SDK's op_dtype_t values (ua.hpp dt_*), in idakit DataType's discriminant order.
 rust::Vec<uint8_t> op_dtype_ids() {
   rust::Vec<uint8_t> out;
-  for (uint8_t d :
-       {dt_byte, dt_word, dt_dword, dt_float, dt_double, dt_tbyte, dt_packreal, dt_qword, dt_byte16,
-        dt_code, dt_void, dt_fword, dt_bitfild, dt_string, dt_unicode, dt_ldbl, dt_byte32, dt_byte64,
-        dt_half})
+  for (uint8_t d : {dt_byte, dt_word, dt_dword, dt_float, dt_double, dt_tbyte, dt_packreal,
+                    dt_qword, dt_byte16, dt_code, dt_void, dt_fword, dt_bitfild, dt_string,
+                    dt_unicode, dt_ldbl, dt_byte32, dt_byte64, dt_half})
     out.push_back(d);
   return out;
 }

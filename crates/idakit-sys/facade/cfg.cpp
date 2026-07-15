@@ -4,8 +4,8 @@
 // lists copy into rust::Vec<uint32_t>. size() is a self:-member call bound straight to the SDK
 // member, so it has no body here. Out-of-range indices throw and surface as a Rust Err.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <funcs.hpp>
 #include <gdl.hpp>

@@ -4,7 +4,7 @@ use super::super::model::*;
 /// (`FlowChart`) owned by [`UniquePtr`](cxx::UniquePtr), so its C++ deleter handles cleanup without
 /// a manual free function or a hand-written `Drop` impl. `size` is a `self:`-member call bound straight to
 /// `qflow_chart_t::size()` (no facade body); every other accessor is a free function over a
-/// `&FlowChart`, hand-written in `facade/cfg_custom.cc`. Block bounds return by value as a `BlockInfo`
+/// `&FlowChart`, hand-written in `facade/cfg.cpp`. Block bounds return by value as a `BlockInfo`
 /// shared struct, and the successor/predecessor edge lists copy into owned `Vec<u32>`.
 pub const CFG: Domain = Domain {
     name: "cfg",
@@ -29,7 +29,7 @@ pub const CFG: Domain = Domain {
         },
     }],
     consts: &[],
-    custom_tu: Some("facade/cfg_custom.cc"),
+    custom_tu: Some("facade/cfg.cpp"),
     fns: fns! {
         "Build the flow chart for the function containing `ea`; `Err` when no function is there. \
          Runs analysis, so it can also fail from a thrown SDK exception."

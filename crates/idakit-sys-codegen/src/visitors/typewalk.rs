@@ -53,7 +53,7 @@ pub(super) const FRAME_WALK: SharedStruct = SharedStruct {
 };
 
 /// The tinfo type walk's sink: one method per node kind, driven depth-first by
-/// `facade/typewalk_cxx.cc`'s `visit_walker_t`.
+/// `facade/typewalk_bridge.cpp`'s `visit_walker_t`.
 pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
     sink_name: "TypeWalkSink",
     sink_doc: "A walk target the type visitor drives inline, one method per tinfo node kind.\n\n\
@@ -68,7 +68,7 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
     visitor_doc: "The `cxx` `extern \"Rust\"` opaque the C++ type walk drives by calling its \
                   `&mut self` methods, each forwarding into the [`TypeWalkSink`] it was built \
                   over.\n\n`cxx` generates a C++ class with a member function per method below; \
-                  `facade/typewalk_cxx.cc` receives a `TypeWalkVisitor&` and calls them. The \
+                  `facade/typewalk_bridge.cpp` receives a `TypeWalkVisitor&` and calls them. The \
                   visitor holds the sink as a lifetime-erased raw pointer: the \
                   [`walk_type_named`]/[`walk_type_ordinal`]/[`walk_func_type`] drivers are its \
                   only constructors, and each keeps the borrowed sink alive across the one \

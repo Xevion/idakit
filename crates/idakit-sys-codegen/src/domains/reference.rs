@@ -2,7 +2,7 @@ use super::super::model::*;
 
 /// The cross-reference domain: every xref edge at an address returned as one owned `Vec<XrefRec>`
 /// snapshot, retiring the raw open-cursor/next/close dance. The single body is hand-written in
-/// `facade/reference_custom.cc` (one walk of an `xrefblk_t`).
+/// `facade/reference.cpp` (one walk of an `xrefblk_t`).
 pub const REFERENCE: Domain = Domain {
     name: "reference",
     sdk_includes: &["<xref.hpp>"],
@@ -19,7 +19,7 @@ pub const REFERENCE: Domain = Domain {
         },
     }],
     consts: &[],
-    custom_tu: Some("facade/reference_custom.cc"),
+    custom_tu: Some("facade/reference.cpp"),
     fns: fns! {
         "Every cross-reference edge at `ea` as an owned, `Send` snapshot: xrefs *to* `ea` when \
          `is_to`, else xrefs *from* it. Ordinary next-instruction flow edges are excluded \

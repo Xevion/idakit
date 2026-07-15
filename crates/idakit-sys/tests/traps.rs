@@ -97,7 +97,7 @@ fn cxx_surfaces_std_exception_as_flat_err() {
     );
 }
 
-// The custom `rust::behavior::trycatch` in probe_ext_cxx.h widens what the
+// The custom `rust::behavior::trycatch` in testonly_probe_ext.h widens what the
 // bridge shims catch. cxx's default terminates on a non-`std::exception` throw; the `catch (...)`
 // arm turns it into an ordinary `Err`. (If the override had failed to take, `throw 42` would
 // std::terminate and abort this test process instead of returning here.)

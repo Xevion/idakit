@@ -21,10 +21,10 @@
 
 #include "rust/cxx.h"
 
-#include "idakit_facade.h"          // trigger_fatal
-#include "idakit_facade_internal.hpp" // guarded<>
-#include "gen_facade_consts.h"      // idakit_gen::EXIT_TRAPPED
-#include "probe_cxx.h"
+#include "abi.h"               // trigger_fatal
+#include "gen_facade_consts.h" // idakit_gen::EXIT_TRAPPED
+#include "internal.h"          // guarded<>
+#include "testonly_probe.h"
 
 namespace idakit_cxx {
 

@@ -1,4 +1,4 @@
-// Declarations for the cxx probe bridge. The bodies live in probe_cxx.cc; the
+// Declarations for the cxx probe bridge. The bodies live in testonly_probe.cpp; the
 // cxx-generated shim (from src/bridge_probe.rs) calls them by their idakit_cxx-namespaced name, so
 // they are declared here for both the generated glue and the hand-written .cc to include.
 #pragma once

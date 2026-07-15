@@ -2,7 +2,7 @@ use super::super::model::*;
 
 /// The function-range domain: the SDK POD `range_t` bound as a `Trivial` `ExternType` that crosses
 /// by value four ways (bare return, by-value argument, shared-struct field, and `Vec` element). All
-/// bodies are hand-written in `facade/range_custom.cc` (they iterate a `func_tail_iterator_t`).
+/// bodies are hand-written in `facade/range.cpp` (they iterate a `func_tail_iterator_t`).
 pub const RANGE: Domain = Domain {
     name: "range",
     sdk_includes: &["<funcs.hpp>", "<range.hpp>", "<stdexcept>"],
@@ -28,7 +28,7 @@ pub const RANGE: Domain = Domain {
         },
     }],
     consts: &[],
-    custom_tu: Some("facade/range_custom.cc"),
+    custom_tu: Some("facade/range.cpp"),
     fns: fns! {
         "Entry chunk (index `0`) of the function containing `ea`, returned by value; `Err` when no \
          function is there."

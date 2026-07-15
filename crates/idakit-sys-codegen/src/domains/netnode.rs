@@ -6,7 +6,7 @@
 //! return n.<member>(...);` body, so [`domain`] emits both the [`FnSpec`] (feeding the shared bridge
 //! engine in [`super`]) and its rendered C++ body from one small emitter. The irregular lifecycle
 //! and node-value functions stay hand-written [`FnSpec`]s with `Custom` bodies in
-//! `facade/netnode_custom.cc`; only the five array families are generated.
+//! `facade/netnode.cpp`; only the five array families are generated.
 
 use std::sync::OnceLock;
 
@@ -495,7 +495,7 @@ fn family_fns() -> Vec<FnSpec> {
 }
 
 /// The irregular lifecycle and node-value functions, kept hand-written with `Custom` bodies in
-/// `facade/netnode_custom.cc`.
+/// `facade/netnode.cpp`.
 const CUSTOM_FNS: &[FnSpec] = fns! {
     // Lifecycle.
     "Resolve the netnode named `name`, creating it when `create`; the node id, or `BADNODE` when it \
@@ -550,7 +550,7 @@ pub fn domain() -> &'static Domain {
             externs: &[],
             structs: &[],
             consts: &[],
-            custom_tu: Some("facade/netnode_custom.cc"),
+            custom_tu: Some("facade/netnode.cpp"),
             fns: Box::leak(fns.into_boxed_slice()),
         }
     })

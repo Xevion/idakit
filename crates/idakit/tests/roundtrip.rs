@@ -26,8 +26,7 @@ fn run(idb: &mut Database) {
     assert!(seg_count > 0, "expected at least one segment");
 
     // Segment domain: idakit's `Segment` view rides the generated seg bridge, so the generated qty
-    // must equal the iterator's count, and the `Custom` escape-hatch body (`gen_seg_span_total`,
-    // hand-written in facade/custom_escape_hatch.cc) must equal the byte span summed over the same iterator.
+    // must equal the iterator's count.
     {
         use idakit_sys as sys;
 
@@ -36,16 +35,7 @@ fn run(idb: &mut Database) {
             seg_count,
             "generated gen_seg_qty disagrees with the Segments iterator"
         );
-        let span_total: u64 = idb
-            .segments()
-            .map(|s| s.end().map_or(0, u64::from) - s.start().map_or(0, u64::from))
-            .sum();
-        assert_eq!(
-            sys::gen_seg_span_total(),
-            span_total,
-            "generated custom gen_seg_span_total disagrees with the summed segment spans"
-        );
-        println!("cxx segment bridge OK: {seg_count} segments, span total agrees");
+        println!("cxx segment bridge OK: {seg_count} segments");
     }
 
     // Function domain: idakit's `Function` view rides the generated func bridge. The generated qty

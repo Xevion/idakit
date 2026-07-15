@@ -3,7 +3,7 @@
 //! A separate `#[cxx::bridge]` from the production bridges, kept off the public API by
 //! `#[doc(hidden)]` on its re-export in `lib.rs`. Shares the `idakit_cxx` namespace with them, so
 //! the generated shim symbols sit in the same family; the hand-written bodies and the `guarded<>`
-//! entry live in `facade/probe_cxx.cc`.
+//! entry live in `facade/testonly_probe.cpp`.
 
 // cxx::bridge's own expansion mis-attributes a missing_errors_doc warning to this attribute's
 // own span, though every Result-returning fn below already documents its `Err` condition.
@@ -15,7 +15,7 @@
 #[cxx::bridge(namespace = "idakit_cxx")]
 mod ffi {
     unsafe extern "C++" {
-        include!("probe_cxx.h");
+        include!("testonly_probe.h");
 
         /// Its C++ body triggers a guarded fatal (`kind` = `crate::FATAL_*`), so a test can drive
         /// a `longjmp` across this `Result`-returning shim's `try/catch` landing-pad frame. Never
@@ -23,7 +23,7 @@ mod ffi {
         ///
         /// # Errors
         /// `Err` when the trap catches an `interr` (a `std::exception`) instead of longjmp-ing.
-        // Never called from Rust: `facade/probe_cxx.cc`'s test_fatal_through_cxx reaches the
+        // Never called from Rust: `facade/testonly_probe.cpp`'s test_fatal_through_cxx reaches the
         // cxx-generated shim by its mangled symbol directly, bypassing this binding. The
         // declaration must still exist so cxx generates that shim in the first place. cxx's
         // foreign-block attribute parser only recognizes allow/warn/deny/forbid (not expect), so

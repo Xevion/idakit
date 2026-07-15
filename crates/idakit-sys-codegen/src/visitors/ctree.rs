@@ -17,7 +17,7 @@ pub(super) const LOC_PIECE: SharedStruct = SharedStruct {
 };
 
 /// The ctree walk's sink: one method per expression, statement, and local variable kind, driven
-/// depth-first (children before parents) by `facade/ctree_cxx.cc`'s `walker_t`.
+/// depth-first (children before parents) by `facade/ctree_bridge.cpp`'s `walker_t`.
 pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
     sink_name: "CtreeSink",
     sink_doc: "A ctree walk target the visitor drives inline, one method per expression, \
@@ -33,7 +33,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
     visitor_doc: "The `cxx` `extern \"Rust\"` opaque the C++ ctree walk drives by calling its \
                   `&mut self` methods, each forwarding into the [`CtreeSink`] it was built over.\n\n\
                   `cxx` generates a C++ class with a member function per method below; \
-                  `facade/ctree_cxx.cc` receives a `CtreeVisitor&` and calls them. The visitor \
+                  `facade/ctree_bridge.cpp` receives a `CtreeVisitor&` and calls them. The visitor \
                   holds the sink as a lifetime-erased raw pointer: [`CtreeVisitor::from_raw`] is \
                   its only constructor, and the caller keeps the borrowed sink alive across the one \
                   synchronous walk, so the pointer is always valid and unaliased when a method \

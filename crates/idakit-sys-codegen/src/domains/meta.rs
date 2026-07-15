@@ -2,14 +2,14 @@ use super::super::model::*;
 
 /// The meta domain: database-wide metadata (bitness, image base) and four identity strings
 /// (processor, file-type text, input path, root filename). All bodies are hand-written in
-/// `facade/meta_custom.cc`; the string getters throw when the SDK has no value.
+/// `facade/meta.cpp`; the string getters throw when the SDK has no value.
 pub const META: Domain = Domain {
     name: "meta",
     sdk_includes: &["<nalt.hpp>", "<loader.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: Some("facade/meta_custom.cc"),
+    custom_tu: Some("facade/meta.cpp"),
     fns: fns! {
         "Application bitness (`inf_get_app_bitness`): 16, 32, or 64."
             bitness() -> I32;

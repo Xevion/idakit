@@ -1,7 +1,7 @@
 //! Sentinels shared with the raw (non-domain) facade TUs: the visitor bridge's absent-child
 //! marker and the fatal-exit trap's result/kind codes. None of these belongs to a single
-//! [`super::model::Domain`] (they're used by `runtime.cpp`, `probe_cxx.cc`, and the visitor
-//! bridge's `ctree_cxx.cc`/`typewalk_cxx.cc`), so they're generated from this standalone list
+//! [`super::model::Domain`] (they're used by `runtime.cpp`, `testonly_probe.cpp`, and the visitor
+//! bridge's `ctree_bridge.cpp`/`typewalk_bridge.cpp`), so they're generated from this standalone list
 //! into `gen_facade_consts.h` instead of a per-domain header.
 
 use super::model::{ConstDef, ConstTy};

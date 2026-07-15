@@ -1,7 +1,7 @@
 // Shared facade internals: the fatal-trap state and the guarded<> wrapper. The trap machinery
-// is defined in runtime.cpp; only runtime.cpp and hexrays_custom.cc (decompile) need it.
-#ifndef IDAKIT_FACADE_INTERNAL_HPP
-#define IDAKIT_FACADE_INTERNAL_HPP
+// is defined in runtime.cpp; only runtime.cpp and hexrays.cpp (decompile) need it.
+#ifndef INTERNAL_H
+#define INTERNAL_H
 
 #include <csetjmp>
 #include <cstdio>
@@ -9,7 +9,7 @@
 
 #include <pro.h> // set_interr_throws, interr_exc_t (caught by reference below)
 
-#include "idakit_facade.h"
+#include "abi.h"
 
 namespace idakit_facade {
 
@@ -80,4 +80,4 @@ template <class T, class F> T guarded(T trapval, bool capture, F &&fn) {
 
 } // namespace idakit_facade
 
-#endif // IDAKIT_FACADE_INTERNAL_HPP
+#endif // INTERNAL_H

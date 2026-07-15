@@ -2,14 +2,14 @@ use super::super::model::*;
 
 /// The function domain: per-function scalar accessors and the name string. Function *chunks* are
 /// the `range` domain (`range_all_chunks`), so no chunk accessor lives here. `func_qty` is a
-/// templated passthrough; the lookup accessors are hand-written in `facade/function_custom.cc`.
+/// templated passthrough; the lookup accessors are hand-written in `facade/function.cpp`.
 pub const FUNCTION: Domain = Domain {
     name: "function",
     sdk_includes: &["<funcs.hpp>", "<name.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: Some("facade/function_custom.cc"),
+    custom_tu: Some("facade/function.cpp"),
     fns: fns! {
         "Number of functions in the database (`get_func_qty`)."
             func_qty() -> Usize = scalar("get_func_qty()");

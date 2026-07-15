@@ -2,8 +2,8 @@
 // Render a function's prototype and name the local type at an ordinal; both throw when the SDK has
 // no value, which cxx maps to a Rust Err. The ordinal-limit passthrough is templated, not here.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <typeinf.hpp> // print_type, get_idati, get_numbered_type_name
 

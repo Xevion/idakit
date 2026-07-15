@@ -27,7 +27,7 @@
 //!   backing store with no allocation and no copy. Sound only because the returned slice's
 //!   lifetime is tied to the borrowed container (`&'a V -> &'a [T]`), the access is read-only
 //!   (`alloc`/`qalloc`/`qfree` are never touched), and the `{array, n}` layout is fixed by the
-//!   ABI-per-minor pin. The bodies are hand-written in `facade/qvec_cxx.cc`.
+//!   ABI-per-minor pin. The bodies are hand-written in `facade/qvec_bridge.cpp`.
 //!
 //! This is a recipe demonstration, not yet consumed by the `idakit` library.
 
@@ -82,7 +82,7 @@ qvec_opaque!(RangeVec, "rangevec_t");
 #[cxx::bridge(namespace = "idakit_cxx")]
 mod ffi {
     unsafe extern "C++" {
-        include!("qvec_cxx.h");
+        include!("qvec_bridge.h");
 
         /// The SDK's `range_t`, shared from the generated [`bridge_gen`](crate::bridge_gen) so it
         /// can be a zero-copy [`RangeVec`] slice element (one ExternType across both bridges).

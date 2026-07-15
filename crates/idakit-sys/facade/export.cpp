@@ -3,8 +3,8 @@
 // absent, since most exports have no forwarder). export_qty is templated (gen_export_bodies.cc),
 // not here.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <entry.hpp>
 
@@ -14,13 +14,9 @@
 
 namespace idakit_gen {
 
-uint64_t export_ea(size_t idx) {
-  return (uint64_t)get_entry(get_entry_ordinal(idx));
-}
+uint64_t export_ea(size_t idx) { return (uint64_t)get_entry(get_entry_ordinal(idx)); }
 
-uint64_t export_ordinal(size_t idx) {
-  return (uint64_t)get_entry_ordinal(idx);
-}
+uint64_t export_ordinal(size_t idx) { return (uint64_t)get_entry_ordinal(idx); }
 
 rust::String export_name(size_t idx) {
   qstring out;

@@ -19,8 +19,8 @@
 #include <nalt.hpp>    // get_tinfo, set_tinfo (address-level type note)
 #include <typeinf.hpp> // tinfo_t, parse_decl, parse_decls, apply_tinfo, create_*
 
-#include "idakit_facade_internal.hpp" // guarded<>, g_output (msg-channel capture)
 #include "gen_type_build.h"
+#include "internal.h" // guarded<>, g_output (msg-channel capture)
 // The generated bridge header defines the shared structs (full definitions needed to construct them
 // below); gen_type_build.h only forward-declares them.
 #include "gen_bridge.h"
@@ -35,9 +35,7 @@ namespace {
 // HT_UI hook) as an owned string; empty when nothing was captured. This is the one genuinely
 // untrusted byte source (arbitrary msg() text, not a sanitized database string), so it decodes
 // leniently: the throwing ctor would std::terminate inside these by-value, non-Result bodies.
-rust::String captured_reason() {
-  return to_rust_string(g_output.c_str(), g_output.length());
-}
+rust::String captured_reason() { return to_rust_string(g_output.c_str(), g_output.length()); }
 
 // Map a scalar integer leaf (width in bytes, signedness) onto the SDK's sized int types. False for
 // a width IDA has no integer type for.
@@ -427,9 +425,8 @@ TypeWriteResult define_type(rust::Str input) {
   try {
     TypeWriteResult out{};
     std::string inputs(input.data(), input.size());
-    out.code = guarded<int>(1, true, [&]() -> int {
-      return parse_decls(get_idati(), inputs.c_str(), msg, HTI_DCL);
-    });
+    out.code = guarded<int>(
+        1, true, [&]() -> int { return parse_decls(get_idati(), inputs.c_str(), msg, HTI_DCL); });
     out.reason = captured_reason();
     return out;
   } catch (...) {
@@ -927,10 +924,10 @@ TypeWriteResult enum_del_member_by_value(rust::Str type_name, uint64_t value) {
   }
 }
 
-// Granular tinfo_t construction: each builder mints a fresh heap tinfo_t owned by a UniquePtr, whose
-// cxx deleter (~tinfo_t) frees it on drop. A build failure returns a null handle (an Err only for
-// the parse-driven tinfo_decl). The transform builders copy the borrowed `inner`, never consuming
-// it, so the caller's input handle stays live.
+// Granular tinfo_t construction: each builder mints a fresh heap tinfo_t owned by a UniquePtr,
+// whose cxx deleter (~tinfo_t) frees it on drop. A build failure returns a null handle (an Err only
+// for the parse-driven tinfo_decl). The transform builders copy the borrowed `inner`, never
+// consuming it, so the caller's input handle stays live.
 
 std::unique_ptr<::tinfo_t> tinfo_void() {
   try {
@@ -989,7 +986,7 @@ std::unique_ptr<::tinfo_t> tinfo_named(rust::Str name) {
 }
 
 // The one builder with a parse step: throw the captured reason on failure so cxx maps it to a Rust
-// Err (hence no abort shell, matching the decompile body in hexrays_custom.cc).
+// Err (hence no abort shell, matching the decompile body in hexrays.cpp).
 std::unique_ptr<::tinfo_t> tinfo_decl(rust::Str decl) {
   std::string decls(decl.data(), decl.size());
   auto t = std::make_unique<::tinfo_t>();

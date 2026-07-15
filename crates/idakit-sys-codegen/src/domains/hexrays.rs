@@ -1,6 +1,6 @@
 use super::super::model::*;
 
-/// The Hex-Rays decompiler domain, bodies in `facade/hexrays_custom.cc`.
+/// The Hex-Rays decompiler domain, bodies in `facade/hexrays.cpp`.
 ///
 /// The SDK's `cfuncptr_t` (`qrefcnt_t<cfunc_t>`) is bound as an `Opaque` `ExternType` ([`CFunc`])
 /// owned by [`UniquePtr`](cxx::UniquePtr), so its cxx deleter runs `~cfuncptr_t` (`release()`) on
@@ -52,7 +52,7 @@ pub const HEXRAYS: Domain = Domain {
         },
     ],
     consts: &[],
-    custom_tu: Some("facade/hexrays_custom.cc"),
+    custom_tu: Some("facade/hexrays.cpp"),
     fns: fns! {
         "Decompile the function at `ea` into a heap `cfuncptr_t` owned by a \
          [`UniquePtr`](cxx::UniquePtr) (one owned ref); `Err` on any decompile failure. Wrapped in \

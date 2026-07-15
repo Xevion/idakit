@@ -2,7 +2,7 @@ use super::super::model::*;
 
 /// The import-table domain: the whole table returned as one owned `Vec<ImportRec>` snapshot,
 /// retiring the raw handle/index/free dance. The single body is hand-written in
-/// `facade/import_custom.cc` (a callback walk over every module's `enum_import_names`).
+/// `facade/import.cpp` (a callback walk over every module's `enum_import_names`).
 pub const IMPORT: Domain = Domain {
     name: "import",
     sdk_includes: &["<nalt.hpp>"],
@@ -18,7 +18,7 @@ pub const IMPORT: Domain = Domain {
         },
     }],
     consts: &[],
-    custom_tu: Some("facade/import_custom.cc"),
+    custom_tu: Some("facade/import.cpp"),
     fns: fns! {
         "The whole import table as an owned, `Send` snapshot, built in one walk of every module's \
          `enum_import_names`."

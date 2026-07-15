@@ -2,7 +2,7 @@ use super::super::model::*;
 
 /// The bytes domain: raw byte-range reads, typed scalar reads (each `Err`s when a covered byte is
 /// uninitialized), string-literal decode, item classification, and linear navigation. `min_ea`/
-/// `max_ea` are templated passthroughs; every other body is hand-written in `facade/bytes_custom.cc`.
+/// `max_ea` are templated passthroughs; every other body is hand-written in `facade/bytes.cpp`.
 /// Writes (`patch_bytes`, `set_cmt`) and the binary-pattern search handle stay on the raw facade,
 /// deferred to the write-side spine.
 pub const BYTES: Domain = Domain {
@@ -28,7 +28,7 @@ pub const BYTES: Domain = Domain {
         },
     }],
     consts: &[],
-    custom_tu: Some("facade/bytes_custom.cc"),
+    custom_tu: Some("facade/bytes.cpp"),
     fns: fns! {
         "The `size` bytes at `ea` as an owned `Vec<u8>`; `Err` when the range is not fully mapped."
             get_bytes(ea: U64, size: Usize) -> ResultVecU8;

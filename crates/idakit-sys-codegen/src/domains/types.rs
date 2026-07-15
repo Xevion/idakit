@@ -3,14 +3,14 @@ use super::super::model::*;
 /// The local-type read domain: render a function's prototype and enumerate the local type library.
 ///
 /// The mirror of the write side (`type_build`); the string bodies are hand-written in
-/// `facade/ty_custom.cc`, the ordinal-limit passthrough templated.
+/// `facade/local_types.cpp`, the ordinal-limit passthrough templated.
 pub const TY: Domain = Domain {
     name: "ty",
     sdk_includes: &["<typeinf.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: Some("facade/ty_custom.cc"),
+    custom_tu: Some("facade/local_types.cpp"),
     fns: fns! {
         "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it has no type."
             func_type(ea: U64) -> ResultString;

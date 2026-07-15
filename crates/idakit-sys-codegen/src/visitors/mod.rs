@@ -3,7 +3,7 @@
 //! [`VISITOR_BRIDGE`] pairs the ctree walk's [`CtreeSink`](VisitorSink)-shaped spec with the tinfo
 //! type walk's, plus the shared `extern "C++"` driver block both are called through. The engine
 //! that turns this into the Rust bridge and the C++ shim glue lives in the sibling `emit` module;
-//! the hand-written C++ drivers stay in `facade/ctree_cxx.cc` / `facade/typewalk_cxx.cc`.
+//! the hand-written C++ drivers stay in `facade/ctree_bridge.cpp` / `facade/typewalk_bridge.cpp`.
 //!
 //! The `args!` / `fields!` / `methods!` DSL macros used below are defined in the parent `dsl`
 //! module (they author every spec's arg and field slices, not just this one). The ctree and tinfo
@@ -17,8 +17,8 @@ use ctree::{CTREE_SINK, LOC_PIECE};
 use typewalk::{ENUM_CONST_INFO, FRAME_VAR, FRAME_WALK, MEMBER_INFO, TYPE_WALK_SINK};
 
 /// The visitor bridge's `extern "C++"` driver block: the four standalone type-walk entry points
-/// plus the ctree walk's `cfunc_walk_ctree`, all hand-written in `facade/ctree_cxx.cc` /
-/// `facade/typewalk_cxx.cc`.
+/// plus the ctree walk's `cfunc_walk_ctree`, all hand-written in `facade/ctree_bridge.cpp` /
+/// `facade/typewalk_bridge.cpp`.
 const DRIVERS: &[VisitorDriverFn] = &[
     VisitorDriverFn {
         name: "cfunc_walk_ctree",

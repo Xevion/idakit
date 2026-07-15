@@ -1,8 +1,8 @@
 /* idakit facade: a clean C ABI over the C++ IDA SDK surface.
  * Opaque handles + free functions; strings copied out into caller buffers.
  * This header is what idakit-sys binds (hand-extern for now, bindgen later). */
-#ifndef IDAKIT_FACADE_H
-#define IDAKIT_FACADE_H
+#ifndef ABI_H
+#define ABI_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -57,4 +57,4 @@ int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size);
 }
 #endif
 
-#endif /* IDAKIT_FACADE_H */
+#endif /* ABI_H */

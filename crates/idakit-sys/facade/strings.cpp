@@ -1,16 +1,16 @@
 // Hand-written Custom bodies for the generated strings domain (namespace idakit_gen). Wraps IDA's
 // string list: build_strlist (an O(database) scan), its
 // length, and the nth entry filled into the StrlistItem shared struct (throw when out of range).
-// strlit_contents decodes the string at (ea,len,type) semantically (STRCONV_REPLCHAR); strlit_escaped
-// decodes it to its C-escaped display form (STRCONV_ESCAPE). Both throw only when the literal cannot
-// be read; STRCONV_REPLCHAR/ESCAPE guarantee the decoded bytes are valid UTF-8.
+// strlit_contents decodes the string at (ea,len,type) semantically (STRCONV_REPLCHAR);
+// strlit_escaped decodes it to its C-escaped display form (STRCONV_ESCAPE). Both throw only when
+// the literal cannot be read; STRCONV_REPLCHAR/ESCAPE guarantee the decoded bytes are valid UTF-8.
 // StrlistItem is a cxx shared struct, defined by the cxx-generated gen_bridge.h.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
-#include <strlist.hpp> // build_strlist, get_strlist_qty, get_strlist_item, string_info_t
 #include <bytes.hpp>   // get_strlit_contents, STRCONV_REPLCHAR, STRCONV_ESCAPE
+#include <strlist.hpp> // build_strlist, get_strlist_qty, get_strlist_item, string_info_t
 
 #include <stdexcept>
 

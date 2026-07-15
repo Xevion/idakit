@@ -1,4 +1,4 @@
-// cxx spike bodies. See probe_ext_cxx.h for the custom trycatch that every
+// cxx spike bodies. See testonly_probe_ext.h for the custom trycatch that every
 // Result-returning body here routes through.
 
 #include <pro.h>
@@ -10,7 +10,7 @@
 
 #include "rust/cxx.h"
 
-#include "probe_ext_cxx.h"
+#include "testonly_probe_ext.h"
 
 namespace idakit_cxx {
 

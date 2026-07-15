@@ -2,8 +2,8 @@
 // metadata: bitness, image base, and four identity strings (processor, file-type text, input path,
 // root filename). The string getters throw when the SDK reports no value (Err on the Rust side).
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <loader.hpp>
 #include <nalt.hpp>

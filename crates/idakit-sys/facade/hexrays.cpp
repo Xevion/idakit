@@ -1,9 +1,10 @@
 // Hand-written Custom bodies for the generated Hex-Rays domain (namespace idakit_gen). decompile
-// hands back a cfuncptr_t owned by std::unique_ptr, so cxx's deleter runs ~cfuncptr_t (release()) on
-// drop, retiring the raw new/delete + dispose. It wraps decompile_func in guarded<> so a decompiler
-// fatal exit() surfaces as a trap (g_trapped) instead of a crash, then throws on failure so cxx maps
-// it to a Rust Err; idakit re-checks was_trapped() to split a trapped exit from an ordinary miss.
-// The read accessors take a borrowed &CFunc and cross the cfunc_t* the qrefcnt holds.
+// hands back a cfuncptr_t owned by std::unique_ptr, so cxx's deleter runs ~cfuncptr_t (release())
+// on drop, retiring the raw new/delete + dispose. It wraps decompile_func in guarded<> so a
+// decompiler fatal exit() surfaces as a trap (g_trapped) instead of a crash, then throws on failure
+// so cxx maps it to a Rust Err; idakit re-checks was_trapped() to split a trapped exit from an
+// ordinary miss. The read accessors take a borrowed &CFunc and cross the cfunc_t* the qrefcnt
+// holds.
 
 #include <pro.h>
 
@@ -17,8 +18,8 @@
 
 #include <stdexcept>
 
-#include "idakit_facade_internal.hpp" // guarded<>, g_trapped
 #include "gen_hexrays.h"
+#include "internal.h" // guarded<>, g_trapped
 // The generated bridge header defines the shared structs (full definitions needed to construct them
 // below); gen_hexrays.h only forward-declares them.
 #include "gen_bridge.h"
@@ -49,8 +50,9 @@ struct ctree_counter_t : public ctree_visitor_t {
 };
 
 // Per-op expression histograms. v counts every cexpr the SDK visits (ground truth); w counts every
-// cexpr the extraction walker materializes, i.e. all except a cot_empty placeholder in an *optional*
-// operand slot (a for(;;) init/cond/step or a bare return;/throw;) that the walker elides to None.
+// cexpr the extraction walker materializes, i.e. all except a cot_empty placeholder in an
+// *optional* operand slot (a for(;;) init/cond/step or a bare return;/throw;) that the walker
+// elides to None.
 struct expr_gap_visitor_t : public ctree_visitor_t {
   int *v;
   int *w;

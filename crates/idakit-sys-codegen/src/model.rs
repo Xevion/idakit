@@ -327,7 +327,7 @@ pub struct VisitorMethod {
 }
 
 /// One `extern "C++"` driver fn in the visitor bridge's shared block: a hand-written entry point
-/// (`facade/ctree_cxx.cc` / `facade/typewalk_cxx.cc`) that drives a visitor over a ctree or tinfo.
+/// (`facade/ctree_bridge.cpp` / `facade/typewalk_bridge.cpp`) that drives a visitor over a ctree or tinfo.
 pub struct VisitorDriverFn {
     pub name: &'static str,
     pub doc: &'static str,

@@ -1,10 +1,10 @@
-// Hand-written Custom body for the generated reference domain (namespace idakit_gen). One walk of an
-// xrefblk_t collects every cross-reference edge at an address into an owned rust::Vec<XrefRec>
+// Hand-written Custom body for the generated reference domain (namespace idakit_gen). One walk of
+// an xrefblk_t collects every cross-reference edge at an address into an owned rust::Vec<XrefRec>
 // returned by value in a single crossing. XrefRec is a cxx
 // shared struct, defined by the cxx-generated gen_bridge.h.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <nalt.hpp> // must precede xref.hpp: casevec_t (used by hexrays.hpp via gen_bridge.h) is
                     // guarded on NALT_HPP
@@ -29,7 +29,7 @@ rust::Vec<XrefRec> xrefs_build(uint64_t ea, bool is_to) {
     rec.type_ = (int32_t)xb.type;
     rec.iscode = xb.iscode != 0;
     rec.user = xb.user != 0;
-    rows.push_back(std::move(rec));
+    rows.push_back(rec);
   }
   return rows;
 }

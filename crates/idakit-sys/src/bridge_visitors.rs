@@ -4,9 +4,9 @@
 //! Two production walks each drive an [`extern "Rust"`] **opaque visitor** whose `&mut self`
 //! methods `cxx` exposes to C++ as callable member functions, sharing one bridge module:
 //!
-//! - the ctree walk ([`CtreeVisitor`], driver `facade/ctree_cxx.cc`'s `walker_t`) walks a
+//! - the ctree walk ([`CtreeVisitor`], driver `facade/ctree_bridge.cpp`'s `walker_t`) walks a
 //!   decompiled `cfunc_t` depth-first, calling one method per expression, statement, and local;
-//! - the tinfo type walk ([`TypeWalkVisitor`], driver `facade/typewalk_cxx.cc`'s `visit_walker_t`)
+//! - the tinfo type walk ([`TypeWalkVisitor`], driver `facade/typewalk_bridge.cpp`'s `visit_walker_t`)
 //!   walks a `tinfo_t`, calling one method per node kind.
 //!
 //! Neither uses a function-pointer table or a `void*` context: each visitor forwards every C++ call

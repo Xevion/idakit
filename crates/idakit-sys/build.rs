@@ -45,7 +45,7 @@ mod platform {
 }
 use platform::{CPP_STDLIB, EMIT_RPATH, IDALIB_LIB, PLATFORM_DEFINE, RUNTIME_LIB};
 
-const FACADE_SOURCES: &[&str] = &["facade/runtime.cpp", "facade/db.cpp"];
+const FACADE_SOURCES: &[&str] = &["facade/runtime.cpp"];
 
 // Compile one cxx bridge into its own static archive. cxx_build seeds a cc::Build with the
 // generated glue; this mirrors the facade's flags (c++17, SDK as -isystem, __EA64__, platform
@@ -119,7 +119,7 @@ fn main() {
     build.define("__EA64__", None).define(PLATFORM_DEFINE, None);
     // The cfunc placement shims (moveit inline CfuncVal path) are a plain facade TU, not a cxx
     // bridge, so they ride along in the whole-archived facade.
-    build.file("facade/cfunc_cxx.cc");
+    build.file("facade/cfunc_shims.cpp");
     // Mirror the caller's `-Zsanitizer=<name>` onto the facade TUs so bugs inside facade/*.cpp
     // are caught too, not just at the FFI boundary. Comma-separated like rustc's flag. `undefined`
     // uses trap mode: rustc links no UBSan runtime, so the usual `__ubsan_handle_*` calls would
@@ -166,7 +166,7 @@ fn main() {
     // qvector<T> bound per-instantiation (the KDAB recipe), read by copy and zero-copy.
     cxx_bridge(
         "src/bridge_qvec.rs",
-        &["facade/qvec_cxx.cc"],
+        &["facade/qvec_bridge.cpp"],
         "idakit_cxx_qvec_bridge",
         sdk_include_str,
         &out_dir,
@@ -203,15 +203,15 @@ fn main() {
     for tu in codegen::custom_tus() {
         gen_bridge.file(tu);
     }
-    gen_bridge.file("facade/ctree_cxx.cc");
-    gen_bridge.file("facade/typewalk_cxx.cc");
+    gen_bridge.file("facade/ctree_bridge.cpp");
+    gen_bridge.file("facade/typewalk_bridge.cpp");
     gen_bridge.compile("idakit_cxx_gen_bridge");
 
     // The cxx fault-injection and boundary probe bridges. Each is its own static archive, like the
     // production bridges above; their Rust bindings are `#[doc(hidden)]`, keeping them off the API.
     cxx_bridge(
         "src/bridge_probe.rs",
-        &["facade/probe_cxx.cc"],
+        &["facade/testonly_probe.cpp"],
         "idakit_cxx_probe",
         sdk_include_str,
         &out_dir,
@@ -219,7 +219,7 @@ fn main() {
     );
     cxx_bridge(
         "src/bridge_probe_ext.rs",
-        &["facade/probe_ext_cxx.cc"],
+        &["facade/testonly_probe_ext.cpp"],
         "idakit_cxx_probe_ext_bridge",
         sdk_include_str,
         &out_dir,
@@ -253,43 +253,42 @@ fn emit_rerun_directives() {
     for src in FACADE_SOURCES {
         println!("cargo:rerun-if-changed={src}");
     }
-    println!("cargo:rerun-if-changed=facade/qvec_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/qvec_cxx.h");
+    println!("cargo:rerun-if-changed=facade/qvec_bridge.cpp");
+    println!("cargo:rerun-if-changed=facade/qvec_bridge.h");
     println!("cargo:rerun-if-changed=src/bridge_qvec.rs");
-    println!("cargo:rerun-if-changed=facade/typewalk_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/typewalk_cxx.h");
-    println!("cargo:rerun-if-changed=facade/ctree_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/ctree_cxx.h");
+    println!("cargo:rerun-if-changed=facade/typewalk_bridge.cpp");
+    println!("cargo:rerun-if-changed=facade/typewalk_bridge.h");
+    println!("cargo:rerun-if-changed=facade/ctree_bridge.cpp");
+    println!("cargo:rerun-if-changed=facade/ctree_bridge.h");
     println!("cargo:rerun-if-changed=src/bridge_visitors.rs");
-    println!("cargo:rerun-if-changed=facade/probe_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/probe_cxx.h");
-    println!("cargo:rerun-if-changed=facade/cfunc_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/cfunc_cxx.h");
+    println!("cargo:rerun-if-changed=facade/testonly_probe.cpp");
+    println!("cargo:rerun-if-changed=facade/testonly_probe.h");
+    println!("cargo:rerun-if-changed=facade/cfunc_shims.cpp");
+    println!("cargo:rerun-if-changed=facade/cfunc_shims.h");
     println!("cargo:rerun-if-changed=src/bridge_cfunc.rs");
-    println!("cargo:rerun-if-changed=facade/probe_ext_cxx.cc");
-    println!("cargo:rerun-if-changed=facade/probe_ext_cxx.h");
+    println!("cargo:rerun-if-changed=facade/testonly_probe_ext.cpp");
+    println!("cargo:rerun-if-changed=facade/testonly_probe_ext.h");
     println!("cargo:rerun-if-changed=src/bridge_probe_ext.rs");
     println!("cargo:rerun-if-changed=src/bridge_probe.rs");
     println!("cargo:rerun-if-changed=src/bridge_gen.rs");
-    println!("cargo:rerun-if-changed=facade/custom_escape_hatch.cc");
-    println!("cargo:rerun-if-changed=facade/import_custom.cc");
-    println!("cargo:rerun-if-changed=facade/range_custom.cc");
-    println!("cargo:rerun-if-changed=facade/function_custom.cc");
-    println!("cargo:rerun-if-changed=facade/export_custom.cc");
-    println!("cargo:rerun-if-changed=facade/meta_custom.cc");
-    println!("cargo:rerun-if-changed=facade/name_custom.cc");
-    println!("cargo:rerun-if-changed=facade/strings_custom.cc");
-    println!("cargo:rerun-if-changed=facade/cfg_custom.cc");
-    println!("cargo:rerun-if-changed=facade/reference_custom.cc");
-    println!("cargo:rerun-if-changed=facade/bytes_custom.cc");
-    println!("cargo:rerun-if-changed=facade/instruction_custom.cc");
-    println!("cargo:rerun-if-changed=facade/hexrays_custom.cc");
-    println!("cargo:rerun-if-changed=facade/type_build_custom.cc");
-    println!("cargo:rerun-if-changed=facade/ty_custom.cc");
-    println!("cargo:rerun-if-changed=facade/netnode_custom.cc");
-    println!("cargo:rerun-if-changed=facade/idakit_facade.h");
-    println!("cargo:rerun-if-changed=facade/idakit_facade_internal.hpp");
-    println!("cargo:rerun-if-changed=facade/typewalk_walker.hpp");
+    println!("cargo:rerun-if-changed=facade/import.cpp");
+    println!("cargo:rerun-if-changed=facade/range.cpp");
+    println!("cargo:rerun-if-changed=facade/function.cpp");
+    println!("cargo:rerun-if-changed=facade/export.cpp");
+    println!("cargo:rerun-if-changed=facade/meta.cpp");
+    println!("cargo:rerun-if-changed=facade/name.cpp");
+    println!("cargo:rerun-if-changed=facade/strings.cpp");
+    println!("cargo:rerun-if-changed=facade/cfg.cpp");
+    println!("cargo:rerun-if-changed=facade/reference.cpp");
+    println!("cargo:rerun-if-changed=facade/bytes.cpp");
+    println!("cargo:rerun-if-changed=facade/instruction.cpp");
+    println!("cargo:rerun-if-changed=facade/hexrays.cpp");
+    println!("cargo:rerun-if-changed=facade/type_build.cpp");
+    println!("cargo:rerun-if-changed=facade/local_types.cpp");
+    println!("cargo:rerun-if-changed=facade/netnode.cpp");
+    println!("cargo:rerun-if-changed=facade/abi.h");
+    println!("cargo:rerun-if-changed=facade/internal.h");
+    println!("cargo:rerun-if-changed=facade/type_walker.h");
     println!("cargo:rerun-if-env-changed=IDADIR");
     println!("cargo:rerun-if-env-changed=IDAKIT_EMIT_COMPILE_COMMANDS");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");
@@ -298,13 +297,28 @@ fn emit_rerun_directives() {
     println!("cargo:rerun-if-env-changed=IDAKIT_SANITIZE");
 }
 
-/// Emit `compile_commands.json` for clang-tidy/clangd (opt-in via `just tidy`).
+/// Emit `compile_commands.json` for clang-tidy/clangd (opt-in via `just tidy`): one entry per
+/// hand-written facade translation unit, so `just tidy` covers every one of them, not just
+/// `FACADE_SOURCES`. Excludes the generated `OUT_DIR` body TUs (`gen_bridge.cc`,
+/// `gen_visitors.cc`, `gen_<domain>_bodies.cc`), which are codegen output, not hand-written.
 fn emit_compile_commands(sdk_include: &str, out_dir: &str) {
     let dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset");
     // OUT_DIR carries the generated gen_*.h; a facade .cpp now includes gen_facade_consts.h.
     let out_inc = format!("-I{out_dir}");
+
+    let mut sources: Vec<&str> = FACADE_SOURCES.to_vec();
+    sources.push("facade/cfunc_shims.cpp");
+    sources.extend(codegen::custom_tus());
+    sources.extend([
+        "facade/qvec_bridge.cpp",
+        "facade/ctree_bridge.cpp",
+        "facade/typewalk_bridge.cpp",
+        "facade/testonly_probe.cpp",
+        "facade/testonly_probe_ext.cpp",
+    ]);
+
     let mut json = String::from("[\n");
-    for (i, src) in FACADE_SOURCES.iter().enumerate() {
+    for (i, src) in sources.iter().enumerate() {
         if i > 0 {
             json.push_str(",\n");
         }

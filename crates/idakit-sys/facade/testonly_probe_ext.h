@@ -1,5 +1,5 @@
 // Declarations for the cxx spike bridge. Proves a custom rust::behavior::trycatch widens what the
-// generated shim catches. Bodies live in probe_ext_cxx.cc; the
+// generated shim catches. Bodies live in testonly_probe_ext.cpp; the
 // cxx-generated shim (from src/bridge_probe_ext.rs) calls them by their idakit_cxx-namespaced name.
 #pragma once
 

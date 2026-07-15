@@ -3,8 +3,8 @@
 // (range_size), carried in the ChunkInfo shared struct (range_chunk_info), and collected into an
 // owned rust::Vec<range_t> (range_all_chunks). Out-of-range indices throw -> Rust Err.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <funcs.hpp> // get_func, func_tail_iterator_t
 #include <range.hpp>

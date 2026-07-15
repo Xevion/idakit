@@ -22,7 +22,7 @@
 // still kill the process, exactly as raw idalib does. fd capture is portable POSIX, kept on
 // Linux+macOS and stubbed on Windows. The interr trap in `guarded<>` catches only where
 // idalib's throw unwinds across the libida boundary (Linux); elsewhere it aborts. See
-// idakit_facade_internal.hpp for `guarded<>`.
+// internal.h for `guarded<>`.
 #if defined(_WIN32)
 #include <fcntl.h>   // _O_WRONLY (banner swallow)
 #include <io.h>      // _open/_dup2/_close (banner swallow)
@@ -40,7 +40,7 @@
 #endif
 
 #include "gen_facade_consts.h" // idakit_gen::EXIT_TRAPPED, idakit_gen::FATAL_*
-#include "idakit_facade_internal.hpp"
+#include "internal.h"
 
 // pro.h poisons libc calls (#define fflush/setenv/... to dont_use_ names) to push callers
 // onto IDA's wrappers. We deliberately want raw libc here: fd-level capture must flush and
@@ -466,7 +466,7 @@ extern "C" int test_fatal(int kind) {
 extern "C" int get_batch(void) { return batch ? 1 : 0; }
 
 // Fire the chosen fatal from an arbitrary translation unit. The exit/abort stand-ins are
-// file-local to this TU, so the cxx probe body (in probe_cxx.cc, a separate archive) can't
+// file-local to this TU, so the cxx probe body (in testonly_probe.cpp, a separate archive) can't
 // reach them directly; it calls here instead. exit/abort take the longjmp path; interr throws
 // (set_interr_throws, armed by guarded<>).
 extern "C" void trigger_fatal(int kind) {

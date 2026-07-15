@@ -2,8 +2,8 @@
 // lookup accessors over get_func/getn_func, plus the name as a rust::String (Err on no name).
 // func_qty is templated (gen_function_bodies.cc), not here.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <funcs.hpp>
 #include <name.hpp>

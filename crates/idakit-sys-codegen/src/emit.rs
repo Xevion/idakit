@@ -470,7 +470,7 @@ impl Domain {
         // terminate) must be in scope in the generated .cc, which includes this header, so cxx's
         // default is disabled; it pulls in rust/cxx.h itself. gen_helpers.h carries the shared
         // qstring/byte marshalling helpers every body and custom_tu may call.
-        s.push_str("\n#include \"idakit_trycatch.h\"\n");
+        s.push_str("\n#include \"trycatch.h\"\n");
         s.push_str("#include \"gen_helpers.h\"\n\n");
         let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
         for c in self.consts {
@@ -739,8 +739,8 @@ impl VisitorBridge {
                 #(#sink_blocks)*
 
                 unsafe extern "C++" {
-                    include!("ctree_cxx.h");
-                    include!("typewalk_cxx.h");
+                    include!("ctree_bridge.h");
+                    include!("typewalk_bridge.h");
 
                     /// The same `cfuncptr_t` the `idakit_gen` bridge's `hexrays` domain bound; this
                     /// is a type alias, not a fresh opaque type, so a decompiled function feeds
@@ -871,8 +871,8 @@ pub(crate) fn helpers_header_source() -> String {
 
 /// The standalone `gen_facade_consts.h`: every [`super::facade_consts::FACADE_CONSTS`] and
 /// [`super::facade_consts::HIDDEN_FACADE_CONSTS`] sentinel as a `constexpr` in the `idakit_gen`
-/// namespace, for the raw (non-domain) facade TUs that need one (`runtime.cpp`, `probe_cxx.cc`,
-/// the visitor bridge's `ctree_cxx.cc`/`typewalk_cxx.cc`).
+/// namespace, for the raw (non-domain) facade TUs that need one (`runtime.cpp`, `testonly_probe.cpp`,
+/// the visitor bridge's `ctree_bridge.cpp`/`typewalk_bridge.cpp`).
 pub(crate) fn facade_consts_header_source() -> String {
     let mut s = String::new();
     s.push_str("#pragma once\n\n#include <cstdint>\n\n");

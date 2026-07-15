@@ -4,8 +4,8 @@
 // symbols that share a generated name are qualified with :: to avoid recursing into this namespace.
 // min_ea/max_ea are templated, not here.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <bytes.hpp> // get_bytes, get_byte/word/dword/qword, is_loaded, is_mapped, get_flags,
                      // get_item_head, get_item_end, next_head, prev_head, get_cmt,
@@ -21,6 +21,8 @@
 // The generated bridge header defines the shared structs (BinpatStats needs its full definition to
 // construct below); gen_bytes.h only forward-declares them.
 #include "gen_bridge.h"
+// idakit_get_bytes below is a raw extern "C" declared here, not a cxx-generated fn.
+#include "abi.h"
 
 namespace idakit_gen {
 
@@ -159,3 +161,9 @@ bool patch_bytes(uint64_t ea, rust::Slice<const uint8_t> bytes) {
 }
 
 } // namespace idakit_gen
+
+// The raw zero-copy read into a caller buffer, a plain extern "C" ABI companion to the
+// idakit_gen::get_bytes cxx binding above.
+extern "C" int64_t idakit_get_bytes(idakit_ea_t ea, void *buf, size_t size) {
+  return (int64_t)get_bytes(buf, (ssize_t)size, (ea_t)ea, GMB_READALL);
+}

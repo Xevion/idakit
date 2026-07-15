@@ -1,7 +1,7 @@
 use super::super::model::*;
 
 /// The name domain: name lookups (address<->name, demangle), the name-list accessors, and the
-/// three flags-word name classifiers. Every body is hand-written in `facade/name_custom.cc` (the
+/// three flags-word name classifiers. Every body is hand-written in `facade/name.cpp` (the
 /// getters throw on no-name, and SDK calls are `::`-qualified to avoid recursing on the shared
 /// symbol spellings).
 pub const NAME: Domain = Domain {
@@ -10,7 +10,7 @@ pub const NAME: Domain = Domain {
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: Some("facade/name_custom.cc"),
+    custom_tu: Some("facade/name.cpp"),
     fns: fns! {
         "Name at address `ea`; `Err` when the address has none."
             get_ea_name(ea: U64) -> ResultString;

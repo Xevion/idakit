@@ -5,8 +5,8 @@
 // share the SDK's own spelling (get_ea_name, has_user_name, ...), so an unqualified call would
 // recurse into this namespace instead of reaching the kernel.
 
-#include <pro.h>
 #include <ida.hpp>
+#include <pro.h>
 
 #include <bytes.hpp>
 #include <name.hpp>

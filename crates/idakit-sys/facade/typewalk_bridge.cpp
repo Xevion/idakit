@@ -1,5 +1,5 @@
 // cxx extern "Rust" opaque-visitor type walk (namespace idakit_cxx). visit_walker_t (declared in
-// typewalk_walker.hpp) does a depth-first tinfo_t recursion guarded by a placeholder plus a
+// type_walker.h) does a depth-first tinfo_t recursion guarded by a placeholder plus a
 // `defined`-set dedup, so a self-referential type resolves instead of looping. It emits through the
 // extern "Rust" opaque visitor's member functions (vis->scalar(...), vis->named_ref(...),
 // vis->fill_struct(...)) that cxx generates, not a C function-pointer table. Type names and
@@ -19,14 +19,14 @@
 #include <string>
 #include <vector>
 
-#include "typewalk_cxx.h"
-#include "typewalk_walker.hpp"
+#include "type_walker.h"
+#include "typewalk_bridge.h"
 // The generated visitor-bridge header defines the TypeWalkVisitor class (its member functions) and
 // the MemberInfo / EnumConstInfo / FrameVar / FrameWalk shared structs. OUT_DIR is on this TU's
 // include path; the ctree walk drives visit_walker_t only through the opaque handle in
-// typewalk_walker.hpp.
-#include "gen_visitors.h"
+// type_walker.h.
 #include "gen_facade_consts.h" // idakit_gen::NONE
+#include "gen_visitors.h"
 
 namespace idakit_cxx {
 
@@ -55,7 +55,7 @@ bool is_modeled_frb_vtype(uint64 vtype) {
 
 } // namespace
 
-// Full definition of the walker the opaque handle in typewalk_walker.hpp fronts. Holds the visitor
+// Full definition of the walker the opaque handle in type_walker.h fronts. Holds the visitor
 // by pointer so the ctree walk can create one and rebind it per walk.
 struct visit_walker_t {
   TypeWalkVisitor *vis = nullptr;
@@ -162,9 +162,9 @@ uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_si
         ms.push_back(md);
       }
     }
-    rust::Slice<const MemberInfo> slice =
-        ms.empty() ? rust::Slice<const MemberInfo>()
-                   : rust::Slice<const MemberInfo>(ms.data(), ms.size());
+    rust::Slice<const MemberInfo> slice = ms.empty()
+                                              ? rust::Slice<const MemberInfo>()
+                                              : rust::Slice<const MemberInfo>(ms.data(), ms.size());
     vis->fill_struct(id, t.is_union(), slice, size, has_size);
   }
   return id;

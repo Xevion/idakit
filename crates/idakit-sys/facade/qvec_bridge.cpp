@@ -16,7 +16,7 @@
 
 #include <stdexcept>
 
-#include "qvec_cxx.h"
+#include "qvec_bridge.h"
 
 // The recipe's "explicit instantiation to force the symbols" step (template class
 // qvector<range_t>;) does NOT compile here: it instantiates *every* member, and
@@ -53,8 +53,8 @@ rust::Slice<const std::int32_t> intvec_slice(const intvec_t &v) {
     return {};
   // Zero-copy: borrow {array (== begin()), n (== size())}. begin() on a const
   // qvector returns the const T* backing pointer; alloc is never read.
-  return rust::Slice<const std::int32_t>(
-      reinterpret_cast<const std::int32_t *>(v.begin()), v.size());
+  return rust::Slice<const std::int32_t>(reinterpret_cast<const std::int32_t *>(v.begin()),
+                                         v.size());
 }
 
 std::unique_ptr<rangevec_t> rangevec_build_chunks(std::uint64_t ea) {

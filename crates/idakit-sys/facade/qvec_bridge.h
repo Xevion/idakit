@@ -16,8 +16,8 @@
 #include <gdl.hpp>   // qflow_chart_t (the intvec_t source)
 #include <range.hpp> // range_t, rangevec_t
 
-#include "idakit_trycatch.h"
 #include "rust/cxx.h"
+#include "trycatch.h"
 
 namespace idakit_cxx {
 

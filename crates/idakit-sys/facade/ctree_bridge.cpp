@@ -2,10 +2,10 @@
 // depth-first cfunc_t recursion the deleted C-vtbl facade did, but emits through the extern "Rust"
 // opaque visitor's member functions (nodes->e_num(...), nodes->s_if(...), nodes->l_lvar(...)) that
 // cxx generates, not a function-pointer table and void* context. Node types are resolved through
-// the shared tinfo walker (typewalk_walker.hpp), one walker created per ctree walk and driven
+// the shared tinfo walker (type_walker.h), one walker created per ctree walk and driven
 // alongside the recursion exactly as the deleted facade did. Names, string literals, and comments
-// cross as owned rust::String, decoded leniently (IDA emits UTF-8, undecodable units become U+FFFD);
-// arrays cross as rust::Slice<T>, borrowed for the one call.
+// cross as owned rust::String, decoded leniently (IDA emits UTF-8, undecodable units become
+// U+FFFD); arrays cross as rust::Slice<T>, borrowed for the one call.
 
 #include <pro.h>
 
@@ -18,12 +18,12 @@
 #include <hexrays.hpp>
 #include <name.hpp> // get_name
 
-#include "ctree_cxx.h"
-#include "typewalk_walker.hpp"
+#include "ctree_bridge.h"
+#include "type_walker.h"
 // The generated visitor-bridge header defines the CtreeVisitor class (its member functions) and
 // the LocPiece shared struct. OUT_DIR is on this TU's include path.
-#include "gen_visitors.h"
 #include "gen_facade_consts.h" // idakit_gen::NONE
+#include "gen_visitors.h"
 
 namespace idakit_cxx {
 
@@ -55,7 +55,7 @@ rust::Slice<const LocPiece> slice_of(const std::vector<LocPiece> &v) {
 struct walker_t {
   CtreeVisitor *nodes;
   // Walks node types into the shared type table via the cxx opaque visitor (see
-  // typewalk_walker.hpp); created/freed around the walk in cfunc_walk_ctree below.
+  // type_walker.h); created/freed around the walk in cfunc_walk_ctree below.
   idakit_cxx::visit_walker_t *vw;
 
   uint32_t expr(const cexpr_t *e) {

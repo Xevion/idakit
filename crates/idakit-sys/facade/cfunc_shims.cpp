@@ -12,13 +12,13 @@
 
 #include <ida.hpp>
 
-#include <funcs.hpp>  // get_func
+#include <funcs.hpp> // get_func
 #include <hexrays.hpp>
 #include <loader.hpp> // load_plugin
 
 #include <new>
 
-#include "cfunc_cxx.h"
+#include "cfunc_shims.h"
 
 namespace {
 

@@ -7,7 +7,7 @@ use super::super::model::*;
 /// crosses as one value with no `Result` (the five outcomes, ok plus `-1..-4`, are structured
 /// payloads a string-only `cxx` exception could not carry). `reg_class_ids`/`op_dtype_ids` expose
 /// the facade's own discriminants as `Vec<u8>` alignment sources for idakit's mirror tests. The
-/// whole body is hand-written in `facade/instruction_custom.cc`.
+/// whole body is hand-written in `facade/instruction.cpp`.
 pub const INSTRUCTION: Domain = Domain {
     name: "instruction",
     sdk_includes: &[],
@@ -137,7 +137,7 @@ pub const INSTRUCTION: Domain = Domain {
             doc: "`InstructionData::flow` bit: sequential flow stops after this instruction.",
         },
     ],
-    custom_tu: Some("facade/instruction_custom.cc"),
+    custom_tu: Some("facade/instruction.cpp"),
     fns: fns! {
         "Decode the instruction at `ea`, folding raw operands into semantic kinds with resolved \
          register names and control-flow facts. Infallible at the boundary: the result code lands \

@@ -2,14 +2,14 @@ use super::super::model::*;
 
 /// The export (entry-point) domain: per-export scalar accessors plus the name and forwarder
 /// strings, indexed `[0, export_qty)`. `export_qty` is a templated passthrough; the lookups are
-/// hand-written in `facade/export_custom.cc` (a forwarder-less export legitimately `Err`s).
+/// hand-written in `facade/export.cpp` (a forwarder-less export legitimately `Err`s).
 pub const EXPORT: Domain = Domain {
     name: "export",
     sdk_includes: &["<entry.hpp>", "<stdexcept>"],
     externs: &[],
     structs: &[],
     consts: &[],
-    custom_tu: Some("facade/export_custom.cc"),
+    custom_tu: Some("facade/export.cpp"),
     fns: fns! {
         "Number of exported entry points in the database (`get_entry_qty`)."
             export_qty() -> Usize = scalar("get_entry_qty()");
