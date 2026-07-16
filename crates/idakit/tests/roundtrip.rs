@@ -15,6 +15,13 @@ fn roundtrip() {
     common::with_canonical_db(run);
 }
 
+// The SDK's QMAXPATH (pro.h): 260 on Windows, PATH_MAX elsewhere. get_root_filename's facade
+// buffer is this exact size.
+#[cfg(windows)]
+const QMAXPATH: usize = 260;
+#[cfg(not(windows))]
+const QMAXPATH: usize = libc::PATH_MAX as usize;
+
 #[expect(
     clippy::too_many_lines,
     reason = "one end-to-end test body kept at a single indent level, per project test convention"
@@ -137,9 +144,23 @@ fn run(idb: &mut Database) {
             "a real database names its processor"
         );
         let _ = sys::image_base();
-        let _ = sys::file_type_name();
+        // The facade clamps get_file_type_name's return to its fixed 256-byte buffer, whose
+        // header promises no "bytes stored" count; nothing may come back past the cap.
+        if let Ok(ft) = sys::file_type_name() {
+            assert!(
+                ft.len() <= 256,
+                "file type name past the facade buffer cap: {ft:?}"
+            );
+        }
         let _ = sys::input_path();
-        let _ = sys::root_filename();
+        // get_root_filename is clamped to a QMAXPATH buffer (pro.h); the facade's clamp caps at
+        // the buffer size, so the string can equal it.
+        if let Ok(rf) = sys::root_filename() {
+            assert!(
+                rf.len() <= QMAXPATH,
+                "root filename past the facade buffer cap: {rf:?}"
+            );
+        }
         println!("cxx meta bridge OK: proc={:?}", sys::proc_name().ok());
     }
 

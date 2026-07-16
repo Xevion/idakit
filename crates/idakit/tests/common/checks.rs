@@ -199,15 +199,12 @@ pub fn cfg(idb: &Database) -> String {
     format!("{} blocks", cfg.len())
 }
 
-/// Decompiling the first functions succeeds where Hex-Rays can, and the extracted ctree's node
-/// counts agree with the independent visitor counts.
+/// Decompiling the first functions succeeds, and the extracted ctree's node counts agree with
+/// the independent visitor counts.
 ///
-/// Deliberately does not assert `decompiled > 0`: several real corpus fixtures (WASM, Dalvik,
-/// .NET CLI, Java bytecode loaders) have no Hex-Rays module at all, and per the manifest's own
-/// comment beside them they are not manifest-skipped for this check on purpose, since they
-/// exist specifically to exercise the loader and processor module with zero decompiler
-/// coverage. A hard failure here would need a manifest-level "no decompiler" signal distinct
-/// from `skip_checks`, which does not exist today.
+/// A fixture whose architecture has no Hex-Rays module declares `decompiler = false` in the
+/// manifest, which skips this check at the trial level rather than letting it pass vacuously;
+/// every fixture that reaches this function is expected to decompile at least one.
 pub fn decompile(idb: &Database) -> String {
     use idakit::decompiler::ctree::{NodeRef, StatementKind};
     let mut decompiled = 0usize;
@@ -252,6 +249,7 @@ pub fn decompile(idb: &Database) -> String {
         );
         deep_checked = true;
     }
+    assert!(decompiled > 0, "no functions decompiled");
     format!("{decompiled} decompiled")
 }
 
@@ -327,8 +325,9 @@ pub fn types(idb: &Database) -> String {
 /// the corpus matrix surfaces the per-architecture argloc spread. `Custom` (`ALOC_CUSTOM`) is a
 /// tripwire: it means a processor module produced an argloc idakit doesn't model, which we want
 /// to see rather than silently absorb. Every scattered fragment must itself be a register
-/// or stack slot, never nested, mirroring `argpart_t`. A fixture Hex-Rays cannot decompile at
-/// all (see [`decompile`]) yields no locals and passes vacuously, by the same design.
+/// or stack slot, never nested, mirroring `argpart_t`. Like [`decompile`], a fixture reaching
+/// this check is expected to decompile: one with no Hex-Rays module declares
+/// `decompiler = false` and is skipped at the trial level.
 pub fn argloc(idb: &Database) -> String {
     use idakit::decompiler::ctree::LocalLocation;
 
@@ -369,9 +368,8 @@ pub fn argloc(idb: &Database) -> String {
         }
     }
 
-    if lvars == 0 {
-        return format!("{decompiled} decompiled, no locals");
-    }
+    assert!(decompiled > 0, "no functions decompiled");
+    assert!(lvars > 0, "no locals collected in decompiled functions");
     assert!(
         n[6] == 0,
         "{} local(s) mapped to Custom (ALOC_CUSTOM) -- an unmodeled argloc surfaced",

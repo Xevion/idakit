@@ -4,9 +4,10 @@
 //! `harness = false`; the nextest `serial-kernel` group keeps it off the other kernel tests'
 //! toes. Runs against the corpus manifest's canonical fixture (see [`common::TestDb`]);
 //! skips when no corpus is configured. It decodes a
-//! slice of each function's instruction stream, asserts structural invariants, and
-//! cross-checks direct-branch targets against IDA's own reference graph. Two independent sources
-//! that must agree. Read-only; never opens for write.
+//! slice of each function's instruction stream, asserts structural invariants, cross-checks
+//! direct-branch targets against IDA's own reference graph (two independent sources that must
+//! agree), and walks the byte accessors. Mostly read-only: one check round-trips a comment write
+//! that is never persisted (`idb.close(false)`).
 
 use std::fmt::Write as _;
 
@@ -57,6 +58,14 @@ fn run(idb: &mut Database) {
     check_code_gated_instructions(idb);
     check_straight_line_lands_on_end(idb);
     check_decode_is_deterministic(idb);
+    check_instructions_in_boundaries(idb);
+    check_xref_flow_and_predicates(idb);
+    check_xref_edges_are_symmetric(idb);
+    check_is_code_and_is_data(idb);
+    check_next_and_prev_head(idb);
+    check_read_into_matches_bytes(idb);
+    // Last: the only check that writes, so nothing after it reads a mutated database.
+    check_comment_round_trips(idb);
     println!("ok");
 }
 
@@ -184,6 +193,9 @@ fn check_code_gated_instructions(idb: &Database) {
     const BUDGET: usize = 4000;
     let mut iter_total = 0usize;
     let mut first_fn: Vec<String> = Vec::new();
+    // A walk that yields more than one instruction proves the cursor advances past each decoded
+    // item rather than jumping straight to the chunk end.
+    let mut multi_insn_function = false;
     'iter: for (fi, function) in idb.functions().enumerate() {
         let chunks: Vec<_> = function.chunks().collect();
         assert!(
@@ -191,6 +203,7 @@ fn check_code_gated_instructions(idb: &Database) {
             "function {:#x} reports no chunks",
             function.address().get()
         );
+        let mut this_fn_count = 0usize;
         for instruction in function.instructions() {
             assert!(
                 idb.is_code(instruction.address),
@@ -218,16 +231,33 @@ fn check_code_gated_instructions(idb: &Database) {
                 instruction.address.get(),
                 idb.item_end(instruction.address).get()
             );
+            // Pins the premise behind Instructions::next's `>` guard: item_end must strictly
+            // advance at every code address a real walk visits, never echo the input back.
+            assert!(
+                idb.item_end(instruction.address) > instruction.address,
+                "item_end should strictly advance past {:#x}",
+                instruction.address.get()
+            );
             if fi == 0 && first_fn.len() < 12 {
                 first_fn.push(fmt_insn(&instruction));
             }
+            this_fn_count += 1;
             iter_total += 1;
             if iter_total >= BUDGET {
                 break 'iter;
             }
         }
+        // Single-chunk only: a multi-chunk function yields one instruction per chunk even if the
+        // cursor never advances within a chunk.
+        if chunks.len() == 1 && this_fn_count > 1 {
+            multi_insn_function = true;
+        }
     }
     assert!(iter_total > 0, "instructions() yielded nothing");
+    assert!(
+        multi_insn_function,
+        "no function yielded more than one instruction; Instructions::next never advances"
+    );
     println!("code-gated instructions(): {iter_total} in-chunk code instructions");
     println!("first function via instructions():");
     for s in &first_fn {
@@ -292,13 +322,50 @@ fn check_decode_is_deterministic(idb: &Database) {
     assert!(a == b, "decode is not deterministic");
 }
 
-#[test]
-fn xref_flow_and_predicates() {
-    common::with_canonical_db(run_xref_flow);
+/// A chunk's range yields more than one instruction (the cursor advances), and an unmapped range
+/// terminates: [`Database::item_end`] falls back to `address` itself there, which must end the
+/// walk rather than loop forever re-examining that address.
+fn check_instructions_in_boundaries(idb: &Database) {
+    let mut multi_insn_range = false;
+    'outer: for function in idb.functions().take(500) {
+        for chunk in function.chunks() {
+            if idb.instructions_in(chunk.start..chunk.end).take(3).count() > 1 {
+                multi_insn_range = true;
+                break 'outer;
+            }
+        }
+    }
+    assert!(
+        multi_insn_range,
+        "no chunk yielded more than one instruction; InstructionsIn::next never advances"
+    );
+
+    let Some(unmapped) = (1u64..0x1000)
+        .filter_map(Address::try_new)
+        .find(|&a| idb.segment_at(a).is_none())
+    else {
+        println!("skipping: no unmapped low address found to probe the zero-width guard");
+        return;
+    };
+    // Pins the other half of Instructions::next's `>` guard premise: even outside every
+    // segment, item_end still advances rather than echoing the input back as BADADDR would.
+    assert!(
+        idb.item_end(unmapped) > unmapped,
+        "item_end should advance past the unmapped address {unmapped:#x} too"
+    );
+    let mut probe = idb.instructions_in(unmapped..unmapped + 0x10);
+    assert!(
+        probe.next().is_none(),
+        "an unmapped range at {unmapped:#x} should decode nothing"
+    );
+    println!("instructions_in boundary checks OK (probed unmapped {unmapped:#x})");
 }
 
-fn run_xref_flow(idb: &mut Database) {
+/// `CodeXref::Flow` is excluded by default and surfaced by `flow(true)`, and the
+/// `has_external_refs`/`has_jump_or_flow_xref` predicates report both true and false.
+fn check_xref_flow_and_predicates(idb: &Database) {
     let mut found_flow = false;
+    let mut mid_function_addr = None;
 
     'outer: for function in idb.functions() {
         let mut address = function.address();
@@ -329,6 +396,7 @@ fn run_xref_flow(idb: &mut Database) {
                     "flow-reached address {next:#x} should report a jump-or-flow xref"
                 );
                 found_flow = true;
+                mid_function_addr = Some(next);
                 println!(
                     "flow edge {:#x} -> {:#x} reachable via xrefs_from_with(...).flow(true)",
                     address.get(),
@@ -346,41 +414,79 @@ fn run_xref_flow(idb: &mut Database) {
         "no CodeXref::Flow edge became reachable via xrefs_from_with(...).flow(true)"
     );
 
-    // Positive case: at least one address in the first functions' straight-line decode should
-    // carry an external reference (a call/jump into an import thunk or another module), proving
-    // has_external_refs actually reports true somewhere rather than only ever false.
+    // A direct call into a different function's entry is a reference from outside the callee, so
+    // has_external_refs must report true there.
+    let function_starts: std::collections::HashSet<Address> =
+        idb.functions().map(|f| f.address()).collect();
     let mut found_external = false;
-    'externals: for function in idb.functions().take(2000) {
+    'externals: for function in idb.functions() {
         let mut address = function.address();
         for _ in 0..64 {
             let Ok(instruction) = idb.decode(address) else {
                 break;
             };
-            if idb.has_external_refs(address) {
+            if !instruction.flow.is_indirect
+                && instruction.flow.is_call
+                && let Some(target) = instruction.flow.target
+                && target != function.address()
+                && function_starts.contains(&target)
+            {
+                assert!(
+                    idb.has_external_refs(target),
+                    "call target {target:#x} from a different function should report external refs"
+                );
                 found_external = true;
-                println!("external ref found at {:#x}", address.get());
+                println!(
+                    "external ref confirmed: {:#x} calls {target:#x}",
+                    address.get()
+                );
                 break 'externals;
             }
             address = address + u64::from(instruction.len);
         }
     }
-    if !found_external {
-        println!("skipping: no external reference found in the scanned prefix");
+    assert!(
+        found_external,
+        "no direct call into a different function's entry found to verify has_external_refs"
+    );
+
+    // Negative case for has_external_refs: nothing calls into the middle of a straight-line
+    // function body, so the second instruction the flow walk above landed on has no external
+    // refs, catching a predicate hardcoded to `true`.
+    let mid = mid_function_addr.expect("found_flow implies a mid-function address was recorded");
+    assert!(
+        !idb.has_external_refs(mid),
+        "mid-function instruction {mid:#x} should report no external refs"
+    );
+
+    // Negative case for has_jump_or_flow_xref: a function entry reached only by direct calls
+    // (fl_CN/fl_CF, xref.hpp) carries no incoming jump (fl_JN/fl_JF) or flow (fl_F) cref.
+    let call_only_entry = idb
+        .functions()
+        .take(5000)
+        .map(|f| f.address())
+        .find(|&entry| {
+            !idb.xrefs_to_with(entry).flow(true).call().any(|x| {
+                matches!(
+                    x.kind,
+                    XrefKind::Code(CodeXref::JumpNear | CodeXref::JumpFar | CodeXref::Flow)
+                )
+            })
+        });
+    if let Some(entry) = call_only_entry {
+        assert!(
+            !idb.has_jump_or_flow_xref(entry),
+            "call-only function entry {entry:#x} should report no jump/flow xref"
+        );
+    } else {
+        println!("skipping: no function entry found with only call-kind incoming xrefs");
     }
-
-    println!("ok");
 }
 
-/// Edge symmetry: `xrefs_to`/`xrefs_from` are two traversal directions over one edge list, so for
-/// every outgoing edge `A -> B` a database-wide bug would show up as `B`'s incoming list missing
-/// the mirror `A -> B` edge. This is checked over both code and data references, sampled from a
-/// real disassembly walk rather than synthesized.
-#[test]
-fn xref_edges_are_symmetric() {
-    common::with_canonical_db(run_xref_symmetry);
-}
-
-fn run_xref_symmetry(idb: &mut Database) {
+/// `xrefs_to`/`xrefs_from` are two traversal directions over one edge list, so every outgoing
+/// edge `A -> B` must appear in `B`'s incoming list. Sampled over code and data references from
+/// a real disassembly walk rather than synthesized.
+fn check_xref_edges_are_symmetric(idb: &Database) {
     const BUDGET: usize = 2000;
     let mut checked = 0usize;
 
@@ -414,4 +520,94 @@ fn run_xref_symmetry(idb: &mut Database) {
 
     assert!(checked > 0, "no xref edges sampled for symmetry");
     println!("xref edge symmetry OK: {checked} edges mirrored in both directions");
+}
+
+/// A string literal in the canonical fixture, a known data address to check `is_data`/`is_code`
+/// against.
+const KNOWN_STRING_ADDRESS: u64 = 0x0030_106b;
+
+/// A function entry classifies as code, never data; the known string address classifies as
+/// data, never code.
+fn check_is_code_and_is_data(idb: &Database) {
+    let code_addr = idb.functions().next().expect("a function").address();
+    assert!(
+        idb.is_code(code_addr),
+        "function entry should classify as code"
+    );
+    assert!(
+        !idb.is_data(code_addr),
+        "function entry should not classify as data"
+    );
+
+    let data_addr = Address::new_const(KNOWN_STRING_ADDRESS);
+    assert!(
+        idb.is_data(data_addr),
+        "known string address should classify as data"
+    );
+    assert!(
+        !idb.is_code(data_addr),
+        "known string address should not classify as code"
+    );
+}
+
+/// `next_head`/`prev_head` land on the real neighboring head, not `None`: from a function entry
+/// to the instruction right after it, and back.
+fn check_next_and_prev_head(idb: &Database) {
+    let bounds = idb
+        .address_range()
+        .expect("open database has an address range");
+    let mut checked = false;
+    for function in idb.functions() {
+        let entry = function.address();
+        let Ok(insn) = idb.decode(entry) else {
+            continue;
+        };
+        let next_addr = entry + u64::from(insn.len);
+        if !idb.is_code(next_addr) {
+            continue;
+        }
+        assert!(
+            idb.next_head(entry, bounds.end) == Some(next_addr),
+            "next_head from {entry:#x} should land on the following head {next_addr:#x}"
+        );
+        assert!(
+            idb.prev_head(next_addr, bounds.start) == Some(entry),
+            "prev_head from {next_addr:#x} should land back on {entry:#x}"
+        );
+        checked = true;
+        break;
+    }
+    assert!(
+        checked,
+        "no function found with two consecutive code heads to check next_head/prev_head"
+    );
+}
+
+/// `read_into` fills the caller's buffer with the same bytes the owning [`Database::bytes`]
+/// shortcut returns, and reports the real count supplied.
+fn check_read_into_matches_bytes(idb: &Database) {
+    let address = idb.functions().next().expect("a function").address();
+    let owned = idb.bytes(address, 8);
+    assert!(owned.len() == 8, "need 8 readable bytes at the entry");
+
+    let mut buf = [0u8; 8];
+    let got = idb.read_into(address, &mut buf);
+    assert!(got == 8, "read_into should report all 8 bytes supplied");
+    assert!(
+        buf.as_slice() == owned.as_slice(),
+        "read_into should match the owned read"
+    );
+}
+
+/// A comment set through the write cursor reads back verbatim through [`Database::comment`].
+/// Never saved: `with_canonical_db` closes `save = false`.
+fn check_comment_round_trips(idb: &mut Database) {
+    let address = idb.functions().next().expect("a function").address();
+    idb.at_mut(address)
+        .set_comment("idakit probe", false)
+        .expect("set_comment failed");
+    assert!(
+        idb.comment(address, false).as_deref() == Some("idakit probe"),
+        "comment should read back the text just set"
+    );
 }

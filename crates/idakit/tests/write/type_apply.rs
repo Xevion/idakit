@@ -393,6 +393,31 @@ fn type_rename_collision() {
     });
 }
 
+/// A `RECIPE_FUNCTION` recipe claiming a param count the buffer has no room to encode is a clean
+/// rejection, not a process abort. Goes straight through `idakit-sys`'s raw `apply_type_recipe`,
+/// the surface a hand-rolled recipe reaches, bypassing the `expr` builder that would keep the
+/// count consistent.
+#[test]
+fn type_recipe_oversized_param_count_is_rejected_not_aborted() {
+    crate::common::with_canonical_db(|idb| {
+        let address = idb.functions().next().expect("a function").address();
+
+        // RECIPE_FUNCTION, nparams = u32::MAX, varargs = 0, cc = 0, then nothing: no bytes left
+        // for even one of the four billion params it claims.
+        let mut recipe = vec![idakit_sys::RECIPE_FUNCTION];
+        recipe.extend_from_slice(&u32::MAX.to_le_bytes());
+        recipe.push(0);
+        recipe.extend_from_slice(&0u16.to_le_bytes());
+
+        let result = idakit_sys::apply_type_recipe(address.get(), &recipe, 0);
+        assert!(
+            result.code == idakit_sys::TYPE_ERR_INPUT,
+            "an unencodable param count should be a clean rejection, got code {}",
+            result.code
+        );
+    });
+}
+
 /// A sweep of syntactically malformed declarations through `set_type`, each a clean `ParseFailed`
 /// rather than a panic: an unterminated struct body and a dangling function-declarator paren.
 #[rstest]

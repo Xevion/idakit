@@ -1,6 +1,7 @@
-//! String enumeration against a real database: every located string has a sane character width
-//! and, when its bytes are readable, decodes to UTF-8 text. Structural, so it holds across any
-//! input. Read-only; opens `save = false`.
+//! String enumeration against a real database: every located string has a sane character width,
+//! decodes to its known text, list order is address-ascending with no stuck cursor, and the
+//! iterator stays exhausted (no `size_hint` underflow) once drained. Read-only; opens
+//! `save = false`.
 
 mod common;
 
@@ -11,12 +12,19 @@ fn strings() {
     common::with_canonical_db(run);
 }
 
+// A string literal at a fixed address in the canonical fixture.
+const ANCHOR_ADDRESS: u64 = 0x0030_106b;
+const ANCHOR_TEXT: &str = "crypto/aes/aes_ige.c";
+
 fn run(idb: &mut Database) {
+    let mut strings = idb.strings();
     let mut total = 0usize;
     let mut decoded = 0usize;
     let mut wide = 0usize;
-    let mut sample: Option<String> = None;
-    for s in idb.strings().take(5000) {
+    let mut prev_address = None;
+    let mut found_anchor = false;
+
+    for s in &mut strings {
         total += 1;
         assert!(
             matches!(s.char_width(), 1 | 2 | 4),
@@ -25,25 +33,48 @@ fn run(idb: &mut Database) {
             s.char_width()
         );
         wide += usize::from(s.char_width() > 1);
+
+        // IDA's string list is address-ascending; a stuck cursor repeats the previous address.
+        assert!(
+            prev_address.is_none_or(|prev| prev < s.address()),
+            "string list is not strictly increasing at {:#x}",
+            s.address()
+        );
+        prev_address = Some(s.address());
+
         if let Some(text) = s.text() {
             decoded += 1;
-            if sample.is_none() && s.char_width() == 1 && !text.trim().is_empty() {
-                sample = Some(text);
+            if s.address() == Address::new_const(ANCHOR_ADDRESS) {
+                found_anchor = true;
+                assert!(text == ANCHOR_TEXT, "anchor text mismatch: {text:?}");
+                assert!(
+                    s.escaped().as_deref() == Some(ANCHOR_TEXT),
+                    "anchor escaped mismatch: {:?}",
+                    s.escaped()
+                );
+                assert!(
+                    format!("{s:?}").contains(ANCHOR_TEXT),
+                    "Debug impl dropped the decoded text"
+                );
             }
         }
     }
 
-    // build_strlist on a real program finds string literals; if the scan surfaced any, the
-    // decode path has to produce text for at least some of them.
-    if total == 0 {
-        println!("strings: none found (unusual, but not a failure)");
-    } else {
-        assert!(
-            decoded > 0,
-            "found {total} strings but none decoded to text"
-        );
-        println!("strings: {total} scanned, {decoded} decoded, {wide} wide; sample {sample:?}");
-    }
+    assert!(total > 0, "string list enumeration yielded nothing");
+    assert!(
+        found_anchor,
+        "expected known string {ANCHOR_TEXT:?} at {ANCHOR_ADDRESS:#x} not found"
+    );
+    assert!(
+        decoded > 0,
+        "found {total} strings but none decoded to text"
+    );
 
+    // A fully drained iterator must stay exhausted, and its size_hint must not underflow past
+    // zero if the cursor overshoots `count`.
+    assert!(strings.next().is_none());
+    assert!(strings.size_hint() == (0, Some(0)));
+
+    println!("strings: {total} scanned, {decoded} decoded, {wide} wide");
     println!("strings OK: string-list enumeration and decode verified");
 }

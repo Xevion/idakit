@@ -1,5 +1,9 @@
 # Every test opens a private DB copy, so RAM is the only limit; caps ADD (~0.85 GiB/slot, so
 # peak = (corpus + kernel) slots). Lower on a RAM-tight runner. slow-timeout kills a wedged test.
+
+[profile.default]
+fail-fast = false
+
 [test-groups]
 kernel = { max-threads = 4 }
 corpus = { max-threads = 8 }
@@ -13,3 +17,11 @@ slow-timeout = { period = "120s", terminate-after = 3 }
 filter = 'kind(test)'
 test-group = 'kernel'
 slow-timeout = { period = "60s", terminate-after = 3 }
+
+# For `just mutants`, which asks a different question than `just test` does. A run there wants to
+# know only whether *some* test rejects the mutant, and roughly three quarters of them do, so
+# finishing the suite past the first failure buys nothing and costs a kernel per remaining test.
+# The default stays false, because a developer reading a real failure wants every failure at once.
+# Inherits the default profile, so the caps and timeouts above still apply.
+[profile.mutants]
+fail-fast = true

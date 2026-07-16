@@ -108,10 +108,10 @@ jobs:
       - name: Run tests
         run: just ci-test
 
-  # ASan+UBSan and ThreadSanitizer against the real kernel across the FFI boundary, via the
-  # roundtrip test. Nightly-only (needs `-Z build-std` for a sanitizer-instrumented std, which
-  # the pinned stable toolchain lacks) and Linux-x64-only (unverified elsewhere; Windows has no
-  # sanitizer-capable facade compiler here).
+  # ASan+UBSan and ThreadSanitizer against the real kernel across the FFI boundary, over every
+  # test binary that marshals strings or buffers. Needs the nightly toolchain (`-Z build-std`
+  # builds a sanitizer-instrumented std, which the pinned stable lacks) and Linux-x64 (unverified
+  # elsewhere; Windows has no sanitizer-capable facade compiler here).
   sanitize:
     name: sanitize (${{ matrix.mode }})
     if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
@@ -120,7 +120,7 @@ jobs:
       matrix:
         mode: [address, thread]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       RUST_BACKTRACE: "1"
       AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}

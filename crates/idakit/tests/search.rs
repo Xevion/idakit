@@ -24,6 +24,7 @@ fn run(idb: &mut Database) {
     wildcards_still_match(idb, address, &bytes);
     range_excludes_start(idb, address, &bytes);
     rejections_trip(idb);
+    debug_impls_render_real_fields(idb, address, &bytes);
 
     println!("search OK: all four constructor forms match; rejections trip typed errors");
 }
@@ -125,6 +126,27 @@ fn rejections_trip(idb: &Database) {
             })
         ),
         "empty ida pattern should be Unparseable, got {r:?}"
+    );
+}
+
+/// The hand-written `Debug` impls render real state: the compiled pattern's match flags, and the
+/// walk's cursor address.
+fn debug_impls_render_real_fields(idb: &Database, address: Address, bytes: &[u8]) {
+    let pat = Pattern::bytes(idb, bytes).call().expect("bytes compiles");
+    let pat_dbg = format!("{pat:?}");
+    assert!(
+        pat_dbg.contains("BITMASK"),
+        "Pattern's Debug should render its real match flags, got {pat_dbg:?}"
+    );
+
+    let bounds = idb
+        .address_range()
+        .expect("open database has an address range");
+    let matches = idb.search_in(address..bounds.end, &pat);
+    let matches_dbg = format!("{matches:?}");
+    assert!(
+        matches_dbg.contains("Matches") && matches_dbg.contains(&format!("{address:#x}")),
+        "Matches' Debug should render its real cursor state, got {matches_dbg:?}"
     );
 }
 

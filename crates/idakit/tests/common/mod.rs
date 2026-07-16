@@ -3,6 +3,7 @@
 #![allow(dead_code, unused_imports, unused_macros)]
 
 pub mod checks;
+pub mod harness;
 mod macros;
 
 pub(crate) use macros::assert_type_write_err;
@@ -96,8 +97,10 @@ impl TestDb {
             if std::fs::create_dir_all(&scratch).is_err() {
                 continue;
             }
-            match std::fs::copy(src, &db) {
-                Ok(_) => return Self { scratch, db },
+            // Masters are write-protected and `fs::copy` preserves the mode, so the copy must be
+            // made writable before idalib, which rewrites a database in place, can open it.
+            match std::fs::copy(src, &db).and_then(|_| idakit::corpus::make_writable(&db)) {
+                Ok(()) => return Self { scratch, db },
                 Err(e) => {
                     let _ = std::fs::remove_dir_all(&scratch);
                     last_err = Some(e);

@@ -6,9 +6,10 @@
 //! [`canonical`] returns `None`, so callers skip with no cases to run.
 //!
 //! The manifest is the source of truth: each `[[fixture]]` gives a `path` (relative to the
-//! manifest), whether it `opens` under our 64-bit build, and an optional `skip_checks` list naming
-//! invariants that legitimately do not apply (e.g. a raw ROM has no symbols). Only openable
-//! fixtures are returned; unknown manifest fields are ignored.
+//! manifest), whether it `opens` under our 64-bit build, an optional `skip_checks` list naming
+//! invariants that legitimately do not apply (e.g. a raw ROM has no symbols), and an optional
+//! `decompiler` flag (default `true`) declaring whether Hex-Rays covers this fixture's
+//! architecture at all. Only openable fixtures are returned; unknown manifest fields are ignored.
 //!
 //! This module owns only the resolution and data model. The copy-destination policy stays with
 //! each caller: [`working_copy`] copies beside the corpus (so large matrix fixtures under fan-out
@@ -23,7 +24,8 @@ use serde::Deserialize;
 static LOAD_ENV: Once = Once::new();
 static NEXT_COPY: AtomicU32 = AtomicU32::new(0);
 
-/// A discovered fixture: a display name, its absolute path, and the checks it opts out of.
+/// A discovered fixture: a display name, its absolute path, the checks it opts out of, and
+/// whether Hex-Rays covers its architecture.
 pub struct Fixture {
     /// Display name, derived from the file stem (see [`display_name`]).
     pub name: String,
@@ -31,6 +33,9 @@ pub struct Fixture {
     pub path: PathBuf,
     /// Checks the manifest declares inapplicable to this fixture.
     pub skip_checks: Vec<String>,
+    /// Whether Hex-Rays covers this fixture's architecture. Defaults to `true`: a fixture with
+    /// no explicit `decompiler = false` is expected to decompile.
+    pub decompiler: bool,
 }
 
 impl Fixture {
@@ -56,6 +61,7 @@ pub fn fixtures() -> Vec<Fixture> {
             name: display_name(&e.path),
             path: root.join(&e.path),
             skip_checks: e.skip_checks,
+            decompiler: e.decompiler,
         })
         .filter(|f| f.path.is_file())
         .collect();
@@ -241,7 +247,8 @@ impl Drop for WorkingCopy {
 ///
 /// # Errors
 ///
-/// `Err` if the scratch dir cannot be created or the copy fails.
+/// `Err` if the scratch dir cannot be created, the copy fails, or the copy cannot be made
+/// writable.
 pub fn working_copy(src: &Path) -> std::io::Result<WorkingCopy> {
     let unique = format!(
         "{}-{}",
@@ -253,7 +260,31 @@ pub fn working_copy(src: &Path) -> std::io::Result<WorkingCopy> {
     let file_name = src.file_name().expect("fixture has a file name");
     let path = dir.join(file_name);
     std::fs::copy(src, &path)?;
+    make_writable(&path)?;
     Ok(WorkingCopy { dir, path })
+}
+
+/// Clear the read-only bit [`std::fs::copy`] carries over from the source.
+///
+/// Masters are write-protected so a stray open of one fails loudly instead of silently unpacking
+/// over the corpus. `fs::copy` preserves the mode, and idalib rewrites a database in place on
+/// open, so the copy would fail to open without this.
+///
+/// # Errors
+///
+/// `Err` if the file's metadata or permissions cannot be set.
+pub fn make_writable(path: &Path) -> std::io::Result<()> {
+    let mut perms = std::fs::metadata(path)?.permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = perms.mode();
+        perms.set_mode(mode | 0o600);
+    }
+    #[cfg(not(unix))]
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    std::fs::set_permissions(path, perms)
 }
 
 fn scratch_root() -> PathBuf {
@@ -293,6 +324,14 @@ struct Entry {
     opens: Opens,
     #[serde(default)]
     skip_checks: Vec<String>,
+    #[serde(default = "default_decompiler")]
+    decompiler: bool,
+}
+
+// Absent `decompiler` means "expected to decompile": a fixture that silently stops decompiling
+// becomes a loud test failure rather than a vacuous pass.
+fn default_decompiler() -> bool {
+    true
 }
 
 /// `opens` is `true`/`false` for 64-bit fixtures and the string `"parked"` for 32-bit ones our

@@ -1,3 +1,7 @@
+# Tests read `.env` themselves, but a mutants job runs in a gitignore-filtered copy that `.env`
+# never reaches, so IDAKIT_CORPUS_MANIFEST has to arrive through the environment instead.
+set dotenv-load := true
+
 facade_cpp := "crates/idakit-sys/facade/*.cpp"
 facade_sources := "crates/idakit-sys/facade/*.cpp crates/idakit-sys/facade/*.h"
 
@@ -87,6 +91,11 @@ pedantic:
 # detection is off -- IDA's kernel is a process-lifetime singleton, so LSan's exit findings all
 # sit in libida.so, not real leaks. Thread mode carries a suppressions file for the same
 # reason: see crates/idakit-sys/tsan-suppressions.txt.
+#
+# Covers the facade's guarded<> boundary plus every binary that marshals a string or buffer
+# across it. `--test-threads=1` is mandatory: unlike nextest, plain `cargo test` shares one
+# process across a binary's tests, and the kernel singleton hard-errors on a second concurrent
+# claim.
 sanitize mode="address":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -99,7 +108,9 @@ sanitize mode="address":
       export RUSTFLAGS="-Zsanitizer=address -Cdebuginfo=1"
       export ASAN_OPTIONS=detect_leaks=0
     fi
-    cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu -p idakit --test roundtrip
+    tests=(-p idakit -p idakit-sys --test roundtrip --test netnode --test tinfo --test traps
+           --test write --test decode_sweep --test strings --test search --test data --test disasm)
+    cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu "${tests[@]}" -- --test-threads=1
 
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -128,9 +139,42 @@ readme-check:
     DOCS_RS=1 cargo rdme --manifest-path crates/idakit/Cargo.toml --heading-base-level 1 --check
     DOCS_RS=1 cargo rdme --manifest-path crates/idakit-sys/Cargo.toml --heading-base-level 1 --check
 
-# Like `test`, but --no-fail-fast so one run surfaces every platform's failures. In CI the
-# fetch-corpus step exports IDAKIT_CORPUS_MANIFEST, so the dedicated tests source the same
+# Like `test`, but spells --no-fail-fast rather than leaning on the nextest profile for it. In CI
+# the fetch-corpus step exports IDAKIT_CORPUS_MANIFEST, so the dedicated tests source the same
 # host-independent canonical fixture the corpus matrix uses.
 ci-test:
     cargo nextest run --workspace --all-features --no-fail-fast
     cargo test --workspace --all-features --doc
+
+# Refuses to start a mutants run that cannot check anything. Without a corpus the kernel tests
+# skip, pass, and leave every mutant MISSED, which reads exactly like a real result: the whole run
+# then reports a coverage hole that does not exist, and buries the ones that do.
+[private]
+require-corpus:
+    #!/usr/bin/env bash
+    if [ -z "${IDAKIT_CORPUS_MANIFEST:-}" ] || [ ! -f "${IDAKIT_CORPUS_MANIFEST:-}" ]; then
+      echo "IDAKIT_CORPUS_MANIFEST is unset or names no file; set it in .env." >&2
+      echo "Without it the kernel tests skip and every mutant reports MISSED against a run that checked nothing." >&2
+      exit 1
+    fi
+
+# Mutation-tests the modules scoped in .cargo/mutants.toml against the unit tests and dedicated
+# kernel binaries. `jobs` stays well under the core count: concurrency nests, since every job
+# runs its own build plus test pool, each test holding a live ~0.85 GiB kernel.
+mutants jobs="3": require-corpus
+    cargo mutants -p idakit --jobs {{ jobs }}
+
+# Like `mutants`, but skips what a previous run already caught or found unviable (accumulated in
+# mutants.out/previously_caught.txt). A heuristic: confirm with a full `just mutants` before
+# trusting a clean result, since it assumes new tests never reduce coverage elsewhere.
+mutants-iterate jobs="3": require-corpus
+    cargo mutants -p idakit --jobs {{ jobs }} --iterate
+
+# Only the mutants touching lines changed since `base`, for a per-PR loop.
+mutants-diff base="master": require-corpus
+    git diff {{ base }}...HEAD > /tmp/idakit-mutants.diff
+    cargo mutants -p idakit --in-diff /tmp/idakit-mutants.diff
+
+# One shard of N for CI fan-out, e.g. `just mutants-shard 0/8`.
+mutants-shard shard: require-corpus
+    cargo mutants -p idakit --shard {{ shard }}

@@ -27,6 +27,7 @@ fn run(idb: &mut Database) {
     knobs_behave(idb, cfg.function());
     build_is_deterministic(idb, cfg.function());
     non_function_is_rejected(idb);
+    raw_predecessors_never_reach_nproper(cfg.function());
 
     println!(
         "cfg OK: {} blocks, edges sound and symmetric, ranges disjoint, kinds match their \
@@ -158,21 +159,24 @@ fn instructions_walk_the_entry_block(idb: &Database, cfg: &FlowChart) {
     }
 }
 
-/// The first function (over a bounded prefix) that transfers out of itself: every exit target
-/// resolves to an address in no block of the graph, so lifting external stubs to edges kept
-/// them addressable and out-of-graph. External stubs are common but not universal, so a scan
-/// is needed; skip if the prefix has none.
+/// The first function that transfers out of itself: every exit target resolves to an address in
+/// no block of the graph, so lifting external stubs to edges kept them addressable and
+/// out-of-graph. A real exit only reaches [`BasicBlock::exits`] through `successors`'
+/// internal/external stub split, so this covers that boundary too. External tail-jumps are
+/// pervasive in an optimized binary, so a fixture without one is a failure, not a skip.
 fn exits_leave_the_function(idb: &Database) {
-    let found = idb.functions().take(4000).find_map(|f| {
-        let cfg = f.flowchart().ok()?;
-        let has_exit = cfg.blocks().any(|(_, b)| !b.exits().is_empty());
-        has_exit.then_some(cfg)
-    });
-    let Some(cfg) = found else {
-        println!("cfg: no function with an external exit in the prefix; skipping the exit check");
-        return;
-    };
+    let cfg = idb
+        .functions()
+        .find_map(|f| {
+            let cfg = f.flowchart().ok()?;
+            let has_exit = cfg.blocks().any(|(_, b)| !b.exits().is_empty());
+            has_exit.then_some(cfg)
+        })
+        .expect("a function with an external exit");
+    structure_is_sound(&cfg);
+
     let exits: usize = cfg.blocks().map(|(_, b)| b.exits().len()).sum();
+    let mut noreturn_cross_checked = false;
     for (_, b) in cfg.blocks() {
         for e in b.exits() {
             assert!(
@@ -180,9 +184,29 @@ fn exits_leave_the_function(idb: &Database) {
                 "exit target {:#x} should lie outside every block",
                 e.target
             );
+            // Where the target is a function entry, the edge's no-return classification must
+            // agree with that function's FUNC_NORET attribute, a different SDK path.
+            if let Some(callee) = idb.functions().find(|f| f.address() == e.target) {
+                assert!(
+                    e.noreturn == callee.is_noreturn(),
+                    "exit {:#x} noreturn={} disagrees with the callee's own is_noreturn()",
+                    e.target,
+                    e.noreturn
+                );
+                noreturn_cross_checked = true;
+            }
         }
     }
-    println!("cfg: verified {exits} external exit(s) leave the function");
+    // Not every fixture's external exits land on a recognized function entry (some target
+    // unclassified stubs), so this is a skip, not a hard failure, when none did.
+    if !noreturn_cross_checked {
+        println!(
+            "cfg: verified {exits} external exit(s) leave the function; skipping noreturn \
+             cross-check, no exit target resolved to a mapped function"
+        );
+        return;
+    }
+    println!("cfg: verified {exits} external exit(s) leave the function, noreturn cross-checked");
 }
 
 /// `call_ends` only ever splits more blocks, `externals(false)` drops every out-of-function
@@ -253,4 +277,24 @@ fn non_function_is_rejected(idb: &Database) {
         matches!(r, Err(Error::NoFunction { .. })),
         "a non-function address should be NoFunction, got {r:?}"
     );
+}
+
+/// Pins the premise behind excluding `predecessors`'s `< -> <=` mutant as equivalent: every raw
+/// predecessor index `cfg_preds` returns for a proper block already sits below `nproper`, so
+/// idakit's `< nproper` filter never actually drops anything. Reads the cxx bridge directly,
+/// since idakit's own `predecessors()` accessor already applies the filter this pins.
+fn raw_predecessors_never_reach_nproper(function: Address) {
+    use idakit_sys as sys;
+
+    let fc = sys::cfg_build(function.get(), 0).expect("cxx cfg_build for the raw pred check");
+    let nproper = sys::cfg_nproper(&fc);
+    for n in 0..nproper {
+        let preds = sys::cfg_preds(&fc, n).expect("cfg_preds within nproper");
+        for p in preds {
+            assert!(
+                (p as usize) < nproper,
+                "cfg_preds({n}) returned {p}, at or past nproper ({nproper})"
+            );
+        }
+    }
 }
