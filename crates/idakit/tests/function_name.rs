@@ -35,8 +35,17 @@ fn run(idb: &mut Database, db: &str) {
             "function {:#x} has an empty name",
             f.address().get()
         );
-        match name {
-            FunctionName::User(_) => user += 1,
+        match &name {
+            FunctionName::User(text) => {
+                user += 1;
+                // Cross-invariant: a User name is an explicit label at that address, so the
+                // whole-database name lookup must return exactly the same text.
+                assert!(
+                    idb.name(f.address()).as_deref() == Some(text.as_str()),
+                    "Database::name disagrees with Function::name's User text at {:#x}",
+                    f.address().get()
+                );
+            }
             FunctionName::Auto(_) => auto += 1,
             FunctionName::Dummy(_) => dummy += 1,
         }

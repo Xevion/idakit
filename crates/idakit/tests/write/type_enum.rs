@@ -347,3 +347,82 @@ fn type_enum_delete_by_value() {
         );
     });
 }
+
+/// Two constants sharing the same value stay distinct: duplicate *values* are legal C (only names
+/// must be unique), so both read back with their own name and the shared value, never merged or
+/// deduped away.
+#[test]
+fn type_enum_duplicate_values() {
+    crate::common::with_canonical_db(|idb| {
+        use idakit::types::TypeShape;
+
+        idb.types_mut()
+            .define("enum idakit_pcase_dup { PROBE_ONE = 1 };")
+            .expect("define the enum");
+        idb.types_mut()
+            .edit("idakit_pcase_dup")
+            .add_constant("PROBE_ALSO_ONE", 1)
+            .expect("a duplicate value should be accepted");
+
+        let ty = idb
+            .type_named("idakit_pcase_dup")
+            .expect("resolve the enum");
+        assert!(let TypeShape::Enum { members, .. } = ty.shape());
+        assert!(
+            members
+                .iter()
+                .any(|m| m.name == "PROBE_ONE" && m.value == 1)
+        );
+        assert!(
+            members
+                .iter()
+                .any(|m| m.name == "PROBE_ALSO_ONE" && m.value == 1)
+        );
+        assert!(
+            members.len() == 2,
+            "both constants should be kept distinct, not merged, got {members:?}"
+        );
+    });
+}
+
+/// The full `u64` range round-trips through a constant, including the two's-complement bit
+/// pattern a negative signed value takes (`u64::MAX` is `-1i64`) and a near-max magnitude, going
+/// straight through `add_constant`'s raw `u64` rather than a signed-literal declaration (whose
+/// parser support for negative enumerators is not something this crate asserts on).
+#[test]
+fn type_enum_extreme_values() {
+    crate::common::with_canonical_db(|idb| {
+        use idakit::types::TypeShape;
+
+        idb.types_mut()
+            .define("enum idakit_pcase_extreme { PROBE_ZERO = 0 };")
+            .expect("define the enum");
+        idb.types_mut()
+            .edit("idakit_pcase_extreme")
+            .set_enum_width(8)
+            .expect("widen to 8 bytes so the full u64 range is representable");
+        idb.types_mut()
+            .edit("idakit_pcase_extreme")
+            .add_constant("PROBE_NEG_ONE", u64::MAX)
+            .expect("the all-ones bit pattern should be accepted");
+        idb.types_mut()
+            .edit("idakit_pcase_extreme")
+            .add_constant("PROBE_HUGE", u64::MAX - 1)
+            .expect("a near-max value should be accepted");
+
+        let ty = idb
+            .type_named("idakit_pcase_extreme")
+            .expect("resolve the enum");
+        assert!(let TypeShape::Enum { members, .. } = ty.shape());
+        assert!(
+            members
+                .iter()
+                .any(|m| m.name == "PROBE_NEG_ONE" && m.value == u64::MAX)
+        );
+        assert!(
+            members
+                .iter()
+                .any(|m| m.name == "PROBE_HUGE" && m.value == u64::MAX - 1)
+        );
+    });
+}

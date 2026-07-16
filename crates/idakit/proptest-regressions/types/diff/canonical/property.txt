@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8ba3c92ba3cd4f91b68765b781b37ba9d96b375fa9465683ca91d6580c12a424 # shrinks to a = Aggregate { tag: Some("U"), kind: Union, members: [CanonicalMember { name: "a", bit_offset: Some(0), bitfield_width: None, ty: Void }, CanonicalMember { name: "b", bit_offset: Some(0), bitfield_width: None, ty: Void }], size: None }, b = Aggregate { tag: Some("U"), kind: Union, members: [CanonicalMember { name: "c", bit_offset: Some(0), bitfield_width: None, ty: Void }], size: None }

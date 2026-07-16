@@ -43,37 +43,51 @@ bitflags! {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use proptest::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn flags_pin_the_generated_facade_values() {
-        assert!(FlowFlags::CALL.bits() == crate::FLOW_CALL);
-        assert!(FlowFlags::RET.bits() == crate::FLOW_RET);
-        assert!(FlowFlags::JUMP.bits() == crate::FLOW_JUMP);
-        assert!(FlowFlags::INDIRECT.bits() == crate::FLOW_INDIRECT);
-        assert!(FlowFlags::STOPS.bits() == crate::FLOW_STOPS);
+    #[rstest]
+    #[case::call(FlowFlags::CALL, crate::FLOW_CALL)]
+    #[case::ret(FlowFlags::RET, crate::FLOW_RET)]
+    #[case::jump(FlowFlags::JUMP, crate::FLOW_JUMP)]
+    #[case::indirect(FlowFlags::INDIRECT, crate::FLOW_INDIRECT)]
+    #[case::stops(FlowFlags::STOPS, crate::FLOW_STOPS)]
+    fn flags_pin_the_generated_facade_values(#[case] flag: FlowFlags, #[case] raw: u8) {
+        assert!(flag.bits() == raw);
     }
 
-    #[test]
-    fn from_bits_retain_preserves_unknown_bits() {
-        let raw = (FlowFlags::CALL | FlowFlags::STOPS).bits() | 0x40;
-        let flow = FlowFlags::from_bits_retain(raw);
-        assert!(flow.contains(FlowFlags::CALL | FlowFlags::STOPS));
-        assert!(flow.bits() == raw);
+    #[rstest]
+    #[case::read(OperandAccess::READ, 1)]
+    #[case::written(OperandAccess::WRITTEN, 2)]
+    fn operand_access_flags_pin_the_raw_values(#[case] flag: OperandAccess, #[case] raw: u8) {
+        assert!(flag.bits() == raw);
     }
 
-    #[test]
-    fn operand_access_flags_pin_the_raw_values() {
-        assert!(OperandAccess::READ.bits() == 1);
-        assert!(OperandAccess::WRITTEN.bits() == 2);
-    }
+    proptest! {
+        #[test]
+        fn flow_flags_from_bits_retain_round_trips_every_byte(raw: u8) {
+            prop_assert_eq!(FlowFlags::from_bits_retain(raw).bits(), raw);
+        }
 
-    #[test]
-    fn operand_access_from_bits_retain_preserves_unknown_bits() {
-        let raw = OperandAccess::READ.bits() | 0x04;
-        let access = OperandAccess::from_bits_retain(raw);
-        assert!(access.contains(OperandAccess::READ));
-        assert!(access.bits() == raw);
+        #[test]
+        fn flow_flags_union_and_intersection_are_raw_bitwise_ops(a: u8, b: u8) {
+            let (fa, fb) = (FlowFlags::from_bits_retain(a), FlowFlags::from_bits_retain(b));
+            prop_assert_eq!((fa | fb).bits(), a | b);
+            prop_assert_eq!((fa & fb).bits(), a & b);
+        }
+
+        #[test]
+        fn operand_access_from_bits_retain_round_trips_every_byte(raw: u8) {
+            prop_assert_eq!(OperandAccess::from_bits_retain(raw).bits(), raw);
+        }
+
+        #[test]
+        fn operand_access_union_and_intersection_are_raw_bitwise_ops(a: u8, b: u8) {
+            let (fa, fb) = (OperandAccess::from_bits_retain(a), OperandAccess::from_bits_retain(b));
+            prop_assert_eq!((fa | fb).bits(), a | b);
+            prop_assert_eq!((fa & fb).bits(), a & b);
+        }
     }
 }

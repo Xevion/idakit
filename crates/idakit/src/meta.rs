@@ -66,6 +66,7 @@ mod tests {
     use std::hash::{Hash, Hasher};
 
     use assert2::assert;
+    use rstest::rstest;
 
     use super::DatabaseInfo;
     use crate::address::Address;
@@ -87,6 +88,30 @@ mod tests {
         }
     }
 
+    /// Every field absent, the emptiest snapshot a database can report.
+    fn empty() -> DatabaseInfo {
+        DatabaseInfo {
+            bitness: None,
+            image_base: None,
+            processor: None,
+            file_type: None,
+            input_path: None,
+            root_filename: None,
+        }
+    }
+
+    /// Every field present, the densest snapshot a database can report.
+    fn dense() -> DatabaseInfo {
+        DatabaseInfo {
+            bitness: Some(Bitness::Bits32),
+            image_base: Some(Address::new_const(0)),
+            processor: Some("arm".to_owned()),
+            file_type: Some("ELF for ARM".to_owned()),
+            input_path: Some("/path/to/binary".to_owned()),
+            root_filename: Some("binary".to_owned()),
+        }
+    }
+
     fn hash_of(info: &DatabaseInfo) -> u64 {
         let mut hasher = DefaultHasher::new();
         info.hash(&mut hasher);
@@ -99,9 +124,23 @@ mod tests {
         assert!(hash_of(&sample()) == hash_of(&sample()));
     }
 
+    /// Snapshots differing in any single field are unequal.
     #[test]
-    fn serde_round_trips() {
-        let info = sample();
+    fn differing_snapshots_are_not_equal() {
+        let mut other = sample();
+        other.processor = Some("arm".to_owned());
+        assert!(other != sample());
+
+        let mut other = sample();
+        other.bitness = None;
+        assert!(other != sample());
+    }
+
+    #[rstest]
+    #[case::empty(empty())]
+    #[case::sample(sample())]
+    #[case::dense(dense())]
+    fn serde_round_trips(#[case] info: DatabaseInfo) {
         let json = serde_json::to_string(&info).unwrap();
         let back: DatabaseInfo = serde_json::from_str(&json).unwrap();
         assert!(back == info);

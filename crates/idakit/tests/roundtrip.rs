@@ -443,9 +443,7 @@ fn run(idb: &mut Database) {
             }
         }
         if let Some((ea, image)) = example {
-            let TypeShape::Function { ret, params, .. } = image.shape() else {
-                panic!("a function prototype's root should be a Function type");
-            };
+            assert!(let TypeShape::Function { ret, params, .. } = image.shape());
             // Every child handle resolves against the image's own table.
             let _ = image.get(*ret);
             for p in params {

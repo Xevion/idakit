@@ -33,6 +33,7 @@ fn run(idb: &mut Database, db: &str) {
 
     let mut classes = [0usize; 13];
     let mut insns = 0usize;
+    let mut ops = 0usize;
 
     // Every code head in every function's chunks must decode faithfully. A `NotCode` head is
     // ordinary (embedded data such as a jump table); any *other* error means the strict decode
@@ -51,6 +52,16 @@ fn run(idb: &mut Database, db: &str) {
                                 register.assert_name_matches_class(address.get());
                                 classes[u8::from(register.class) as usize] += 1;
                             }
+                            // Every operand's slot index stays within IDA's fixed operand array,
+                            // the documented bound also held by the disasm budget check.
+                            for op in &insn.ops {
+                                assert!(
+                                    op.idx < 8,
+                                    "operand index {} out of range at {address:#x}",
+                                    op.idx
+                                );
+                                ops += 1;
+                            }
                             insns += 1;
                         }
                         Err(DecodeError::NotCode { .. }) => {}
@@ -62,7 +73,15 @@ fn run(idb: &mut Database, db: &str) {
                     }
                 }
                 match idb.next_head(address, chunk.end) {
-                    Some(next) if next > address => address = next,
+                    Some(next) if next > address => {
+                        // next_head must never walk past the bound it was given.
+                        assert!(
+                            next <= chunk.end,
+                            "next_head overshot its bound: {next:#x} > chunk end {:#x}",
+                            chunk.end.get()
+                        );
+                        address = next;
+                    }
                     _ => break,
                 }
             }
@@ -79,7 +98,7 @@ fn run(idb: &mut Database, db: &str) {
     idb.close(false);
     let named = |c: RegisterClass| classes[u8::from(c) as usize];
     println!(
-        "decode sweep OK: {insns} instructions, {regs} register operands -- \
+        "decode sweep OK: {insns} instructions, {ops} operands, {regs} register operands -- \
          gpr {} seg {} xmm {} ymm {} zmm {} mask {} st {} mmx {} ctrl {} dbg {} test {} ip {} bnd {}",
         named(RegisterClass::GeneralPurpose),
         named(RegisterClass::Segment),

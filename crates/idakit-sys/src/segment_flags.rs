@@ -59,40 +59,66 @@ bitflags! {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use proptest::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn flags_pin_the_raw_sdk_values() {
-        assert!(SegPerm::EXEC.bits() == 1);
-        assert!(SegPerm::WRITE.bits() == 2);
-        assert!(SegPerm::READ.bits() == 4);
+    #[rstest]
+    #[case::exec(SegPerm::EXEC, 1)]
+    #[case::write(SegPerm::WRITE, 2)]
+    #[case::read(SegPerm::READ, 4)]
+    fn flags_pin_the_raw_sdk_values(#[case] flag: SegPerm, #[case] raw: c_int) {
+        assert!(flag.bits() == raw);
     }
 
-    #[test]
-    fn from_bits_retain_preserves_unknown_bits() {
-        let raw = SegPerm::READ.bits() | 0x10;
-        let perm = SegPerm::from_bits_retain(raw);
-        assert!(perm.contains(SegPerm::READ));
-        assert!(perm.bits() == raw);
+    #[rstest]
+    #[case::comorg(SegFlags::COMORG, 0x01)]
+    #[case::obok(SegFlags::OBOK, 0x02)]
+    #[case::hidden(SegFlags::HIDDEN, 0x04)]
+    #[case::debug(SegFlags::DEBUG, 0x08)]
+    #[case::loader(SegFlags::LOADER, 0x10)]
+    #[case::hidetype(SegFlags::HIDETYPE, 0x20)]
+    #[case::header(SegFlags::HEADER, 0x40)]
+    fn seg_flags_pin_the_raw_sdk_values(#[case] flag: SegFlags, #[case] raw: c_int) {
+        assert!(flag.bits() == raw);
     }
 
-    #[test]
-    fn seg_flags_pin_the_raw_sdk_values() {
-        assert!(SegFlags::COMORG.bits() == 0x01);
-        assert!(SegFlags::OBOK.bits() == 0x02);
-        assert!(SegFlags::HIDDEN.bits() == 0x04);
-        assert!(SegFlags::DEBUG.bits() == 0x08);
-        assert!(SegFlags::LOADER.bits() == 0x10);
-        assert!(SegFlags::HIDETYPE.bits() == 0x20);
-        assert!(SegFlags::HEADER.bits() == 0x40);
-    }
+    proptest! {
+        #[test]
+        fn seg_perm_from_bits_retain_round_trips_every_bit_pattern(raw: c_int) {
+            prop_assert_eq!(SegPerm::from_bits_retain(raw).bits(), raw);
+        }
 
-    #[test]
-    fn seg_flags_from_bits_retain_preserves_unknown_bits() {
-        let raw = SegFlags::HIDDEN.bits() | 0x1000;
-        let flags = SegFlags::from_bits_retain(raw);
-        assert!(flags.contains(SegFlags::HIDDEN));
-        assert!(flags.bits() == raw);
+        #[test]
+        fn seg_perm_union_and_intersection_are_raw_bitwise_ops(a: c_int, b: c_int) {
+            let (fa, fb) = (SegPerm::from_bits_retain(a), SegPerm::from_bits_retain(b));
+            prop_assert_eq!((fa | fb).bits(), a | b);
+            prop_assert_eq!((fa & fb).bits(), a & b);
+        }
+
+        #[test]
+        fn seg_perm_complement_truncates_to_the_known_flag_mask(a: c_int) {
+            let fa = SegPerm::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & SegPerm::all().bits());
+        }
+
+        #[test]
+        fn seg_flags_from_bits_retain_round_trips_every_bit_pattern(raw: c_int) {
+            prop_assert_eq!(SegFlags::from_bits_retain(raw).bits(), raw);
+        }
+
+        #[test]
+        fn seg_flags_union_and_intersection_are_raw_bitwise_ops(a: c_int, b: c_int) {
+            let (fa, fb) = (SegFlags::from_bits_retain(a), SegFlags::from_bits_retain(b));
+            prop_assert_eq!((fa | fb).bits(), a | b);
+            prop_assert_eq!((fa & fb).bits(), a & b);
+        }
+
+        #[test]
+        fn seg_flags_complement_truncates_to_the_known_flag_mask(a: c_int) {
+            let fa = SegFlags::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & SegFlags::all().bits());
+        }
     }
 }

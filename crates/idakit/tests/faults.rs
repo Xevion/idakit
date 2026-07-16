@@ -1,10 +1,10 @@
 //! Fault injection: feed `open` bad and corrupt inputs and assert the kernel rejects each
-//! with an `Err` while the process survives to run the assertion. nextest isolates every test
-//! in its own process, so a kernel fatal that escapes the facade's traps (a crash, an
+//! with a typed `Err` while the process survives to run the assertion. nextest isolates every
+//! test in its own process, so a kernel fatal that escapes the facade's traps (a crash, an
 //! `abort`, or a deadlock hitting the `slow-timeout`) surfaces as that one test failing.
 //!
-//! The bad-input cases here need no database fixture; the corrupt-copy cases gate on
-//! [`common::TestDb::source`] and skip without it.
+//! The bad-input cases here need no database fixture; the corrupt-copy and parked-32-bit cases
+//! gate on a corpus fixture and skip without one.
 
 use std::fs;
 use std::io::Read;
@@ -12,11 +12,13 @@ use std::path::{Path, PathBuf};
 
 use assert2::assert;
 use idakit::prelude::*;
+use rstest::rstest;
 
 mod common;
 
-/// A throwaway file under the temp dir, deleted on drop. The kernel tests run serially
-/// (the `serial-kernel` nextest group), so a fixed per-test name cannot collide.
+/// A throwaway file (or directory, or a path that never gets created) under the temp dir,
+/// deleted on drop. The kernel tests run serially (the `serial-kernel` nextest group), so a
+/// fixed per-test name cannot collide.
 struct Scratch(PathBuf);
 
 impl Scratch {
@@ -25,6 +27,17 @@ impl Scratch {
         let path = std::env::temp_dir().join(name);
         fs::write(&path, bytes).expect("write scratch file");
         Self(path)
+    }
+
+    /// A path under the temp dir that is never created, for the "file does not exist" case.
+    fn missing(name: &str) -> Self {
+        Self(std::env::temp_dir().join(name))
+    }
+
+    /// The shared system temp directory itself, a directory rather than a file. `Drop` only
+    /// ever attempts `remove_file`, which refuses a directory, so this never touches it.
+    fn directory() -> Self {
+        Self(std::env::temp_dir())
     }
 
     /// The first `len` bytes of `src`, a header-truncated database. Reads only the prefix,
@@ -48,11 +61,37 @@ impl Drop for Scratch {
     }
 }
 
-/// Open `path` and assert the kernel rejected it with an `Err` (rather than succeeding or
-/// killing the process). Runs as the kernel job body so the test stays at one indent level.
+/// Open `path` and assert the kernel rejected it as one of the two typed shapes `open` can fail
+/// with: [`Error::Open`] (a normal rejection, whose `reason`/`path` must carry real content) or
+/// [`Error::KernelExit`] (a trapped fatal exit). Anything else, including success, is a failure.
+/// Runs as the kernel job body so the test stays at one indent level.
 fn open_is_rejected(idb: &mut Database, path: &str) {
-    let result = idb.open(path).call();
-    assert!(result.is_err(), "open of {path:?} should be rejected");
+    let err = match idb.open(path).call() {
+        Ok(()) => panic!("open of {path:?} should be rejected, but it opened"),
+        Err(e) => e,
+    };
+    match &err {
+        Error::Open {
+            path: reported,
+            reason,
+            ..
+        } => {
+            assert!(
+                reported == path,
+                "Error::Open.path {reported:?} disagrees with the requested {path:?}"
+            );
+            assert!(
+                !reason.is_empty(),
+                "Error::Open.reason is empty for {path:?}"
+            );
+        }
+        // A trapped fatal exit is the other legitimate containment shape (see signals/side
+        // effects on the exit trap); it still carries a code, checked structurally here.
+        Error::KernelExit { code, .. } => {
+            assert!(*code != 0, "KernelExit.code is 0 for a rejected open");
+        }
+        other => panic!("open of {path:?} rejected with an unexpected error shape: {other:?}"),
+    }
 }
 
 /// Drive `open_is_rejected` against `path` on the kernel thread.
@@ -64,27 +103,28 @@ fn assert_open_rejected(path: String) {
     .expect("kernel init failed");
 }
 
-#[test]
-fn nonexistent_path_is_rejected() {
-    let missing = std::env::temp_dir().join("idakit-faults-missing.i64");
-    assert_open_rejected(missing.to_string_lossy().into_owned());
-}
-
-#[test]
-fn empty_file_is_rejected() {
-    let scratch = Scratch::new("idakit-faults-empty.i64", b"");
+#[rstest]
+#[case::nonexistent_path(Scratch::missing("idakit-faults-missing.i64"))]
+#[case::empty_file(Scratch::new("idakit-faults-empty.i64", b""))]
+#[case::garbage_bytes(Scratch::new("idakit-faults-garbage.i64", &[0xABu8; 4096]))]
+#[case::directory_path(Scratch::directory())]
+fn bad_input_is_rejected(#[case] scratch: Scratch) {
     assert_open_rejected(scratch.path());
 }
 
+/// A 32-bit `.idb` (IDA1) our `__EA64__` build cannot open at all: it must be refused with a
+/// typed error, not crash or silently misinterpret the file as 64-bit. Gates on the manifest
+/// declaring a parked (`opens = "parked"`) fixture and skips without one. The manifest's own
+/// fixtures are masters (`chmod a-w`); this copies before opening rather than touching one
+/// directly, matching every other corpus-driven test here.
 #[test]
-fn garbage_bytes_are_rejected() {
-    let scratch = Scratch::new("idakit-faults-garbage.i64", &[0xABu8; 4096]);
-    assert_open_rejected(scratch.path());
-}
-
-#[test]
-fn directory_path_is_rejected() {
-    assert_open_rejected(std::env::temp_dir().to_string_lossy().into_owned());
+fn parked_32bit_database_is_rejected() {
+    let Some(source) = idakit::corpus::parked_fixture() else {
+        eprintln!("skipping: no parked (32-bit) fixture in the corpus manifest");
+        return;
+    };
+    let copy = common::TestDb::copy_of(&source);
+    assert_open_rejected(copy.path().to_owned());
 }
 
 /// A Java class newer than IDA's loader supports (major 69 = Java 25) is rejected through the

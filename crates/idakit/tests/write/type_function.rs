@@ -41,9 +41,7 @@ fn type_surgery() {
             .prototype_type()
             .expect("walk the edited prototype")
             .expect("a prototype is set");
-        let TypeShape::Function { ret, params, .. } = proto.shape() else {
-            panic!("expected a function, got {:?}", proto.shape());
-        };
+        assert!(let TypeShape::Function { ret, params, .. } = proto.shape());
         assert!(let TypeShape::Ptr(_) = &proto.get(*ret).shape);
         assert!(params.len() == 2, "still two params, got {}", params.len());
         assert!(let TypeShape::Int { signed: false, .. } = &proto.get(params[0]).shape);
@@ -78,9 +76,7 @@ fn type_surgery() {
             .prototype_type()
             .expect("walk after prepend_this")
             .expect("a prototype is set");
-        let TypeShape::Function { params, .. } = proto.shape() else {
-            panic!("expected a function, got {:?}", proto.shape());
-        };
+        assert!(let TypeShape::Function { params, .. } = proto.shape());
         assert!(
             params.len() == 3,
             "the this-pointer should be prepended, got {}",

@@ -78,6 +78,135 @@ fn tag_run(idb: &mut idakit::Database) {
     idb.netnode_mut(name).kill();
 }
 
+#[test]
+fn netnode_boundary_alt() {
+    common::with_canonical_db(boundary_alt_run);
+}
+
+/// The alt array's boundary indices (`0`, `u64::MAX`) both store and read back.
+fn boundary_alt_run(idb: &mut idakit::Database) {
+    let name = "$ idakit.netnode.boundary.alt";
+    let mut node = idb.netnode_mut(name);
+
+    node.set_alt(0, 0xAAAA).expect("set_alt at index 0");
+    assert!(node.alt(0) == 0xAAAA, "alt at index 0 did not stick");
+
+    node.set_alt(u64::MAX, 0xBBBB).expect("set_alt at u64::MAX");
+    assert!(
+        node.alt(u64::MAX) == 0xBBBB,
+        "alt at index u64::MAX did not stick"
+    );
+
+    node.kill();
+    println!("netnode boundary alt OK");
+}
+
+#[test]
+fn netnode_boundary_sup() {
+    common::with_canonical_db(boundary_sup_run);
+}
+
+/// The sup array's boundary indices (`0`, `u64::MAX`) both store and read back.
+fn boundary_sup_run(idb: &mut idakit::Database) {
+    let name = "$ idakit.netnode.boundary.sup";
+    let mut node = idb.netnode_mut(name);
+
+    node.set_sup(0, b"zero").expect("set_sup at index 0");
+    assert!(
+        node.sup(0).as_deref() == Some(b"zero".as_slice()),
+        "sup at index 0 did not stick"
+    );
+
+    node.set_sup(u64::MAX, b"max").expect("set_sup at u64::MAX");
+    assert!(
+        node.sup(u64::MAX).as_deref() == Some(b"max".as_slice()),
+        "sup at index u64::MAX did not stick"
+    );
+
+    node.kill();
+    println!("netnode boundary sup OK");
+}
+
+#[test]
+fn netnode_empty_value_is_rejected() {
+    common::with_canonical_db(empty_value_run);
+}
+
+/// Every byte-valued setter rejects an empty value rather than reaching the kernel.
+///
+/// The SDK's `set`/`supset`/`hashset` read a `length` of 0 as "measure the value with strlen",
+/// so an empty slice would hand them a dangling pointer to walk, and no length stores zero
+/// bytes at all. Rejecting keeps the unstorable case out of the kernel and off the niche that
+/// separates an unset slot from a present one.
+fn empty_value_run(idb: &mut idakit::Database) {
+    let name = "$ idakit.netnode.boundary.empty";
+    let mut node = idb.netnode_mut(name);
+
+    assert!(
+        node.set_sup(1, b"").is_err(),
+        "an empty sup value is unstorable"
+    );
+    assert!(
+        node.sup(1).is_none(),
+        "the rejected sup write left no value"
+    );
+
+    assert!(
+        node.set_hash("k", b"").is_err(),
+        "an empty hash value is unstorable"
+    );
+    assert!(
+        node.hash("k").is_none(),
+        "the rejected hash write left no value"
+    );
+
+    assert!(
+        node.set_value(b"").is_err(),
+        "an empty node value is unstorable"
+    );
+    assert!(
+        node.value().is_none(),
+        "the rejected value write left no value"
+    );
+
+    // A one-byte value is the smallest the SDK can represent, and it must still round-trip.
+    node.set_sup(1, b"\0").expect("set_sup with a single NUL");
+    assert!(
+        node.sup(1).as_deref() == Some(b"\0".as_slice()),
+        "a one-byte sup value did not round-trip"
+    );
+
+    node.kill();
+    println!("netnode empty value rejection OK");
+}
+
+#[test]
+fn netnode_large_blob() {
+    common::with_canonical_db(large_blob_run);
+}
+
+/// A 64 KiB blob, well past the 1024-byte cap that binds the hash/sup arrays, round-trips
+/// exactly, proving blobs are genuinely unbounded rather than sharing that cap.
+fn large_blob_run(idb: &mut idakit::Database) {
+    let name = "$ idakit.netnode.boundary.blob";
+    let mut node = idb.netnode_mut(name);
+
+    let big = vec![0x5Au8; 64 * 1024];
+    node.set_blob(&big).expect("set_blob with a 64 KiB value");
+    assert!(
+        node.blob_size() == big.len(),
+        "blob_size disagrees with the blob's actual length"
+    );
+    assert!(
+        node.blob().as_deref() == Some(big.as_slice()),
+        "large blob did not round-trip exactly"
+    );
+
+    node.kill();
+    assert!(idb.netnode(name).is_none(), "node is gone after kill");
+    println!("netnode large blob OK");
+}
+
 fn run(idb: &mut idakit::Database) {
     let name = "$ idakit.netnode.roundtrip";
 

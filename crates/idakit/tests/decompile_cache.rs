@@ -76,9 +76,19 @@ fn set_type_auto_invalidates_callers_body(idb: &mut Database) {
             if caller == callee {
                 continue;
             }
-            if idb.decompile(caller).is_err() || idb.decompile(callee).is_err() {
+            if idb.decompile(caller).is_err() {
                 continue;
             }
+
+            // Baseline: the callee's prototype text and rendered pseudocode before the type
+            // write, so the eventual re-decompile proves it actually picked up the edit, not
+            // just that the cache went empty.
+            let old_prototype = idb.function(callee).prototype();
+            let Ok(callee_cf) = idb.decompile(callee) else {
+                continue;
+            };
+            let baseline_pseudocode = callee_cf.pseudocode();
+            drop(callee_cf);
 
             // Auto-invalidation ON: a prototype change on the callee must evict the caller too,
             // since the caller's cached pseudocode renders the callee's call site.
@@ -101,6 +111,27 @@ fn set_type_auto_invalidates_callers_body(idb: &mut Database) {
                 "the prototype write should evict the callee's own cached decompilation"
             );
 
+            // Semantic proof, not just an empty-cache check: the write actually reshaped the
+            // callee's declared type, and a fresh decompile renders that new type rather than
+            // silently reusing stale text.
+            let new_prototype = idb.function(callee).prototype();
+            check!(
+                new_prototype.as_deref() != old_prototype.as_deref(),
+                "set_type should change the callee's stored prototype, still {new_prototype:?}"
+            );
+            check!(
+                new_prototype
+                    .as_deref()
+                    .is_some_and(|p| p.contains("__int64")),
+                "the new prototype should reflect the applied type, got {new_prototype:?}"
+            );
+            if let Ok(fresh_cf) = idb.decompile(callee) {
+                check!(
+                    fresh_cf.pseudocode() != baseline_pseudocode,
+                    "re-decompiling after set_type should render different pseudocode"
+                );
+            }
+
             // Opt-out: re-cache the caller, then a set_type with auto_invalidate(false) leaves it.
             idb.decompile(caller).expect("re-decompile the caller");
             assert!(idb.is_decompilation_cached(caller));
@@ -115,7 +146,8 @@ fn set_type_auto_invalidates_callers_body(idb: &mut Database) {
             );
 
             println!(
-                "set_type auto-invalidation OK: callee {:#x} evicts caller {:#x}, opt-out preserves it",
+                "set_type auto-invalidation OK: callee {:#x} evicts caller {:#x}, opt-out \
+                 preserves it, prototype now {new_prototype:?}",
                 callee.get(),
                 caller.get()
             );
@@ -269,11 +301,11 @@ fn refresh_text_reflects_rename_body(idb: &mut Database) {
                     .expect("callee is a function")
                     .name(),
             );
-            let baseline = {
+            let (baseline, baseline_counts) = {
                 let Ok(cf) = idb.decompile(caller) else {
                     continue;
                 };
-                cf.pseudocode()
+                (cf.pseudocode(), cf.counts())
             };
             let Some(baseline) = baseline else { continue };
             if old_name.is_empty() || !baseline.contains(&old_name) {
@@ -292,6 +324,12 @@ fn refresh_text_reflects_rename_body(idb: &mut Database) {
 
             // The cached ctext still shows the old name; refresh re-prints from the ctree.
             let cf = idb.decompile(caller).expect("re-decompile hits the cache");
+            // A rename is ctext-only: it never touches the ctree's own node structure, so the
+            // same handle's counts are unchanged even though its printed text is about to be.
+            check!(
+                cf.counts() == baseline_counts,
+                "a rename must not change the ctree's own node counts, only how it prints"
+            );
             let refreshed = cf
                 .refresh_text()
                 .expect("refresh_text renders the pseudocode");

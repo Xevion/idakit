@@ -373,6 +373,9 @@ fn diff_members(path: &str, lm: &[CanonicalMember], rm: &[CanonicalMember], out:
         }
     }
     // Pass 2: unpaired members sharing one unambiguous bit offset, read as a rename in place.
+    // Unambiguous means one candidate on each side: a lone right-hand match is not enough, since
+    // a union puts every member at offset 0, where several left members would race for it and the
+    // first by index would win arbitrarily.
     for li in 0..lm.len() {
         if l_used[li] {
             continue;
@@ -381,7 +384,10 @@ fn diff_members(path: &str, lm: &[CanonicalMember], rm: &[CanonicalMember], out:
             continue;
         };
         let mut at_off = (0..rm.len()).filter(|&ri| !r_used[ri] && rm[ri].bit_offset == Some(off));
-        if let (Some(ri), None) = (at_off.next(), at_off.next()) {
+        let mut rivals = (0..lm.len()).filter(|&i| !l_used[i] && lm[i].bit_offset == Some(off));
+        if let (Some(ri), None) = (at_off.next(), at_off.next())
+            && let (Some(_), None) = (rivals.next(), rivals.next())
+        {
             l_used[li] = true;
             r_used[ri] = true;
             pairs.push((li, ri, true));

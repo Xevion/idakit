@@ -19,14 +19,18 @@ fn cfg() {
 fn run(idb: &mut Database) {
     let cfg = first_multiblock_cfg(idb).expect("a function with at least two basic blocks");
     structure_is_sound(&cfg);
+    ranges_are_disjoint(&cfg);
+    block_kind_matches_its_edges(&cfg);
     entry_and_lookup(&cfg);
     instructions_walk_the_entry_block(idb, &cfg);
     exits_leave_the_function(idb);
     knobs_behave(idb, cfg.function());
+    build_is_deterministic(idb, cfg.function());
     non_function_is_rejected(idb);
 
     println!(
-        "cfg OK: {} blocks, edges sound and symmetric, exits + knobs + NoFunction verified",
+        "cfg OK: {} blocks, edges sound and symmetric, ranges disjoint, kinds match their \
+         edges, exits + knobs + determinism + NoFunction verified",
         cfg.len()
     );
 }
@@ -64,6 +68,51 @@ fn structure_is_sound(cfg: &FlowChart) {
                 "exit target {:#x} lies in no block of the graph",
                 e.target
             );
+        }
+    }
+}
+
+/// Every block's `[start, end)` range is disjoint from every other's, once sorted by start: a
+/// function's basic blocks partition its code, they never overlap.
+fn ranges_are_disjoint(cfg: &FlowChart) {
+    let mut ranges: Vec<_> = cfg.blocks().map(|(_, b)| b.range()).collect();
+    ranges.sort_by_key(|r| r.start);
+    for w in ranges.windows(2) {
+        assert!(
+            w[0].end <= w[1].start,
+            "block ranges overlap: {:#x}..{:#x} and {:#x}..{:#x}",
+            w[0].start,
+            w[0].end,
+            w[1].start,
+            w[1].end
+        );
+    }
+}
+
+/// A block's kind constrains its outgoing edges, per the semantics [`BasicBlockKind`] already
+/// documents: `Normal` falls through or branches in-function, so it always has somewhere to go;
+/// `Return` ends the function outright, so it never has an in-function successor; `CondReturn`
+/// only sometimes returns, so its non-returning path still needs a continuation.
+fn block_kind_matches_its_edges(cfg: &FlowChart) {
+    for (_, b) in cfg.blocks() {
+        let has_continuation = !b.successors().is_empty() || !b.exits().is_empty();
+        match b.kind() {
+            BasicBlockKind::Normal => assert!(
+                has_continuation,
+                "a Normal block at {:#x} has no successor or exit",
+                b.start()
+            ),
+            BasicBlockKind::Return => assert!(
+                b.successors().is_empty(),
+                "a Return block at {:#x} has an in-function successor",
+                b.start()
+            ),
+            BasicBlockKind::CondReturn => assert!(
+                has_continuation,
+                "a CondReturn block at {:#x} has no non-returning continuation",
+                b.start()
+            ),
+            BasicBlockKind::IndirectJump | BasicBlockKind::NoReturn | BasicBlockKind::Error => {}
         }
     }
 }
@@ -174,6 +223,17 @@ fn knobs_behave(idb: &Database, function: Address) {
     assert!(
         no_preds.blocks().all(|(_, b)| b.predecessors().is_empty()),
         "predecessors(false) leaves every predecessor list empty"
+    );
+}
+
+/// Building the same function's CFG twice, with no edit between, produces a structurally
+/// identical graph: same block count, ranges, kinds, and edges, not just an equal length.
+fn build_is_deterministic(idb: &Database, function: Address) {
+    let first = idb.flowchart(function).expect("first cfg build");
+    let second = idb.flowchart(function).expect("second cfg build");
+    assert!(
+        first == second,
+        "rebuilding the same function's CFG should be deterministic"
     );
 }
 

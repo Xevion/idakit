@@ -153,20 +153,34 @@ impl Address {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn rejects_only_badaddr() {
-        assert!(Address::try_new(BADADDR).is_none());
-        assert!(Address::try_new(0).is_some());
-        assert!(Address::try_new(1).is_some());
-        assert!(Address::try_new(BADADDR - 1).is_some());
+    /// Every raw value round-trips except the `BADADDR` sentinel itself.
+    #[rstest]
+    #[case::zero(0, true)]
+    #[case::one(1, true)]
+    #[case::below_max_ea(MAX_EA - 1, true)]
+    #[case::max_ea(MAX_EA, true)]
+    #[case::badaddr(BADADDR, false)]
+    fn try_new_boundary(#[case] raw: u64, #[case] expect_valid: bool) {
+        let got = Address::try_new(raw);
+        assert!(got.is_some() == expect_valid);
+        if expect_valid {
+            assert!(got.unwrap().get() == raw);
+        }
     }
 
     #[test]
     fn zero_is_a_valid_address() {
         assert!(Address::try_new(0).unwrap().get() == 0);
+    }
+
+    #[test]
+    fn new_const_panics_on_badaddr() {
+        let result = std::panic::catch_unwind(|| Address::new_const(BADADDR));
+        assert!(result.is_err());
     }
 
     #[test]
@@ -200,13 +214,14 @@ mod tests {
         assert!([hi, lo].iter().min() == Some(&lo));
     }
 
-    #[test]
-    fn distance_to_is_a_saturating_span() {
-        let lo = Address::new_const(0x1f00);
-        let hi = Address::new_const(0x2000);
-        assert!(lo.distance_to(hi) == 0x100);
-        // Below-self saturates to zero rather than wrapping.
-        assert!(hi.distance_to(lo) == 0);
+    #[rstest]
+    #[case::forward(0x1f00, 0x2000, 0x100)]
+    #[case::zero_span(0x1000, 0x1000, 0)]
+    // Below-self saturates to zero rather than wrapping.
+    #[case::backward_saturates(0x2000, 0x1f00, 0)]
+    #[case::from_zero(0, MAX_EA, MAX_EA)]
+    fn distance_to_is_a_saturating_span(#[case] start: u64, #[case] end: u64, #[case] expect: u64) {
+        assert!(Address::new_const(start).distance_to(Address::new_const(end)) == expect);
     }
 
     #[test]
@@ -240,6 +255,13 @@ mod tests {
             #[test]
             fn try_new_get_roundtrips(raw in 0u64..BADADDR) {
                 prop_assert_eq!(Address::try_new(raw).unwrap().get(), raw);
+            }
+
+            // Across the *full* u64 domain, not just the valid sub-range: the only rejected
+            // value is the sentinel itself.
+            #[test]
+            fn try_new_is_none_iff_badaddr(raw in any::<u64>()) {
+                prop_assert_eq!(Address::try_new(raw).is_none(), raw == BADADDR);
             }
 
             #[test]

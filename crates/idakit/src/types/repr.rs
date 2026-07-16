@@ -100,43 +100,32 @@ pub struct ValueRepr {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
-    const ALL: [NumberFormat; 5] = [
-        NumberFormat::Binary,
-        NumberFormat::Octal,
-        NumberFormat::Hexadecimal,
-        NumberFormat::Decimal,
-        NumberFormat::Char,
-    ];
-
-    /// Every variant round-trips through its FRB nibble.
-    #[test]
-    fn number_format_round_trips() {
-        for &f in &ALL {
-            assert!(NumberFormat::from_frb(f.to_frb()) == Some(f));
-        }
-    }
-
-    /// The nibbles are pinned to the SDK's literal `FRB_*` values (`typeinf.hpp`).
-    #[test]
-    fn number_format_pins_frb_values() {
-        assert!(NumberFormat::Binary.to_frb() == 0x1);
-        assert!(NumberFormat::Octal.to_frb() == 0x2);
-        assert!(NumberFormat::Hexadecimal.to_frb() == 0x3);
-        assert!(NumberFormat::Decimal.to_frb() == 0x4);
-        assert!(NumberFormat::Char.to_frb() == 0x6);
+    /// Every variant round-trips through its FRB nibble, and the nibble is pinned to the SDK's
+    /// literal `FRB_*` value (`typeinf.hpp`).
+    #[rstest]
+    #[case(NumberFormat::Binary, 0x1)]
+    #[case(NumberFormat::Octal, 0x2)]
+    #[case(NumberFormat::Hexadecimal, 0x3)]
+    #[case(NumberFormat::Decimal, 0x4)]
+    #[case(NumberFormat::Char, 0x6)]
+    fn number_format_round_trips_and_pins_frb(#[case] format: NumberFormat, #[case] frb: u32) {
+        assert!(format.to_frb() == frb);
+        assert!(NumberFormat::from_frb(frb) == Some(format));
     }
 
     /// A nibble outside the modeled numeric subset (unknown, or an info-carrying/float/segment
     /// form) is rejected, not absorbed.
-    #[test]
-    fn from_frb_rejects_unmodeled() {
-        assert!(NumberFormat::from_frb(0x0).is_none()); // FRB_UNK
-        assert!(NumberFormat::from_frb(0x5).is_none()); // FRB_FLOAT
-        assert!(NumberFormat::from_frb(0x7).is_none()); // FRB_SEG
-        assert!(NumberFormat::from_frb(0x8).is_none()); // FRB_ENUM
-        assert!(NumberFormat::from_frb(0xff).is_none());
+    #[rstest]
+    #[case::unk(0x0)]
+    #[case::float(0x5)]
+    #[case::seg(0x7)]
+    #[case::enum_linked(0x8)]
+    #[case::out_of_range(0xff)]
+    fn from_frb_rejects_unmodeled(#[case] vtype: u32) {
+        assert!(NumberFormat::from_frb(vtype).is_none());
     }
 }

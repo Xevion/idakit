@@ -112,14 +112,18 @@ mod tests {
         assert!(got.as_bytes() == src);
     }
 
-    #[test]
-    fn negative_length_is_absent() {
+    /// Any negative length, not just `-1`, signals absence.
+    #[rstest]
+    #[case::minus_one(-1)]
+    #[case::minus_two(-2)]
+    #[case::i64_min(i64::MIN)]
+    fn negative_length_is_absent(#[case] rc: i64) {
         let r = read_string(|buf, cap| {
             if cap > 0 {
                 // SAFETY: test-only.
                 unsafe { *buf = 0 };
             }
-            -1
+            rc
         });
         assert!(r.is_none());
     }
@@ -130,10 +134,81 @@ mod tests {
         assert!(got.contains('\u{fffd}'));
     }
 
+    /// The regrow path trusts only the length observed on the *sizing* call: a second call
+    /// that reports a larger length (the value grew between calls) is clamped down to it
+    /// rather than read past the heap buffer sized for the first length.
     #[test]
-    fn with_cstr_rejects_interior_nul() {
-        let r = with_cstr("ab\0cd", "name", |_| ());
-        assert!(r == Err(Error::InteriorNul { arg: "name" }));
+    fn regrow_clamps_to_the_first_observed_length_when_it_grew() {
+        let grown = vec![b'x'; 400];
+        let calls = std::cell::Cell::new(0u32);
+        let got = read_string(|buf, cap| {
+            let call = calls.get();
+            calls.set(call + 1);
+            if call == 0 {
+                // Sizing call: report 300, too large for the stack buffer.
+                if cap > 0 {
+                    // SAFETY: test-only; buf has cap bytes.
+                    unsafe { *buf = 0 };
+                }
+                300
+            } else {
+                // Fill call: the heap buffer is sized for 300 (301 bytes), but the getter now
+                // reports 400 as if the source grew between calls.
+                let n = grown.len().min(cap.saturating_sub(1));
+                // SAFETY: test-only; buf has cap bytes and n < cap.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(grown.as_ptr(), buf.cast::<u8>(), n);
+                    *buf.add(n) = 0;
+                }
+                400
+            }
+        })
+        .expect("present");
+        assert!(got.len() == 300);
+    }
+
+    /// The inverse: a second call that reports a *smaller* length (the value shrank) is
+    /// trusted, since it is still within the heap buffer's capacity.
+    #[test]
+    fn regrow_trusts_a_second_call_that_shrank() {
+        let shrunk = [b'y'; 100];
+        let calls = std::cell::Cell::new(0u32);
+        let got = read_string(|buf, cap| {
+            let call = calls.get();
+            calls.set(call + 1);
+            if call == 0 {
+                if cap > 0 {
+                    // SAFETY: test-only.
+                    unsafe { *buf = 0 };
+                }
+                300
+            } else {
+                let n = shrunk.len().min(cap.saturating_sub(1));
+                // SAFETY: test-only; buf has cap bytes and n < cap.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(shrunk.as_ptr(), buf.cast::<u8>(), n);
+                    *buf.add(n) = 0;
+                }
+                100
+            }
+        })
+        .expect("present");
+        assert!(got.len() == 100);
+    }
+
+    #[rstest]
+    #[case::clean("hello", None)]
+    #[case::interior_nul("ab\0cd", Some("name"))]
+    #[case::leading_nul("\0abc", Some("name"))]
+    #[case::trailing_nul("abc\0", Some("name"))]
+    #[case::all_nul("\0\0\0", Some("name"))]
+    #[case::empty("", None)]
+    fn with_cstr_nul_boundary(#[case] s: &str, #[case] rejected_arg: Option<&'static str>) {
+        let r = with_cstr(s, "name", |_| ());
+        match rejected_arg {
+            Some(arg) => assert!(r == Err(Error::InteriorNul { arg })),
+            None => assert!(r.is_ok()),
+        }
     }
 
     #[test]
@@ -144,5 +219,61 @@ mod tests {
         })
         .expect("valid");
         assert!(len == 5);
+    }
+
+    #[rstest]
+    #[case::clean("clean")]
+    #[case::empty("")]
+    fn nul_checked_passes_clean_input(#[case] s: &str) {
+        assert!(nul_checked(s, "name") == Ok(s));
+    }
+
+    #[rstest]
+    #[case::interior("a\0b")]
+    #[case::leading("\0abc")]
+    #[case::trailing("abc\0")]
+    fn nul_checked_rejects_any_nul(#[case] s: &str) {
+        assert!(nul_checked(s, "name") == Err(Error::InteriorNul { arg: "name" }));
+    }
+
+    #[rstest]
+    #[case::empty("", "fallback", "fallback")]
+    #[case::whitespace_only("   ", "fallback", "fallback")]
+    #[case::newline_only("\n\n", "fallback", "fallback")]
+    #[case::trimmed("actual reason\n", "fallback", "actual reason")]
+    #[case::interior_whitespace_kept(
+        "  leading and trailing  ",
+        "fallback",
+        "leading and trailing"
+    )]
+    fn reason_or_trims_or_falls_back(
+        #[case] reason: &str,
+        #[case] fallback: &str,
+        #[case] expect: &str,
+    ) {
+        assert!(reason_or(reason, fallback) == expect);
+    }
+
+    #[test]
+    fn cstr_null_is_empty() {
+        // SAFETY: null is explicitly allowed by cstr's contract.
+        let s = unsafe { cstr(std::ptr::null()) };
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn cstr_reads_a_valid_c_string() {
+        let c = CString::new("hello").unwrap();
+        // SAFETY: c stays alive for the call.
+        let s = unsafe { cstr(c.as_ptr()) };
+        assert!(s == "hello");
+    }
+
+    #[test]
+    fn cstr_decodes_invalid_utf8_lossily() {
+        let c = CString::new(vec![0xff, 0xfe, b'a']).unwrap();
+        // SAFETY: c stays alive for the call.
+        let s = unsafe { cstr(c.as_ptr()) };
+        assert!(s.contains('\u{fffd}'));
     }
 }

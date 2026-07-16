@@ -67,4 +67,27 @@ mod tests {
         let json = serde_json::to_string(&Tag::new(b'X')).unwrap();
         assert!(serde_json::from_str::<Tag>(&json).unwrap() == Tag::new(b'X'));
     }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // Across the full u8 domain: the selector round-trips exactly, and the FFI-facing
+            // widening never changes its numeric value.
+            #[test]
+            fn new_get_and_raw_round_trip(byte in any::<u8>()) {
+                let tag = Tag::new(byte);
+                prop_assert_eq!(tag.get(), byte);
+                prop_assert_eq!(tag.raw(), u32::from(byte));
+            }
+
+            // Ordering follows the raw byte value for any pair.
+            #[test]
+            fn ord_follows_the_raw_byte(a in any::<u8>(), b in any::<u8>()) {
+                prop_assert_eq!(Tag::new(a).cmp(&Tag::new(b)), a.cmp(&b));
+            }
+        }
+    }
 }

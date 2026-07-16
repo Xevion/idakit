@@ -493,8 +493,83 @@ mod tests {
         Error::TypeDefineFailed { decl: "struct {".to_owned(), reason: "expected '}'".to_owned() },
         "could not define type \"struct {\": expected '}'",
     )]
+    #[case::hex_rays_init(Error::HexRaysInit, "hex-rays decompiler could not be initialized")]
+    #[case::type_not_found(
+        Error::TypeNotFound { name: "FOO_STRUCT".to_owned() },
+        "no type named \"FOO_STRUCT\" in the database",
+    )]
+    #[case::no_function(
+        Error::NoFunction { address: 0x1000 },
+        "no function at 0x1000",
+    )]
+    #[case::unknown_block_kind(
+        Error::UnknownBlockKind { block: 0x2000, raw: 200 },
+        "unmodeled block kind 200 in the flow chart at 0x2000",
+    )]
+    #[case::pattern_rejected(
+        Error::PatternRejected {
+            pattern: "?? gg".to_owned(),
+            kind: PatternRejection::BadToken { token: "gg".to_owned(), index: 1 },
+        },
+        "invalid search pattern \"?? gg\": token \"gg\" at position 1 is not a hex byte, nibble, or wildcard",
+    )]
+    #[case::interior_nul(
+        Error::InteriorNul { arg: "name" },
+        "argument name contains an interior NUL byte",
+    )]
+    #[case::kernel_exit_with_diagnostic(
+        Error::KernelExit { code: 1, diagnostic: Some("license not accepted".to_owned()) },
+        "the IDA kernel aborted the process (exit code 1): license not accepted",
+    )]
+    #[case::kernel_exit_no_diagnostic(
+        Error::KernelExit { code: 1, diagnostic: None },
+        "the IDA kernel aborted the process (exit code 1)",
+    )]
+    #[case::decode_flattens_through(
+        Error::from(DecodeError::NotCode { address: 0x1400_1000 }),
+        "no instruction at 0x14001000",
+    )]
+    #[case::type_write_flattens_through(
+        Error::from(TypeWriteError::NoType { name: "FOO".to_owned() }),
+        "no type named \"FOO\" in the local type library",
+    )]
     fn error_displays(#[case] err: Error, #[case] expect: &str) {
         assert!(err.to_string() == expect);
+    }
+
+    /// [`PatternRejection`] renders its own message independent of the [`Error::PatternRejected`]
+    /// wrapper, including the `total == 0` special-case wording for [`PatternRejection::NoAnchor`].
+    #[rstest]
+    #[case::bad_token(
+        PatternRejection::BadToken { token: "zz".to_owned(), index: 3 },
+        "token \"zz\" at position 3 is not a hex byte, nibble, or wildcard",
+    )]
+    #[case::bad_mask_char(
+        PatternRejection::BadMaskChar { ch: '!', index: 2 },
+        "mask character '!' at position 2 is not one of x, ?, .",
+    )]
+    #[case::mask_mismatch(
+        PatternRejection::MaskMismatch { bytes: 4, mask: 3 },
+        "mask length 3 does not match pattern length 4",
+    )]
+    #[case::no_anchor_empty(
+        PatternRejection::NoAnchor { total: 0 },
+        "pattern is empty",
+    )]
+    #[case::no_anchor_all_wildcards(
+        PatternRejection::NoAnchor { total: 3 },
+        "pattern pins no concrete bits (3 wildcard bytes)",
+    )]
+    #[case::unparseable_with_detail(
+        PatternRejection::Unparseable { detail: Some("unterminated quote".to_owned()) },
+        "could not parse (unterminated quote)",
+    )]
+    #[case::unparseable_without_detail(
+        PatternRejection::Unparseable { detail: None },
+        "could not parse",
+    )]
+    fn pattern_rejection_displays(#[case] kind: PatternRejection, #[case] expect: &str) {
+        assert!(kind.to_string() == expect);
     }
 
     /// `?` on a `call` result flattens through this `From` into [`Error::Kernel`].
@@ -506,7 +581,7 @@ mod tests {
     }
 
     /// `Qerrno` round-trips its raw code, with the named codes mapping by value and any
-    /// other code preserved through `Other`.
+    /// other code preserved through `Other`, including negative and extreme codes.
     #[rstest]
     #[case(0, Qerrno::Ok)]
     #[case(1, Qerrno::Os)]
@@ -514,16 +589,36 @@ mod tests {
     #[case(3, Qerrno::ReadError)]
     #[case(4, Qerrno::FileTooLarge)]
     #[case(7, Qerrno::Other(7))]
+    #[case(-1, Qerrno::Other(-1))]
+    #[case(i32::MIN, Qerrno::Other(i32::MIN))]
+    #[case(i32::MAX, Qerrno::Other(i32::MAX))]
     fn qerrno_round_trips_codes(#[case] code: i32, #[case] expect: Qerrno) {
         assert!(Qerrno::from_code(code) == expect);
         assert!(expect.code() == code);
     }
 
+    mod qerrno_proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // Every raw i32 round-trips through from_code/code, across the whole domain.
+            #[test]
+            fn from_code_code_roundtrips(code in any::<i32>()) {
+                prop_assert_eq!(Qerrno::from_code(code).code(), code);
+            }
+        }
+    }
+
     /// `Display` names the error and carries its raw code.
-    #[test]
-    fn qerrno_display_carries_code() {
-        assert!(Qerrno::DiskFull.to_string() == "disk full (code 2)");
-        assert!(Qerrno::Other(9).to_string() == "unrecognized error (code 9)");
+    #[rstest]
+    #[case(Qerrno::Ok, "no error (code 0)")]
+    #[case(Qerrno::DiskFull, "disk full (code 2)")]
+    #[case(Qerrno::Other(9), "unrecognized error (code 9)")]
+    #[case(Qerrno::Other(-1), "unrecognized error (code -1)")]
+    fn qerrno_display_carries_code(#[case] qerrno: Qerrno, #[case] expect: &str) {
+        assert!(qerrno.to_string() == expect);
     }
 
     /// Two `InitError`s with equal payloads compare equal.
@@ -532,5 +627,82 @@ mod tests {
         assert!(InitError::InitLibrary { code: 3 } == InitError::InitLibrary { code: 3 });
         assert!(InitError::InitLibrary { code: 3 } != InitError::InitLibrary { code: 4 });
         assert!(InitError::KernelGone == InitError::KernelGone);
+    }
+
+    #[rstest]
+    #[case::claim(
+        InitError::Claim { reason: "unrecognized prologue".to_owned() },
+        "could not claim the kernel thread: unrecognized prologue",
+    )]
+    #[case::init_library(
+        InitError::InitLibrary { code: 3 },
+        "init_library failed (code 3)",
+    )]
+    #[case::kernel_gone(InitError::KernelGone, "the kernel thread exited before initializing")]
+    #[case::already_running(InitError::AlreadyRunning, "a kernel is already live in this process")]
+    fn init_error_displays(#[case] err: InitError, #[case] expect: &str) {
+        assert!(err.to_string() == expect);
+    }
+
+    /// A `&str` panic payload is recovered by `message()`, rendered in `Display`, and re-raised
+    /// verbatim by `resume()`.
+    #[test]
+    fn call_error_panicked_str_payload() {
+        let err = CallError::Panicked(Box::new("boom"));
+        assert!(err.message() == Some("boom"));
+        assert!(err.to_string() == "the kernel closure panicked: boom");
+        assert!(format!("{err:?}") == "Panicked(\"boom\")");
+    }
+
+    /// A `String` panic payload is recovered the same way as a `&str` one.
+    #[test]
+    fn call_error_panicked_string_payload() {
+        let err = CallError::Panicked(Box::new(String::from("kaboom")));
+        assert!(err.message() == Some("kaboom"));
+        assert!(err.to_string() == "the kernel closure panicked: kaboom");
+    }
+
+    /// A non-string payload has no recoverable message, and renders a generic placeholder.
+    #[test]
+    fn call_error_panicked_non_string_payload() {
+        let err = CallError::Panicked(Box::new(42i32));
+        assert!(err.message().is_none());
+        assert!(err.to_string() == "the kernel closure panicked (non-string payload)");
+        assert!(format!("{err:?}") == "Panicked(\"<non-string payload>\")");
+    }
+
+    #[test]
+    fn call_error_disconnected_display_and_debug() {
+        assert!(CallError::Disconnected.message().is_none());
+        assert!(CallError::Disconnected.to_string() == "the kernel thread is gone");
+        assert!(format!("{:?}", CallError::Disconnected) == "Disconnected");
+    }
+
+    /// `resume()` re-raises the original panic payload unchanged, not a re-stringified copy.
+    #[test]
+    fn call_error_resume_reraises_the_original_panic() {
+        let result =
+            std::panic::catch_unwind(|| CallError::Panicked(Box::new("original message")).resume());
+        let payload = result.expect_err("resume always panics");
+        assert!(payload.downcast_ref::<&str>() == Some(&"original message"));
+    }
+
+    /// `Disconnected` has no payload to resume, so it panics with a generic message instead.
+    #[test]
+    fn call_error_resume_disconnected_panics_generically() {
+        let result = std::panic::catch_unwind(|| CallError::Disconnected.resume());
+        assert!(result.is_err());
+    }
+
+    /// A value that could not be encoded for netnode storage renders its encoder reason.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serialize_failed_display() {
+        let err = Error::SerializeFailed {
+            reason: "sequence too long".to_owned(),
+        };
+        assert!(
+            err.to_string() == "could not serialize value for netnode storage: sequence too long"
+        );
     }
 }

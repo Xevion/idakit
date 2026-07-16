@@ -22,6 +22,10 @@ pub const CHECKS: &[(&str, Check)] = &[
     ("func_attrs", func_attrs),
 ];
 
+// A regression that empties the check axis would otherwise still pass every corpus trial
+// vacuously (zero checks run, zero failures); catch it at compile time instead.
+const _: () = assert!(!CHECKS.is_empty());
+
 /// The database has functions and segments, the first function is named, and its entry bytes
 /// are readable, the floor every real program clears.
 pub fn structure(idb: &Database) -> String {
@@ -37,8 +41,9 @@ pub fn structure(idb: &Database) -> String {
     format!("{funcs} funcs, {segs} segs")
 }
 
-/// Every export resolves to an address or a forwarder; every import carries a name or an
-/// ordinal; a real program has at least one of the two.
+/// Every export resolves to an address or a forwarder, and a resolved address falls inside a
+/// real segment; every import carries a name or an ordinal, and its address falls inside a real
+/// segment too. A real program has at least one export or import.
 pub fn symbols(idb: &Database) -> String {
     let mut exports = 0usize;
     for export in idb.exports().take(20000) {
@@ -48,6 +53,13 @@ pub fn symbols(idb: &Database) -> String {
             "export #{} resolves to neither address nor forwarder",
             export.index()
         );
+        if let Some(address) = export.address() {
+            assert!(
+                idb.segment_at(address).is_some(),
+                "export #{} at {address:#x} is not inside any segment",
+                export.index()
+            );
+        }
     }
     let mut imports = 0usize;
     for import in idb.imports().take(20000) {
@@ -55,6 +67,11 @@ pub fn symbols(idb: &Database) -> String {
         assert!(
             import.name().is_some() || import.ordinal().is_some(),
             "import at {:#x} has neither name nor ordinal",
+            import.address()
+        );
+        assert!(
+            idb.segment_at(import.address()).is_some(),
+            "import at {:#x} is not inside any segment",
             import.address()
         );
     }
@@ -184,6 +201,13 @@ pub fn cfg(idb: &Database) -> String {
 
 /// Decompiling the first functions succeeds where Hex-Rays can, and the extracted ctree's node
 /// counts agree with the independent visitor counts.
+///
+/// Deliberately does not assert `decompiled > 0`: several real corpus fixtures (WASM, Dalvik,
+/// .NET CLI, Java bytecode loaders) have no Hex-Rays module at all, and per the manifest's own
+/// comment beside them they are not manifest-skipped for this check on purpose, since they
+/// exist specifically to exercise the loader and processor module with zero decompiler
+/// coverage. A hard failure here would need a manifest-level "no decompiler" signal distinct
+/// from `skip_checks`, which does not exist today.
 pub fn decompile(idb: &Database) -> String {
     use idakit::decompiler::ctree::{NodeRef, StatementKind};
     let mut decompiled = 0usize;
@@ -303,8 +327,8 @@ pub fn types(idb: &Database) -> String {
 /// the corpus matrix surfaces the per-architecture argloc spread. `Custom` (`ALOC_CUSTOM`) is a
 /// tripwire: it means a processor module produced an argloc idakit doesn't model, which we want
 /// to see rather than silently absorb. Every scattered fragment must itself be a register
-/// or stack slot, never nested, mirroring `argpart_t`. Databases Hex-Rays can't decompile (e.g.
-/// the 68k arcade ROM, no decompiler) yield no locals and pass vacuously, like [`decompile`].
+/// or stack slot, never nested, mirroring `argpart_t`. A fixture Hex-Rays cannot decompile at
+/// all (see [`decompile`]) yields no locals and passes vacuously, by the same design.
 pub fn argloc(idb: &Database) -> String {
     use idakit::decompiler::ctree::LocalLocation;
 
@@ -359,43 +383,48 @@ pub fn argloc(idb: &Database) -> String {
     )
 }
 
-/// Every segment's flag-derived predicates agree with the flags they mirror, and the newer
-/// scalar accessors (`kind`, `align`, `comb`, `sel`, `color`, `comment`) resolve without
-/// panicking. A database with no segments skips cleanly rather than failing.
+/// Every segment's start resolves back to its own index through [`Database::segment_at`], no
+/// segment is inverted or overlaps the one before it, and the newer scalar accessors (`kind`,
+/// `align`, `comb`, `sel`, `color`, `comment`) resolve without panicking. A database with no
+/// segments skips cleanly rather than failing.
+///
+/// `is_visible`/`is_debugger`/`is_loader`/`is_type_hidden`/`is_header` are deliberately not
+/// checked against [`Segment::flags`] here: per `segment.hpp`, the SDK defines each predicate
+/// as that exact bit test (`is_visible_segm() { return (flags & SFL_HIDDEN) == 0; }`), so
+/// re-deriving the same bit from the same flags and comparing is a tautology that can never
+/// fail regardless of whether the predicate is wired to the right bit.
 pub fn segment_attrs(idb: &Database) -> String {
     let mut checked = 0usize;
     let mut typed = 0usize;
     let mut aligned = 0usize;
     let mut combined = 0usize;
+    let mut prev_end: Option<Address> = None;
 
     for seg in idb.segments() {
         checked += 1;
-        let flags = seg.flags();
-        assert!(
-            seg.is_visible() != flags.contains(SegFlags::HIDDEN),
-            "segment {} is_visible disagrees with the HIDDEN flag",
-            seg.index()
-        );
-        assert!(
-            seg.is_debugger() == flags.contains(SegFlags::DEBUG),
-            "segment {} is_debugger disagrees with the DEBUG flag",
-            seg.index()
-        );
-        assert!(
-            seg.is_loader() == flags.contains(SegFlags::LOADER),
-            "segment {} is_loader disagrees with the LOADER flag",
-            seg.index()
-        );
-        assert!(
-            seg.is_type_hidden() == flags.contains(SegFlags::HIDETYPE),
-            "segment {} is_type_hidden disagrees with the HIDETYPE flag",
-            seg.index()
-        );
-        assert!(
-            seg.is_header() == flags.contains(SegFlags::HEADER),
-            "segment {} is_header disagrees with the HEADER flag",
-            seg.index()
-        );
+
+        if let (Some(start), Some(end)) = (seg.start(), seg.end()) {
+            assert!(
+                end > start,
+                "segment {} has inverted or empty range [{start:#x}, {end:#x})",
+                seg.index()
+            );
+            assert!(
+                prev_end.is_none_or(|prev| start >= prev),
+                "segment {} starts at {start:#x}, before the previous segment's end {:#x}",
+                seg.index(),
+                prev_end.unwrap()
+            );
+            prev_end = Some(end);
+
+            let found = idb.segment_at(start);
+            assert!(
+                found.is_some_and(|f| f.index() == seg.index()),
+                "segment_at(segment {}'s start {start:#x}) resolved to {:?}, not itself",
+                seg.index(),
+                found.map(|f| f.index())
+            );
+        }
 
         if seg.kind().is_some() {
             typed += 1;

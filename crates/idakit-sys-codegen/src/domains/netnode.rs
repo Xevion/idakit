@@ -23,6 +23,11 @@ fn nn_return(expr: &str) -> String {
     nn_body(&format!("  return {expr};\n"))
 }
 
+/// Rejects an empty value ahead of an SDK setter that reads a `length` of 0 as "measure the
+/// value with strlen": an empty slice's pointer is dangling, so the measurement would walk it,
+/// and no length stores zero bytes in the first place.
+const EMPTY_VALUE_GUARD: &str = "  if (value.empty())\n    return false;\n";
+
 /// A string-keyed netnode body: copy `key` into a `std::string k`, reconstruct `n`, then run
 /// `stmts`. The hash family keys by string, so every keyed hash body opens this way.
 fn nn_key_body(stmts: &str) -> String {
@@ -231,9 +236,11 @@ fn sup(v: &mut Vec<FnSpec>) {
                 Arg::new("tag", ArgTy::U32),
             ],
             ret!(Bool),
-            format!("Set the sup value {at} under `tag` (max `MAXSPECSIZE` bytes)."),
-            nn_return(&format!(
-                "n.supset{suf}({cast}{idx}, value.data(), value.size(), (uchar)tag)"
+            format!(
+                "Set the sup value {at} under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty, which the SDK cannot store."
+            ),
+            nn_body(&format!(
+                "{EMPTY_VALUE_GUARD}  return n.supset{suf}({cast}{idx}, value.data(), value.size(), (uchar)tag);\n"
             )),
         ));
         v.push(FnSpec::rendered(
@@ -328,8 +335,10 @@ fn hash(v: &mut Vec<FnSpec>) {
             Arg::new("tag", ArgTy::U32),
         ],
         ret!(Bool),
-        "Set the hash value for `key` under `tag` (max `MAXSPECSIZE` bytes).".into(),
-        nn_key_return("n.hashset(k.c_str(), value.data(), value.size(), (uchar)tag)"),
+        "Set the hash value for `key` under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty, which the SDK cannot store.".into(),
+        nn_key_body(&format!(
+            "{EMPTY_VALUE_GUARD}  return n.hashset(k.c_str(), value.data(), value.size(), (uchar)tag);\n"
+        )),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashset_long".into(),

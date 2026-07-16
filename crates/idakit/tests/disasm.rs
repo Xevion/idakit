@@ -53,6 +53,17 @@ fn disasm() {
 }
 
 fn run(idb: &mut Database) {
+    check_straight_line_decode_invariants(idb);
+    check_code_gated_instructions(idb);
+    check_straight_line_lands_on_end(idb);
+    check_decode_is_deterministic(idb);
+    println!("ok");
+}
+
+/// A bounded straight-line decode over every function's instruction stream: structural
+/// invariants hold per instruction, and at least one direct branch target is cross-checked
+/// against IDA's own reference graph.
+fn check_straight_line_decode_invariants(idb: &Database) {
     const BUDGET: usize = 4000;
     let mut total = 0usize;
     let mut with_ops = 0usize;
@@ -163,11 +174,14 @@ fn run(idb: &mut Database) {
     );
 
     println!("decoded {total} instructions ({with_ops} with operands); invariants held");
+}
 
-    // Code-gated iteration: `Function::instructions()` must yield only real instructions, unlike
-    // the straight-line decode above that runs off a function's tail into adjacent bytes.
-    // Every yielded instruction sits at a code address inside one of the function's chunks
-    // and does not spill past that chunk's end.
+/// Code-gated iteration: `Function::instructions()` must yield only real instructions, unlike
+/// the unguarded straight-line decode that runs off a function's tail into adjacent bytes. Every
+/// yielded instruction sits at a code address inside one of the function's chunks, does not
+/// spill past that chunk's end, and its decoded length agrees with IDA's own item boundary.
+fn check_code_gated_instructions(idb: &Database) {
+    const BUDGET: usize = 4000;
     let mut iter_total = 0usize;
     let mut first_fn: Vec<String> = Vec::new();
     'iter: for (fi, function) in idb.functions().enumerate() {
@@ -192,6 +206,18 @@ fn run(idb: &mut Database) {
                 "instruction {:#x} escapes its function's chunks",
                 instruction.address.get()
             );
+            // Decoded length matches the byte span IDA itself assigns the item: two independent
+            // sources (the processor decoder and the item classifier) must agree on where a real
+            // code instruction ends. Only meaningful here, where `is_code` is already confirmed;
+            // the unguarded straight-line walk elsewhere can run off into data, where the two need
+            // not agree.
+            assert!(
+                idb.item_end(instruction.address) == end,
+                "decoded length disagrees with the item boundary at {:#x}: decoded end {end:#x}, \
+                 item_end {:#x}",
+                instruction.address.get(),
+                idb.item_end(instruction.address).get()
+            );
             if fi == 0 && first_fn.len() < 12 {
                 first_fn.push(fmt_insn(&instruction));
             }
@@ -207,14 +233,63 @@ fn run(idb: &mut Database) {
     for s in &first_fn {
         println!("  {s}");
     }
+}
 
-    // Decode is a pure read: the same address must decode identically twice.
+/// Straight-line decode from a function's start, advancing by decoded length, must land exactly
+/// on the function's end when every head in between is real code (no embedded data, e.g. a jump
+/// table, derails the walk). Restricted to single-chunk functions, whose entry span is the whole
+/// function; overshooting `end` here would mean a decoded length is wrong.
+///
+/// Gated on `is_code` before each decode, unlike the unguarded budgeted walk elsewhere: `decode`
+/// will happily turn a data byte into a plausible-looking instruction, so trusting a decode over
+/// unclassified bytes here would risk a spurious "clean" walk that never truly lands on `end` by
+/// construction, not by a real bug.
+fn check_straight_line_lands_on_end(idb: &Database) {
+    let mut landed = 0usize;
+    let mut clean_fns = 0usize;
+    for function in idb.functions().take(2000) {
+        let Some(end) = function.end() else { continue };
+        if function.chunks().count() != 1 {
+            continue;
+        }
+        clean_fns += 1;
+        let mut address = function.address();
+        let mut clean = true;
+        while address < end {
+            if !idb.is_code(address) {
+                clean = false;
+                break;
+            }
+            let Ok(instruction) = idb.decode(address) else {
+                clean = false;
+                break;
+            };
+            address = address + u64::from(instruction.len);
+        }
+        if clean {
+            assert!(
+                address == end,
+                "straight-line decode overshot the function end: landed at {:#x}, end is {end:#x}",
+                address.get()
+            );
+            landed += 1;
+        }
+    }
+    assert!(
+        landed > 0,
+        "no single-chunk function's straight-line decode landed cleanly on its end"
+    );
+    println!(
+        "landing check: {landed}/{clean_fns} single-chunk functions decoded cleanly to their end"
+    );
+}
+
+/// Decode is a pure read: the same address must decode identically twice.
+fn check_decode_is_deterministic(idb: &Database) {
     let entry = idb.functions().next().expect("a function").address();
     let a = idb.decode(entry).expect("entry decodes");
     let b = idb.decode(entry).expect("entry decodes again");
     assert!(a == b, "decode is not deterministic");
-
-    println!("ok");
 }
 
 #[test]
@@ -294,4 +369,49 @@ fn run_xref_flow(idb: &mut Database) {
     }
 
     println!("ok");
+}
+
+/// Edge symmetry: `xrefs_to`/`xrefs_from` are two traversal directions over one edge list, so for
+/// every outgoing edge `A -> B` a database-wide bug would show up as `B`'s incoming list missing
+/// the mirror `A -> B` edge. This is checked over both code and data references, sampled from a
+/// real disassembly walk rather than synthesized.
+#[test]
+fn xref_edges_are_symmetric() {
+    common::with_canonical_db(run_xref_symmetry);
+}
+
+fn run_xref_symmetry(idb: &mut Database) {
+    const BUDGET: usize = 2000;
+    let mut checked = 0usize;
+
+    'outer: for function in idb.functions() {
+        let mut address = function.address();
+        for _ in 0..64 {
+            let Ok(instruction) = idb.decode(address) else {
+                break;
+            };
+            for x in idb.xrefs_from(address) {
+                let mirrored = idb
+                    .xrefs_to(x.to)
+                    .any(|y| y.from == x.from && y.kind == x.kind && y.origin == x.origin);
+                assert!(
+                    mirrored,
+                    "xref {:#x} -> {:#x} ({:?}, {:?}) has no mirrored entry in xrefs_to({:#x})",
+                    x.from.get(),
+                    x.to.get(),
+                    x.kind,
+                    x.origin,
+                    x.to.get()
+                );
+                checked += 1;
+                if checked >= BUDGET {
+                    break 'outer;
+                }
+            }
+            address = address + u64::from(instruction.len);
+        }
+    }
+
+    assert!(checked > 0, "no xref edges sampled for symmetry");
+    println!("xref edge symmetry OK: {checked} edges mirrored in both directions");
 }

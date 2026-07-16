@@ -255,4 +255,33 @@ mod tests {
         assert!(strings[0].address() == lo);
         assert!(strings[1].address() == hi);
     }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // Across the full raw STRTYPE domain: width comes only from the low two bits, so it
+            // is always a power of two in {1, 2, 4, 8} (8 is STRWIDTH's unassigned reserved
+            // value; no real IDA database emits it, but the parser must not panic on it either),
+            // and it is never disturbed by any bit outside STRWIDTH_MASK.
+            #[test]
+            fn char_width_of_never_panics_and_is_a_power_of_two(raw in any::<i32>()) {
+                let width = char_width_of(raw);
+                prop_assert!(matches!(width, 1 | 2 | 4 | 8));
+                prop_assert_eq!(width, char_width_of(raw & sys::STRWIDTH_MASK));
+            }
+
+            // is_pascal_of never panics, and only depends on the STRLYT field (bits outside
+            // STRWIDTH_MASK).
+            #[test]
+            fn is_pascal_of_never_panics_and_ignores_width_bits(raw in any::<i32>(), width_bits in 0i32..4) {
+                prop_assert_eq!(
+                    is_pascal_of(raw),
+                    is_pascal_of((raw & !sys::STRWIDTH_MASK) | width_bits)
+                );
+            }
+        }
+    }
 }

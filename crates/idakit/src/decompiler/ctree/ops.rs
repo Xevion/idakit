@@ -389,4 +389,57 @@ mod tests {
         let json = serde_json::to_string(&UnaryOp::LogNot).unwrap();
         assert!(serde_json::from_str::<UnaryOp>(&json).unwrap() == UnaryOp::LogNot);
     }
+
+    /// Completeness: every variant of every group round-trips through its own raw
+    /// discriminant, so a variant added without a matching value fails here instead of
+    /// silently mismapping at the FFI boundary.
+    #[test]
+    fn every_variant_round_trips_through_its_discriminant() {
+        for &op in BinaryOp::VARIANTS {
+            assert!(BinaryOp::try_from(u16::from(op)).ok() == Some(op));
+        }
+        for &op in AssignmentOp::VARIANTS {
+            assert!(AssignmentOp::try_from(u16::from(op)).ok() == Some(op));
+        }
+        for &op in UnaryOp::VARIANTS {
+            assert!(UnaryOp::try_from(u16::from(op)).ok() == Some(op));
+        }
+    }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            /// The three operator groups partition disjoint slices of the raw `ctype_t` space:
+            /// no raw value should ever parse as more than one group's operator.
+            #[test]
+            fn discriminant_groups_are_mutually_exclusive(raw in any::<u16>()) {
+                let matches = [
+                    BinaryOp::try_from(raw).is_ok(),
+                    AssignmentOp::try_from(raw).is_ok(),
+                    UnaryOp::try_from(raw).is_ok(),
+                ]
+                .into_iter()
+                .filter(|&m| m)
+                .count();
+                prop_assert!(matches <= 1, "raw {raw} matched {matches} operator groups");
+            }
+
+            /// Any raw value that does parse round-trips back to itself through `u16::from`.
+            #[test]
+            fn successful_round_trip_preserves_the_raw_value(raw in any::<u16>()) {
+                if let Ok(op) = BinaryOp::try_from(raw) {
+                    prop_assert_eq!(u16::from(op), raw);
+                }
+                if let Ok(op) = AssignmentOp::try_from(raw) {
+                    prop_assert_eq!(u16::from(op), raw);
+                }
+                if let Ok(op) = UnaryOp::try_from(raw) {
+                    prop_assert_eq!(u16::from(op), raw);
+                }
+            }
+        }
+    }
 }

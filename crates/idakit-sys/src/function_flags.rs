@@ -84,39 +84,54 @@ bitflags! {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use proptest::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn flags_pin_the_raw_sdk_values() {
-        assert!(FuncFlags::NORET.bits() == 0x0000_0001);
-        assert!(FuncFlags::FAR.bits() == 0x0000_0002);
-        assert!(FuncFlags::LIB.bits() == 0x0000_0004);
-        assert!(FuncFlags::STATICDEF.bits() == 0x0000_0008);
-        assert!(FuncFlags::FRAME.bits() == 0x0000_0010);
-        assert!(FuncFlags::USERFAR.bits() == 0x0000_0020);
-        assert!(FuncFlags::HIDDEN.bits() == 0x0000_0040);
-        assert!(FuncFlags::THUNK.bits() == 0x0000_0080);
-        assert!(FuncFlags::BOTTOMBP.bits() == 0x0000_0100);
-        assert!(FuncFlags::NORET_PENDING.bits() == 0x0000_0200);
-        assert!(FuncFlags::SP_READY.bits() == 0x0000_0400);
-        assert!(FuncFlags::FUZZY_SP.bits() == 0x0000_0800);
-        assert!(FuncFlags::PROLOG_OK.bits() == 0x0000_1000);
-        assert!(FuncFlags::PURGED_OK.bits() == 0x0000_4000);
-        assert!(FuncFlags::TAIL.bits() == 0x0000_8000);
-        assert!(FuncFlags::LUMINA.bits() == 0x0001_0000);
-        assert!(FuncFlags::OUTLINE.bits() == 0x0002_0000);
-        assert!(FuncFlags::REANALYZE.bits() == 0x0004_0000);
-        assert!(FuncFlags::UNWIND.bits() == 0x0008_0000);
-        assert!(FuncFlags::CATCH.bits() == 0x0010_0000);
-        assert!(FuncFlags::RESERVED.bits() == 0x8000_0000_0000_0000);
+    #[rstest]
+    #[case::noret(FuncFlags::NORET, 0x0000_0001)]
+    #[case::far(FuncFlags::FAR, 0x0000_0002)]
+    #[case::lib(FuncFlags::LIB, 0x0000_0004)]
+    #[case::staticdef(FuncFlags::STATICDEF, 0x0000_0008)]
+    #[case::frame(FuncFlags::FRAME, 0x0000_0010)]
+    #[case::userfar(FuncFlags::USERFAR, 0x0000_0020)]
+    #[case::hidden(FuncFlags::HIDDEN, 0x0000_0040)]
+    #[case::thunk(FuncFlags::THUNK, 0x0000_0080)]
+    #[case::bottombp(FuncFlags::BOTTOMBP, 0x0000_0100)]
+    #[case::noret_pending(FuncFlags::NORET_PENDING, 0x0000_0200)]
+    #[case::sp_ready(FuncFlags::SP_READY, 0x0000_0400)]
+    #[case::fuzzy_sp(FuncFlags::FUZZY_SP, 0x0000_0800)]
+    #[case::prolog_ok(FuncFlags::PROLOG_OK, 0x0000_1000)]
+    #[case::purged_ok(FuncFlags::PURGED_OK, 0x0000_4000)]
+    #[case::tail(FuncFlags::TAIL, 0x0000_8000)]
+    #[case::lumina(FuncFlags::LUMINA, 0x0001_0000)]
+    #[case::outline(FuncFlags::OUTLINE, 0x0002_0000)]
+    #[case::reanalyze(FuncFlags::REANALYZE, 0x0004_0000)]
+    #[case::unwind(FuncFlags::UNWIND, 0x0008_0000)]
+    #[case::catch(FuncFlags::CATCH, 0x0010_0000)]
+    #[case::reserved(FuncFlags::RESERVED, 0x8000_0000_0000_0000)]
+    fn flags_pin_the_raw_sdk_values(#[case] flag: FuncFlags, #[case] raw: u64) {
+        assert!(flag.bits() == raw);
     }
 
-    #[test]
-    fn from_bits_retain_preserves_unknown_bits() {
-        let raw = FuncFlags::LIB.bits() | 0x0020_0000;
-        let flags = FuncFlags::from_bits_retain(raw);
-        assert!(flags.contains(FuncFlags::LIB));
-        assert!(flags.bits() == raw);
+    proptest! {
+        #[test]
+        fn from_bits_retain_round_trips_every_bit_pattern(raw: u64) {
+            prop_assert_eq!(FuncFlags::from_bits_retain(raw).bits(), raw);
+        }
+
+        #[test]
+        fn union_and_intersection_are_raw_bitwise_ops(a: u64, b: u64) {
+            let (fa, fb) = (FuncFlags::from_bits_retain(a), FuncFlags::from_bits_retain(b));
+            prop_assert_eq!((fa | fb).bits(), a | b);
+            prop_assert_eq!((fa & fb).bits(), a & b);
+        }
+
+        #[test]
+        fn complement_truncates_to_the_known_flag_mask(a: u64) {
+            let fa = FuncFlags::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & FuncFlags::all().bits());
+        }
     }
 }

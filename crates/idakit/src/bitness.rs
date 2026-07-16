@@ -72,22 +72,32 @@ impl fmt::Display for Bitness {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn known_widths_round_trip() {
-        for b in [Bitness::Bits16, Bitness::Bits32, Bitness::Bits64] {
-            assert!(Bitness::try_from_bits(b.bits()) == Some(b));
-        }
+    #[rstest]
+    #[case::bits16(16, Some(Bitness::Bits16))]
+    #[case::bits32(32, Some(Bitness::Bits32))]
+    #[case::bits64(64, Some(Bitness::Bits64))]
+    // The facade's "no such segment" sentinel and any odd width map to None.
+    #[case::zero_sentinel(0, None)]
+    #[case::one(1, None)]
+    #[case::eight(8, None)]
+    #[case::adjacent_to_16(17, None)]
+    #[case::adjacent_to_64(63, None)]
+    #[case::max(255, None)]
+    fn try_from_bits_boundary(#[case] bits: u8, #[case] expect: Option<Bitness>) {
+        assert!(Bitness::try_from_bits(bits) == expect);
     }
 
-    #[test]
-    fn unknown_widths_are_rejected() {
-        // The facade's "no such segment" sentinel and any odd width map to None.
-        assert!(Bitness::try_from_bits(0).is_none());
-        assert!(Bitness::try_from_bits(8).is_none());
-        assert!(Bitness::try_from_bits(128).is_none());
+    #[rstest]
+    #[case(Bitness::Bits16, 16)]
+    #[case(Bitness::Bits32, 32)]
+    #[case(Bitness::Bits64, 64)]
+    fn known_widths_round_trip(#[case] bitness: Bitness, #[case] bits: u8) {
+        assert!(bitness.bits() == bits);
+        assert!(Bitness::try_from_bits(bits) == Some(bitness));
     }
 
     #[test]
@@ -96,14 +106,40 @@ mod tests {
         assert!(Bitness::Bits32 < Bitness::Bits64);
     }
 
-    #[test]
-    fn display_shows_bit_width() {
-        assert!(Bitness::Bits32.to_string() == "32-bit");
+    #[rstest]
+    #[case(Bitness::Bits16, "16-bit")]
+    #[case(Bitness::Bits32, "32-bit")]
+    #[case(Bitness::Bits64, "64-bit")]
+    fn display_shows_bit_width(#[case] bitness: Bitness, #[case] expect: &str) {
+        assert!(bitness.to_string() == expect);
     }
 
-    #[test]
-    fn serde_round_trips() {
-        let json = serde_json::to_string(&Bitness::Bits64).unwrap();
-        assert!(serde_json::from_str::<Bitness>(&json).unwrap() == Bitness::Bits64);
+    #[rstest]
+    #[case(Bitness::Bits16)]
+    #[case(Bitness::Bits32)]
+    #[case(Bitness::Bits64)]
+    fn serde_round_trips(#[case] bitness: Bitness) {
+        let json = serde_json::to_string(&bitness).unwrap();
+        assert!(serde_json::from_str::<Bitness>(&json).unwrap() == bitness);
+    }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // Across the full u8 domain: only 16/32/64 are accepted, everything else is None.
+            #[test]
+            fn try_from_bits_matches_known_set(bits in any::<u8>()) {
+                let expect = match bits {
+                    16 => Some(Bitness::Bits16),
+                    32 => Some(Bitness::Bits32),
+                    64 => Some(Bitness::Bits64),
+                    _ => None,
+                };
+                prop_assert_eq!(Bitness::try_from_bits(bits), expect);
+            }
+        }
     }
 }

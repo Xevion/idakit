@@ -5,7 +5,9 @@
 //!
 //! `harness = false` + `libtest-mimic` because the corpus is discovered at runtime, not
 //! compile-time. Under nextest each trial is its own process, required, since the kernel is a
-//! per-process singleton. No corpus, no cases.
+//! per-process singleton. No corpus configured, no cases; a *misconfigured* one (a manifest
+//! present but broken, see [`idakit::corpus::validate`]) instead runs a single trial that fails
+//! loudly, so it can never be confused with the former.
 
 mod common;
 
@@ -28,9 +30,17 @@ static KERNEL_GATE: Mutex<()> = Mutex::new(());
 // normal CRT exit path, so the swallow runs. (Unix was unaffected: its `process::exit` runs atexit.)
 fn main() -> ExitCode {
     let args = Arguments::from_args();
-    let fixtures = common::fixtures();
-
     let mut trials = Vec::new();
+
+    // A misconfigured corpus (manifest present but broken) must fail loudly rather than
+    // silently collapse to zero trials and a green run; see idakit::corpus::validate.
+    if let Err(reason) = idakit::corpus::validate() {
+        trials.push(Trial::test("corpus_manifest_is_valid", move || {
+            Err(Failed::from(reason))
+        }));
+    }
+
+    let fixtures = common::fixtures();
     for fx in fixtures {
         let name = fx.name.clone();
         let path = fx.path.clone();

@@ -135,4 +135,35 @@ mod tests {
     fn calling_convention_pins_cm_cc(#[case] cc: CallingConvention, #[case] raw: u8) {
         assert!(u8::from(cc) == raw);
     }
+
+    /// `sig_result` classifies every surgery return code, kernel-free: only `SigWriteCode::Ok`
+    /// maps to success, and no code panics regardless of the captured reason or arg pair.
+    #[test]
+    fn sig_result_classifies_every_known_code() {
+        use idakit_sys::{SIG_APPLY, SIG_ARG_RANGE, SIG_BUILD, SIG_NO_PROTOTYPE, SIG_OK};
+
+        let address = Address::new_const(0x1000);
+        assert!(sig_result(SIG_OK, address, None, "").is_ok());
+        assert!(let Err(_) = sig_result(SIG_NO_PROTOTYPE, address, None, ""));
+        assert!(let Err(_) = sig_result(SIG_ARG_RANGE, address, Some((3, 2)), ""));
+        assert!(let Err(_) = sig_result(SIG_BUILD, address, None, ""));
+        assert!(let Err(_) = sig_result(SIG_APPLY, address, None, "kernel said no"));
+    }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // Across the full i32 domain: exactly the SIG_OK code succeeds, every other code
+            // (modelled or not) is a rejection, and the mapper never panics on any bit pattern.
+            #[test]
+            fn sig_result_only_ok_succeeds(code in any::<i32>(), reason in ".*") {
+                let address = Address::new_const(0x1000);
+                let result = sig_result(code, address, Some((0, 1)), &reason);
+                prop_assert_eq!(result.is_ok(), code == idakit_sys::SIG_OK);
+            }
+        }
+    }
 }

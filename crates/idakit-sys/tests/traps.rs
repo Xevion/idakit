@@ -5,22 +5,36 @@
 
 use idakit_sys::{
     EXIT_TRAPPED, FATAL_ABORT, FATAL_EXIT, FATAL_INTERR, drop_probe_count, drop_probe_make,
-    ext_throw_coded, ext_throw_interr, ext_throw_plain_int, probe_throw, test_fatal,
-    test_fatal_through_cxx,
+    ext_throw_coded, ext_throw_interr, ext_throw_plain_int, last_exit_code, probe_throw,
+    test_fatal, test_fatal_through_cxx, was_trapped,
 };
+use rstest::rstest;
 
-#[test]
-fn exit_inside_guarded_call_is_trapped() {
-    // SAFETY: the shim calls exit() inside guarded<>; the trap longjmps back instead of exiting.
-    let rc = unsafe { test_fatal(FATAL_EXIT) };
-    assert_eq!(rc, EXIT_TRAPPED);
-}
+/// `trap_exit`'s fixed status (`runtime.cpp`'s `test_fatal`/`trigger_fatal`, `kind ==
+/// FATAL_EXIT`).
+const TRAP_EXIT_CODE: i32 = 42;
+/// `128 + SIGABRT`, `trap_abort`'s fixed status (`runtime.cpp`'s `ABORT_EXIT_CODE`).
+const TRAP_ABORT_CODE: i32 = 134;
 
-#[test]
-fn abort_inside_guarded_call_is_trapped() {
-    // SAFETY: the shim calls abort() inside guarded<>; the trap longjmps back instead of aborting.
-    let rc = unsafe { test_fatal(FATAL_ABORT) };
+#[rstest]
+#[case::exit(FATAL_EXIT, TRAP_EXIT_CODE)]
+#[case::abort(FATAL_ABORT, TRAP_ABORT_CODE)]
+fn fatal_inside_guarded_call_is_trapped(#[case] kind: i32, #[case] expected_exit_code: i32) {
+    // SAFETY: the shim calls exit()/abort() inside guarded<>; the trap longjmps back instead of
+    // tearing down the process.
+    let rc = unsafe { test_fatal(kind) };
     assert_eq!(rc, EXIT_TRAPPED);
+    // SAFETY: reads thread-local state guarded<> just wrote; no invariants beyond that.
+    assert_eq!(
+        unsafe { was_trapped() },
+        1,
+        "guarded<> must record that it trapped a fatal"
+    );
+    assert_eq!(
+        unsafe { last_exit_code() },
+        expected_exit_code,
+        "the trapped status/signal code must survive the longjmp"
+    );
 }
 
 // Unlike exit/abort (trapped by the shim's direct longjmp), interr relies on idalib throwing
@@ -36,6 +50,12 @@ fn interr_inside_guarded_call_is_trapped() {
     // interr_exc_t, so the guard returns instead of terminating.
     let rc = unsafe { test_fatal(FATAL_INTERR) };
     assert_eq!(rc, EXIT_TRAPPED);
+    // SAFETY: reads thread-local state guarded<> just wrote; no invariants beyond that.
+    assert_eq!(
+        unsafe { was_trapped() },
+        1,
+        "guarded<>'s interr_exc_t catch must record a trap the same as the longjmp paths"
+    );
 }
 
 // Force the dangerous topology the ordinary trap tests never hit: a
@@ -45,19 +65,25 @@ fn interr_inside_guarded_call_is_trapped() {
 // rather than return the sentinel cleanly. (idakit's real code never builds this topology; the
 // probe is synthetic, to establish the empirical boundary.)
 
-#[test]
-fn exit_longjmp_across_cxx_shim_is_trapped() {
-    // SAFETY: the guard arms guarded<>, then reaches exit() through the cxx shim; the trap
-    // longjmps back across that shim frame instead of exiting.
-    let rc = unsafe { test_fatal_through_cxx(FATAL_EXIT) };
+#[rstest]
+#[case::exit(FATAL_EXIT, TRAP_EXIT_CODE)]
+#[case::abort(FATAL_ABORT, TRAP_ABORT_CODE)]
+fn fatal_longjmp_across_cxx_shim_is_trapped(#[case] kind: i32, #[case] expected_exit_code: i32) {
+    // SAFETY: the guard arms guarded<>, then reaches exit()/abort() through the cxx shim; the
+    // trap longjmps back across that shim frame instead of tearing down the process.
+    let rc = unsafe { test_fatal_through_cxx(kind) };
     assert_eq!(rc, EXIT_TRAPPED);
-}
-
-#[test]
-fn abort_longjmp_across_cxx_shim_is_trapped() {
-    // SAFETY: as above, for the abort() path.
-    let rc = unsafe { test_fatal_through_cxx(FATAL_ABORT) };
-    assert_eq!(rc, EXIT_TRAPPED);
+    // SAFETY: reads thread-local state guarded<> just wrote; no invariants beyond that.
+    assert_eq!(
+        unsafe { was_trapped() },
+        1,
+        "guarded<> must record the trap even when the longjmp crossed a cxx shim frame"
+    );
+    assert_eq!(
+        unsafe { last_exit_code() },
+        expected_exit_code,
+        "the trapped status/signal code must survive a longjmp across a cxx shim frame"
+    );
 }
 
 // An interr is a *throw* (interr_exc_t : std::exception), not a longjmp. Fired below a cxx shim,
@@ -78,23 +104,24 @@ fn interr_across_cxx_shim_is_intercepted_by_cxx() {
         rc, 1,
         "cxx should intercept the interr throw before the trap"
     );
+    // SAFETY: reads thread-local state guarded<> just wrote; no invariants beyond that.
+    assert_eq!(
+        unsafe { was_trapped() },
+        0,
+        "the throw never reaches guarded<>'s own catch, so it must not be recorded as a trap"
+    );
 }
 
 // What cxx's default trycatch actually surfaces. Its generated shim
 // catches only `std::exception const&`, giving back a flat `cxx::Exception` whose `what()` is the
 // C++ message and nothing else (no qerrno, no structured context). A non-std::exception throw
 // (kind 2) escapes the catch and std::terminate()s the process, so it is documented, not run.
-#[test]
-fn cxx_surfaces_std_exception_as_flat_err() {
-    let runtime_err = probe_throw(0).unwrap_err();
-    assert_eq!(runtime_err.what(), "probe_throw: runtime_error from C++");
-
-    let range_err = probe_throw(1).unwrap_err();
-    assert!(
-        range_err.what().contains("out_of_range"),
-        "out_of_range should surface via std::exception::what(), got: {}",
-        range_err.what()
-    );
+#[rstest]
+#[case::runtime_error(0, "probe_throw: runtime_error from C++")]
+#[case::out_of_range(1, "probe_throw: out_of_range from C++")]
+fn cxx_surfaces_std_exception_as_flat_err(#[case] kind: i32, #[case] expected: &str) {
+    let err = probe_throw(kind).unwrap_err();
+    assert_eq!(err.what(), expected);
 }
 
 // The custom `rust::behavior::trycatch` in testonly_probe_ext.h widens what the

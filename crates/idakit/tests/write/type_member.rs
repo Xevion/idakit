@@ -1,8 +1,11 @@
 //! Struct-member surgery: append/rename/retype/delete, comments, bitfields, numeric repr,
-//! durable member refs, offset-keyed insertion and editing, and the `ETF_COMPATIBLE` retype flag.
+//! durable member refs, offset-keyed insertion and editing, the `ETF_COMPATIBLE` retype flag, and
+//! the aggregate edge cases (bitfield-width extremes, deep named-struct nesting, and a
+//! zero-length trailing array).
 
 use assert2::assert;
 use idakit::prelude::*;
+use rstest::rstest;
 
 use crate::common::assert_type_write_err;
 
@@ -489,5 +492,133 @@ fn type_member_set_type_compatible() {
             .find(|m| m.name == "a")
             .expect("member a");
         assert!(let TypeShape::Int { signed: false, .. } = &probe.get(a.ty).shape);
+    });
+}
+
+/// A sweep of bitfield widths against an 8-byte container, each read back exactly: the minimum
+/// (1 bit), an interior width, and the full container width (64 bits).
+#[rstest]
+#[case::minimum(1)]
+#[case::interior(17)]
+#[case::full_container(64)]
+fn type_member_bitfield_width_sweep(#[case] width: u8) {
+    crate::common::with_canonical_db(move |idb| {
+        use idakit::types::expr;
+
+        idb.types_mut()
+            .define("struct idakit_pcase_bf { int pad; };")
+            .expect("define a struct to add a bitfield to");
+        idb.types_mut()
+            .edit("idakit_pcase_bf")
+            .add_member("flag", expr::bitfield(8, width, false))
+            .unwrap_or_else(|e| {
+                panic!("a {width}-bit field in an 8-byte container should be accepted, got {e:?}")
+            });
+
+        let ty = idb
+            .type_named("idakit_pcase_bf")
+            .expect("resolve the struct");
+        let field = ty
+            .members()
+            .expect("a struct has members")
+            .iter()
+            .find(|m| m.name == "flag")
+            .expect("member flag");
+        assert!(
+            field.bitfield_width == Some(u32::from(width)),
+            "flag should be a {width}-bit bitfield, got {:?}",
+            field.bitfield_width
+        );
+    });
+}
+
+/// Three levels of named-struct nesting resolve through their `TypeId` chain: `C` embeds `B` by
+/// value, `B` embeds `A` by value, and walking `C`'s member down to `A`'s own field lands on the
+/// expected leaf type at every level.
+#[test]
+fn type_member_deeply_nested_named_structs() {
+    crate::common::with_canonical_db(|idb| {
+        use idakit::types::TypeShape;
+
+        idb.types_mut()
+            .define("struct idakit_pcase_a { int leaf; };")
+            .expect("define the innermost struct");
+        idb.types_mut()
+            .define("struct idakit_pcase_b { struct idakit_pcase_a a; int mid; };")
+            .expect("define the middle struct");
+        idb.types_mut()
+            .define("struct idakit_pcase_c { struct idakit_pcase_b b; int top; };")
+            .expect("define the outer struct");
+
+        let c = idb
+            .type_named("idakit_pcase_c")
+            .expect("resolve the outer struct");
+        assert!(
+            let TypeShape::Struct {
+                members: c_members, ..
+            } = c.shape()
+        );
+        let b_member = c_members.iter().find(|m| m.name == "b").expect("member b");
+        assert!(
+            let TypeShape::Struct {
+                members: b_members,
+                name: b_name,
+                ..
+            } = &c.get(b_member.ty).shape
+        );
+        assert!(b_name.as_deref() == Some("idakit_pcase_b"));
+
+        let a_member = b_members.iter().find(|m| m.name == "a").expect("member a");
+        assert!(
+            let TypeShape::Struct {
+                members: a_members,
+                name: a_name,
+                ..
+            } = &c.get(a_member.ty).shape
+        );
+        assert!(a_name.as_deref() == Some("idakit_pcase_a"));
+
+        let leaf = a_members
+            .iter()
+            .find(|m| m.name == "leaf")
+            .expect("member leaf");
+        assert!(let TypeShape::Int { .. } = &c.get(leaf.ty).shape);
+    });
+}
+
+/// A trailing zero-length array member either builds cleanly, with a zero-element array read
+/// back, or is a typed rejection; either way it must not panic. Goes through the structured
+/// builder (`expr::decl("char").array(0)`) rather than a `[0]` text declaration, so the outcome
+/// depends on the kernel's member-add logic rather than on this parser's flexible-array syntax
+/// support.
+#[test]
+fn type_member_zero_length_array() {
+    crate::common::with_canonical_db(|idb| {
+        use idakit::types::{TypeShape, expr};
+
+        idb.types_mut()
+            .define("struct idakit_pcase_flex { int n; };")
+            .expect("define the struct to extend");
+
+        match idb
+            .types_mut()
+            .edit("idakit_pcase_flex")
+            .add_member("data", expr::decl("char").array(0))
+        {
+            Ok(()) => {
+                let ty = idb
+                    .type_named("idakit_pcase_flex")
+                    .expect("resolve the extended struct");
+                let data = ty
+                    .members()
+                    .expect("a struct has members")
+                    .iter()
+                    .find(|m| m.name == "data")
+                    .expect("member data");
+                assert!(let TypeShape::Array { len: 0, .. } = &ty.get(data.ty).shape);
+                println!("type-member zero-length array: accepted");
+            }
+            Err(e) => println!("type-member zero-length array: rejected, {e:?}"),
+        }
     });
 }

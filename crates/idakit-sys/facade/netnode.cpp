@@ -119,8 +119,12 @@ rust::String netnode_value_str(uint64_t node) {
   return to_rust_string(out);
 }
 
-// Sets the netnode's value blob; returns whether the write succeeded.
+// Sets the netnode's value blob; returns whether the write succeeded. An empty value is
+// rejected: set() reads a length of 0 as "measure the value with strlen", which would walk an
+// empty slice's dangling pointer, and there is no length that stores zero bytes.
 bool netnode_set_value(uint64_t node, rust::Slice<const uint8_t> value) {
+  if (value.empty())
+    return false;
   netnode handle(static_cast<nodeidx_t>(node));
   return handle.set(value.data(), value.size());
 }

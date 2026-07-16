@@ -122,9 +122,17 @@ fn every_alias_names_a_real_sdk_symbol() {
         eprintln!("skipping: IDA_SDK_INCLUDE unset (no SDK headers to validate aliases against)");
         return;
     };
+    assert!(
+        !idents.is_empty(),
+        "IDA_SDK_INCLUDE is set but no identifiers were extracted from any header; the header \
+         glob is broken and this check would pass vacuously"
+    );
+
+    let mut checked = 0usize;
     let mut violations = Vec::new();
     for (path, src) in sources() {
         for alias in alias_strings(&src) {
+            checked += 1;
             let leaf = alias.rsplit("::").next().unwrap_or(&alias);
             if leaf.is_empty() || idents.contains(leaf) || VALIDITY_ALLOW.contains(&alias.as_str())
             {
@@ -137,9 +145,37 @@ fn every_alias_names_a_real_sdk_symbol() {
         }
     }
     assert!(
+        checked > 0,
+        "no #[doc(alias(...))] attributes were found under src/; the source glob is broken and \
+         this check would pass vacuously"
+    );
+    assert!(
         violations.is_empty(),
         "every #[doc(alias)] must name a real SDK symbol; fix the name or, if it is genuinely \
          not an SDK identifier, add it to VALIDITY_ALLOW:\n{}",
         violations.join("\n")
     );
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use assert2::assert;
+    use rstest::rstest;
+
+    use super::alias_strings;
+
+    #[rstest]
+    #[case::single(r#"#[doc(alias("FOO"))]"#, &["FOO"])]
+    #[case::multiple(r#"#[doc(alias("FOO", "BAR", "BAZ"))]"#, &["FOO", "BAR", "BAZ"])]
+    #[case::none("no attribute here", &[])]
+    #[case::two_attrs(
+        r#"#[doc(alias("A"))] struct X; #[doc(alias("B"))] struct Y;"#,
+        &["A", "B"]
+    )]
+    #[case::qualified(r#"#[doc(alias("netnode::altval"))]"#, &["netnode::altval"])]
+    fn extracts_every_literal(#[case] src: &str, #[case] expect: &[&str]) {
+        let found = alias_strings(src);
+        let found: Vec<&str> = found.iter().map(String::as_str).collect();
+        assert!(found == expect);
+    }
 }

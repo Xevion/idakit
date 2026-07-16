@@ -407,4 +407,34 @@ mod tests {
         assert!(c == ch);
         assert!(i == index);
     }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // For any byte sequence, rendering it as space-separated uppercase hex (Pattern's own
+            // `render`) and parsing it back through `parse_hex` recovers the exact bytes with a
+            // fully-defined mask (every byte is a concrete two-digit token, never a wildcard).
+            #[test]
+            fn hex_round_trips_through_render(bytes in proptest::collection::vec(any::<u8>(), 1..32)) {
+                let (parsed, mask) = parse_hex(&render(&bytes)).expect("rendered hex always parses");
+                prop_assert_eq!(&parsed, &bytes);
+                prop_assert!(mask.iter().all(|&m| m == 0xFF));
+            }
+
+            // A mask string built only from 'x'/'?' characters always parses, one byte per
+            // character, 'x' as a full match (0xFF) and '?' as a wildcard (0x00).
+            #[test]
+            fn mask_parses_every_x_and_wildcard_string(
+                bits in proptest::collection::vec(any::<bool>(), 0..32)
+            ) {
+                let s: String = bits.iter().map(|&full| if full { 'x' } else { '?' }).collect();
+                let mask = parse_mask(&s).expect("an x/? string always parses");
+                let expect: Vec<u8> = bits.iter().map(|&full| if full { 0xFF } else { 0x00 }).collect();
+                prop_assert_eq!(mask, expect);
+            }
+        }
+    }
 }

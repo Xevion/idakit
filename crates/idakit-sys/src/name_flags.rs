@@ -51,20 +51,43 @@ bitflags! {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use proptest::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn flags_pin_the_raw_sdk_values() {
-        assert!(GnFlags::VISIBLE.bits() == 0x0001);
-        assert!(GnFlags::COLORED.bits() == 0x0002);
-        assert!(GnFlags::DEMANGLED.bits() == 0x0004);
-        assert!(GnFlags::STRICT.bits() == 0x0008);
-        assert!(GnFlags::SHORT.bits() == 0x0010);
-        assert!(GnFlags::LONG.bits() == 0x0020);
-        assert!(GnFlags::LOCAL.bits() == 0x0040);
-        assert!(GnFlags::ISRET.bits() == 0x0080);
-        assert!(GnFlags::NOT_ISRET.bits() == 0x0100);
-        assert!(GnFlags::NOT_DUMMY.bits() == 0x0200);
+    #[rstest]
+    #[case::visible(GnFlags::VISIBLE, 0x0001)]
+    #[case::colored(GnFlags::COLORED, 0x0002)]
+    #[case::demangled(GnFlags::DEMANGLED, 0x0004)]
+    #[case::strict(GnFlags::STRICT, 0x0008)]
+    #[case::short(GnFlags::SHORT, 0x0010)]
+    #[case::long(GnFlags::LONG, 0x0020)]
+    #[case::local(GnFlags::LOCAL, 0x0040)]
+    #[case::isret(GnFlags::ISRET, 0x0080)]
+    #[case::not_isret(GnFlags::NOT_ISRET, 0x0100)]
+    #[case::not_dummy(GnFlags::NOT_DUMMY, 0x0200)]
+    fn flags_pin_the_raw_sdk_values(#[case] flag: GnFlags, #[case] raw: c_int) {
+        assert!(flag.bits() == raw);
+    }
+
+    proptest! {
+        #[test]
+        fn from_bits_retain_round_trips_every_bit_pattern(raw: c_int) {
+            prop_assert_eq!(GnFlags::from_bits_retain(raw).bits(), raw);
+        }
+
+        #[test]
+        fn union_and_intersection_are_raw_bitwise_ops(a: c_int, b: c_int) {
+            let (fa, fb) = (GnFlags::from_bits_retain(a), GnFlags::from_bits_retain(b));
+            prop_assert_eq!((fa | fb).bits(), a | b);
+            prop_assert_eq!((fa & fb).bits(), a & b);
+        }
+
+        #[test]
+        fn complement_truncates_to_the_known_flag_mask(a: c_int) {
+            let fa = GnFlags::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & GnFlags::all().bits());
+        }
     }
 }

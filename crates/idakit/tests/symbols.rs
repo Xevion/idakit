@@ -17,6 +17,7 @@ fn run(idb: &mut Database) {
     let mut exports = 0usize;
     let mut named_exports = 0usize;
     let mut forwarders = 0usize;
+    let mut exports_in_segment = 0usize;
     for export in idb.exports().take(4000) {
         exports += 1;
         named_exports += usize::from(export.name().is_some());
@@ -26,13 +27,27 @@ fn run(idb: &mut Database) {
             "export #{} resolves to neither an address nor a forwarder",
             export.index()
         );
+        // Cross-invariant: a local export's address is real -- it lies inside some segment, not
+        // off in unmapped space.
+        if let Some(ea) = export.address() {
+            assert!(
+                idb.segment_at(ea).is_some(),
+                "export {:?} at {ea:#x} does not resolve to any segment",
+                export.name()
+            );
+            exports_in_segment += 1;
+        }
     }
-    println!("exports: {exports} total, {named_exports} named, {forwarders} forwarded");
+    println!(
+        "exports: {exports} total, {named_exports} named, {forwarders} forwarded, \
+         {exports_in_segment} resolved to a segment"
+    );
 
     // Every import must carry a way to resolve it: a name or an ordinal.
     let mut imports = 0usize;
     let mut by_name = 0usize;
     let mut by_ordinal = 0usize;
+    let mut imports_in_segment = 0usize;
     for import in idb.imports().take(8000) {
         imports += 1;
         by_name += usize::from(import.name().is_some());
@@ -42,8 +57,20 @@ fn run(idb: &mut Database) {
             "import at {:#x} has neither a name nor an ordinal",
             import.address()
         );
+        // Cross-invariant: an import's slot address (the IAT entry / thunk) is a real address --
+        // it lies inside some segment, not off in unmapped space.
+        assert!(
+            idb.segment_at(import.address()).is_some(),
+            "import {:?} at {:#x} does not resolve to any segment",
+            import.name(),
+            import.address()
+        );
+        imports_in_segment += 1;
     }
-    println!("imports: {imports} total, {by_name} by name, {by_ordinal} by ordinal");
+    println!(
+        "imports: {imports} total, {by_name} by name, {by_ordinal} by ordinal, \
+         {imports_in_segment} resolved to a segment"
+    );
 
     // A real program either exports or imports something; otherwise the enumeration is broken,
     // not merely empty.

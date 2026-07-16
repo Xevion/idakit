@@ -51,12 +51,51 @@ unsafe extern "C" {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use proptest::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
+    #[rstest]
+    #[case::case(BinSearchFlags::CASE, 0x01)]
+    #[case::bitmask(BinSearchFlags::BITMASK, 0x20)]
+    fn flags_pin_the_raw_sdk_values(#[case] flag: BinSearchFlags, #[case] raw: c_int) {
+        assert!(flag.bits() == raw);
+    }
+
+    #[rstest]
+    #[case::ms_cls(MS_CLS, 0x0000_0600)]
+    #[case::ff_code(FF_CODE, 0x0000_0600)]
+    #[case::ff_data(FF_DATA, 0x0000_0400)]
+    fn classification_consts_pin_the_raw_sdk_values(#[case] value: u64, #[case] raw: u64) {
+        assert!(value == raw);
+    }
+
     #[test]
-    fn flags_pin_the_raw_sdk_values() {
-        assert!(BinSearchFlags::CASE.bits() == 0x01);
-        assert!(BinSearchFlags::BITMASK.bits() == 0x20);
+    fn ff_code_and_ff_data_are_distinct_under_the_class_mask() {
+        assert!(FF_CODE & MS_CLS == FF_CODE);
+        assert!(FF_DATA & MS_CLS == FF_DATA);
+        assert!(FF_CODE != FF_DATA);
+    }
+
+    proptest! {
+        #[test]
+        fn from_bits_retain_round_trips_every_bit_pattern(raw: c_int) {
+            prop_assert_eq!(BinSearchFlags::from_bits_retain(raw).bits(), raw);
+        }
+
+        #[test]
+        fn union_and_intersection_are_raw_bitwise_ops(a: c_int, b: c_int) {
+            let (fa, fb) = (BinSearchFlags::from_bits_retain(a), BinSearchFlags::from_bits_retain(b));
+            prop_assert_eq!((fa | fb).bits(), a | b);
+            prop_assert_eq!((fa & fb).bits(), a & b);
+        }
+
+        // complement() truncates to the known-flag mask, unlike union/intersection.
+        #[test]
+        fn complement_truncates_to_the_known_flag_mask(a: c_int) {
+            let fa = BinSearchFlags::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & BinSearchFlags::all().bits());
+        }
     }
 }

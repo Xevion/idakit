@@ -81,20 +81,129 @@ pub fn canonical() -> Option<PathBuf> {
         .filter(|p| p.is_file())
 }
 
-/// Load the `.env`, locate the manifest, and parse it, returning it alongside its parent dir
-/// (the root every fixture `path` is relative to). `None` when no corpus is configured or the
-/// manifest is missing or malformed.
-fn parse() -> Option<(Manifest, PathBuf)> {
+/// The first manifest fixture explicitly parked as unopenable under this 64-bit build
+/// (`opens = "parked"`; today that means a 32-bit IDA1 `.idb`). `None` when no corpus is
+/// configured or none is parked.
+///
+/// For fault-injection tests proving the 64-bit build rejects such a database with a real
+/// error rather than a crash; not part of the corpus matrix's own fixture set.
+#[must_use]
+pub fn parked_fixture() -> Option<PathBuf> {
+    let (parsed, root) = parse()?;
+    parsed
+        .fixture
+        .into_iter()
+        .find(|e| e.opens.parked())
+        .map(|e| root.join(&e.path))
+        .filter(|p| p.is_file())
+}
+
+/// Outcome of locating and parsing the corpus manifest: absent (nothing configured, every
+/// caller skips), malformed (configured but broken, a real misconfiguration), or parsed
+/// alongside the root every fixture `path` is relative to.
+enum Loaded {
+    NotConfigured,
+    Malformed(String),
+    Parsed(Manifest, PathBuf),
+}
+
+/// Load the `.env` and locate + parse the manifest, distinguishing "not configured" from
+/// "configured but broken" so [`validate`] can fail loudly on the latter while [`parse`]'s
+/// lenient callers keep skipping on either.
+fn load() -> Loaded {
     LOAD_ENV.call_once(|| {
         let _ = dotenvy::dotenv();
     });
-    let manifest = manifest_path()?;
-    let text = std::fs::read_to_string(&manifest).ok()?;
-    let parsed = toml::from_str::<Manifest>(&text).ok()?;
+    let raw = match std::env::var("IDAKIT_CORPUS_MANIFEST") {
+        Ok(raw) if !raw.is_empty() => raw,
+        _ => return Loaded::NotConfigured,
+    };
+    let manifest = PathBuf::from(raw);
+    if !manifest.is_file() {
+        return Loaded::Malformed(format!(
+            "IDAKIT_CORPUS_MANIFEST={manifest:?} does not point to a file"
+        ));
+    }
+    let text = match std::fs::read_to_string(&manifest) {
+        Ok(text) => text,
+        Err(e) => return Loaded::Malformed(format!("failed to read {manifest:?}: {e}")),
+    };
+    let parsed = match toml::from_str::<Manifest>(&text) {
+        Ok(parsed) => parsed,
+        Err(e) => return Loaded::Malformed(format!("failed to parse {manifest:?}: {e}")),
+    };
     let root = manifest
         .parent()
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    Some((parsed, root))
+    Loaded::Parsed(parsed, root)
+}
+
+/// Locate and parse the manifest, returning it alongside its parent dir (the root every
+/// fixture `path` is relative to). `None` when no corpus is configured *or* the manifest is
+/// missing or malformed; callers that need to tell those apart use [`validate`] instead.
+fn parse() -> Option<(Manifest, PathBuf)> {
+    match load() {
+        Loaded::Parsed(parsed, root) => Some((parsed, root)),
+        Loaded::NotConfigured | Loaded::Malformed(_) => None,
+    }
+}
+
+/// Validate the corpus configuration, distinguishing "nothing configured" from "configured but
+/// broken".
+///
+/// [`fixtures`] and [`canonical`] both collapse every failure mode to an empty/`None` result, so
+/// a caller that only checks those cannot tell a genuinely absent corpus (`IDAKIT_CORPUS_MANIFEST`
+/// unset) from a misconfigured one (the variable points nowhere, the manifest is malformed TOML,
+/// or it declares fixtures whose files do not exist). Both would otherwise run zero cases and
+/// report success. Call this once at the top of a corpus-driven entry point and fail loudly on
+/// `Err` instead of silently passing with no coverage.
+///
+/// # Errors
+///
+/// `Err` with a diagnostic message if `IDAKIT_CORPUS_MANIFEST` is set but: the path it names is
+/// not a file, the file cannot be read, the TOML fails to parse, no `[[fixture]]` entry has
+/// `opens = true`, an `opens = true` fixture's `path` does not resolve to a real file, or
+/// `[corpus].canonical` names a path with no matching `opens = true` fixture.
+pub fn validate() -> Result<(), String> {
+    let (parsed, root) = match load() {
+        Loaded::NotConfigured => return Ok(()),
+        Loaded::Malformed(reason) => return Err(reason),
+        Loaded::Parsed(parsed, root) => (parsed, root),
+    };
+
+    let openable: Vec<&Entry> = parsed
+        .fixture
+        .iter()
+        .filter(|e| e.opens.runnable())
+        .collect();
+    if openable.is_empty() {
+        return Err(format!(
+            "corpus manifest at {root:?} declares {} fixture(s) but none have opens = true",
+            parsed.fixture.len()
+        ));
+    }
+
+    let missing: Vec<PathBuf> = openable
+        .iter()
+        .map(|e| root.join(&e.path))
+        .filter(|p| !p.is_file())
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "corpus manifest declares {} openable fixture(s) whose file does not exist: {missing:?}",
+            missing.len()
+        ));
+    }
+
+    if let Some(canonical) = parsed.corpus.as_ref().and_then(|c| c.canonical.as_ref())
+        && !openable.iter().any(|e| e.path == *canonical)
+    {
+        return Err(format!(
+            "corpus manifest's [corpus].canonical = {canonical:?} names no opens = true fixture"
+        ));
+    }
+
+    Ok(())
 }
 
 fn manifest_path() -> Option<PathBuf> {
@@ -192,8 +301,7 @@ struct Entry {
 #[serde(untagged)]
 enum Opens {
     Bool(bool),
-    // The manifest carries the word (e.g. "parked"); the value itself is never inspected here.
-    Word(#[allow(dead_code)] String),
+    Word(String),
 }
 
 impl Default for Opens {
@@ -205,5 +313,12 @@ impl Default for Opens {
 impl Opens {
     fn runnable(&self) -> bool {
         matches!(self, Self::Bool(true))
+    }
+
+    /// Whether the manifest explicitly parks this fixture (word value `"parked"`): a real
+    /// database our 64-bit build declines to open, kept for fault-injection tests that assert
+    /// the rejection rather than for the corpus matrix.
+    fn parked(&self) -> bool {
+        matches!(self, Self::Word(w) if w == "parked")
     }
 }

@@ -865,4 +865,172 @@ mod tests {
         let rendered = format!("{descendants:?}");
         assert!(rendered.contains("Descendants"));
     }
+
+    /// Builds arbitrary small expression/statement shapes through [`CtreeBuilder`]'s public API
+    /// (so every handle is consumed by exactly one parent, keeping the result a genuine tree, not
+    /// a DAG a shared handle could turn into) and checks the structural invariants any
+    /// [`CtreeBuilder::finish`] output must hold, regardless of shape.
+    mod proptests {
+        use proptest::prelude::*;
+        use strum::VariantArray;
+
+        use super::*;
+
+        /// A recursive expression shape, built fresh into the tree by [`build_expr`] so no
+        /// handle is ever reused as a second parent's child.
+        #[derive(Debug, Clone)]
+        enum ExprSpec {
+            Num(u64),
+            Var(u32),
+            Unary(UnaryOp, Box<Self>),
+            Binary(BinaryOp, Box<Self>, Box<Self>),
+            Cast(Box<Self>),
+            Call(Box<Self>, Vec<Self>),
+        }
+
+        fn expr_spec() -> impl Strategy<Value = ExprSpec> {
+            let leaf = prop_oneof![
+                any::<u64>().prop_map(ExprSpec::Num),
+                (0u32..4).prop_map(ExprSpec::Var),
+            ];
+            leaf.prop_recursive(4, 32, 4, |inner| {
+                prop_oneof![
+                    (
+                        prop::sample::select(UnaryOp::VARIANTS.to_vec()),
+                        inner.clone()
+                    )
+                        .prop_map(|(op, x)| ExprSpec::Unary(op, Box::new(x))),
+                    (
+                        prop::sample::select(BinaryOp::VARIANTS.to_vec()),
+                        inner.clone(),
+                        inner.clone(),
+                    )
+                        .prop_map(|(op, x, y)| ExprSpec::Binary(
+                            op,
+                            Box::new(x),
+                            Box::new(y)
+                        )),
+                    inner.clone().prop_map(|x| ExprSpec::Cast(Box::new(x))),
+                    (inner.clone(), prop::collection::vec(inner, 0..3))
+                        .prop_map(|(callee, args)| ExprSpec::Call(Box::new(callee), args)),
+                ]
+            })
+        }
+
+        /// A block of independently generated expression statements: enough of both arenas to
+        /// exercise statement- and expression-side navigation together.
+        fn stmt_spec() -> impl Strategy<Value = Vec<ExprSpec>> {
+            prop::collection::vec(expr_spec(), 1..6)
+        }
+
+        /// Allocates `spec` children-first, matching [`CtreeBuilder::finish`]'s own requirement.
+        fn build_expr(b: &mut CtreeBuilder, ty: TypeId, spec: &ExprSpec) -> ExpressionId {
+            match spec {
+                ExprSpec::Num(v) => b.num(ty, *v),
+                ExprSpec::Var(i) => b.var(ty, LocalId(*i)),
+                ExprSpec::Unary(op, x) => {
+                    let x = build_expr(b, ty, x);
+                    b.unary(ty, *op, x)
+                }
+                ExprSpec::Binary(op, x, y) => {
+                    let x = build_expr(b, ty, x);
+                    let y = build_expr(b, ty, y);
+                    b.binary(ty, *op, x, y)
+                }
+                ExprSpec::Cast(x) => {
+                    let x = build_expr(b, ty, x);
+                    b.cast(ty, x)
+                }
+                ExprSpec::Call(callee, args) => {
+                    let callee = build_expr(b, ty, callee);
+                    let args = args.iter().map(|a| build_expr(b, ty, a)).collect();
+                    b.call_expression(ty, callee, args)
+                }
+            }
+        }
+
+        fn build_tree(specs: &[ExprSpec]) -> Ctree {
+            let mut b = CtreeBuilder::new();
+            let ty = b.intern_type(int32());
+            let statements = specs
+                .iter()
+                .map(|spec| {
+                    let e = build_expr(&mut b, ty, spec);
+                    b.expression_statement(e)
+                })
+                .collect();
+            let block = b.block(statements);
+            b.finish(block)
+        }
+
+        proptest! {
+            /// Every child a node reports points back to that node as its parent. The parent
+            /// pass in `finish` is a separate, non-recursive walk from allocation, so a mismatch
+            /// here is a real wiring bug, not an artifact of the generated shape.
+            #[test]
+            fn parent_links_mirror_children(specs in stmt_spec()) {
+                let tree = build_tree(&specs);
+                let root = NodeRef::Statement(tree.root());
+                prop_assert_eq!(tree.parent(root), None);
+                for node in tree.descendants(root) {
+                    for child in tree.children(node) {
+                        prop_assert_eq!(
+                            tree.parent(child),
+                            Some(node),
+                            "child {:?} of {:?} does not point back",
+                            child,
+                            node
+                        );
+                    }
+                }
+            }
+
+            /// The push-based `children_for_each` visits exactly the set the `Vec`-collecting
+            /// `children` twin returns, in the same order, for every node in the tree.
+            #[test]
+            fn for_each_child_matches_children(specs in stmt_spec()) {
+                let tree = build_tree(&specs);
+                let root = NodeRef::Statement(tree.root());
+                for node in tree.descendants(root) {
+                    let mut via_callback = Vec::new();
+                    tree.children_for_each(node, |c| via_callback.push(c));
+                    prop_assert_eq!(via_callback, tree.children(node));
+                }
+            }
+
+            /// A pre-order walk from the root terminates having visited every allocated node
+            /// exactly once: no node is skipped, and none is revisited through a shared handle.
+            #[test]
+            fn descendants_visit_every_node_exactly_once(specs in stmt_spec()) {
+                let tree = build_tree(&specs);
+                let root = NodeRef::Statement(tree.root());
+                let visited: Vec<NodeRef> = tree.descendants(root).collect();
+                let total = tree.expressions().count() + tree.statements().count();
+                prop_assert_eq!(
+                    visited.len(),
+                    total,
+                    "traversal should terminate having seen every allocated node"
+                );
+
+                let mut seen = std::collections::HashSet::new();
+                for node in &visited {
+                    prop_assert!(seen.insert(*node), "node {:?} visited twice", node);
+                }
+            }
+
+            /// Every handle the arenas hand out indexes within that same arena's length.
+            #[test]
+            fn handles_stay_within_their_arena(specs in stmt_spec()) {
+                let tree = build_tree(&specs);
+                let n_expr = tree.expressions().count();
+                let n_stmt = tree.statements().count();
+                for (id, _) in tree.expressions() {
+                    prop_assert!(id.index() < n_expr);
+                }
+                for (id, _) in tree.statements() {
+                    prop_assert!(id.index() < n_stmt);
+                }
+            }
+        }
+    }
 }

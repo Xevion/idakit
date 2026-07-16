@@ -180,8 +180,46 @@ impl<T> IndexMut<Idx<T>> for Arena<T> {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
+
+    #[test]
+    fn empty_arena_has_no_elements() {
+        let arena: Arena<u8> = Arena::new();
+        assert!(arena.is_empty());
+        assert!(arena.len() == 0);
+        assert!(arena.iter().len() == 0);
+    }
+
+    #[rstest]
+    #[case::none(0)]
+    #[case::one(1)]
+    #[case::several(5)]
+    #[case::many(200)]
+    fn alloc_count_matches_len(#[case] count: u32) {
+        let mut arena = Arena::new();
+        for i in 0..count {
+            arena.alloc(i);
+        }
+        assert!(arena.len() == count as usize);
+        assert!(arena.is_empty() == (count == 0));
+        assert!(arena.iter().len() == count as usize);
+    }
+
+    #[test]
+    fn index_mut_writes_through() {
+        let mut arena = Arena::new();
+        let idx = arena.alloc(1);
+        arena[idx] = 42;
+        assert!(arena[idx] == 42);
+    }
+
+    #[test]
+    fn idx_debug_renders_the_raw_index() {
+        let idx: Idx<u8> = Idx::from_raw(7);
+        assert!(format!("{idx:?}") == "Idx(7)");
+    }
 
     #[test]
     fn alloc_returns_stable_handles() {
@@ -268,5 +306,29 @@ mod tests {
         let json = serde_json::to_string(&idx).unwrap();
         let round_tripped: Idx<*const ()> = serde_json::from_str(&json).unwrap();
         assert!(round_tripped == idx);
+    }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            #[test]
+            fn from_raw_index_roundtrips(raw in any::<u32>()) {
+                let idx: Idx<u8> = Idx::from_raw(raw);
+                prop_assert_eq!(idx.index(), raw as usize);
+            }
+
+            #[test]
+            fn alloc_handle_index_matches_position(values in prop::collection::vec(any::<i32>(), 0..64)) {
+                let mut arena = Arena::new();
+                let handles: Vec<_> = values.iter().map(|&v| arena.alloc(v)).collect();
+                for (position, handle) in handles.iter().enumerate() {
+                    prop_assert_eq!(handle.index(), position);
+                    prop_assert_eq!(arena[*handle], values[position]);
+                }
+            }
+        }
     }
 }

@@ -630,6 +630,7 @@ impl StatementKind {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
@@ -738,33 +739,36 @@ mod tests {
 
     /// `from_argloc` maps each location discriminant to its variant, reading only the fields that
     /// discriminant selects, and folds custom locations (7 or higher) into `Custom`.
-    #[test]
-    fn from_argloc_maps_every_atype() {
-        use LocalLocation::*;
-        assert!(LocalLocation::from_argloc(0, 0, 0, 0, vec![]) == Unallocated);
-        assert!(LocalLocation::from_argloc(1, 0, 0, -8, vec![]) == Stack(-8));
-        assert!(LocalLocation::from_argloc(3, 5, 0, 0, vec![]) == Register(5));
-        assert!(LocalLocation::from_argloc(4, 5, 6, 0, vec![]) == RegisterPair { low: 5, high: 6 });
-        assert!(
-            LocalLocation::from_argloc(5, 5, 0, 16, vec![])
-                == RegisterRelative { reg: 5, offset: 16 }
-        );
-        assert!(
-            LocalLocation::from_argloc(6, 0, 0, 0x1000, vec![])
-                == Static(Address::new_const(0x1000))
-        );
-        // Custom is 7 or higher.
-        assert!(LocalLocation::from_argloc(7, 0, 0, 0, vec![]) == Custom);
-        assert!(LocalLocation::from_argloc(42, 0, 0, 0, vec![]) == Custom);
+    #[rstest]
+    #[case::unallocated(0, 0, 0, 0, LocalLocation::Unallocated)]
+    #[case::stack(1, 0, 0, -8, LocalLocation::Stack(-8))]
+    #[case::register(3, 5, 0, 0, LocalLocation::Register(5))]
+    #[case::register_pair(4, 5, 6, 0, LocalLocation::RegisterPair { low: 5, high: 6 })]
+    #[case::register_relative(5, 5, 0, 16, LocalLocation::RegisterRelative { reg: 5, offset: 16 })]
+    #[case::static_(6, 0, 0, 0x1000, LocalLocation::Static(Address::new_const(0x1000)))]
+    #[case::custom_lower_bound(7, 0, 0, 0, LocalLocation::Custom)]
+    #[case::custom_above_lower_bound(42, 0, 0, 0, LocalLocation::Custom)]
+    fn from_argloc_maps_known_atypes(
+        #[case] atype: u32,
+        #[case] reg1: u32,
+        #[case] reg2: u32,
+        #[case] sval: i64,
+        #[case] expected: LocalLocation,
+    ) {
+        assert!(LocalLocation::from_argloc(atype, reg1, reg2, sval, vec![]) == expected);
+    }
 
-        // A scattered location carries its fragments verbatim.
+    /// A scattered location carries its fragments verbatim.
+    #[test]
+    fn from_argloc_scattered_carries_its_fragments() {
         let piece = LocationPiece {
-            location: Stack(16),
+            location: LocalLocation::Stack(16),
             offset: 0,
             size: 8,
         };
         assert!(
-            LocalLocation::from_argloc(2, 0, 0, 0, vec![piece.clone()]) == Scattered(vec![piece])
+            LocalLocation::from_argloc(2, 0, 0, 0, vec![piece.clone()])
+                == LocalLocation::Scattered(vec![piece])
         );
     }
 
@@ -916,5 +920,28 @@ mod tests {
         };
         let json = serde_json::to_string(&case).unwrap();
         assert!(serde_json::from_str::<Case>(&json).unwrap() == case);
+    }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            /// The `atype >= 7` boundary that folds every custom location into `Custom` holds
+            /// for any register/offset payload, not just the curated cases above.
+            #[test]
+            fn atype_at_or_above_seven_is_always_custom(
+                atype in 7u32..=u32::MAX,
+                reg1 in any::<u32>(),
+                reg2 in any::<u32>(),
+                sval in any::<i64>(),
+            ) {
+                prop_assert_eq!(
+                    LocalLocation::from_argloc(atype, reg1, reg2, sval, vec![]),
+                    LocalLocation::Custom
+                );
+            }
+        }
     }
 }

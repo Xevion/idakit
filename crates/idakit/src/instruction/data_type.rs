@@ -186,7 +186,25 @@ mod tests {
     #[test]
     fn try_from_rejects_unknown() {
         assert!(OperandDataType::try_from(19).is_err());
+        assert!(OperandDataType::try_from(20).is_err());
+        assert!(OperandDataType::try_from(100).is_err());
         assert!(OperandDataType::try_from(255).is_err());
+    }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // Across the full u8 domain: `try_from` accepts a byte iff it is one of the 19
+            // modelled discriminants, and rejects every other byte.
+            #[test]
+            fn try_from_matches_the_modelled_discriminant_set(byte: u8) {
+                let modelled = OperandDataType::VARIANTS.iter().any(|&v| u8::from(v) == byte);
+                prop_assert_eq!(OperandDataType::try_from(byte).is_ok(), modelled);
+            }
+        }
     }
 
     #[test]

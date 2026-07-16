@@ -134,6 +134,7 @@ impl std::fmt::Display for RegisterClass {
 mod tests {
     use assert2::assert;
     use idakit_sys as sys;
+    use rstest::rstest;
 
     use super::*;
 
@@ -147,7 +148,25 @@ mod tests {
     #[test]
     fn try_from_rejects_unknown() {
         assert!(RegisterClass::try_from(13).is_err());
+        assert!(RegisterClass::try_from(14).is_err());
+        assert!(RegisterClass::try_from(100).is_err());
         assert!(RegisterClass::try_from(255).is_err());
+    }
+
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            // Across the full u8 domain: `try_from` accepts a byte iff it is one of the 13
+            // modelled discriminants, and rejects every other byte.
+            #[test]
+            fn try_from_matches_the_modelled_discriminant_set(byte: u8) {
+                let modelled = RegisterClass::VARIANTS.iter().any(|&v| u8::from(v) == byte);
+                prop_assert_eq!(RegisterClass::try_from(byte).is_ok(), modelled);
+            }
+        }
     }
 
     // A prefix is exactly the regularly-spelled classes; GPR/segment/ip have none.
@@ -188,6 +207,17 @@ mod tests {
         assert!(RegisterClass::from_name("zmm31") == Some(RegisterClass::Zmm));
         assert!(RegisterClass::from_name("k7") == Some(RegisterClass::Mask));
         assert!(RegisterClass::from_name("st").is_none());
+    }
+
+    /// A prefix followed by a non-digit is not a class-prefixed name, even though it starts
+    /// with a registered prefix.
+    #[rstest]
+    #[case::prefix_then_letter("xmmx")]
+    #[case::prefix_then_letters("crab")]
+    #[case::bare_prefix_no_index("xmm")]
+    #[case::empty("")]
+    fn from_name_rejects_malformed_prefixed_names(#[case] name: &str) {
+        assert!(RegisterClass::from_name(name).is_none(), "{name}");
     }
 
     // The facade fills its class codes by position in this enum's declaration order, so a

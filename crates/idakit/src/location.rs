@@ -527,7 +527,7 @@ impl Drop for LocationMut<'_> {
 /// Ordered by breadth: a later write can only widen the pending eviction, never narrow it. Nothing
 /// can observe the cache between a write and the cursor's drop, since the cursor holds the database
 /// exclusively, so deferring is invisible apart from the coalescing.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum PendingInvalidation {
     /// No write needs eviction.
     None,
@@ -542,16 +542,20 @@ pub(crate) enum PendingInvalidation {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn location_identity_compares_by_address() {
+    #[rstest]
+    #[case::zero(0)]
+    #[case::small(0x1000)]
+    #[case::large(0xdead_beef)]
+    fn location_identity_compares_by_address(#[case] raw: u64) {
         let db = Database::new();
-        let a = Address::new_const(0x1000);
-        let b = Address::new_const(0x2000);
+        let a = Address::new_const(raw);
+        let other = Address::new_const(raw.wrapping_add(1).max(1));
         assert!(db.at(a) == db.at(a));
-        assert!(db.at(a) != db.at(b));
+        assert!(db.at(a) != db.at(other));
     }
 
     #[test]
@@ -566,5 +570,78 @@ mod tests {
         let mut db = Database::new();
         let cursor = db.at_mut(Address::new_const(0xdead_beef));
         assert!(format!("{cursor:?}") == "LocationMut { address: Address(0xdeadbeef), .. }");
+    }
+
+    /// `None < SelfOnly < Dependents`, so `.max()` always widens toward `Dependents`.
+    #[test]
+    fn pending_invalidation_orders_by_breadth() {
+        assert!(PendingInvalidation::None < PendingInvalidation::SelfOnly);
+        assert!(PendingInvalidation::SelfOnly < PendingInvalidation::Dependents);
+        assert!(
+            PendingInvalidation::None.max(PendingInvalidation::Dependents)
+                == PendingInvalidation::Dependents
+        );
+        assert!(
+            PendingInvalidation::Dependents.max(PendingInvalidation::None)
+                == PendingInvalidation::Dependents
+        );
+    }
+
+    /// Builds a cursor with `auto_invalidate: false`, so `Drop` never touches the (unopened)
+    /// database regardless of the pending state a test leaves behind.
+    fn cursor(db: &mut Database) -> LocationMut<'_> {
+        LocationMut {
+            db,
+            address: Address::new_const(0x1000),
+            auto_invalidate: false,
+            pending: PendingInvalidation::None,
+        }
+    }
+
+    /// A successful write only ever widens the queued eviction toward `Dependents`, never
+    /// narrows it back down.
+    #[test]
+    fn queued_ok_widens_but_never_narrows() {
+        let mut db = Database::new();
+        let mut c = cursor(&mut db);
+
+        let _: Result<()> = c.queued(Ok(()), PendingInvalidation::SelfOnly);
+        assert!(c.pending == PendingInvalidation::SelfOnly);
+
+        let _: Result<()> = c.queued(Ok(()), PendingInvalidation::Dependents);
+        assert!(c.pending == PendingInvalidation::Dependents);
+
+        // A later, narrower request does not walk the eviction back down.
+        let _: Result<()> = c.queued(Ok(()), PendingInvalidation::SelfOnly);
+        assert!(c.pending == PendingInvalidation::Dependents);
+    }
+
+    /// A failed write passes the error through untouched and queues no eviction.
+    #[test]
+    fn queued_err_leaves_pending_untouched() {
+        let mut db = Database::new();
+        let mut c = cursor(&mut db);
+        c.pending = PendingInvalidation::SelfOnly;
+
+        let out = c.queued(
+            Err::<(), _>(Error::InteriorNul { arg: "name" }),
+            PendingInvalidation::Dependents,
+        );
+
+        assert!(out == Err(Error::InteriorNul { arg: "name" }));
+        assert!(c.pending == PendingInvalidation::SelfOnly);
+    }
+
+    /// `queue_invalidation` alone applies the same widen-only rule as `queued`.
+    #[test]
+    fn queue_invalidation_widens_only() {
+        let mut db = Database::new();
+        let mut c = cursor(&mut db);
+
+        c.queue_invalidation(PendingInvalidation::Dependents);
+        assert!(c.pending == PendingInvalidation::Dependents);
+
+        c.queue_invalidation(PendingInvalidation::None);
+        assert!(c.pending == PendingInvalidation::Dependents);
     }
 }

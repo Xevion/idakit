@@ -1,9 +1,12 @@
 //! Applying and defining prototypes and struct types: the direct-decl path (`type_apply`,
-//! `type_define`), the built-recipe path (`type_build`, `type_function_build`), and their
-//! typed-failure counterparts (`type_build_failed`, plus the failure paths inside `type_apply`).
+//! `type_define`), the built-recipe path (`type_build`, `type_function_build`), their
+//! typed-failure counterparts (`type_build_failed`, plus the failure paths inside `type_apply`),
+//! and the declaration edge cases (empty aggregates, anonymous members, recursion, redefinition,
+//! rename collisions, and the identifier boundary).
 
 use assert2::assert;
 use idakit::prelude::*;
+use rstest::rstest;
 
 use crate::common::assert_type_write_err;
 
@@ -161,17 +164,13 @@ fn type_function_build() {
             .prototype_type()
             .expect("walk the built prototype")
             .expect("a prototype is set after the built apply");
-        let TypeShape::Function {
-            ret,
-            params,
-            varargs,
-        } = proto.shape()
-        else {
-            panic!(
-                "the built prototype should be a function, got {:?}",
-                proto.shape()
-            );
-        };
+        assert!(
+            let TypeShape::Function {
+                ret,
+                params,
+                varargs,
+            } = proto.shape()
+        );
         assert!(!*varargs, "the fixed prototype is not variadic");
         assert!(params.len() == 2, "two parameters, got {}", params.len());
         assert!(
@@ -246,5 +245,190 @@ fn type_named_arg_renders() {
             text.contains("myparam"),
             "the builder-supplied param name should render: {text:?}"
         );
+    });
+}
+
+/// A representative sweep of declaration shapes through `define`, each read back structurally: an
+/// array member and a plain typedef alias.
+#[rstest]
+#[case::array_member("struct idakit_pcase_arr { int items[4]; };", "idakit_pcase_arr")]
+#[case::typedef_alias("typedef unsigned int idakit_pcase_alias;", "idakit_pcase_alias")]
+fn type_define_decl_sweep(#[case] decl: &'static str, #[case] name: &'static str) {
+    crate::common::with_canonical_db(move |idb| {
+        idb.types_mut()
+            .define(decl)
+            .unwrap_or_else(|e| panic!("{decl:?} should define cleanly, got {e:?}"));
+        assert!(
+            idb.named_types().any(|t| t.name() == name),
+            "{name} should appear in named_types after defining {decl:?}"
+        );
+    });
+}
+
+/// A struct member with no name (`union { ... };` spliced directly into the parent, the C11/MSVC
+/// anonymous-member extension) reads back with an empty [`TypeMember::name`], as documented.
+#[test]
+fn type_define_anonymous_member() {
+    crate::common::with_canonical_db(|idb| {
+        idb.types_mut()
+            .define("struct idakit_pcase_anon { union { int i; float f; }; int tag; };")
+            .expect("define a struct with an anonymous union member");
+
+        let ty = idb
+            .type_named("idakit_pcase_anon")
+            .expect("resolve the struct");
+        assert!(let TypeShape::Struct { members, .. } = ty.shape());
+        let anon = members
+            .iter()
+            .find(|m| m.name.is_empty())
+            .expect("the anonymous union member should be present with an empty name");
+        assert!(let TypeShape::Union { members: inner, .. } = &ty.get(anon.ty).shape);
+        assert!(
+            inner.len() == 2,
+            "the anonymous union should keep its two fields, got {inner:?}"
+        );
+    });
+}
+
+/// An empty struct body (`{}`) may or may not be accepted by the declaration parser (C
+/// historically forbids it; several parsers extend it): whichever way this IDA build rules, the
+/// outcome is a clean success (zero members read back) or a clean `TypeDefineFailed`, never a
+/// panic.
+#[test]
+fn type_define_empty_struct() {
+    crate::common::with_canonical_db(|idb| {
+        match idb.types_mut().define("struct idakit_pcase_empty { };") {
+            Ok(()) => {
+                let ty = idb
+                    .type_named("idakit_pcase_empty")
+                    .expect("resolve the empty struct");
+                assert!(let TypeShape::Struct { members, .. } = ty.shape());
+                assert!(members.is_empty(), "an empty struct should have no members");
+                println!("type-define empty struct: accepted, size {:?}", ty.size());
+            }
+            Err(Error::TypeDefineFailed { reason, .. }) => {
+                println!("type-define empty struct: rejected, reason {reason:?}");
+            }
+            other => {
+                panic!("empty struct should define cleanly or TypeDefineFailed, got {other:?}");
+            }
+        }
+    });
+}
+
+/// A self-referential struct (`struct Node { struct Node *next; int value; }`) resolves with the
+/// recursive pointer closing back to the struct's own root [`TypeId`], the live-kernel
+/// counterpart of `TypeTable`'s hand-built `recursive_struct_uses_a_placeholder_back_reference`
+/// unit test.
+#[test]
+fn type_define_recursive_struct() {
+    crate::common::with_canonical_db(|idb| {
+        idb.types_mut()
+            .define("struct idakit_pcase_node { struct idakit_pcase_node *next; int value; };")
+            .expect("define a self-referential struct");
+
+        let node = idb
+            .type_named("idakit_pcase_node")
+            .expect("resolve the recursive struct");
+        assert!(let TypeShape::Struct { members, .. } = node.shape());
+        assert!(members.len() == 2, "next and value, got {}", members.len());
+        let next = members
+            .iter()
+            .find(|m| m.name == "next")
+            .expect("member next");
+        assert!(let TypeShape::Ptr(pointee) = &node.get(next.ty).shape);
+        assert!(
+            *pointee == node.root(),
+            "next should point back at the struct's own root type, got a different handle"
+        );
+    });
+}
+
+/// Redefining a name with a different body is tolerated, per `define`'s doc: the type library
+/// keeps the latest body, not the first.
+#[test]
+fn type_redefine_conflicting_body() {
+    crate::common::with_canonical_db(|idb| {
+        idb.types_mut()
+            .define("struct idakit_pcase_redef { int a; };")
+            .expect("define the first body");
+        idb.types_mut()
+            .define("struct idakit_pcase_redef { int a; int b; int c; };")
+            .expect("redefining with a different body should be tolerated");
+
+        let ty = idb
+            .type_named("idakit_pcase_redef")
+            .expect("resolve the redefined struct");
+        assert!(let TypeShape::Struct { members, .. } = ty.shape());
+        assert!(
+            members.len() == 3,
+            "the latest definition (3 members) should win, got {members:?}"
+        );
+    });
+}
+
+/// Renaming a type onto a name already taken by another type is a typed `DupName` rejection, the
+/// til-level counterpart of the member/constant `DupName` cases in `type_member`/`type_enum`, and
+/// leaves neither name moved.
+#[test]
+fn type_rename_collision() {
+    crate::common::with_canonical_db(|idb| {
+        idb.types_mut()
+            .define("struct idakit_pcase_a { int x; };")
+            .expect("define the first type");
+        idb.types_mut()
+            .define("struct idakit_pcase_b { int y; };")
+            .expect("define the second type");
+
+        let collided = idb.types_mut().rename("idakit_pcase_a", "idakit_pcase_b");
+        assert_type_write_err!(
+            collided,
+            TypeWriteError::Rejected {
+                code: TypeEditCode::DupName,
+                ..
+            }
+        );
+        assert!(idb.named_types().any(|t| t.name() == "idakit_pcase_a"));
+        assert!(idb.named_types().any(|t| t.name() == "idakit_pcase_b"));
+    });
+}
+
+/// A sweep of syntactically malformed declarations through `set_type`, each a clean `ParseFailed`
+/// rather than a panic: an unterminated struct body and a dangling function-declarator paren.
+#[rstest]
+#[case::unterminated_struct("struct { int x;")]
+#[case::dangling_paren("int (")]
+fn type_apply_rejects_malformed_syntax(#[case] decl: &'static str) {
+    crate::common::with_canonical_db(move |idb| {
+        let address = idb.functions().next().expect("a function").address();
+        let r = idb.at_mut(address).set_type(expr::decl(decl));
+        assert_type_write_err!(r, TypeWriteError::ParseFailed { .. });
+    });
+}
+
+/// The identifier boundary: a tag starting with a digit is not a valid C identifier and the
+/// declaration parser rejects it (`TypeDefineFailed`), while a leading underscore or mixed-case
+/// digits are ordinary valid identifiers that define cleanly.
+#[rstest]
+#[case::leading_digit("9bad", false)]
+#[case::leading_underscore("_idakit_pcase_leading", true)]
+#[case::mixed_case_digits("IdaKit_Pcase_42", true)]
+fn type_define_name_boundary(#[case] name: &'static str, #[case] should_succeed: bool) {
+    crate::common::with_canonical_db(move |idb| {
+        let decl = format!("struct {name} {{ int x; }};");
+        match (idb.types_mut().define(&decl), should_succeed) {
+            (Ok(()), true) => {
+                assert!(idb.named_types().any(|t| t.name() == name));
+            }
+            (Err(Error::TypeDefineFailed { .. }), false) => {}
+            (result, expected) => panic!(
+                "defining {decl:?} should {}, got {result:?}",
+                if expected {
+                    "succeed"
+                } else {
+                    "fail with TypeDefineFailed"
+                }
+            ),
+        }
     });
 }

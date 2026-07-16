@@ -55,6 +55,7 @@ pub enum TypeApplyCode {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
@@ -65,18 +66,32 @@ mod tests {
         for &code in SigWriteCode::VARIANTS {
             assert!(SigWriteCode::try_from(i32::from(code)) == Ok(code));
         }
-        assert!(SigWriteCode::try_from(5).is_err());
+    }
+
+    /// A code past the last modelled `SigWriteCode` variant is rejected, not absorbed.
+    #[rstest]
+    #[case::just_past_the_set(5)]
+    #[case::far_past_the_set(100)]
+    #[case::negative(-1)]
+    #[case::i32_min(i32::MIN)]
+    #[case::i32_max(i32::MAX)]
+    fn sig_write_code_rejects_values_outside_the_set(#[case] raw: i32) {
+        assert!(SigWriteCode::try_from(raw).is_err());
     }
 
     /// Each variant's discriminant matches the generated `crate::SIG_*` const, a real drift check
     /// between the hand-written enum and the single-sourced facade value.
-    #[test]
-    fn sig_write_code_pins_the_generated_facade_values() {
-        assert!(i32::from(SigWriteCode::Ok) == crate::SIG_OK);
-        assert!(i32::from(SigWriteCode::NoPrototype) == crate::SIG_NO_PROTOTYPE);
-        assert!(i32::from(SigWriteCode::ArgRange) == crate::SIG_ARG_RANGE);
-        assert!(i32::from(SigWriteCode::Build) == crate::SIG_BUILD);
-        assert!(i32::from(SigWriteCode::Apply) == crate::SIG_APPLY);
+    #[rstest]
+    #[case::ok(SigWriteCode::Ok, crate::SIG_OK)]
+    #[case::no_prototype(SigWriteCode::NoPrototype, crate::SIG_NO_PROTOTYPE)]
+    #[case::arg_range(SigWriteCode::ArgRange, crate::SIG_ARG_RANGE)]
+    #[case::build(SigWriteCode::Build, crate::SIG_BUILD)]
+    #[case::apply(SigWriteCode::Apply, crate::SIG_APPLY)]
+    fn sig_write_code_pins_the_generated_facade_values(
+        #[case] code: SigWriteCode,
+        #[case] raw: i32,
+    ) {
+        assert!(i32::from(code) == raw);
     }
 
     /// Every `TypeApplyCode` variant round-trips its raw value.
@@ -85,14 +100,28 @@ mod tests {
         for &code in TypeApplyCode::VARIANTS {
             assert!(TypeApplyCode::try_from(i32::from(code)) == Ok(code));
         }
-        assert!(TypeApplyCode::try_from(3).is_err());
+    }
+
+    /// A code past the last modelled `TypeApplyCode` variant is rejected, not absorbed.
+    #[rstest]
+    #[case::just_past_the_set(3)]
+    #[case::far_past_the_set(100)]
+    #[case::negative(-1)]
+    #[case::i32_min(i32::MIN)]
+    #[case::i32_max(i32::MAX)]
+    fn type_apply_code_rejects_values_outside_the_set(#[case] raw: i32) {
+        assert!(TypeApplyCode::try_from(raw).is_err());
     }
 
     /// Each variant's discriminant matches the generated `crate::TYPE_*` const.
-    #[test]
-    fn type_apply_code_pins_the_generated_facade_values() {
-        assert!(i32::from(TypeApplyCode::Ok) == crate::TYPE_OK);
-        assert!(i32::from(TypeApplyCode::ErrInput) == crate::TYPE_ERR_INPUT);
-        assert!(i32::from(TypeApplyCode::ErrApply) == crate::TYPE_ERR_APPLY);
+    #[rstest]
+    #[case::ok(TypeApplyCode::Ok, crate::TYPE_OK)]
+    #[case::err_input(TypeApplyCode::ErrInput, crate::TYPE_ERR_INPUT)]
+    #[case::err_apply(TypeApplyCode::ErrApply, crate::TYPE_ERR_APPLY)]
+    fn type_apply_code_pins_the_generated_facade_values(
+        #[case] code: TypeApplyCode,
+        #[case] raw: i32,
+    ) {
+        assert!(i32::from(code) == raw);
     }
 }
