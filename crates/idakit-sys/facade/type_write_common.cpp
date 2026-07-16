@@ -216,6 +216,10 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
       uint64_t nparams = reader.uint_le(4); // param count is a 4-byte field
       uint8_t varargs = reader.u8();
       uint64_t cc = reader.uint_le(2); // calling-convention code is a 2-byte field
+      // Each param entry costs at least its own 4-byte length prefix, so reject a count the rest
+      // of the buffer cannot hold before allocating on it.
+      if (!reader.ok || nparams > (reader.len - reader.pos) / 4)
+        return TYPE_ERR_INPUT;
       std::vector<std::string> names(static_cast<size_t>(nparams));
       for (uint64_t i = 0; i < nparams && reader.ok; i++)
         reader.str(names[static_cast<size_t>(i)]);

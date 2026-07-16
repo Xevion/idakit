@@ -38,7 +38,9 @@ rust::String file_type_name() {
   size_t n = get_file_type_name(buf, sizeof(buf));
   if (n == 0)
     throw std::runtime_error("no file type name");
-  return to_rust_string(buf, n);
+  // "size of answer" is IDA's phrasing for the full source length, not the copied count.
+  size_t len = n < sizeof(buf) ? n : sizeof(buf);
+  return to_rust_string(buf, len);
 }
 
 // Full path to the original input file; throws when the database has none recorded.
@@ -53,11 +55,13 @@ rust::String input_path() {
 
 // Base filename (no directory) of the input file; throws when the database has none recorded.
 rust::String root_filename() {
+  // get_root_filename's header never promises the count is what it stored, so clamp it.
   char buf[QMAXPATH];
   ssize_t n = get_root_filename(buf, sizeof(buf));
   if (n <= 0)
     throw std::runtime_error("no root filename");
-  return to_rust_string(buf, static_cast<size_t>(n));
+  size_t len = static_cast<size_t>(n) < sizeof(buf) ? static_cast<size_t>(n) : sizeof(buf);
+  return to_rust_string(buf, len);
 }
 
 } // namespace gen
