@@ -19,6 +19,7 @@ use super::{
     SinkAdapter, TypeBuilder, TypeId, TypeMember, TypeShape, TypeSink, TypeTable, TypeValue, tid,
 };
 use crate::Database;
+use crate::address::Address;
 use crate::decompiler::ctree::ExtractError;
 use crate::error::{Error, Result};
 
@@ -40,6 +41,38 @@ impl Database {
             // A malformed local type is near-unreachable and address-less; 0 stands in.
             Err(source) => Err(Error::Extract { address: 0, source }),
         }
+    }
+
+    /// Reads and resolves the `tinfo_t` attached to `address` into an owned [`Type`].
+    ///
+    /// Not restricted to a function entry: `get_tinfo` reports whatever type IDA has attached to
+    /// `address`, a function's prototype or a global variable's declared type alike. `Ok(None)` if
+    /// the kernel has no type info there.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// use idakit::types::TypeShape;
+    ///
+    /// let entry = db.functions().next().unwrap().address();
+    /// if let Some(ty) = db.type_at(entry)? {
+    ///     assert!(matches!(ty.shape(), TypeShape::Function { .. }));
+    /// }
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// [`Error::Extract`] if the walked type is malformed.
+    #[doc(alias("get_tinfo"))]
+    pub fn type_at(&self, address: Address) -> Result<Option<Type>> {
+        // The kernel is claimed for `&self`; get_tinfo(address) is address-generic, not
+        // function-specific, so this reuses the same driver `Function::prototype_type` does.
+        walk_type(|sink| sys::walk_func_type(address.get(), sink)).map_err(|source| {
+            Error::Extract {
+                address: address.get(),
+                source,
+            }
+        })
     }
 }
 

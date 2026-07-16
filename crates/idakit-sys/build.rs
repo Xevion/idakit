@@ -280,6 +280,7 @@ fn emit_rerun_directives() {
     println!("cargo:rerun-if-changed=facade/strings.cpp");
     println!("cargo:rerun-if-changed=facade/cfg.cpp");
     println!("cargo:rerun-if-changed=facade/reference.cpp");
+    println!("cargo:rerun-if-changed=facade/segment.cpp");
     println!("cargo:rerun-if-changed=facade/bytes.cpp");
     println!("cargo:rerun-if-changed=facade/instruction.cpp");
     println!("cargo:rerun-if-changed=facade/hexrays.cpp");

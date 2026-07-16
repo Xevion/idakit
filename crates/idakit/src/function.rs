@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Database;
 use crate::address::Address;
+use crate::bitness::Bitness;
 use crate::decompiler::DecompiledFunction;
 use crate::decompiler::ctree::Ctree;
 use crate::error::{Error, Result};
@@ -179,6 +180,84 @@ impl<'db> Function<'db> {
     #[must_use]
     pub fn chunks(&self) -> FunctionChunks {
         FunctionChunks::new(self.address, self.db)
+    }
+
+    /// Total size in bytes across every chunk (entry chunk plus tails).
+    ///
+    /// A pure sum over [`chunks`](Self::chunks)' `[start, end)` spans, matching what
+    /// `calc_func_size` computes from the same fragments. Equal to [`size`](Self::size) for a
+    /// contiguous function; larger when tail chunks lie outside the entry chunk's span.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let f = db.functions().next().unwrap();
+    /// assert!(f.total_size() >= f.size());
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[must_use]
+    #[doc(alias("calc_func_size"))]
+    pub fn total_size(&self) -> u64 {
+        self.chunks()
+            .map(|chunk| chunk.start.distance_to(chunk.end))
+            .sum()
+    }
+
+    /// The function-level comment, or `None` if that channel carries none.
+    ///
+    /// Set with `set_func_cmt`, and works across every chunk; distinct from the item-level
+    /// [`Database::comment`](crate::Database::comment), which reads a single address's comment.
+    /// `repeatable` selects the repeatable channel (propagated to call sites) over the regular
+    /// one.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let f = db.functions().next().unwrap();
+    /// let _: Option<String> = f.comment(false);
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[must_use]
+    #[doc(alias("get_func_cmt"))]
+    pub fn comment(&self, repeatable: bool) -> Option<String> {
+        self.db.func_cmt(self.address, repeatable)
+    }
+
+    /// Whether this function is known to return.
+    ///
+    /// Richer than [`is_noreturn`](Self::is_noreturn): consults call-site analysis (`is_noret()`)
+    /// in addition to the `FUNC_NORET` flag, which matters for imported functions that have only
+    /// a pointer, not a body, to analyze.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let f = db.functions().next().unwrap();
+    /// if !f.is_noreturn() {
+    ///     assert!(f.does_return());
+    /// }
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[must_use]
+    #[doc(alias("func_does_return"))]
+    pub fn does_return(&self) -> bool {
+        self.db.func_does_return(self.address)
+    }
+
+    /// This function's addressing width, or `None` if the entry no longer resolves to a function
+    /// or reports an unrecognized width.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let f = db.functions().next().unwrap();
+    /// assert!(f.bitness().is_some());
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[must_use]
+    #[doc(alias("get_func_bitness"))]
+    pub fn bitness(&self) -> Option<Bitness> {
+        Bitness::try_from_bits(self.db.func_bitness(self.address).max(0) as u8)
     }
 
     /// Lazily iterates this function's instructions, in address order within each chunk,

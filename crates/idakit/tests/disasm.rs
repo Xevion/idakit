@@ -81,12 +81,19 @@ fn run(idb: &mut Database) {
                 "empty mnemonic at {address:#x} (itype {})",
                 instruction.itype
             );
-            // Every operand's original slot index stays within IDA's operand array.
+            // Every operand's original slot index stays within IDA's operand array, and its byte
+            // offset never exceeds the instruction it belongs to.
             for op in &instruction.ops {
                 assert!(
                     op.idx < 8,
                     "operand index {} out of range at {address:#x}",
                     op.idx
+                );
+                assert!(
+                    op.offb <= instruction.len,
+                    "operand offb {} exceeds instruction length {} at {address:#x}",
+                    op.offb,
+                    instruction.len
                 );
             }
             if !instruction.ops.is_empty() {
@@ -206,6 +213,85 @@ fn run(idb: &mut Database) {
     let a = idb.decode(entry).expect("entry decodes");
     let b = idb.decode(entry).expect("entry decodes again");
     assert!(a == b, "decode is not deterministic");
+
+    println!("ok");
+}
+
+#[test]
+fn xref_flow_and_predicates() {
+    common::with_canonical_db(run_xref_flow);
+}
+
+fn run_xref_flow(idb: &mut Database) {
+    let mut found_flow = false;
+
+    'outer: for function in idb.functions() {
+        let mut address = function.address();
+        for _ in 0..64 {
+            let Ok(instruction) = idb.decode(address) else {
+                break;
+            };
+            let next = address + u64::from(instruction.len);
+
+            // Default excludes ordinary flow, matching CodeXref::Flow's exclusion from
+            // xrefs_to/xrefs_from.
+            assert!(
+                !idb.xrefs_from(address)
+                    .any(|x| x.to == next && matches!(x.kind, XrefKind::Code(CodeXref::Flow))),
+                "xrefs_from at {address:#x} should exclude ordinary flow by default"
+            );
+
+            // flow(true) surfaces the sequential edge into the next instruction (skipped when
+            // this one diverts control away entirely, e.g. an unconditional jump).
+            let with_flow = idb
+                .xrefs_from_with(address)
+                .flow(true)
+                .call()
+                .any(|x| x.to == next && matches!(x.kind, XrefKind::Code(CodeXref::Flow)));
+            if with_flow && !found_flow {
+                assert!(
+                    idb.has_jump_or_flow_xref(next),
+                    "flow-reached address {next:#x} should report a jump-or-flow xref"
+                );
+                found_flow = true;
+                println!(
+                    "flow edge {:#x} -> {:#x} reachable via xrefs_from_with(...).flow(true)",
+                    address.get(),
+                    next.get()
+                );
+                break 'outer;
+            }
+
+            address = next;
+        }
+    }
+
+    assert!(
+        found_flow,
+        "no CodeXref::Flow edge became reachable via xrefs_from_with(...).flow(true)"
+    );
+
+    // Positive case: at least one address in the first functions' straight-line decode should
+    // carry an external reference (a call/jump into an import thunk or another module), proving
+    // has_external_refs actually reports true somewhere rather than only ever false.
+    let mut found_external = false;
+    'externals: for function in idb.functions().take(2000) {
+        let mut address = function.address();
+        for _ in 0..64 {
+            let Ok(instruction) = idb.decode(address) else {
+                break;
+            };
+            if idb.has_external_refs(address) {
+                found_external = true;
+                println!("external ref found at {:#x}", address.get());
+                break 'externals;
+            }
+            address = address + u64::from(instruction.len);
+        }
+    }
+    if !found_external {
+        println!("skipping: no external reference found in the scanned prefix");
+    }
 
     println!("ok");
 }

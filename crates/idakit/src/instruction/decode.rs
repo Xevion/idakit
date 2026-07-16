@@ -74,6 +74,7 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
         })?;
     Ok(Operand {
         idx: o.idx,
+        offb: o.offb,
         kind,
         data_type,
         access: {
@@ -153,6 +154,7 @@ mod tests {
         sys::OperandData {
             kind: 0,
             idx: 0,
+            offb: 0,
             data_type: 0,
             access: 0,
             scale: 0,
@@ -187,6 +189,7 @@ mod tests {
     fn register_operand_carries_name_and_class() {
         let mut op = blank_op();
         op.kind = sys::OP_REG;
+        op.offb = 2;
         op.data_type = u8::from(OperandDataType::Qword);
         op.access = 0b11; // read + written
         op.reg = gpr(0, 8, "rax");
@@ -196,6 +199,7 @@ mod tests {
         assert!(r.name.as_ref() == "rax");
         assert!(r.class == RegisterClass::GeneralPurpose);
         assert!(r.width == 8);
+        assert!(mapped.offb == 2);
         assert!(mapped.data_type == OperandDataType::Qword);
         assert!(
             mapped.access

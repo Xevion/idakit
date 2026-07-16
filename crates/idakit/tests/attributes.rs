@@ -73,5 +73,56 @@ fn run(idb: &mut Database) {
         entry_seg.name()
     );
 
+    // segment_at resolves the entry function's address back to the same segment.
+    let looked_up = idb
+        .segment_at(address)
+        .expect("segment_at resolves the entry function's address");
+    assert!(
+        looked_up.index() == entry_seg.index(),
+        "segment_at should resolve to the entry segment"
+    );
+
+    // A segment's `type`/`align`/`comb` codes are loader-dependent, so no single segment is
+    // guaranteed to report one; a real database is expected to have at least one that does.
+    assert!(
+        segs.iter().any(|s| s.kind().is_some()),
+        "at least one segment should report a recognized type code"
+    );
+    assert!(
+        segs.iter().any(|s| s.align().is_some()),
+        "at least one segment should report a recognized alignment code"
+    );
+    assert!(
+        segs.iter().any(|s| s.comb().is_some()),
+        "at least one segment should report a recognized combination code"
+    );
+
+    // Every `is_*` predicate is exactly its corresponding bit in `flags()`.
+    for seg in &segs {
+        let flags = seg.flags();
+        assert!(seg.is_visible() != flags.contains(SegFlags::HIDDEN));
+        assert!(seg.is_debugger() == flags.contains(SegFlags::DEBUG));
+        assert!(seg.is_loader() == flags.contains(SegFlags::LOADER));
+        assert!(seg.is_type_hidden() == flags.contains(SegFlags::HIDETYPE));
+        assert!(seg.is_header() == flags.contains(SegFlags::HEADER));
+    }
+
+    let _ = exec.comment(false);
+    let _ = exec.comment(true);
+    println!(
+        "exec segment scalars: sel={:#x} type={:?} color={:?} align={:?} comb={:?} \
+         visible={} debugger={} loader={} type_hidden={} header={}",
+        exec.sel(),
+        exec.kind(),
+        exec.color(),
+        exec.align(),
+        exec.comb(),
+        exec.is_visible(),
+        exec.is_debugger(),
+        exec.is_loader(),
+        exec.is_type_hidden(),
+        exec.is_header(),
+    );
+
     println!("attributes OK: function sizes/flags, segment perms/bitness/class verified");
 }

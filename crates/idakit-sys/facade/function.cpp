@@ -1,7 +1,7 @@
 // Hand-written Custom bodies for the generated function domain (namespace gen): scalar lookup
-// accessors over get_func/getn_func returning BADADDR (or 0) when there is no function, plus the
-// name as a rust::String (throws, a Rust Err, when unnamed). func_qty is templated
-// (gen_function_bodies.cc), not here.
+// accessors over get_func/getn_func returning BADADDR (or 0) when there is no function, the name
+// and comment as rust::String (throw, a Rust Err, when absent), and the function's bitness.
+// func_qty and func_does_return are templated (gen_function_bodies.cc), not here.
 
 #include <ida.hpp>
 #include <pro.h>
@@ -57,6 +57,26 @@ rust::String func_name(uint64_t addr) {
   if (get_func_name(&out, static_cast<ea_t>(addr)) <= 0)
     throw std::runtime_error("no function name at address");
   return to_rust_string(out);
+}
+
+// The function's comment at addr (repeatable or regular); throws when addr is not a function or
+// that channel carries no comment.
+rust::String func_cmt(uint64_t addr, bool repeatable) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  if (func == nullptr)
+    throw std::runtime_error("no function at address");
+  qstring out;
+  if (get_func_cmt(&out, func, repeatable) <= 0)
+    throw std::runtime_error("no function comment");
+  return to_rust_string(out);
+}
+
+// The function's addressing width in bits at addr: 16, 32, or 64, or 0 when addr is not a
+// function. Returns the width (get_func_bits), not the raw 0/1/2 bitness code, so the Rust side's
+// width-based Bitness conversion applies uniformly across every bitness accessor.
+int32_t func_bitness(uint64_t addr) {
+  func_t *func = get_func(static_cast<ea_t>(addr));
+  return func != nullptr ? static_cast<int32_t>(get_func_bits(func)) : 0;
 }
 
 } // namespace gen

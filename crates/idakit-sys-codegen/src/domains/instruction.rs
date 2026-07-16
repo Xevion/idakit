@@ -30,6 +30,8 @@ pub const INSTRUCTION: Domain = Domain {
             fields: fields! {
                 kind: U8 = "Semantic kind (0 reg, 1 mem, 2 imm, 3 near, 4 far).";
                 idx: U8 = "Original operand slot index (feature bits are keyed by it).";
+                offb: U8 = "Raw `op_t::offb`: the operand's byte offset within the encoded \
+                            instruction.";
                 data_type: U8 = "Raw `op_dtype_t`.";
                 access: U8 = "Access bits: bit0 read, bit1 written.";
                 scale: U8 = "Memory index scale multiplier (1/2/4/8).";

@@ -18,6 +18,8 @@ pub const CHECKS: &[(&str, Check)] = &[
     ("decompile", decompile),
     ("types", types),
     ("argloc", argloc),
+    ("segment_attrs", segment_attrs),
+    ("func_attrs", func_attrs),
 ];
 
 /// The database has functions and segments, the first function is named, and its entry bytes
@@ -244,6 +246,21 @@ pub fn types(idb: &Database) -> String {
         };
         typed += 1;
 
+        // Database::type_at(f.address()) reads the same tinfo_t as prototype_type, just keyed by
+        // address instead of routed through the Function view; the two must agree.
+        match idb.type_at(f.address()) {
+            Ok(Some(via_address)) => assert!(
+                via_address.key() == image.key(),
+                "type_at({:#x}) disagrees with prototype_type",
+                f.address()
+            ),
+            Ok(None) => panic!(
+                "type_at({:#x}) found nothing, but prototype_type resolved one",
+                f.address()
+            ),
+            Err(e) => panic!("type_at({:#x}) failed unexpectedly: {e}", f.address()),
+        }
+
         if !checked_proto {
             let TypeShape::Function { ret, params, .. } = image.shape() else {
                 panic!("prototype root at {:#x} is not a Function", f.address());
@@ -340,6 +357,106 @@ pub fn argloc(idb: &Database) -> String {
         "{decompiled} fns, {lvars} lvars | reg={} pair={} stack={} rrel={} static={} scatter={} none={}",
         n[0], n[1], n[2], n[3], n[4], n[5], n[7]
     )
+}
+
+/// Every segment's flag-derived predicates agree with the flags they mirror, and the newer
+/// scalar accessors (`kind`, `align`, `comb`, `sel`, `color`, `comment`) resolve without
+/// panicking. A database with no segments skips cleanly rather than failing.
+pub fn segment_attrs(idb: &Database) -> String {
+    let mut checked = 0usize;
+    let mut typed = 0usize;
+    let mut aligned = 0usize;
+    let mut combined = 0usize;
+
+    for seg in idb.segments() {
+        checked += 1;
+        let flags = seg.flags();
+        assert!(
+            seg.is_visible() != flags.contains(SegFlags::HIDDEN),
+            "segment {} is_visible disagrees with the HIDDEN flag",
+            seg.index()
+        );
+        assert!(
+            seg.is_debugger() == flags.contains(SegFlags::DEBUG),
+            "segment {} is_debugger disagrees with the DEBUG flag",
+            seg.index()
+        );
+        assert!(
+            seg.is_loader() == flags.contains(SegFlags::LOADER),
+            "segment {} is_loader disagrees with the LOADER flag",
+            seg.index()
+        );
+        assert!(
+            seg.is_type_hidden() == flags.contains(SegFlags::HIDETYPE),
+            "segment {} is_type_hidden disagrees with the HIDETYPE flag",
+            seg.index()
+        );
+        assert!(
+            seg.is_header() == flags.contains(SegFlags::HEADER),
+            "segment {} is_header disagrees with the HEADER flag",
+            seg.index()
+        );
+
+        if seg.kind().is_some() {
+            typed += 1;
+        }
+        if seg.align().is_some() {
+            aligned += 1;
+        }
+        if seg.comb().is_some() {
+            combined += 1;
+        }
+        // Neither accessor has an independent oracle here; calling them without panicking is
+        // the invariant.
+        let _ = seg.sel();
+        let _ = seg.color();
+        let _ = seg.comment(false);
+        let _ = seg.comment(true);
+    }
+
+    if checked == 0 {
+        return "no segments".to_string();
+    }
+    format!("{checked} segs, {typed} typed, {aligned} aligned, {combined} combined")
+}
+
+/// A bounded sample of functions reports a bitness, and every accessor new to this pass resolves
+/// without panicking. `total_size` (summed across chunks) never undershoots `size` (the entry
+/// chunk alone), since the entry chunk is one of the chunks being summed.
+pub fn func_attrs(idb: &Database) -> String {
+    const SAMPLE: usize = 200;
+
+    let total = idb.functions().count();
+    let mut checked = 0usize;
+    let mut with_bitness = 0usize;
+
+    for f in idb.functions().take(SAMPLE) {
+        checked += 1;
+        assert!(
+            f.bitness().is_some(),
+            "function {:#x} reports no bitness",
+            f.address().get()
+        );
+        with_bitness += 1;
+        assert!(
+            f.total_size() >= f.size(),
+            "function {:#x} total_size {} is smaller than size {}",
+            f.address().get(),
+            f.total_size(),
+            f.size()
+        );
+        let _ = f.does_return();
+        let _ = f.comment(false);
+        let _ = f.comment(true);
+    }
+
+    assert!(checked > 0, "no functions");
+
+    if total > SAMPLE {
+        format!("{checked}/{total} funcs sampled (capped), {with_bitness} with bitness")
+    } else {
+        format!("{checked} funcs, {with_bitness} with bitness")
+    }
 }
 
 /// Strict decode over a bounded prefix of real code: every code head decodes with no silent

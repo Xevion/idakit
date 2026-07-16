@@ -25,5 +25,11 @@ pub const FUNCTION: Domain = Domain {
             func_chunk_qty(ea: U64) -> I32;
         "Name of the function at `ea`; `Err` when it has none."
             func_name(ea: U64) -> ResultString;
+        "Comment of the function at `ea` (repeatable if `repeatable`); `Err` when there is none."
+            func_cmt(ea: U64, repeatable: Bool) -> ResultString;
+        "Whether the function at `callee` is known to return (`func_does_return`)."
+            func_does_return(callee: U64) -> Bool = scalar("::func_does_return(static_cast<ea_t>(callee))");
+        "Addressing width in bits of the function at `ea`: 16, 32, or 64, or 0 when not a function."
+            func_bitness(ea: U64) -> I32;
     },
 };

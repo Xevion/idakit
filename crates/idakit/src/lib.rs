@@ -205,13 +205,15 @@ pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExi
 pub use crate::import::{Import, Imports};
 pub use crate::location::{Location, LocationMut};
 pub use crate::meta::DatabaseInfo;
-pub use crate::name::{Name, Names};
+pub use crate::name::{GnFlags, Name, Names};
 pub use crate::netnode::{
     Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups, Tag, TaggedNetnode,
     TaggedNetnodeMut,
 };
 pub use crate::search::{Matches, Pattern};
-pub use crate::segment::{Segment, SegmentClass, Segments};
+pub use crate::segment::{
+    SegFlags, Segment, SegmentAlign, SegmentClass, SegmentComb, SegmentType, Segments,
+};
 pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
 pub use crate::strings::{StringLiteral, Strings};
 pub use crate::xref::{CodeXref, DataXref, Xref, XrefKind, XrefOrigin, Xrefs};
@@ -239,13 +241,15 @@ pub mod prelude {
     pub use crate::kernel::{Ida, IdaConfig, IdaConfigBuilder};
     pub use crate::location::{Location, LocationMut};
     pub use crate::meta::DatabaseInfo;
-    pub use crate::name::{Name, Names};
+    pub use crate::name::{GnFlags, Name, Names};
     pub use crate::netnode::{
         Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups, Tag,
         TaggedNetnode, TaggedNetnodeMut,
     };
     pub use crate::search::{Matches, Pattern};
-    pub use crate::segment::{Segment, SegmentClass, Segments};
+    pub use crate::segment::{
+        SegFlags, Segment, SegmentAlign, SegmentClass, SegmentComb, SegmentType, Segments,
+    };
     pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
     pub use crate::strings::{StringLiteral, Strings};
     pub use crate::types::diff::{

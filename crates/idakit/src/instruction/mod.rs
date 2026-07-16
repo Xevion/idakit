@@ -208,6 +208,8 @@ pub struct Operand {
     /// [`ops`](Instruction::ops), so a slot's position in that vector need not equal this; anything
     /// keyed by IDA's per-operand slots correlates through `idx`.
     pub idx: u8,
+    /// The operand's byte offset within the encoded instruction.
+    pub offb: u8,
     /// What the operand refers to.
     pub kind: OperandKind,
     /// The operand's value type.
@@ -334,6 +336,7 @@ mod tests {
     fn op(kind: OperandKind) -> Operand {
         Operand {
             idx: 0,
+            offb: 0,
             kind,
             data_type: OperandDataType::Qword,
             access: Access::default(),

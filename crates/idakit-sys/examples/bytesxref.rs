@@ -13,7 +13,7 @@ fn func_label(address: Address) -> String {
 
 /// Every reference targeting `address`, as `(from, type, iscode)`, from the owned xref snapshot.
 fn references_to(address: Address) -> Vec<(Address, i32, bool)> {
-    xrefs_build(address, true)
+    xrefs_build(address, true, false)
         .into_iter()
         .map(|r| (r.from, r.type_, r.iscode))
         .collect()

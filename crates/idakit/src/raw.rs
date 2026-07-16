@@ -174,16 +174,33 @@ impl Database {
         fn nlist_size(&self) -> usize = sys::nlist_size();
         fn nlist_ea(&self, idx: usize) -> sys::Address = sys::nlist_ea(idx);
         fn nlist_name(&self, idx: usize) -> Option<String> = sys::nlist_name(idx).ok();
+        fn get_ea_name_flags(&self, address: Address, flags: i32) -> Option<String>
+            = sys::get_ea_name_flags(address.get(), flags).ok();
+        fn is_public_name_ea(&self, address: Address) -> bool = sys::is_public_name(address.get());
+        fn is_weak_name_ea(&self, address: Address) -> bool = sys::is_weak_name(address.get());
     }
 
     /// Every cross-reference edge at `address`, as an owned snapshot.
     ///
-    /// `is_to` selects xrefs targeting `address` vs originating at it. The [`Xrefs`] iterator owns
-    /// the returned `Vec` and needs no kernel access to walk it.
+    /// `is_to` selects xrefs targeting `address` vs originating at it; `flow` includes ordinary
+    /// next-instruction flow edges when `true`. The [`Xrefs`] iterator owns the returned `Vec` and
+    /// needs no kernel access to walk it.
     ///
     /// [`Xrefs`]: crate::Xrefs
-    pub(crate) fn xrefs_build(&self, address: Address, is_to: bool) -> Vec<sys::XrefRec> {
-        sys::xrefs_build(address.get(), is_to)
+    pub(crate) fn xrefs_build(
+        &self,
+        address: Address,
+        is_to: bool,
+        flow: bool,
+    ) -> Vec<sys::XrefRec> {
+        sys::xrefs_build(address.get(), is_to, flow)
+    }
+
+    forward! {
+        fn xref_has_external_refs(&self, address: Address) -> bool
+            = sys::has_external_refs(address.get());
+        fn xref_has_jump_or_flow_xref(&self, address: Address) -> bool
+            = sys::has_jump_or_flow_xref(address.get());
     }
 
     forward! {
@@ -207,6 +224,10 @@ impl Database {
         fn func_start(&self, address: Address) -> sys::Address = sys::func_start(address.get());
         fn func_end(&self, address: Address) -> sys::Address = sys::func_end(address.get());
         fn func_flags(&self, address: Address) -> u64 = sys::func_flags(address.get());
+        fn func_cmt(&self, address: Address, repeatable: bool) -> Option<String>
+            = sys::func_cmt(address.get(), repeatable).ok();
+        fn func_does_return(&self, address: Address) -> bool = sys::func_does_return(address.get());
+        fn func_bitness(&self, address: Address) -> i32 = sys::func_bitness(address.get());
         fn type_ordinal_limit(&self) -> u32 = sys::type_ordinal_limit();
         fn type_name_at(&self, ordinal: u32) -> String = sys::type_name_at(ordinal).unwrap_or_default();
     }
@@ -288,6 +309,15 @@ impl Database {
         fn seg_perm(&self, n: c_int) -> c_int = sys::gen_seg_perm(n);
         fn seg_bitness(&self, n: c_int) -> c_int = sys::gen_seg_bitness(n);
         fn seg_class(&self, n: c_int) -> Option<String> = sys::gen_seg_class(n).ok();
+        fn seg_sel(&self, n: c_int) -> u64 = sys::gen_seg_sel(n);
+        fn seg_type(&self, n: c_int) -> c_int = sys::gen_seg_type(n);
+        fn seg_color(&self, n: c_int) -> u32 = sys::gen_seg_color(n);
+        fn seg_flags(&self, n: c_int) -> c_int = sys::gen_seg_flags(n);
+        fn seg_align(&self, n: c_int) -> c_int = sys::gen_seg_align(n);
+        fn seg_comb(&self, n: c_int) -> c_int = sys::gen_seg_comb(n);
+        fn seg_at(&self, address: Address) -> c_int = sys::gen_seg_at(address.get());
+        fn seg_cmt(&self, n: c_int, repeatable: bool) -> Option<String>
+            = sys::gen_seg_cmt(n, repeatable).ok();
         fn export_qty(&self) -> usize = sys::export_qty();
         fn export_ea(&self, idx: usize) -> sys::Address = sys::export_ea(idx);
         fn export_ordinal(&self, idx: usize) -> u64 = sys::export_ordinal(idx);

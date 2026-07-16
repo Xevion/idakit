@@ -13,25 +13,99 @@ use strum::VariantArray;
 use crate::Database;
 use crate::address::Address;
 
+#[bon::bon]
 impl Database {
     /// Iterates every cross-reference targeting `address`.
     ///
-    /// Its callers and the data that points at it (ordinary sequential flow excluded).
+    /// Its callers and the data that points at it (ordinary sequential flow excluded). For
+    /// control over that exclusion, use [`xrefs_to_with`](Self::xrefs_to_with).
     #[inline]
     #[must_use]
     #[doc(alias("xrefblk_t", "first_to"))]
     pub fn xrefs_to(&self, address: Address) -> Xrefs {
-        Xrefs::new(self.xrefs_build(address, true))
+        self.xrefs_to_with(address).call()
     }
 
     /// Iterates every cross-reference originating at `address`.
     ///
-    /// What the code there calls, jumps to, or reads (ordinary sequential flow excluded).
+    /// What the code there calls, jumps to, or reads (ordinary sequential flow excluded). For
+    /// control over that exclusion, use [`xrefs_from_with`](Self::xrefs_from_with).
     #[inline]
     #[must_use]
     #[doc(alias("xrefblk_t", "first_from"))]
     pub fn xrefs_from(&self, address: Address) -> Xrefs {
-        Xrefs::new(self.xrefs_build(address, false))
+        self.xrefs_from_with(address).call()
+    }
+
+    /// Iterates every cross-reference targeting `address`, with control over ordinary flow edges.
+    ///
+    /// `flow(true)` also includes ordinary next-instruction flow edges ([`CodeXref::Flow`]),
+    /// excluded by default, matching [`xrefs_to`](Self::xrefs_to).
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let entry = db.functions().next().unwrap().address();
+    /// let noflow: Vec<_> = db.xrefs_to(entry).collect();
+    /// let with_flow: Vec<_> = db.xrefs_to_with(entry).flow(true).call().collect();
+    /// assert!(with_flow.len() >= noflow.len());
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[builder]
+    #[doc(alias("xrefblk_t", "first_to"))]
+    pub fn xrefs_to_with(
+        &self,
+        #[builder(start_fn)] address: Address,
+        #[builder(default = false)] flow: bool,
+    ) -> Xrefs {
+        Xrefs::new(self.xrefs_build(address, true, flow))
+    }
+
+    /// Iterates every cross-reference originating at `address`, with control over ordinary flow
+    /// edges.
+    ///
+    /// `flow(true)` also includes ordinary next-instruction flow edges ([`CodeXref::Flow`]),
+    /// excluded by default, matching [`xrefs_from`](Self::xrefs_from).
+    #[builder]
+    #[doc(alias("xrefblk_t", "first_from"))]
+    pub fn xrefs_from_with(
+        &self,
+        #[builder(start_fn)] address: Address,
+        #[builder(default = false)] flow: bool,
+    ) -> Xrefs {
+        Xrefs::new(self.xrefs_build(address, false, flow))
+    }
+
+    /// Whether `address` has a reference from outside the function that contains it.
+    ///
+    /// `false` when `address` is not inside any function.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let entry = db.functions().next().unwrap().address();
+    /// let _ = db.has_external_refs(entry);
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn has_external_refs(&self, address: Address) -> bool {
+        self.xref_has_external_refs(address)
+    }
+
+    /// Whether `address` has an incoming jump or ordinary-flow code cross-reference.
+    ///
+    /// ```
+    /// # idakit::doctest::with_db(|db| {
+    /// let entry = db.functions().next().unwrap().address();
+    /// let _ = db.has_jump_or_flow_xref(entry);
+    /// # Ok(())
+    /// # }).unwrap();
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn has_jump_or_flow_xref(&self, address: Address) -> bool {
+        self.xref_has_jump_or_flow_xref(address)
     }
 }
 

@@ -22,8 +22,13 @@ pub const REFERENCE: Domain = Domain {
     custom_tus: &["facade/reference.cpp"],
     fns: fns! {
         "Every cross-reference edge at `ea` as an owned, `Send` snapshot: xrefs *to* `ea` when \
-         `is_to`, else xrefs *from* it. Ordinary next-instruction flow edges are excluded \
-         (`XREF_NOFLOW`)."
-            xrefs_build(ea: U64, is_to: Bool) -> Vec("XrefRec");
+         `is_to`, else xrefs *from* it. Ordinary next-instruction flow edges are included only \
+         when `flow` (`XREF_FLOW` vs `XREF_NOFLOW`)."
+            xrefs_build(ea: U64, is_to: Bool, flow: Bool) -> Vec("XrefRec");
+        "Whether `ea` has a reference from outside the function that contains it; `false` when \
+         `ea` is not inside any function."
+            has_external_refs(ea: U64) -> Bool;
+        "Whether `ea` has an incoming jump or ordinary-flow code cross-reference."
+            has_jump_or_flow_xref(ea: U64) -> Bool;
     },
 };

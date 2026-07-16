@@ -133,6 +133,7 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
 // o_reg whose register lands in no modelled class (reg_class_of -> RC_BAD).
 int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
   dst.idx = static_cast<uint8_t>(idx);
+  dst.offb = static_cast<uint8_t>(op.offb);
   dst.data_type = op.dtype;
   // dst arrives value-initialized, so every field that stays zero for this operand already is;
   // only the register slots need the REG_NONE sentinel a zeroed RegisterData wouldn't carry.

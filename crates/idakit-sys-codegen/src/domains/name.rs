@@ -1,9 +1,9 @@
 use super::super::model::*;
 
-/// The name domain: name lookups (address<->name, demangle), the name-list accessors, and the
-/// three flags-word name classifiers. Every body is hand-written in `facade/name.cpp` (the
-/// getters throw on no-name, and SDK calls are `::`-qualified to avoid recursing on the shared
-/// symbol spellings).
+/// The name domain: name lookups (address<->name, demangle), the name-list accessors, the three
+/// flags-word name classifiers, and the public/weak linkage predicates. Every body is
+/// hand-written in `facade/name.cpp` (the getters throw on no-name, and SDK calls are
+/// `::`-qualified to avoid recursing on the shared symbol spellings).
 pub const NAME: Domain = Domain {
     name: "name",
     sdk_includes: &["<name.hpp>", "<bytes.hpp>", "<stdexcept>"],
@@ -14,6 +14,8 @@ pub const NAME: Domain = Domain {
     fns: fns! {
         "Name at address `ea`; `Err` when the address has none."
             get_ea_name(ea: U64) -> ResultString;
+        "Name at address `ea` under `gtn_flags` (`GN_*` bits); `Err` when the address has none."
+            get_ea_name_flags(ea: U64, flags: I32) -> ResultString;
         "Address the symbol `name` resolves to, or `BADADDR` when it is unknown."
             get_name_ea(name: Str) -> U64;
         "Fully demangled form of `name`; `Err` when `name` is not mangled."
@@ -30,5 +32,9 @@ pub const NAME: Domain = Domain {
             has_auto_name(flags: U64) -> Bool;
         "Whether a flags word marks a dummy (address-derived) name."
             has_dummy_name(flags: U64) -> Bool;
+        "Whether the name at `ea` is public (linker-exported)."
+            is_public_name(ea: U64) -> Bool;
+        "Whether the name at `ea` is weak (may be overridden by another definition)."
+            is_weak_name(ea: U64) -> Bool;
     },
 };

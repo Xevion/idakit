@@ -1,9 +1,9 @@
 // Hand-written Custom bodies for the generated name domain (namespace gen): name lookups, the
-// name-list accessors, and the flags-word name classifiers. String getters throw
-// std::runtime_error (a Rust Err) instead of returning a sentinel length. SDK calls are
-// ::-qualified since several generated symbols share the SDK's own spelling (get_ea_name,
-// has_user_name, ...), so an unqualified call would recurse into this namespace instead of
-// reaching the kernel.
+// name-list accessors, the flags-word name classifiers, and the public/weak linkage predicates.
+// String getters throw std::runtime_error (a Rust Err) instead of returning a sentinel length.
+// SDK calls are ::-qualified since several generated symbols share the SDK's own spelling
+// (get_ea_name, has_user_name, is_public_name, ...), so an unqualified call would recurse into
+// this namespace instead of reaching the kernel.
 
 #include <ida.hpp>
 #include <pro.h>
@@ -22,6 +22,15 @@ namespace gen {
 rust::String get_ea_name(uint64_t addr) {
   qstring out;
   if (::get_ea_name(&out, static_cast<ea_t>(addr)) <= 0)
+    throw std::runtime_error("no name at address");
+  return to_rust_string(out);
+}
+
+// Name at addr under gtn_flags (GN_* bits, name.hpp); throws when addr has no name. Collapses
+// get_visible_name/get_short_name/get_long_name/get_demangled_name into one call.
+rust::String get_ea_name_flags(uint64_t addr, int32_t flags) {
+  qstring out;
+  if (::get_ea_name(&out, static_cast<ea_t>(addr), flags) <= 0)
     throw std::runtime_error("no name at address");
   return to_rust_string(out);
 }
@@ -67,5 +76,13 @@ bool has_auto_name(uint64_t flags) { return ::has_auto_name(static_cast<flags64_
 
 // True when the name at flags is an IDA placeholder/dummy name.
 bool has_dummy_name(uint64_t flags) { return ::has_dummy_name(static_cast<flags64_t>(flags)); }
+
+// Public/weak linkage predicates: real kernel calls keyed by address, not flags-word bit tests.
+
+// True when the name at addr is public (linker-exported), not just an internal label.
+bool is_public_name(uint64_t addr) { return ::is_public_name(static_cast<ea_t>(addr)); }
+
+// True when the name at addr is weak (may be overridden by another definition).
+bool is_weak_name(uint64_t addr) { return ::is_weak_name(static_cast<ea_t>(addr)); }
 
 } // namespace gen
