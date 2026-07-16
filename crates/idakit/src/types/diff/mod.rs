@@ -11,7 +11,7 @@ mod canonical;
 mod catalog;
 
 pub use canonical::{
-    AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, Change, ChangeKind, TypeDiff,
-    TypeIdentity, TypeKey, canonicalize,
+    AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, Change, ChangeKind,
+    RecordKind, TypeDiff, TypeIdentity, TypeKey, canonicalize,
 };
 pub use catalog::{CatalogDiff, TypeCatalog};

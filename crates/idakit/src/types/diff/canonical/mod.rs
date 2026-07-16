@@ -24,8 +24,8 @@ mod model;
 
 pub use engine::{Change, ChangeKind, TypeDiff};
 pub use model::{
-    AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, TypeIdentity, TypeKey,
-    canonicalize,
+    AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, RecordKind, TypeIdentity,
+    TypeKey, canonicalize,
 };
 
 #[cfg(test)]

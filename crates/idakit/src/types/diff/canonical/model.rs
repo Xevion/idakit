@@ -2,6 +2,7 @@
 
 use std::fmt;
 use std::hash::Hash;
+use std::num::NonZeroUsize;
 
 use serde::{Deserialize, Serialize};
 use siphasher::sip128::{Hasher128, SipHasher13};
@@ -40,6 +41,47 @@ impl fmt::Display for AggregateKind {
     }
 }
 
+/// Whether a spelled record is a struct or a union.
+///
+/// Narrower than [`AggregateKind`], which also admits an enum. [`CanonicalType::Aggregate`] only
+/// ever spells a record body, since a spelled enum is [`CanonicalType::Enum`] instead.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum RecordKind {
+    /// A `struct`.
+    Struct,
+    /// A `union`.
+    Union,
+}
+
+impl RecordKind {
+    /// The C keyword for this record, used in the canonical string.
+    #[inline]
+    #[must_use]
+    pub const fn keyword(self) -> &'static str {
+        match self {
+            Self::Struct => "struct",
+            Self::Union => "union",
+        }
+    }
+}
+
+impl fmt::Display for RecordKind {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
+impl From<RecordKind> for AggregateKind {
+    #[inline]
+    fn from(kind: RecordKind) -> Self {
+        match kind {
+            RecordKind::Struct => Self::Struct,
+            RecordKind::Union => Self::Union,
+        }
+    }
+}
+
 /// One field of a canonical aggregate.
 ///
 /// Layout facets (`bit_offset`) are present only when [`CanonicalOptions`] folds sizes in;
@@ -61,6 +103,12 @@ pub struct CanonicalMember {
 /// Children are inlined by value; a named aggregate is a [`Named`](CanonicalType::Named) reference
 /// rather than a nested body, so two databases produce equal values for equal types. A closed
 /// mirror of [`TypeShape`], with the table-relative [`TypeId`] handles resolved away.
+///
+/// A root value produced by [`canonicalize`] is always fully spelled, never a bare
+/// [`Named`](CanonicalType::Named) or [`BackRef`](CanonicalType::BackRef): both refer to an
+/// enclosing frame, which a root has none of. Below the root, an
+/// [`Aggregate`](CanonicalType::Aggregate) always carries `tag: None`, since a tagged one cuts to
+/// [`Named`](CanonicalType::Named) rather than being spelled again.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum CanonicalType {
     /// `void`.
@@ -107,7 +155,7 @@ pub enum CanonicalType {
         /// The tag, or `None` if anonymous (or synthetically named).
         tag: Option<String>,
         /// Struct or union.
-        kind: AggregateKind,
+        kind: RecordKind,
         /// Fields in declaration order.
         members: Vec<CanonicalMember>,
         /// Size in bytes, or `None` under a size-abstracted key.
@@ -145,8 +193,9 @@ pub enum CanonicalType {
     /// Nominal-only, its identity is known but its structure is not.
     Opaque(String),
     /// A De Bruijn back-reference to an enclosing aggregate `n` levels up, closing a cycle that
-    /// the nominal cut did not (a synthetic-named or anonymous recursive type).
-    BackRef(usize),
+    /// the nominal cut did not (a synthetic-named or anonymous recursive type). `n` is always at
+    /// least 1, encoded as the type's niche.
+    BackRef(NonZeroUsize),
 }
 
 /// A stable 128-bit fingerprint of a [`CanonicalType`].
@@ -281,14 +330,17 @@ impl CanonicalType {
     #[must_use]
     pub fn identity(&self) -> Option<TypeIdentity> {
         match self {
-            Self::Named { tag, kind }
-            | Self::Aggregate {
+            Self::Named { tag, kind } => Some(TypeIdentity::Tagged {
+                tag: tag.clone(),
+                kind: *kind,
+            }),
+            Self::Aggregate {
                 tag: Some(tag),
                 kind,
                 ..
             } => Some(TypeIdentity::Tagged {
                 tag: tag.clone(),
-                kind: *kind,
+                kind: (*kind).into(),
             }),
             Self::Enum { tag: Some(tag), .. } => Some(TypeIdentity::Tagged {
                 tag: tag.clone(),
@@ -351,7 +403,7 @@ fn canon(
         TypeShape::Struct { name, members } => aggregate(
             table,
             id,
-            AggregateKind::Struct,
+            RecordKind::Struct,
             name.as_deref(),
             members,
             value.size,
@@ -362,7 +414,7 @@ fn canon(
         TypeShape::Union { name, members } => aggregate(
             table,
             id,
-            AggregateKind::Union,
+            RecordKind::Union,
             name.as_deref(),
             members,
             value.size,
@@ -445,7 +497,7 @@ fn nominal_cut(
 fn aggregate(
     table: &TypeTable,
     id: TypeId,
-    kind: AggregateKind,
+    kind: RecordKind,
     name: Option<&str>,
     members: &[crate::types::TypeMember],
     size: Option<u64>,
@@ -453,11 +505,12 @@ fn aggregate(
     stack: &mut Vec<TypeId>,
     spell_named: bool,
 ) -> CanonicalType {
-    if let Some(cut) = nominal_cut(name, kind, spell_named) {
+    if let Some(cut) = nominal_cut(name, kind.into(), spell_named) {
         return cut;
     }
     if let Some(pos) = stack.iter().rposition(|x| *x == id) {
-        return CanonicalType::BackRef(stack.len() - pos);
+        let n = stack.len() - pos;
+        return CanonicalType::BackRef(NonZeroUsize::new(n).expect("pos < stack.len(), so n >= 1"));
     }
     stack.push(id);
     let mut members: Vec<CanonicalMember> = members
@@ -472,7 +525,7 @@ fn aggregate(
     stack.pop();
     // A union's members all sit at offset 0, so their order carries no meaning; sort by name so a
     // reordered union is one canonical value. A struct's order *is* its layout, so leave it.
-    if kind == AggregateKind::Union {
+    if kind == RecordKind::Union {
         members.sort_by(|a, b| a.name.cmp(&b.name));
     }
     CanonicalType::Aggregate {
@@ -690,14 +743,16 @@ mod tests {
     use std::collections::HashSet;
 
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
+    use crate::types::{TypeMember, TypeValue};
 
     #[test]
     fn canonical_type_serde_round_trips() {
         let ty = CanonicalType::Aggregate {
             tag: Some("point".to_owned()),
-            kind: AggregateKind::Struct,
+            kind: RecordKind::Struct,
             members: vec![CanonicalMember {
                 name: "x".to_owned(),
                 bit_offset: Some(0),
@@ -755,5 +810,295 @@ mod tests {
         assert!(AggregateKind::Struct.to_string() == "struct");
         assert!(AggregateKind::Union.to_string() == "union");
         assert!(AggregateKind::Enum.to_string() == "enum");
+    }
+
+    #[test]
+    fn record_kind_display() {
+        assert!(RecordKind::Struct.to_string() == "struct");
+        assert!(RecordKind::Union.to_string() == "union");
+    }
+
+    #[test]
+    fn record_kind_into_aggregate_kind() {
+        assert!(AggregateKind::from(RecordKind::Struct) == AggregateKind::Struct);
+        assert!(AggregateKind::from(RecordKind::Union) == AggregateKind::Union);
+    }
+
+    #[test]
+    fn record_kind_serde_round_trips() {
+        let kind = RecordKind::Union;
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: RecordKind = serde_json::from_str(&json).unwrap();
+        assert!(back == kind);
+    }
+
+    #[test]
+    fn type_key_display_is_zero_padded_lowercase_hex() {
+        assert!(TypeKey(0x1).to_string() == "00000000000000000000000000000001");
+        assert!(TypeKey(0xabc).to_string() == "00000000000000000000000000000abc");
+        assert!(TypeKey(u128::MAX).to_string() == "ffffffffffffffffffffffffffffffff");
+    }
+
+    /// Every [`CanonicalType`] variant: only a tagged shape carries a nominal [`TypeIdentity`].
+    #[rstest]
+    #[case::void(CanonicalType::Void, None)]
+    #[case::bool_(CanonicalType::Bool, None)]
+    #[case::int(CanonicalType::Int { bytes: Some(4), signed: true }, None)]
+    #[case::float(CanonicalType::Float { bytes: Some(4) }, None)]
+    #[case::ptr(
+        CanonicalType::Ptr { pointee: Box::new(CanonicalType::Void), width: Some(8) },
+        None,
+    )]
+    #[case::array(
+        CanonicalType::Array { elem: Box::new(CanonicalType::Void), len: 3 },
+        None,
+    )]
+    #[case::named(
+        CanonicalType::Named { tag: "point".to_owned(), kind: AggregateKind::Struct },
+        Some(TypeIdentity::Tagged { tag: "point".to_owned(), kind: AggregateKind::Struct }),
+    )]
+    #[case::aggregate_tagged(
+        CanonicalType::Aggregate {
+            tag: Some("point".to_owned()),
+            kind: RecordKind::Struct,
+            members: vec![],
+            size: None,
+        },
+        Some(TypeIdentity::Tagged { tag: "point".to_owned(), kind: AggregateKind::Struct }),
+    )]
+    #[case::aggregate_anonymous(
+        CanonicalType::Aggregate { tag: None, kind: RecordKind::Struct, members: vec![], size: None },
+        None,
+    )]
+    #[case::enum_tagged(
+        CanonicalType::Enum {
+            tag: Some("color".to_owned()),
+            underlying: Box::new(CanonicalType::Int { bytes: Some(4), signed: false }),
+            members: vec![],
+            size: None,
+        },
+        Some(TypeIdentity::Tagged { tag: "color".to_owned(), kind: AggregateKind::Enum }),
+    )]
+    #[case::enum_anonymous(
+        CanonicalType::Enum {
+            tag: None,
+            underlying: Box::new(CanonicalType::Int { bytes: Some(4), signed: false }),
+            members: vec![],
+            size: None,
+        },
+        None,
+    )]
+    #[case::function(
+        CanonicalType::Function { ret: Box::new(CanonicalType::Void), params: vec![], varargs: false },
+        None,
+    )]
+    #[case::typedef(
+        CanonicalType::Typedef {
+            name: "u32".to_owned(),
+            underlying: Box::new(CanonicalType::Int { bytes: Some(4), signed: false }),
+        },
+        Some(TypeIdentity::Alias { name: "u32".to_owned() }),
+    )]
+    #[case::opaque(CanonicalType::Opaque("Foo".to_owned()), None)]
+    #[case::backref(CanonicalType::BackRef(NonZeroUsize::new(1).unwrap()), None)]
+    fn identity_covers_every_canonical_type_variant(
+        #[case] ty: CanonicalType,
+        #[case] expected: Option<TypeIdentity>,
+    ) {
+        assert!(ty.identity() == expected);
+    }
+
+    #[test]
+    fn a_two_level_nested_anonymous_cycle_back_refs_two_frames_up() {
+        // outer($A) -> mid($B) -> inner($C) -> ptr back to mid: the ptr sits two spelled frames
+        // down, so the walk must count past inner rather than stopping at the nearest frame.
+        let mut table = TypeTable::new();
+        let outer = table.alloc_placeholder();
+        let mid = table.alloc_placeholder();
+        let inner = table.alloc_placeholder();
+        let mid_ptr = table.intern(TypeValue {
+            shape: TypeShape::Ptr(mid),
+            size: Some(8),
+        });
+        table.fill(
+            inner,
+            TypeValue {
+                shape: TypeShape::Struct {
+                    name: Some("$C".to_owned()),
+                    members: vec![TypeMember {
+                        name: "back".to_owned(),
+                        bit_offset: 0,
+                        ty: mid_ptr,
+                        bitfield_width: None,
+                        repr: None,
+                    }],
+                },
+                size: Some(8),
+            },
+        );
+        table.fill(
+            mid,
+            TypeValue {
+                shape: TypeShape::Struct {
+                    name: Some("$B".to_owned()),
+                    members: vec![TypeMember {
+                        name: "next".to_owned(),
+                        bit_offset: 0,
+                        ty: inner,
+                        bitfield_width: None,
+                        repr: None,
+                    }],
+                },
+                size: Some(8),
+            },
+        );
+        table.fill(
+            outer,
+            TypeValue {
+                shape: TypeShape::Struct {
+                    name: Some("$A".to_owned()),
+                    members: vec![TypeMember {
+                        name: "start".to_owned(),
+                        bit_offset: 0,
+                        ty: mid,
+                        bitfield_width: None,
+                        repr: None,
+                    }],
+                },
+                size: Some(8),
+            },
+        );
+
+        let c = canonicalize(&table, outer, CanonicalOptions::strict());
+        let CanonicalType::Aggregate {
+            members: outer_members,
+            ..
+        } = &c
+        else {
+            panic!("root spells its body");
+        };
+        let CanonicalType::Aggregate {
+            members: mid_members,
+            ..
+        } = &outer_members[0].ty
+        else {
+            panic!("mid spells its body inline");
+        };
+        let CanonicalType::Aggregate {
+            members: inner_members,
+            ..
+        } = &mid_members[0].ty
+        else {
+            panic!("inner spells its body inline");
+        };
+        assert!(
+            inner_members[0].ty
+                == CanonicalType::Ptr {
+                    pointee: Box::new(CanonicalType::BackRef(NonZeroUsize::new(2).unwrap())),
+                    width: Some(8),
+                }
+        );
+    }
+
+    /// Every scalar shape, sized and size-abstracted, plus a back-reference.
+    #[rstest]
+    #[case::void(CanonicalType::Void, "void")]
+    #[case::bool_(CanonicalType::Bool, "bool")]
+    #[case::int_sized(CanonicalType::Int { bytes: Some(4), signed: true }, "i32")]
+    #[case::int_unsized(CanonicalType::Int { bytes: None, signed: false }, "uint")]
+    #[case::float_sized(CanonicalType::Float { bytes: Some(4) }, "f32")]
+    #[case::float_unsized(CanonicalType::Float { bytes: None }, "float")]
+    #[case::backref(CanonicalType::BackRef(NonZeroUsize::new(3).unwrap()), "#3")]
+    fn scalar_forms_render_every_variant(#[case] ty: CanonicalType, #[case] expected: &str) {
+        assert!(ty.to_string() == expected);
+    }
+
+    #[test]
+    fn canonical_aggregate_string_separates_multiple_members_with_a_comma() {
+        let ty = CanonicalType::Aggregate {
+            tag: Some("pair".to_owned()),
+            kind: RecordKind::Struct,
+            members: vec![
+                CanonicalMember {
+                    name: "x".to_owned(),
+                    bit_offset: Some(0),
+                    bitfield_width: None,
+                    ty: CanonicalType::Int {
+                        bytes: Some(4),
+                        signed: true,
+                    },
+                },
+                CanonicalMember {
+                    name: "y".to_owned(),
+                    bit_offset: Some(32),
+                    bitfield_width: None,
+                    ty: CanonicalType::Int {
+                        bytes: Some(4),
+                        signed: true,
+                    },
+                },
+            ],
+            size: Some(8),
+        };
+        assert!(ty.to_string() == "struct:pair{x@0=i32,y@32=i32}=8");
+    }
+
+    #[test]
+    fn canonical_function_string_separates_multiple_params_with_a_comma() {
+        let ty = CanonicalType::Function {
+            ret: Box::new(CanonicalType::Void),
+            params: vec![
+                CanonicalType::Int {
+                    bytes: Some(4),
+                    signed: true,
+                },
+                CanonicalType::Int {
+                    bytes: Some(1),
+                    signed: true,
+                },
+            ],
+            varargs: false,
+        };
+        assert!(ty.to_string() == "fn(i32,i8)->void");
+    }
+
+    /// The compact params separator (`", "`), tested below, at, and above the first-param
+    /// threshold.
+    #[rstest]
+    #[case::no_params(vec![], "void()")]
+    #[case::one_param(vec![CanonicalType::Bool], "void(bool)")]
+    #[case::three_params(
+        vec![
+            CanonicalType::Bool,
+            CanonicalType::Void,
+            CanonicalType::Int { bytes: Some(1), signed: false },
+        ],
+        "void(bool, void, u8)",
+    )]
+    fn compact_function_string_separates_params_with_comma_space(
+        #[case] params: Vec<CanonicalType>,
+        #[case] expected: &str,
+    ) {
+        let ty = CanonicalType::Function {
+            ret: Box::new(CanonicalType::Void),
+            params,
+            varargs: false,
+        };
+        assert!(format!("{ty:#}") == expected);
+    }
+
+    #[rstest]
+    #[case::no_params_with_varargs(vec![], "void(...)")]
+    #[case::one_param_with_varargs(vec![CanonicalType::Bool], "void(bool, ...)")]
+    fn compact_function_string_places_the_varargs_separator_correctly(
+        #[case] params: Vec<CanonicalType>,
+        #[case] expected: &str,
+    ) {
+        let ty = CanonicalType::Function {
+            ret: Box::new(CanonicalType::Void),
+            params,
+            varargs: true,
+        };
+        assert!(format!("{ty:#}") == expected);
     }
 }

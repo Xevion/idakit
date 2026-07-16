@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use assert2::assert;
 
 use super::*;
@@ -168,7 +170,7 @@ fn a_synthetic_named_cycle_closes_with_a_backref() {
     assert!(
         members[0].ty
             == CanonicalType::Ptr {
-                pointee: Box::new(CanonicalType::BackRef(1)),
+                pointee: Box::new(CanonicalType::BackRef(NonZeroUsize::new(1).unwrap())),
                 width: Some(8),
             }
     );
@@ -450,7 +452,7 @@ fn cfield(name: &str, off: u64, ty: CanonicalType) -> CanonicalMember {
 fn cstruct(tag: &str, members: Vec<CanonicalMember>, size: u64) -> CanonicalType {
     CanonicalType::Aggregate {
         tag: Some(tag.to_owned()),
-        kind: AggregateKind::Struct,
+        kind: RecordKind::Struct,
         members,
         size: Some(size),
     }
@@ -586,7 +588,7 @@ fn an_inserted_field_does_not_report_the_offset_cascade() {
 fn a_bitfield_width_change_is_flagged() {
     let bf = |w: u32| CanonicalType::Aggregate {
         tag: Some("F".to_owned()),
-        kind: AggregateKind::Struct,
+        kind: RecordKind::Struct,
         members: vec![CanonicalMember {
             name: "b".to_owned(),
             bit_offset: Some(0),
@@ -613,7 +615,7 @@ fn a_struct_and_union_of_one_body_still_differ() {
     let s = cstruct("X", vec![cfield("a", 0, cint(4, true))], 4);
     let u = CanonicalType::Aggregate {
         tag: Some("X".to_owned()),
-        kind: AggregateKind::Union,
+        kind: RecordKind::Union,
         members: vec![cfield("a", 0, cint(4, true))],
         size: Some(4),
     };

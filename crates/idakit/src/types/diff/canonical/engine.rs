@@ -1,5 +1,6 @@
 //! The diff algorithm: [`TypeDiff`], its [`Change`]s, and the walk that produces them.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -372,26 +373,28 @@ fn diff_members(path: &str, lm: &[CanonicalMember], rm: &[CanonicalMember], out:
             pairs.push((li, ri, false));
         }
     }
-    // Pass 2: unpaired members sharing one unambiguous bit offset, read as a rename in place.
-    // Unambiguous means one candidate on each side: a lone right-hand match is not enough, since
-    // a union puts every member at offset 0, where several left members would race for it and the
-    // first by index would win arbitrarily.
-    for li in 0..lm.len() {
-        if l_used[li] {
-            continue;
-        }
-        let Some(off) = lm[li].bit_offset else {
+    // Pass 2: members still unpaired, matched by a bit offset unique on both sides, read as a
+    // rename in place. Partitioning each side independently and requiring one entry per side keeps
+    // the criterion symmetric; an incremental search picks a winner by index order wherever
+    // offsets collide, as they do in a union with every member at offset 0.
+    let l_groups = group_unpaired_by_offset(&l_used, lm);
+    let r_groups = group_unpaired_by_offset(&r_used, rm);
+    let mut offset_pairs: Vec<(usize, usize)> = Vec::new();
+    for (off, ls) in &l_groups {
+        let [li] = ls.as_slice() else { continue };
+        let Some(rs) = r_groups.get(off) else {
             continue;
         };
-        let mut at_off = (0..rm.len()).filter(|&ri| !r_used[ri] && rm[ri].bit_offset == Some(off));
-        let mut rivals = (0..lm.len()).filter(|&i| !l_used[i] && lm[i].bit_offset == Some(off));
-        if let (Some(ri), None) = (at_off.next(), at_off.next())
-            && let (Some(_), None) = (rivals.next(), rivals.next())
-        {
-            l_used[li] = true;
-            r_used[ri] = true;
-            pairs.push((li, ri, true));
-        }
+        let [ri] = rs.as_slice() else { continue };
+        offset_pairs.push((*li, *ri));
+    }
+    // HashMap iteration order is unspecified; sort so pass 2's output is deterministic (by
+    // declaration order on the left), matching pass 1's.
+    offset_pairs.sort_unstable_by_key(|&(li, _)| li);
+    for (li, ri) in offset_pairs {
+        l_used[li] = true;
+        r_used[ri] = true;
+        pairs.push((li, ri, true));
     }
 
     let structural = l_used.iter().any(|u| !u) || r_used.iter().any(|u| !u);
@@ -427,6 +430,25 @@ fn diff_members(path: &str, lm: &[CanonicalMember], rm: &[CanonicalMember], out:
             kind: ChangeKind::Added(r.ty.clone()),
         });
     }
+}
+
+/// Partition a member list's still-unpaired indices by bit offset.
+///
+/// A member with no offset (a size-abstracted diff) never enters a group, since offset-based
+/// rename inference does not apply there.
+fn group_unpaired_by_offset(
+    used: &[bool],
+    members: &[CanonicalMember],
+) -> HashMap<u64, Vec<usize>> {
+    let mut groups: HashMap<u64, Vec<usize>> = HashMap::new();
+    for (i, m) in members.iter().enumerate() {
+        if !used[i]
+            && let Some(off) = m.bit_offset
+        {
+            groups.entry(off).or_default().push(i);
+        }
+    }
+    groups
 }
 
 /// Diff two enums' constants, paired by name (both sides are name-sorted by canonicalization).
@@ -631,5 +653,267 @@ impl fmt::Display for TypeDiff {
             r.write(f, verb_w, has_path, path_w, budget)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+    use crate::types::diff::RecordKind;
+    use crate::types::{TypeShape, TypeTable, TypeValue};
+
+    fn int(bytes: u8) -> CanonicalType {
+        CanonicalType::Int {
+            bytes: Some(bytes),
+            signed: true,
+        }
+    }
+
+    fn member(name: &str, bit_offset: u64, ty: CanonicalType) -> CanonicalMember {
+        CanonicalMember {
+            name: name.to_owned(),
+            bit_offset: Some(bit_offset),
+            bitfield_width: None,
+            ty,
+        }
+    }
+
+    fn agg(tag: &str, members: Vec<CanonicalMember>, size: Option<u64>) -> CanonicalType {
+        CanonicalType::Aggregate {
+            tag: Some(tag.to_owned()),
+            kind: RecordKind::Struct,
+            members,
+            size,
+        }
+    }
+
+    fn agg_anon(members: Vec<CanonicalMember>, size: Option<u64>) -> CanonicalType {
+        CanonicalType::Aggregate {
+            tag: None,
+            kind: RecordKind::Struct,
+            members,
+            size,
+        }
+    }
+
+    fn enum_ty(tag: &str, consts: Vec<(&str, u64)>) -> CanonicalType {
+        CanonicalType::Enum {
+            tag: Some(tag.to_owned()),
+            underlying: Box::new(int(4)),
+            members: consts.into_iter().map(|(n, v)| (n.to_owned(), v)).collect(),
+            size: Some(4),
+        }
+    }
+
+    #[test]
+    fn changed_is_zero_when_only_additions_exist() {
+        let a = agg("S", vec![member("x", 0, int(4))], Some(4));
+        let b = agg(
+            "S",
+            vec![member("x", 0, int(4)), member("y", 32, int(4))],
+            Some(8),
+        );
+        let d = a.diff(&b);
+        assert!(d.added() == 1);
+        assert!(d.changed() == 0);
+    }
+
+    #[test]
+    fn size_change_only_reports_the_root_size() {
+        // Only the nested member's size differs; the root's stays 16, so root-only `size_change`
+        // must report `None`.
+        let inner_a = agg_anon(vec![member("v", 0, int(4))], Some(4));
+        let inner_b = agg_anon(vec![member("v", 0, int(4))], Some(8));
+        let a = agg("S", vec![member("in", 0, inner_a)], Some(16));
+        let b = agg("S", vec![member("in", 0, inner_b)], Some(16));
+        let d = a.diff(&b);
+        assert!(d.size_change().is_none());
+    }
+
+    #[test]
+    fn type_diff_reports_a_real_difference_between_two_types() {
+        // `Type` has no test-visible constructor outside its own module, so build one through its
+        // public `Deserialize` impl.
+        fn image(mut types: TypeTable, shape: TypeShape, size: Option<u64>) -> Type {
+            let root = types.intern(TypeValue { shape, size });
+            let value = serde_json::json!({
+                "types": serde_json::to_value(&types).unwrap(),
+                "root": serde_json::to_value(root).unwrap(),
+            });
+            serde_json::from_value(value).unwrap()
+        }
+
+        let a = image(TypeTable::new(), TypeShape::Bool, Some(1));
+        let b = image(
+            TypeTable::new(),
+            TypeShape::Int {
+                bytes: 4,
+                signed: true,
+            },
+            Some(4),
+        );
+
+        assert!(!a.diff(&b).is_empty());
+        assert!(a.diff(&a).is_empty());
+    }
+
+    #[test]
+    fn an_enum_with_a_different_tag_is_a_whole_retype() {
+        let a = enum_ty("A", vec![("X", 1)]);
+        let b = enum_ty("B", vec![("X", 1)]);
+        let d = a.diff(&b);
+        assert!(d.changes().len() == 1);
+        assert!(let ChangeKind::Retyped { .. } = &d.changes()[0].kind);
+    }
+
+    #[test]
+    fn same_width_pointers_recurse_into_the_pointee() {
+        let a = CanonicalType::Ptr {
+            pointee: Box::new(int(4)),
+            width: Some(8),
+        };
+        let b = CanonicalType::Ptr {
+            pointee: Box::new(int(8)),
+            width: Some(8),
+        };
+        let d = a.diff(&b);
+        assert!(d.changes().len() == 1);
+        assert!(let ChangeKind::Retyped { left, right } = &d.changes()[0].kind);
+        // The reported values are the inner ints, not the pointers.
+        assert!(*left == int(4));
+        assert!(*right == int(8));
+    }
+
+    #[test]
+    fn arrays_of_different_length_are_a_whole_retype() {
+        let a = CanonicalType::Array {
+            elem: Box::new(int(4)),
+            len: 3,
+        };
+        let b = CanonicalType::Array {
+            elem: Box::new(int(4)),
+            len: 5,
+        };
+        let d = a.diff(&b);
+        assert!(!d.is_empty());
+        assert!(let ChangeKind::Retyped { .. } = &d.changes()[0].kind);
+    }
+
+    #[test]
+    fn same_length_arrays_recurse_into_the_element() {
+        let a = CanonicalType::Array {
+            elem: Box::new(int(4)),
+            len: 3,
+        };
+        let b = CanonicalType::Array {
+            elem: Box::new(int(8)),
+            len: 3,
+        };
+        let d = a.diff(&b);
+        assert!(d.changes().len() == 1);
+        assert!(let ChangeKind::Retyped { left, right } = &d.changes()[0].kind);
+        assert!(*left == int(4));
+        assert!(*right == int(8));
+    }
+
+    #[test]
+    fn function_prototypes_differing_in_varargs_are_a_whole_retype() {
+        let a = CanonicalType::Function {
+            ret: Box::new(int(4)),
+            params: vec![],
+            varargs: false,
+        };
+        let b = CanonicalType::Function {
+            ret: Box::new(int(4)),
+            params: vec![],
+            varargs: true,
+        };
+        let d = a.diff(&b);
+        assert!(!d.is_empty());
+        assert!(let ChangeKind::Retyped { .. } = &d.changes()[0].kind);
+    }
+
+    #[test]
+    fn function_prototypes_of_matching_shape_recurse_into_params_and_return() {
+        let a = CanonicalType::Function {
+            ret: Box::new(int(4)),
+            params: vec![int(4)],
+            varargs: false,
+        };
+        let b = CanonicalType::Function {
+            ret: Box::new(int(8)),
+            params: vec![int(8)],
+            varargs: false,
+        };
+        let d = a.diff(&b);
+        let paths: Vec<&str> = d.changes().iter().map(|c| c.path.as_str()).collect();
+        assert!(d.changes().len() == 2);
+        assert!(paths.contains(&"return"));
+        assert!(paths.contains(&"arg0"));
+    }
+
+    #[test]
+    fn anonymous_members_at_the_same_offset_are_not_reported_as_renamed() {
+        // Pass 2 pairs the two anonymous members by offset and sets `renamed`, but neither name
+        // changed, so only the SizeChanged should surface.
+        let a = agg("S", vec![member("", 0, int(4))], Some(4));
+        let b = agg("S", vec![member("", 0, int(4))], Some(8));
+        let d = a.diff(&b);
+        assert!(d.changes().len() == 1);
+        assert!(let ChangeKind::SizeChanged { .. } = &d.changes()[0].kind);
+    }
+
+    #[test]
+    fn an_unchanged_constant_among_changed_ones_is_not_reported() {
+        let a = enum_ty("E", vec![("A", 1), ("B", 2)]);
+        let b = enum_ty("E", vec![("A", 1), ("B", 9)]);
+        let d = a.diff(&b);
+        assert!(d.changes().len() == 1);
+        assert!(
+            let ChangeKind::ConstantChanged { left: 2, right: 9 } = &d.changes()[0].kind
+        );
+    }
+
+    #[test]
+    fn split_parent_drops_the_dot_between_segments() {
+        assert!(split_parent("a.b") == ("a", "b"));
+        assert!(split_parent("a.b.c") == ("a.b", "c"));
+        assert!(split_parent("x") == ("", "x"));
+    }
+
+    #[test]
+    fn a_line_that_exactly_fits_the_budget_stays_on_one_line() {
+        let d = int(4).diff(&int(8));
+        let full = d.to_string();
+        let n = full.chars().count();
+        let exact = format!("{d:n$}");
+        assert!(exact == full);
+
+        let tight = format!("{:1$}", d, n - 1);
+        assert!(tight != full);
+        assert!(tight.contains('\n'));
+    }
+
+    #[test]
+    fn a_root_row_folded_for_width_omits_the_path_segment() {
+        // `has_path` is true diff-wide (a member-level change is present), but this row's own path
+        // is empty, so its folded head is the bare verb, not a verb plus a blank path column.
+        let a = agg("S", vec![member("x", 0, int(4))], Some(4));
+        let b = agg("S", vec![member("x", 0, int(8))], Some(8));
+        let d = a.diff(&b);
+        let rendered = format!("{:1$}", d, 1);
+        let first_line = rendered.lines().next().unwrap();
+        assert!(first_line == "Resize");
+    }
+
+    #[test]
+    fn multiple_changes_are_newline_separated() {
+        let a = agg("S", vec![member("x", 0, int(4))], Some(4));
+        let b = agg("S", vec![member("x", 0, int(8))], Some(8));
+        let d = a.diff(&b);
+        assert!(d.changes().len() == 2);
+        assert!(d.to_string().lines().count() == 2);
     }
 }

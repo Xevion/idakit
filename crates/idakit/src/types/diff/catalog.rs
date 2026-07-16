@@ -331,4 +331,171 @@ mod tests {
         let back: CatalogDiff = serde_json::from_str(&json).unwrap();
         assert!(back == diff);
     }
+
+    fn make_catalog(
+        pairs: &[(&str, CanonicalType)],
+        skipped: usize,
+        opts: CanonicalOptions,
+    ) -> TypeCatalog {
+        let mut types = BTreeMap::new();
+        for (name, ty) in pairs {
+            types.insert(
+                (*name).to_owned(),
+                Entry {
+                    key: ty.key(),
+                    canonical: ty.clone(),
+                },
+            );
+        }
+        TypeCatalog {
+            types,
+            opts,
+            skipped,
+        }
+    }
+
+    #[test]
+    fn type_catalog_accessors_reflect_the_backing_map() {
+        let int_ty = CanonicalType::Int {
+            bytes: Some(4),
+            signed: true,
+        };
+        let catalog = make_catalog(
+            &[("i32", int_ty.clone()), ("flag", CanonicalType::Bool)],
+            3,
+            CanonicalOptions::strict(),
+        );
+
+        assert!(catalog.get("i32") == Some(&int_ty));
+        assert!(catalog.get("missing").is_none());
+        assert!(catalog.contains("i32"));
+        assert!(!catalog.contains("missing"));
+        assert!(catalog.len() == 2);
+        assert!(!catalog.is_empty());
+        assert!(catalog.skipped() == 3);
+
+        assert!(make_catalog(&[], 0, CanonicalOptions::strict()).is_empty());
+    }
+
+    #[test]
+    fn type_catalog_with_accounts_for_every_named_type() {
+        // Exercises the real accumulation loop, unlike `make_catalog`'s fabricated struct: every
+        // named type lands in exactly one of `len`/`skipped`.
+        crate::doctest::with_db(|db| {
+            let total = db.named_types().count();
+            let catalog = db.type_catalog();
+            assert!(catalog.len() + catalog.skipped() == total);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn options_reports_the_canonicalization_lens() {
+        // `strict` equals the default, so only `logical` proves `options()` reads the stored value.
+        let catalog = make_catalog(&[], 0, CanonicalOptions::logical());
+        assert!(catalog.options() == CanonicalOptions::logical());
+    }
+
+    #[test]
+    fn diff_classifies_shared_drifted_and_unique_names() {
+        let int_ty = CanonicalType::Int {
+            bytes: Some(4),
+            signed: true,
+        };
+        let bool_ty = CanonicalType::Bool;
+
+        let left = make_catalog(
+            &[
+                ("shared_same", int_ty.clone()),
+                ("shared_diff", int_ty.clone()),
+                ("left_only", bool_ty.clone()),
+            ],
+            0,
+            CanonicalOptions::strict(),
+        );
+        let right = make_catalog(
+            &[
+                ("shared_same", int_ty),
+                ("shared_diff", bool_ty.clone()),
+                ("right_only", bool_ty),
+            ],
+            0,
+            CanonicalOptions::strict(),
+        );
+
+        let diff = left.diff(&right);
+
+        assert!(diff.identical().to_vec() == vec!["shared_same".to_owned()]);
+        assert!(diff.drifted().len() == 1);
+        assert!(diff.drifted()[0].0 == "shared_diff");
+        assert!(diff.only_left().to_vec() == vec!["left_only".to_owned()]);
+        assert!(diff.only_right().to_vec() == vec!["right_only".to_owned()]);
+        assert!(diff.shared() == 2);
+        assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn diff_of_identical_catalogs_is_empty() {
+        let ty = CanonicalType::Bool;
+        let a = make_catalog(&[("x", ty.clone())], 0, CanonicalOptions::strict());
+        let b = make_catalog(&[("x", ty)], 0, CanonicalOptions::strict());
+        assert!(a.diff(&b).is_empty());
+    }
+
+    #[test]
+    fn catalog_diff_is_empty_requires_all_three_lists_empty() {
+        let all_empty = CatalogDiff::default();
+        assert!(all_empty.is_empty());
+
+        // An identical entry is not a difference, so it never defeats emptiness.
+        let only_identical = CatalogDiff {
+            identical: vec!["a".to_owned()],
+            ..CatalogDiff::default()
+        };
+        assert!(only_identical.is_empty());
+
+        let left = CanonicalType::Bool;
+        let right = CanonicalType::Int {
+            bytes: Some(4),
+            signed: true,
+        };
+
+        let has_drifted = CatalogDiff {
+            drifted: vec![("a".to_owned(), left.diff(&right))],
+            ..CatalogDiff::default()
+        };
+        assert!(!has_drifted.is_empty());
+
+        let has_only_left = CatalogDiff {
+            only_left: vec!["a".to_owned()],
+            ..CatalogDiff::default()
+        };
+        assert!(!has_only_left.is_empty());
+
+        let has_only_right = CatalogDiff {
+            only_right: vec!["a".to_owned()],
+            ..CatalogDiff::default()
+        };
+        assert!(!has_only_right.is_empty());
+    }
+
+    #[test]
+    fn shared_counts_identical_plus_drifted() {
+        let left = CanonicalType::Bool;
+        let right = CanonicalType::Int {
+            bytes: Some(4),
+            signed: true,
+        };
+        let diff = CatalogDiff {
+            identical: vec!["a".to_owned(), "b".to_owned()],
+            drifted: vec![
+                ("c".to_owned(), left.diff(&right)),
+                ("d".to_owned(), left.diff(&right)),
+                ("e".to_owned(), left.diff(&right)),
+            ],
+            ..CatalogDiff::default()
+        };
+        assert!(diff.shared() == 5);
+    }
 }

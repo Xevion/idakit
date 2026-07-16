@@ -254,7 +254,7 @@ pub mod prelude {
     pub use crate::strings::{StringLiteral, Strings};
     pub use crate::types::diff::{
         AggregateKind, CanonicalMember, CanonicalOptions, CanonicalType, CatalogDiff, Change,
-        ChangeKind, TypeCatalog, TypeDiff, TypeIdentity, TypeKey, canonicalize,
+        ChangeKind, RecordKind, TypeCatalog, TypeDiff, TypeIdentity, TypeKey, canonicalize,
     };
     pub use crate::types::expr;
     pub use crate::types::{
