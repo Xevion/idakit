@@ -100,13 +100,10 @@ impl<'db> Pattern<'db> {
             pattern: repr.clone(),
             kind,
         })?;
-        if mask_bytes.len() != code.len() {
+        if let Err(kind) = require_matching_length(code.len(), mask_bytes.len()) {
             return Err(Error::PatternRejected {
                 pattern: repr,
-                kind: PatternRejection::MaskMismatch {
-                    bytes: code.len(),
-                    mask: mask_bytes.len(),
-                },
+                kind,
             });
         }
         Self::from_parts(db, repr, code, Some(&mask_bytes))
@@ -123,16 +120,11 @@ impl<'db> Pattern<'db> {
         mask: Option<&[u8]>,
     ) -> Result<Self> {
         let _ = db; // borrow only: ties the pattern's lifetime to the open database.
-        let anchors = match mask {
-            Some(m) => m.iter().filter(|&&b| b != 0).count(),
-            None => bytes.len(),
-        };
-        if anchors == 0 {
-            return Err(Error::PatternRejected {
-                pattern: repr,
-                kind: PatternRejection::NoAnchor { total: bytes.len() },
-            });
-        }
+        let anchors = count_anchors(bytes.len(), mask);
+        require_anchor(anchors, bytes.len()).map_err(|kind| Error::PatternRejected {
+            pattern: repr,
+            kind,
+        })?;
         // An empty mask slice tells the facade every byte is concrete.
         let handle = sys::binpat_from_bytes(bytes, mask.unwrap_or(&[]));
         Ok(Self {
@@ -159,14 +151,11 @@ impl<'db> Pattern<'db> {
         mask: Option<&'a [u8]>,
     ) -> Result<Self> {
         if let Some(m) = mask
-            && m.len() != data.len()
+            && let Err(kind) = require_matching_length(data.len(), m.len())
         {
             return Err(Error::PatternRejected {
                 pattern: render(data),
-                kind: PatternRejection::MaskMismatch {
-                    bytes: data.len(),
-                    mask: m.len(),
-                },
+                kind,
             });
         }
         Self::from_parts(db, render(data), data, mask)
@@ -202,19 +191,17 @@ impl<'db> Pattern<'db> {
             Error::PatternRejected {
                 pattern: pattern.to_owned(),
                 kind: PatternRejection::Unparseable {
-                    detail: (!detail.is_empty()).then_some(detail),
+                    detail: non_empty(detail),
                 },
             }
         })?;
         // IDA's parser reports success even when it dropped tokens to nothing; a pattern with
         // no concrete byte can only ever match nothing, so reject it here too.
         let stats = sys::binpat_stats(handle.as_ref().expect("live pattern"));
-        if stats.anchors == 0 {
-            return Err(Error::PatternRejected {
-                pattern: pattern.to_owned(),
-                kind: PatternRejection::NoAnchor { total: stats.total },
-            });
-        }
+        require_anchor(stats.anchors, stats.total).map_err(|kind| Error::PatternRejected {
+            pattern: pattern.to_owned(),
+            kind,
+        })?;
         Ok(Self {
             handle,
             flags,
@@ -296,6 +283,42 @@ fn render(bytes: &[u8]) -> String {
         .map(|b| format!("{b:02X}"))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Count concrete (non-wildcard) bytes: non-zero mask bytes, or every byte when there is no
+/// mask (a raw all-bytes-match pattern).
+fn count_anchors(bytes_len: usize, mask: Option<&[u8]>) -> usize {
+    match mask {
+        Some(m) => m.iter().filter(|&&b| b != 0).count(),
+        None => bytes_len,
+    }
+}
+
+/// Reject a pattern with no concrete byte to match on.
+fn require_anchor(anchors: usize, total: usize) -> std::result::Result<(), PatternRejection> {
+    if anchors == 0 {
+        return Err(PatternRejection::NoAnchor { total });
+    }
+    Ok(())
+}
+
+/// Reject a mask whose length doesn't match the data it covers.
+fn require_matching_length(
+    data_len: usize,
+    mask_len: usize,
+) -> std::result::Result<(), PatternRejection> {
+    if mask_len != data_len {
+        return Err(PatternRejection::MaskMismatch {
+            bytes: data_len,
+            mask: mask_len,
+        });
+    }
+    Ok(())
+}
+
+/// `None` for an empty detail string; IDA's parser sometimes fails with no message at all.
+fn non_empty(detail: String) -> Option<String> {
+    (!detail.is_empty()).then_some(detail)
 }
 
 /// A lazy iterator over a [`Pattern`]'s matches, from [`Database::search`]/[`Database::search_in`].
@@ -406,6 +429,58 @@ mod tests {
         assert!(let Err(PatternRejection::BadMaskChar { ch: c, index: i }) = parse_mask(input));
         assert!(c == ch);
         assert!(i == index);
+    }
+
+    #[rstest]
+    #[case(Some(&[0xFF, 0x00, 0xFF][..]), 3, 2)] // one wildcard mask byte
+    #[case(Some(&[0x00, 0x00, 0x00][..]), 3, 0)] // all-wildcard mask
+    #[case(None, 4, 4)] // no mask: every byte anchors
+    fn count_anchors_counts_non_zero_mask_bytes_or_every_byte(
+        #[case] mask: Option<&[u8]>,
+        #[case] bytes_len: usize,
+        #[case] expected: usize,
+    ) {
+        assert!(count_anchors(bytes_len, mask) == expected);
+    }
+
+    #[test]
+    fn require_anchor_accepts_at_least_one_anchor() {
+        assert!(let Ok(()) = require_anchor(1, 3));
+    }
+
+    #[test]
+    fn require_anchor_rejects_zero_anchors() {
+        assert!(let Err(PatternRejection::NoAnchor { total: 3 }) = require_anchor(0, 3));
+    }
+
+    #[test]
+    fn require_matching_length_accepts_equal_lengths() {
+        assert!(let Ok(()) = require_matching_length(4, 4));
+    }
+
+    #[rstest]
+    #[case(4, 3)]
+    #[case(3, 4)]
+    fn require_matching_length_rejects_a_mismatch(
+        #[case] data_len: usize,
+        #[case] mask_len: usize,
+    ) {
+        assert!(
+            let Err(PatternRejection::MaskMismatch { bytes, mask }) =
+                require_matching_length(data_len, mask_len)
+        );
+        assert!(bytes == data_len);
+        assert!(mask == mask_len);
+    }
+
+    #[test]
+    fn non_empty_keeps_a_real_message() {
+        assert!(non_empty("bad pattern".to_owned()) == Some("bad pattern".to_owned()));
+    }
+
+    #[test]
+    fn non_empty_drops_an_empty_message() {
+        assert!(non_empty(String::new()) == None);
     }
 
     mod proptests {

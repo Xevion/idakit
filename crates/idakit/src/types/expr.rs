@@ -955,6 +955,51 @@ mod tests {
         assert!(p.as_array().is_none());
     }
 
+    // Each predicate checks only its own outermost variant, so every case pins a recipe where it
+    // holds against recipes where each other predicate holds instead.
+    #[rstest]
+    #[case::void_leaf(void(), false, false, false, false, false, true)]
+    #[case::named_leaf(named("Widget"), true, false, false, false, false, false)]
+    #[case::decl_leaf(decl("Widget *"), false, false, false, false, false, false)]
+    #[case::pointer(named("Widget").pointer(), false, true, false, false, false, false)]
+    #[case::array(int32().array(8), false, false, true, false, false, false)]
+    #[case::const_qualified(named("Widget").const_(), false, false, false, true, false, false)]
+    #[case::volatile_qualified(named("Widget").volatile_(), false, false, false, false, true, false)]
+    // outermost layer is Const wrapping a Pointer, so only is_const sees it
+    #[case::const_of_pointer_checks_outer_layer_only(
+        named("Widget").pointer().const_(),
+        false, false, false, true, false, false
+    )]
+    fn predicate_truth_vector_covers_every_variant(
+        #[case] recipe: TypeExpr,
+        #[case] is_named: bool,
+        #[case] is_pointer: bool,
+        #[case] is_array: bool,
+        #[case] is_const: bool,
+        #[case] is_volatile: bool,
+        #[case] is_void: bool,
+    ) {
+        assert!(recipe.is_named() == is_named);
+        assert!(recipe.is_pointer() == is_pointer);
+        assert!(recipe.is_array() == is_array);
+        assert!(recipe.is_const() == is_const);
+        assert!(recipe.is_volatile() == is_volatile);
+        assert!(recipe.is_void() == is_void);
+    }
+
+    #[test]
+    fn checked_serialize_matches_check_then_serialize() {
+        use crate::Error;
+
+        // A clean recipe: checked_serialize carries the real serialized bytes, not just some Ok.
+        let recipe = named("Foo").pointer();
+        assert!(recipe.checked_serialize() == Ok(recipe.serialize()));
+        assert!(recipe.serialize() == vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 6]);
+
+        // check() failing short-circuits before any bytes are produced.
+        assert!(let Err(Error::InteriorNul { arg: "name" }) = named("a\0b").checked_serialize());
+    }
+
     #[test]
     fn check_rejects_interior_nul_anywhere() {
         use crate::Error;

@@ -308,6 +308,25 @@ mod tests {
         assert!(round_tripped == idx);
     }
 
+    #[rstest]
+    #[case::adjacent(0, 1)]
+    #[case::gap(3, 200)]
+    #[case::wraps_type(u32::MAX, 0)]
+    fn hash_distinguishes_distinct_handles(#[case] raw_a: u32, #[case] raw_b: u32) {
+        use std::collections::hash_map::DefaultHasher;
+
+        fn hash_of<T>(idx: Idx<T>) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            idx.hash(&mut hasher);
+            hasher.finish()
+        }
+
+        // `*const ()` doesn't implement Hash; the handle still does.
+        let a: Idx<*const ()> = Idx::from_raw(raw_a);
+        let b: Idx<*const ()> = Idx::from_raw(raw_b);
+        assert!(hash_of(a) != hash_of(b));
+    }
+
     mod proptests {
         use proptest::prelude::*;
 

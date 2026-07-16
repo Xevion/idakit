@@ -230,6 +230,7 @@ mod tests {
     use assert2::assert;
 
     use super::*;
+    use crate::types::diff::{AggregateKind, TypeIdentity};
 
     const fn assert_send<T: Send>() {}
 
@@ -283,6 +284,48 @@ mod tests {
                     signed: false,
                 }
         );
+    }
+
+    /// A tagged root reports the nominal identity the type catalog keys on, and an anonymous one
+    /// reports none, since it is structural and has no name to match across databases.
+    #[test]
+    fn identity_is_the_root_tag_and_anonymous_roots_have_none() {
+        let mut types = TypeTable::new();
+        let field = u32_type(&mut types);
+        let root = types.intern(TypeValue {
+            shape: TypeShape::Struct {
+                name: Some("pt".into()),
+                members: vec![TypeMember {
+                    name: "x".into(),
+                    bit_offset: 0,
+                    ty: field,
+                    bitfield_width: None,
+                    repr: None,
+                }],
+            },
+            size: Some(4),
+        });
+        let tagged = Type {
+            types,
+            root,
+            key: OnceCell::new(),
+        };
+        assert!(
+            tagged.identity()
+                == Some(TypeIdentity::Tagged {
+                    tag: "pt".into(),
+                    kind: AggregateKind::Struct,
+                })
+        );
+
+        let mut types = TypeTable::new();
+        let root = u32_type(&mut types);
+        let anonymous = Type {
+            types,
+            root,
+            key: OnceCell::new(),
+        };
+        assert!(anonymous.identity() == None);
     }
 
     /// A non-aggregate root has no members.

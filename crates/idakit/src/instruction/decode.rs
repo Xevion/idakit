@@ -120,9 +120,40 @@ pub(crate) fn insn_from_data(
     })
 }
 
+/// Classifies a raw decode result into the rebuilt instruction or the matching [`DecodeError`],
+/// from [`Database::decode`](crate::Database::decode)'s `status` code.
+///
+/// Pure and kernel-free like [`insn_from_data`], so unit tests exercise every status code
+/// (including the empirically-unreachable-on-x86 `-2`/`-3`/`-4`) with hand-built data.
+pub(crate) fn classify(
+    data: &sys::InstructionData,
+    address: Address,
+) -> Result<Instruction, DecodeError> {
+    match data.status {
+        0 => insn_from_data(data, address),
+        -2 => Err(DecodeError::UnsupportedProcessor),
+        -3 => Err(DecodeError::UnsupportedOperand {
+            address: address.get(),
+            op: data.err_op,
+            optype: data.err_optype,
+        }),
+        -4 => Err(DecodeError::UnsupportedRegister {
+            address: address.get(),
+            op: data.err_op,
+            // for -4 the facade repurposes err_optype to carry the register number.
+            regnum: data.err_optype,
+        }),
+        // -1 (no instruction) and any other negative status.
+        _ => Err(DecodeError::NotCode {
+            address: address.get(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use rstest::rstest;
 
     use super::*;
 
@@ -347,5 +378,51 @@ mod tests {
         op.kind = sys::OP_IMM;
         op.data_type = 200; // outside the modeled scalar/float domain
         assert!(let Err(DecodeError::UnsupportedDataType { dtype: 200, .. }) = operand(&op, at()));
+    }
+
+    /// A successful status rebuilds the instruction via `insn_from_data`.
+    #[test]
+    fn classify_success_status_rebuilds_the_instruction() {
+        let raw = blank_insn();
+        assert!(classify(&raw, at()) == insn_from_data(&raw, at()));
+    }
+
+    /// Every failure status maps to its own [`DecodeError`] variant; `-1` and any other negative
+    /// status fall back to `NotCode`. Tabled over every arm so dropping one silently regresses to
+    /// `NotCode` instead.
+    #[rstest]
+    #[case::unsupported_processor(-2)]
+    #[case::unsupported_operand(-3)]
+    #[case::unsupported_register(-4)]
+    #[case::no_instruction(-1)]
+    #[case::other_negative_status(-99)]
+    fn classify_maps_every_failure_status(#[case] status: i32) {
+        let mut raw = blank_insn();
+        raw.status = status;
+        raw.err_op = 3;
+        raw.err_optype = 7;
+        let err = classify(&raw, at()).expect_err("a negative status is always an error");
+        match status {
+            -2 => assert!(err == DecodeError::UnsupportedProcessor),
+            -3 => assert!(
+                err == DecodeError::UnsupportedOperand {
+                    address: at().get(),
+                    op: 3,
+                    optype: 7,
+                }
+            ),
+            -4 => assert!(
+                err == DecodeError::UnsupportedRegister {
+                    address: at().get(),
+                    op: 3,
+                    regnum: 7,
+                }
+            ),
+            _ => assert!(
+                err == DecodeError::NotCode {
+                    address: at().get(),
+                }
+            ),
+        }
     }
 }

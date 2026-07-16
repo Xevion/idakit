@@ -497,6 +497,40 @@ mod tests {
         assert!(cloned == chart);
     }
 
+    /// `is_empty` reflects the arena, not a constant: an arena with no blocks is empty, one
+    /// with a block (like [`sample_chart`]) is not.
+    #[test]
+    fn is_empty_reflects_the_arena() {
+        let empty = FlowChart {
+            blocks: Arena::new(),
+            entry: BasicBlockId::from_raw(0),
+            function: Address::try_new(0x1000).unwrap(),
+        };
+        assert!(empty.is_empty());
+        assert!(!sample_chart().is_empty());
+    }
+
+    /// `exits` returns the block's real data, not an empty stand-in.
+    #[test]
+    fn exits_returns_the_real_data() {
+        let chart = sample_chart();
+        let exits = chart.block(chart.entry()).exits();
+        assert!(exits.len() == 1);
+        assert!(exits[0].target == Address::try_new(0x2000).unwrap());
+        assert!(exits[0].noreturn);
+    }
+
+    /// `block_at`'s range is half-open: the start address resolves to the block, the end
+    /// address (one past it) does not.
+    #[test]
+    fn block_at_end_is_exclusive() {
+        let chart = sample_chart();
+        let entry = chart.entry();
+        assert!(chart.block_at(Address::try_new(0x1000).unwrap()) == Some(entry));
+        assert!(chart.block_at(Address::try_new(0x100f).unwrap()) == Some(entry));
+        assert!(chart.block_at(Address::try_new(0x1010).unwrap()).is_none());
+    }
+
     #[test]
     fn flowchart_serde_round_trip() {
         let chart = sample_chart();

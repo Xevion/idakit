@@ -312,6 +312,8 @@ mod tests {
     }
 
     /// A real variable exposes its name/type and is not special; a reserved slot is the reverse.
+    /// Both also return their stored `offset`/`size` verbatim, at values distinct from the
+    /// unrelated 0/1/-1 constants the accessors could be mistakenly hardcoded to.
     #[test]
     fn accessors_follow_the_kind() {
         let ty = Some(tid(3));
@@ -326,15 +328,19 @@ mod tests {
         assert!(!var.is_special());
         assert!(var.name() == Some("var_18"));
         assert!(var.ty() == ty);
+        assert!(var.offset() == -0x18);
+        assert!(var.size() == 4);
 
         let retaddr = StackSlot {
-            offset: 0,
-            size: 8,
+            offset: 0x8,
+            size: 0x10,
             kind: StackSlotKind::ReturnAddress,
         };
         assert!(retaddr.is_special());
         assert!(retaddr.name().is_none());
         assert!(retaddr.ty().is_none());
+        assert!(retaddr.offset() == 0x8);
+        assert!(retaddr.size() == 0x10);
     }
 
     /// Distinct kinds hash distinctly (dedup in a `HashSet`) and each round-trips through JSON.
@@ -423,5 +429,65 @@ mod tests {
         let json = serde_json::to_string(&frame).expect("serialize");
         let back: StackFrame = serde_json::from_str(&json).expect("deserialize");
         assert!(back == frame);
+    }
+
+    fn slot(offset: i64, size: u64, kind: StackSlotKind) -> StackSlot {
+        StackSlot { offset, size, kind }
+    }
+
+    fn frame_with(slots: Vec<StackSlot>) -> StackFrame {
+        StackFrame {
+            size: 0x40,
+            types: TypeTable::new(),
+            slots,
+        }
+    }
+
+    /// `size` returns the stored total verbatim, at a value distinct from 0 or 1.
+    #[test]
+    fn frame_size_returns_stored_value() {
+        assert!(frame_with(Vec::new()).size() == 0x40);
+    }
+
+    /// `len`/`is_empty` reflect the real slot count: two slots is neither 0 nor 1, and an empty
+    /// frame is empty while a populated one is not.
+    #[test]
+    fn len_and_is_empty_reflect_slot_count() {
+        let populated = frame_with(vec![
+            slot(
+                -0x8,
+                4,
+                StackSlotKind::Variable {
+                    name: "var_8".to_owned(),
+                    ty: None,
+                },
+            ),
+            slot(0x8, 8, StackSlotKind::ReturnAddress),
+        ]);
+        assert!(populated.len() == 2);
+        assert!(!populated.is_empty());
+
+        assert!(frame_with(Vec::new()).is_empty());
+    }
+
+    /// `variables` yields only the real slots, not the reserved ones, and not an empty iterator.
+    #[test]
+    fn variables_excludes_reserved_slots() {
+        let var = slot(
+            -0x10,
+            4,
+            StackSlotKind::Variable {
+                name: "var_10".to_owned(),
+                ty: None,
+            },
+        );
+        let frame = frame_with(vec![
+            var.clone(),
+            slot(0x8, 8, StackSlotKind::ReturnAddress),
+            slot(0x10, 8, StackSlotKind::SavedRegisters),
+        ]);
+
+        let vars: Vec<&StackSlot> = frame.variables().collect();
+        assert!(vars == [&var]);
     }
 }

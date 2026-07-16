@@ -226,6 +226,34 @@ mod tests {
         assert!(is_pascal_of(raw) == pascal);
     }
 
+    /// `len`/`is_empty` read the stored length back verbatim, zero or not.
+    #[rstest]
+    #[case(0, true)]
+    #[case(1, false)]
+    #[case(5, false)]
+    fn len_and_is_empty_reflect_the_stored_length(#[case] length: usize, #[case] empty: bool) {
+        let db = Database::new();
+        let literal = StringLiteral::new(Address::new_const(0x1000), length, STRTYPE_C, &db);
+        assert!(literal.len() == length);
+        assert!(literal.is_empty() == empty);
+    }
+
+    /// `char_width`/`is_pascal` forward to the free functions above over the stored raw type.
+    #[rstest]
+    #[case(STRTYPE_C, 1, false)]
+    #[case(STRTYPE_C_16, 2, false)]
+    #[case(STRTYPE_PASCAL, 1, true)]
+    fn char_width_and_is_pascal_forward_the_raw_type(
+        #[case] raw: i32,
+        #[case] width: u8,
+        #[case] pascal: bool,
+    ) {
+        let db = Database::new();
+        let literal = StringLiteral::new(Address::new_const(0x1000), 0, raw, &db);
+        assert!(literal.char_width() == width);
+        assert!(literal.is_pascal() == pascal);
+    }
+
     /// Identity is the address alone: two entries at the same address are equal even with
     /// different lengths/types, and a different address is never equal.
     #[test]
@@ -254,6 +282,19 @@ mod tests {
         strings.sort();
         assert!(strings[0].address() == lo);
         assert!(strings[1].address() == hi);
+    }
+
+    /// `size_hint`'s upper bound is the remaining `count - next` span, with no live kernel
+    /// involved: it never walks the list itself.
+    #[test]
+    fn strings_size_hint_reports_the_remaining_span() {
+        let db = Database::new();
+        let strings = Strings {
+            db: &db,
+            next: 2,
+            count: 6,
+        };
+        assert!(strings.size_hint() == (0, Some(4)));
     }
 
     mod proptests {

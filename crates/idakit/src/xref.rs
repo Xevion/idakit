@@ -443,6 +443,21 @@ mod tests {
         assert!(serde_json::from_str::<XrefKind>(&json).expect("deserializable") == kind);
     }
 
+    /// `size_hint`'s upper bound tracks the underlying record count, not a hardcoded constant.
+    /// No live kernel involved: it never walks the list itself.
+    #[test]
+    fn xrefs_size_hint_reports_the_record_count() {
+        let rec = |to: u64| sys::XrefRec {
+            from: 0,
+            to,
+            type_: 0,
+            iscode: false,
+            user: false,
+        };
+        let xrefs = Xrefs::new(vec![rec(1), rec(2), rec(3)]);
+        assert!(xrefs.size_hint() == (0, Some(3)));
+    }
+
     /// `CodeXref`'s `Display` renders a stable, human-readable label.
     #[rstest]
     #[case::unknown(CodeXref::Unknown, "unknown")]

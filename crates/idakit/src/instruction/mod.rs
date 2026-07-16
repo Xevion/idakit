@@ -24,7 +24,7 @@ pub use data_type::OperandDataType;
 pub use iter::{Instructions, InstructionsIn};
 pub use register::{Register, RegisterClass};
 
-pub(crate) use decode::insn_from_data;
+pub(crate) use decode::classify;
 
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
@@ -47,25 +47,7 @@ impl Database {
     #[doc(alias("decode_insn"))]
     pub fn decode(&self, address: Address) -> Result<Instruction, DecodeError> {
         let data = self.decode_insn(address);
-        match data.status {
-            0 => insn_from_data(&data, address),
-            -2 => Err(DecodeError::UnsupportedProcessor),
-            -3 => Err(DecodeError::UnsupportedOperand {
-                address: address.get(),
-                op: data.err_op,
-                optype: data.err_optype,
-            }),
-            -4 => Err(DecodeError::UnsupportedRegister {
-                address: address.get(),
-                op: data.err_op,
-                // for -4 the facade repurposes err_optype to carry the register number.
-                regnum: data.err_optype,
-            }),
-            // -1 (no instruction) and any other negative status.
-            _ => Err(DecodeError::NotCode {
-                address: address.get(),
-            }),
-        }
+        classify(&data, address)
     }
 }
 

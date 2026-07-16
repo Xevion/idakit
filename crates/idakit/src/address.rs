@@ -242,8 +242,16 @@ mod tests {
     #[test]
     fn hex_formatting() {
         let a = Address::new_const(0xdead_beef);
+        assert!(format!("{a}") == "0xdeadbeef");
         assert!(format!("{a:#x}") == "0xdeadbeef");
+        assert!(format!("{a:#X}") == "0xDEADBEEF");
         assert!(format!("{a:?}") == "Address(0xdeadbeef)");
+    }
+
+    #[test]
+    fn into_u64_yields_the_real_address() {
+        let a = Address::new_const(0x1400_1000);
+        assert!(u64::from(a) == 0x1400_1000);
     }
 
     mod proptests {

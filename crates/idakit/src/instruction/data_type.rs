@@ -156,6 +156,7 @@ impl std::fmt::Display for OperandDataType {
 mod tests {
     use assert2::assert;
     use idakit_sys as sys;
+    use rstest::rstest;
 
     use super::*;
 
@@ -207,16 +208,28 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fixed_sizes_match_the_isa() {
-        assert!(OperandDataType::Byte.bytes() == Some(1));
-        assert!(OperandDataType::Qword.bytes() == Some(8));
-        assert!(OperandDataType::Byte16.bytes() == Some(16));
-        assert!(OperandDataType::Half.bytes() == Some(2));
-        // Variable / pointer / sizeless types report no fixed width.
-        assert!(OperandDataType::Tbyte.bytes().is_none());
-        assert!(OperandDataType::Code.bytes().is_none());
-        assert!(OperandDataType::Void.bytes().is_none());
+    #[rstest]
+    #[case::byte(OperandDataType::Byte, Some(1))]
+    #[case::word(OperandDataType::Word, Some(2))]
+    #[case::dword(OperandDataType::Dword, Some(4))]
+    #[case::float(OperandDataType::Float, Some(4))]
+    #[case::double(OperandDataType::Double, Some(8))]
+    #[case::tbyte(OperandDataType::Tbyte, None)]
+    #[case::pack_real(OperandDataType::PackReal, None)]
+    #[case::qword(OperandDataType::Qword, Some(8))]
+    #[case::byte16(OperandDataType::Byte16, Some(16))]
+    #[case::code(OperandDataType::Code, None)]
+    #[case::void(OperandDataType::Void, None)]
+    #[case::fword(OperandDataType::Fword, Some(6))]
+    #[case::bit_field(OperandDataType::BitField, None)]
+    #[case::string(OperandDataType::String, None)]
+    #[case::unicode(OperandDataType::Unicode, None)]
+    #[case::ldbl(OperandDataType::Ldbl, None)]
+    #[case::byte32(OperandDataType::Byte32, Some(32))]
+    #[case::byte64(OperandDataType::Byte64, Some(64))]
+    #[case::half(OperandDataType::Half, Some(2))]
+    fn bytes_matches_every_variant(#[case] dtype: OperandDataType, #[case] expect: Option<u32>) {
+        assert!(dtype.bytes() == expect);
     }
 
     #[test]

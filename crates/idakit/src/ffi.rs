@@ -196,6 +196,41 @@ mod tests {
         assert!(got.len() == 100);
     }
 
+    /// A fill call reporting `0` is a legitimate empty value, not absence: only a
+    /// negative length signals absence.
+    #[test]
+    fn regrow_fill_call_reporting_zero_yields_empty_string() {
+        let calls = std::cell::Cell::new(0u32);
+        let got = read_string(|buf, cap| {
+            let call = calls.get();
+            calls.set(call + 1);
+            if cap > 0 {
+                // SAFETY: test-only; buf has cap bytes.
+                unsafe { *buf = 0 };
+            }
+            if call == 0 { 300 } else { 0 }
+        })
+        .expect("present");
+        assert!(got.is_empty());
+    }
+
+    /// A failure that appears only on the regrow's fill call, after a valid sizing
+    /// call, still signals absence.
+    #[test]
+    fn regrow_fill_call_failure_is_absent() {
+        let calls = std::cell::Cell::new(0u32);
+        let r = read_string(|buf, cap| {
+            let call = calls.get();
+            calls.set(call + 1);
+            if cap > 0 {
+                // SAFETY: test-only; buf has cap bytes.
+                unsafe { *buf = 0 };
+            }
+            if call == 0 { 300 } else { -1 }
+        });
+        assert!(r.is_none());
+    }
+
     #[rstest]
     #[case::clean("hello", None)]
     #[case::interior_nul("ab\0cd", Some("name"))]
