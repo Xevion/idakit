@@ -11,3 +11,5 @@ compile_commands.json
 **/*.id2
 **/*.nam
 **/*.til
+# cargo-mutants rotates its output dir to mutants.out.old on each run, so match both.
+mutants.out*

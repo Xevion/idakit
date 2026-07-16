@@ -1,0 +1,108 @@
+# Scopes cargo-mutants to modules a test can actually reach; see `just mutants`. Excluded on
+# purpose: claim.rs (its one live branch needs two kernels in one process), raw.rs (thin unsafe
+# forwarders, no errors built), error.rs (derived enum), lib.rs's open/close paths (unreachable
+# without `faults`). Each would only ever report MISSED, indistinguishable from a real gap.
+examine_globs = [
+    "crates/idakit/src/types/diff/**/*.rs",
+    "crates/idakit/src/types/expr.rs",
+    "crates/idakit/src/types/tinfo.rs",
+    "crates/idakit/src/arena.rs",
+    "crates/idakit/src/address.rs",
+    "crates/idakit/src/ffi.rs",
+    "crates/idakit/src/search.rs",
+    "crates/idakit/src/strings.rs",
+    "crates/idakit/src/bitness.rs",
+    "crates/idakit/src/meta.rs",
+    "crates/idakit/src/name.rs",
+    "crates/idakit/src/stack.rs",
+    "crates/idakit/src/xref.rs",
+    "crates/idakit/src/bytes.rs",
+    "crates/idakit/src/flowchart.rs",
+    "crates/idakit/src/instruction/**/*.rs",
+    "crates/idakit/src/netnode/**/*.rs",
+    "crates/idakit/src/function/signature.rs",
+]
+
+# Mutants no test could ever kill. The first three are equivalent-by-construction: a defensive
+# counter that never runs (`skipped`), and disjoint-bit OR/XOR swaps in `parse_hex_token` and
+# `short_name`/`long_name` (the col-30 `| -> &` sibling, which drops GN_VISIBLE, stays real and
+# is caught via a substitution test). The col-51 `| -> &` swap collapses `DEMANGLED & SHORT`/
+# `DEMANGLED & LONG` to zero, so the mutant is just GN_VISIBLE alone (same as `visible_name`);
+# only a mangled C++ symbol makes that observable, and the canonical fixture (libcrypto, a C
+# library) has none. `is_weak_name` is the same shape: untestable only against the current
+# fixture (no weak symbols); revisit either if the fixture changes.
+#
+# `Instructions`/`InstructionsIn::next`'s `stepped > address` guard is equivalent too:
+# bytes.hpp documents `get_item_size(ea)` (`get_item_end(ea) - ea`) as zero only for `BADADDR`,
+# a raw value `Address` can never hold, so `get_item_end` never echoes its input back. The one
+# residual path, a raw result landing exactly on `BADADDR` and falling back through `item_end`'s
+# `unwrap_or(address)`, is closed because both loops only call `item_end` on `address < end` with
+# `end: Address`, keeping `address` below `Address`'s own ceiling (`BADADDR - 1`) too, so the
+# "unexplored bytes step by one" case can never overflow into the sentinel.
+#
+# `predecessors`'s `< -> <=` is equivalent too: `qflow_chart_t` scopes a flow chart to one
+# function's own range (`bounds`/`pfn`, gdl.hpp), and external blocks (index >= `nproper`) exist
+# solely as materialized jump *targets*, per `FC_NOEXT`'s own doc; nothing in the SDK's shape lets
+# a chart decode past one to give it succ edges of its own. `FC_NOPREDS` names predecessor lists as
+# a derived pass over the already-built succ edges, not an independent analysis, so an index that
+# is never a source in any block's succ list can never land in another block's pred list either.
+# `cfg_preds` therefore never actually yields `nproper`, and `<`/`<=` agree on every real input.
+exclude_re = [
+    "replace \\+= with .* in Database::type_catalog_with",
+    "replace \\| with \\^ in parse_hex_token",
+    "replace \\| with \\^ in Database::(short|long)_name",
+    "name\\.rs:93:51: replace \\| with \\& in Database::short_name",
+    "name\\.rs:114:51: replace \\| with \\& in Database::long_name",
+    "replace Database::is_weak_name -> bool with false",
+    "replace > with >= in <impl Iterator for Instructions(In)?<'_>>::next",
+    "replace < with <= in predecessors",
+]
+
+# Matches what `just test` builds; a feature-gated function excluded here would get mutants no
+# compiled test could ever kill.
+all_features = true
+
+test_tool = "nextest"
+
+# Unit tests plus the kernel binaries covering the globs above; pure vs. kernel-bound is a
+# property of functions, not files, so both halves are needed. Add a binary here when adding its
+# glob, or its mutants go unchecked. The corpus matrix is deliberately excluded: it dominates the
+# suite's wall time by fanning out across every fixture, unrelated to code-under-test coverage.
+additional_cargo_test_args = [
+    "--lib",
+    "--test",
+    "strings",
+    "--test",
+    "dbinfo",
+    "--test",
+    "search",
+    "--test",
+    "netnode",
+    "--test",
+    "disasm",
+    "--test",
+    "cfg",
+    "--test",
+    "tinfo",
+    "--test",
+    "function_name",
+    "--test",
+    "frame",
+    # nextest's thread count multiplies by `--jobs` rather than dividing; caps live kernels
+    # (~0.85 GiB each) to `jobs * 4`. Lower this before lowering `--jobs`.
+    "--test-threads",
+    "4",
+    # Stops each mutant at the first rejecting test; see .config/nextest.toml.
+    "-P",
+    "mutants",
+]
+
+# Each job builds in its own scratch copy of the tree; gitignore-filtering it keeps that copy to
+# ~5 MiB instead of ~2 GiB (local databases, a vendored SDK checkout). copy_target can't override
+# this, since the filter runs during the walk before target/ would be handed over.
+gitignore = true
+copy_target = false
+
+# Mutants only need pass/fail, never a symbolized backtrace; full debuginfo on hundreds of
+# per-mutant binaries is pure write traffic.
+profile = "mutants"

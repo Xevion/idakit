@@ -50,3 +50,9 @@ wildcard_imports = "allow"         # idakit-sys's flat namespace re-exports ever
 unnecessary_debug_formatting = "allow"
 missing_const_for_fn = "allow"     # nursery; const is a forward API commitment, not free
 struct_excessive_bools = "allow"   # flat bool config binds 1:1 to fields
+
+# Mutation runs build hundreds of near-identical test binaries, each relinking against libida.so.
+# They only ever need pass/fail, so full DWARF on every one is write traffic bought for nothing.
+[profile.mutants]
+inherits = "test"
+debug = "none"
