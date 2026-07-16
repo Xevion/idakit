@@ -11,6 +11,9 @@
 //!   the typed key/value store ([`get`](Netnode::get)/[`put`](NetnodeMut::put)) layered on it;
 //! - **blobs** ([`blob`](Netnode::blob)), unlimited-size byte objects.
 //!
+//! Every value/sup/hash byte write goes through [`NetnodeBytes`], validating the SDK's
+//! `1..=MAXSPECSIZE` object-size domain at conversion time. Blobs alone are unbounded.
+//!
 //! [`Netnode`] reads (absence is [`None`], never an error); [`NetnodeMut`], acquired by
 //! [`netnode_mut`](Database::netnode_mut) from `&mut Database`, writes. The whole layer holds no
 //! kernel handle and needs no `unsafe`: a netnode is a value over its [`NodeId`], so the views are
@@ -20,6 +23,7 @@
 //! this layer is the curated, idiomatic subset.
 
 mod arrays;
+mod bytes;
 mod persist;
 mod tag;
 mod tagged;
@@ -32,6 +36,7 @@ use crate::Database;
 use crate::error::{Error, Result};
 
 pub use self::arrays::{Alts, HashEntries, Sups};
+pub use self::bytes::{MAXSPECSIZE, NetnodeBytes, NetnodeBytesError};
 pub use self::persist::Persist;
 pub use self::tag::Tag;
 pub use self::tagged::{TaggedNetnode, TaggedNetnodeMut};
@@ -443,13 +448,6 @@ impl NetnodeMut<'_> {
     }
 
     write_ops! {
-        /// Set the node value (max 1024 bytes).
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::set"))]
-        fn set_value(this, value: &[u8]) => this.db.netnode_set_value(this.id.get(), value);
-
         /// Delete the node value.
         ///
         /// # Errors
@@ -478,13 +476,6 @@ impl NetnodeMut<'_> {
         #[doc(alias("netnode::altdel_all"))]
         fn clear_alts(this) => this.db.netnode_altdel_all(this.id.get(), ATAG);
 
-        /// Set the sup byte object at `index` (max 1024 bytes).
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::supset"))]
-        fn set_sup(this, index: u64, value: &[u8]) => this.db.netnode_supset(this.id.get(), index, value, STAG);
-
         /// Delete the sup byte object at `index`.
         ///
         /// # Errors
@@ -498,13 +489,6 @@ impl NetnodeMut<'_> {
         /// [`Error::WriteRejected`] if the kernel rejects the write.
         #[doc(alias("netnode::supdel_all"))]
         fn clear_sups(this) => this.db.netnode_supdel_all(this.id.get(), STAG);
-
-        /// Set the hash value for `key` to raw bytes (max 1024 bytes).
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`] if the kernel rejects the write.
-        #[doc(alias("netnode::hashset"))]
-        fn set_hash(this, key: &str, value: &[u8]) => this.db.netnode_hashset(this.id.get(), key, value, HTAG);
 
         /// Set the hash value for `key` to an integer.
         ///
@@ -547,6 +531,57 @@ impl NetnodeMut<'_> {
         /// [`Error::WriteRejected`] if the name is already taken.
         #[doc(alias("netnode::rename"))]
         fn rename(this, name: &str) => this.db.netnode_rename(this.id.get(), name);
+    }
+
+    /// Set the node value, from 1 to `MAXSPECSIZE` (1024) bytes.
+    ///
+    /// # Errors
+    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds `MAXSPECSIZE`, or
+    /// [`Error::WriteRejected`] if the kernel rejects the write.
+    #[doc(alias("netnode::set"))]
+    pub fn set_value<'a>(
+        &mut self,
+        value: impl TryInto<NetnodeBytes<'a>, Error: Into<NetnodeBytesError>>,
+    ) -> Result<()> {
+        let bytes: NetnodeBytes<'_> = value.try_into().map_err(Into::into)?;
+        let ok = self.db.netnode_set_value(self.id.get(), bytes.as_bytes());
+        self.checked(ok, "set_value")
+    }
+
+    /// Set the sup byte object at `index`, from 1 to `MAXSPECSIZE` (1024) bytes.
+    ///
+    /// # Errors
+    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds `MAXSPECSIZE`, or
+    /// [`Error::WriteRejected`] if the kernel rejects the write.
+    #[doc(alias("netnode::supset"))]
+    pub fn set_sup<'a>(
+        &mut self,
+        index: u64,
+        value: impl TryInto<NetnodeBytes<'a>, Error: Into<NetnodeBytesError>>,
+    ) -> Result<()> {
+        let bytes: NetnodeBytes<'_> = value.try_into().map_err(Into::into)?;
+        let ok = self
+            .db
+            .netnode_supset(self.id.get(), index, bytes.as_bytes(), STAG);
+        self.checked(ok, "set_sup")
+    }
+
+    /// Set the hash value for `key` to raw bytes, from 1 to `MAXSPECSIZE` (1024) bytes.
+    ///
+    /// # Errors
+    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds `MAXSPECSIZE`, or
+    /// [`Error::WriteRejected`] if the kernel rejects the write.
+    #[doc(alias("netnode::hashset"))]
+    pub fn set_hash<'a>(
+        &mut self,
+        key: &str,
+        value: impl TryInto<NetnodeBytes<'a>, Error: Into<NetnodeBytesError>>,
+    ) -> Result<()> {
+        let bytes: NetnodeBytes<'_> = value.try_into().map_err(Into::into)?;
+        let ok = self
+            .db
+            .netnode_hashset(self.id.get(), key, bytes.as_bytes(), HTAG);
+        self.checked(ok, "set_hash")
     }
 
     /// Store a typed value under hash `key`.
@@ -671,6 +706,31 @@ mod tests {
             next: NodeId::try_new(1),
         };
         assert!(format!("{iter:?}").starts_with("Netnodes"));
+    }
+
+    #[test]
+    fn node_id_debug_renders_the_hex_id() {
+        let id = NodeId::try_new(0x1234).unwrap();
+        assert!(format!("{id:?}") == "NodeId(0x1234)");
+    }
+
+    #[test]
+    fn node_id_lower_hex_matches_get() {
+        let id = NodeId::try_new(0x1234).unwrap();
+        assert!(format!("{id:x}") == "1234");
+    }
+
+    #[test]
+    fn node_id_partial_cmp_orders_by_the_real_id() {
+        let a = NodeId::try_new(1).unwrap();
+        let b = NodeId::try_new(2).unwrap();
+        assert!(a.partial_cmp(&b) == Some(std::cmp::Ordering::Less));
+    }
+
+    #[test]
+    fn node_id_into_u64_is_the_real_id() {
+        let id = NodeId::try_new(0x1234).unwrap();
+        assert!(u64::from(id) == 0x1234);
     }
 
     #[test]

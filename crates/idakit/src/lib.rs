@@ -207,8 +207,8 @@ pub use crate::location::{Location, LocationMut};
 pub use crate::meta::DatabaseInfo;
 pub use crate::name::{GnFlags, Name, Names};
 pub use crate::netnode::{
-    Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups, Tag, TaggedNetnode,
-    TaggedNetnodeMut,
+    Alts, HashEntries, MAXSPECSIZE, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut, Netnodes,
+    NodeId, Persist, Sups, Tag, TaggedNetnode, TaggedNetnodeMut,
 };
 pub use crate::search::{Matches, Pattern};
 pub use crate::segment::{
@@ -243,8 +243,8 @@ pub mod prelude {
     pub use crate::meta::DatabaseInfo;
     pub use crate::name::{GnFlags, Name, Names};
     pub use crate::netnode::{
-        Alts, HashEntries, Netnode, NetnodeMut, Netnodes, NodeId, Persist, Sups, Tag,
-        TaggedNetnode, TaggedNetnodeMut,
+        Alts, HashEntries, MAXSPECSIZE, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut,
+        Netnodes, NodeId, Persist, Sups, Tag, TaggedNetnode, TaggedNetnodeMut,
     };
     pub use crate::search::{Matches, Pattern};
     pub use crate::segment::{

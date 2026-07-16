@@ -11,6 +11,7 @@ use snafu::Snafu;
 
 use crate::decompiler::ctree::ExtractError;
 use crate::instruction::DecodeError;
+use crate::netnode::NetnodeBytesError;
 use crate::types::TypeWriteError;
 
 /// IDA's error code, with the documented generic values named.
@@ -265,6 +266,15 @@ pub enum Error {
         pattern: String,
         /// Why it was rejected.
         kind: PatternRejection,
+    },
+
+    /// A netnode value/sup/hash write was given bytes outside the SDK's `1..=MAXSPECSIZE`
+    /// domain; carries the typed [`NetnodeBytesError`]. `?` flattens it into the crate
+    /// [`Result`] via [`From`] (`context(false)`).
+    #[snafu(display("{source}"), context(false))]
+    InvalidNetnodeBytes {
+        /// The underlying validation failure.
+        source: NetnodeBytesError,
     },
 
     /// A write (`op` names the kernel op, e.g. `"rename"`) was rejected. `reason` is
@@ -532,6 +542,10 @@ mod tests {
     #[case::type_write_flattens_through(
         Error::from(TypeWriteError::NoType { name: "FOO".to_owned() }),
         "no type named \"FOO\" in the local type library",
+    )]
+    #[case::invalid_netnode_bytes_flattens_through(
+        Error::from(NetnodeBytesError::TooLarge { len: 1025, cap: 1024 }),
+        "netnode value is 1025 bytes, exceeding the 1024-byte MAXSPECSIZE cap",
     )]
     fn error_displays(#[case] err: Error, #[case] expect: &str) {
         assert!(err.to_string() == expect);

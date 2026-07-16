@@ -100,14 +100,16 @@ size_t netnode_copyto(uint64_t node, uint64_t count, uint64_t target, bool move_
 
 // Node value (vtag).
 
-// The netnode's raw value blob, copied into an owned Vec<u8>; throws if it has none.
+// The netnode's raw value blob, copied into an owned Vec<u8>; throws if it has none. valobj
+// reports the stored object's size, not the bytes it wrote, so the length is clamped to buf.
 rust::Vec<uint8_t> netnode_value(uint64_t node) {
   netnode handle(static_cast<nodeidx_t>(node));
   uint8_t buf[MAXSPECSIZE];
   ssize_t r = handle.valobj(buf, sizeof(buf));
   if (r < 0)
     throw std::runtime_error("netnode has no value");
-  return to_rust_bytes(buf, static_cast<size_t>(r));
+  size_t len = static_cast<size_t>(r) < sizeof(buf) ? static_cast<size_t>(r) : sizeof(buf);
+  return to_rust_bytes(buf, len);
 }
 
 // The netnode's value read back as a string; throws if it has none.
@@ -119,11 +121,11 @@ rust::String netnode_value_str(uint64_t node) {
   return to_rust_string(out);
 }
 
-// Sets the netnode's value blob; returns whether the write succeeded. An empty value is
-// rejected: set() reads a length of 0 as "measure the value with strlen", which would walk an
-// empty slice's dangling pointer, and there is no length that stores zero bytes.
+// Sets the netnode's value blob; returns whether the write succeeded. set() reads a length of 0
+// as "measure with strlen", walking an empty slice's dangling pointer, and truncates silently
+// past MAXSPECSIZE while still reporting success, so both are rejected here.
 bool netnode_set_value(uint64_t node, rust::Slice<const uint8_t> value) {
-  if (value.empty())
+  if (value.empty() || value.size() > static_cast<size_t>(MAXSPECSIZE))
     return false;
   netnode handle(static_cast<nodeidx_t>(node));
   return handle.set(value.data(), value.size());

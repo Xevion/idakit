@@ -2,26 +2,52 @@
 //! iterate, then clear and kill.
 //!
 //! A normal `#[test]` on the kernel thread `Ida::run` spawns, serialized by the nextest
-//! `serial-kernel` group. It only creates a `"$ "`-prefixed user node and never saves, so the
+//! `serial-kernel` group. It only creates `"$ "`-prefixed user nodes and never saves, so the
 //! fixture is untouched on disk. Skips when no corpus is configured.
+//!
+//! Every case runs in one session: each owns a distinct node name and kills it on the way out,
+//! so they never see each other, and kernel bring-up is paid once rather than per case.
 
 mod common;
 
 use assert2::assert;
+use idakit::Database;
+
+/// A named case, run against the shared session's database.
+type Case = (&'static str, fn(&mut Database));
+
+/// The cases, each independent of every other.
+const CASES: &[Case] = &[
+    ("roundtrip", roundtrip_run),
+    ("tag view", tag_run),
+    ("boundary alt", boundary_alt_run),
+    ("boundary sup", boundary_sup_run),
+    ("empty value rejection", empty_value_run),
+    ("oversized value rejection", oversized_value_run),
+    ("write rejection", write_rejection_run),
+    ("large blob", large_blob_run),
+    ("reused validated bytes", reused_bytes_run),
+];
 
 #[test]
-fn netnode_roundtrip() {
+fn netnode() {
     common::with_canonical_db(run);
 }
 
-#[cfg(feature = "serde")]
-#[test]
-fn netnode_serde_roundtrip() {
-    common::with_canonical_db(serde_run);
+fn run(idb: &mut Database) {
+    for (name, case) in CASES {
+        case(idb);
+        println!("netnode {name} OK");
+    }
+    #[cfg(feature = "serde")]
+    {
+        serde_run(idb);
+        println!("netnode serde OK");
+    }
 }
 
 #[cfg(feature = "serde")]
-fn serde_run(idb: &mut idakit::Database) {
+fn serde_run(idb: &mut Database) {
     let name = "$ idakit.netnode.serde";
     let value: (u32, Vec<String>) = (0xbeef, vec!["a".into(), "b".into()]);
 
@@ -40,12 +66,7 @@ fn serde_run(idb: &mut idakit::Database) {
     idb.netnode_mut(name).kill();
 }
 
-#[test]
-fn netnode_tag_view() {
-    common::with_canonical_db(tag_run);
-}
-
-fn tag_run(idb: &mut idakit::Database) {
+fn tag_run(idb: &mut Database) {
     use idakit::Tag;
     let name = "$ idakit.netnode.tag";
     let user = Tag::new(b'X');
@@ -78,13 +99,8 @@ fn tag_run(idb: &mut idakit::Database) {
     idb.netnode_mut(name).kill();
 }
 
-#[test]
-fn netnode_boundary_alt() {
-    common::with_canonical_db(boundary_alt_run);
-}
-
 /// The alt array's boundary indices (`0`, `u64::MAX`) both store and read back.
-fn boundary_alt_run(idb: &mut idakit::Database) {
+fn boundary_alt_run(idb: &mut Database) {
     let name = "$ idakit.netnode.boundary.alt";
     let mut node = idb.netnode_mut(name);
 
@@ -98,16 +114,10 @@ fn boundary_alt_run(idb: &mut idakit::Database) {
     );
 
     node.kill();
-    println!("netnode boundary alt OK");
-}
-
-#[test]
-fn netnode_boundary_sup() {
-    common::with_canonical_db(boundary_sup_run);
 }
 
 /// The sup array's boundary indices (`0`, `u64::MAX`) both store and read back.
-fn boundary_sup_run(idb: &mut idakit::Database) {
+fn boundary_sup_run(idb: &mut Database) {
     let name = "$ idakit.netnode.boundary.sup";
     let mut node = idb.netnode_mut(name);
 
@@ -124,12 +134,6 @@ fn boundary_sup_run(idb: &mut idakit::Database) {
     );
 
     node.kill();
-    println!("netnode boundary sup OK");
-}
-
-#[test]
-fn netnode_empty_value_is_rejected() {
-    common::with_canonical_db(empty_value_run);
 }
 
 /// Every byte-valued setter rejects an empty value rather than reaching the kernel.
@@ -138,32 +142,28 @@ fn netnode_empty_value_is_rejected() {
 /// so an empty slice would hand them a dangling pointer to walk, and no length stores zero
 /// bytes at all. Rejecting keeps the unstorable case out of the kernel and off the niche that
 /// separates an unset slot from a present one.
-fn empty_value_run(idb: &mut idakit::Database) {
+fn empty_value_run(idb: &mut Database) {
+    use idakit::NetnodeBytesError;
+    use idakit::error::Error;
+
     let name = "$ idakit.netnode.boundary.empty";
     let mut node = idb.netnode_mut(name);
 
-    assert!(
-        node.set_sup(1, b"").is_err(),
-        "an empty sup value is unstorable"
-    );
+    // The typed variant proves the rejection happened in `NetnodeBytes::try_from`, not the
+    // kernel (which would be `Error::WriteRejected`).
+    assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::Empty }) = node.set_sup(1, b""));
     assert!(
         node.sup(1).is_none(),
         "the rejected sup write left no value"
     );
 
-    assert!(
-        node.set_hash("k", b"").is_err(),
-        "an empty hash value is unstorable"
-    );
+    assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::Empty }) = node.set_hash("k", b""));
     assert!(
         node.hash("k").is_none(),
         "the rejected hash write left no value"
     );
 
-    assert!(
-        node.set_value(b"").is_err(),
-        "an empty node value is unstorable"
-    );
+    assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::Empty }) = node.set_value(b""));
     assert!(
         node.value().is_none(),
         "the rejected value write left no value"
@@ -177,17 +177,114 @@ fn empty_value_run(idb: &mut idakit::Database) {
     );
 
     node.kill();
-    println!("netnode empty value rejection OK");
 }
 
-#[test]
-fn netnode_large_blob() {
-    common::with_canonical_db(large_blob_run);
+/// Every byte-valued setter enforces `MAXSPECSIZE` rather than silently truncating.
+///
+/// An over-cap `supset` returns success while storing only the first `MAXSPECSIZE` bytes, so a
+/// caller trusting the `Ok` would silently lose data. idakit rejects the write client-side
+/// instead, matching the empty-value guard.
+fn oversized_value_run(idb: &mut Database) {
+    use idakit::NetnodeBytesError;
+    use idakit::error::Error;
+
+    let name = "$ idakit.netnode.boundary.oversized";
+    let mut node = idb.netnode_mut(name);
+
+    // Exactly the cap: stores and round-trips in full.
+    let at_cap = vec![0x11u8; 1024];
+    node.set_sup(0, &at_cap).expect("set_sup at MAXSPECSIZE");
+    assert!(
+        node.sup(0).as_deref() == Some(at_cap.as_slice()),
+        "a value at the cap did not round-trip exactly"
+    );
+
+    // One byte over: rejected before the kernel, with the length and cap on the typed error.
+    let over_cap = vec![0x22u8; 1025];
+    assert!(
+        let Err(Error::InvalidNetnodeBytes {
+            source: NetnodeBytesError::TooLarge { len: 1025, cap: 1024 },
+        }) = node.set_sup(1, &over_cap)
+    );
+    assert!(
+        node.sup(1).is_none(),
+        "the rejected sup write left no value"
+    );
+
+    // Far over the cap: same rejection.
+    let far_over = vec![0x33u8; 4096];
+    assert!(
+        let Err(Error::InvalidNetnodeBytes {
+            source: NetnodeBytesError::TooLarge { len: 4096, cap: 1024 },
+        }) = node.set_sup(2, &far_over)
+    );
+    assert!(
+        node.sup(2).is_none(),
+        "the rejected sup write left no value"
+    );
+
+    // hashset shares the same guard.
+    assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::TooLarge { .. } }) = node.set_hash("k", &over_cap));
+    assert!(
+        node.hash("k").is_none(),
+        "the rejected hash write left no value"
+    );
+
+    // The node value shares the same guard.
+    assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::TooLarge { .. } }) = node.set_value(&over_cap));
+    assert!(
+        node.value().is_none(),
+        "the rejected value write left no value"
+    );
+
+    node.kill();
+}
+
+/// A kernel-level rejection, unlike the client-side `NetnodeBytes` guard above, surfaces as
+/// `Error::WriteRejected` through both `NetnodeMut::checked` and `TaggedNetnodeMut::checked`,
+/// which are separate implementations rather than one delegating to the other.
+///
+/// `netnode::altdel`/`supdel` return `false` when the slot was never set, a deterministic
+/// kernel-side rejection reachable with no invalid input.
+fn write_rejection_run(idb: &mut Database) {
+    use idakit::Tag;
+    use idakit::error::Error;
+
+    let name = "$ idakit.netnode.checked";
+    let mut node = idb.netnode_mut(name);
+
+    assert!(let Err(Error::WriteRejected { .. }) = node.remove_alt(9_999));
+
+    {
+        let mut t = node.tag(Tag::new(b'Z'));
+        assert!(let Err(Error::WriteRejected { .. }) = t.remove(9_999));
+    }
+
+    node.kill();
+}
+
+/// A `NetnodeBytes` validated once is itself accepted back into the setters it exists for, so
+/// one validation reuses across several writes instead of re-validating identical bytes.
+fn reused_bytes_run(idb: &mut Database) {
+    use idakit::NetnodeBytes;
+
+    let name = "$ idakit.netnode.reused_bytes";
+    let mut node = idb.netnode_mut(name);
+
+    let bytes = NetnodeBytes::try_from(b"shared".as_slice()).expect("valid bytes");
+    node.set_sup(0, bytes).expect("set_sup with a NetnodeBytes");
+    node.set_hash("k", bytes)
+        .expect("set_hash with the same NetnodeBytes");
+
+    assert!(node.sup(0).as_deref() == Some(b"shared".as_slice()));
+    assert!(node.hash("k").as_deref() == Some(b"shared".as_slice()));
+
+    node.kill();
 }
 
 /// A 64 KiB blob, well past the 1024-byte cap that binds the hash/sup arrays, round-trips
 /// exactly, proving blobs are genuinely unbounded rather than sharing that cap.
-fn large_blob_run(idb: &mut idakit::Database) {
+fn large_blob_run(idb: &mut Database) {
     let name = "$ idakit.netnode.boundary.blob";
     let mut node = idb.netnode_mut(name);
 
@@ -204,10 +301,10 @@ fn large_blob_run(idb: &mut idakit::Database) {
 
     node.kill();
     assert!(idb.netnode(name).is_none(), "node is gone after kill");
-    println!("netnode large blob OK");
 }
 
-fn run(idb: &mut idakit::Database) {
+/// The full cycle: create, write every store, read back, iterate, then clear and kill.
+fn roundtrip_run(idb: &mut Database) {
     let name = "$ idakit.netnode.roundtrip";
 
     // Create the node and populate every store through the write cursor.
@@ -230,6 +327,11 @@ fn run(idb: &mut idakit::Database) {
     let node = idb.netnode(name).expect("node exists after creation");
     assert!(node.id() == id);
     assert!(idb.netnode_at(id).name().as_deref() == Some(name));
+
+    // Debug renders the real id and name, not an empty shell.
+    let rendered = format!("{node:?}");
+    assert!(rendered.contains(&format!("{id:?}")));
+    assert!(rendered.contains(name));
 
     // Scalar reads.
     assert!(node.value().as_deref() == Some(b"payload".as_slice()));
@@ -254,16 +356,32 @@ fn run(idb: &mut idakit::Database) {
         "a 6-byte string is not a u64"
     );
 
-    // Iterators enumerate exactly the populated entries, in order.
-    let alts: Vec<(u64, u64)> = node.alts().collect();
-    assert!(alts == vec![(1, 111), (2, 222)]);
-    let sups: Vec<(u64, Vec<u8>)> = node.sups().collect();
-    assert!(sups == vec![(0, b"sup-zero".to_vec())]);
-    let keys: Vec<String> = node.hash_entries().map(|(k, _)| k).collect();
-    assert!(keys.len() == 4, "four hash keys, got {keys:?}");
+    // Iterators enumerate exactly the populated entries, in ascending order, checked per item
+    // as it's pulled rather than via collect(): a mutant next() that repeats or fabricates an
+    // item then fails on that item instead of hanging an unbounded collect() forever.
+    let mut alts = node.alts();
+    for expected in [(1u64, 111u64), (2, 222)] {
+        assert!(alts.next() == Some(expected), "alts item mismatch");
+    }
+    assert!(alts.next().is_none(), "alts: unexpected extra entry");
+
+    let mut sups = node.sups();
     assert!(
-        keys.windows(2).all(|w| w[0] <= w[1]),
-        "hash keys iterate lexically"
+        sups.next() == Some((0u64, b"sup-zero".to_vec())),
+        "sups item mismatch"
+    );
+    assert!(sups.next().is_none(), "sups: unexpected extra entry");
+
+    let mut hash_entries = node.hash_entries();
+    for expected_key in ["count", "greeting", "typed_str", "typed_u64"] {
+        let (key, _) = hash_entries
+            .next()
+            .expect("hash_entries: expected another entry");
+        assert!(key == expected_key, "hash_entries key mismatch");
+    }
+    assert!(
+        hash_entries.next().is_none(),
+        "hash_entries: unexpected extra entry"
     );
 
     // The node appears in the whole-database enumeration.
@@ -275,6 +393,16 @@ fn run(idb: &mut idakit::Database) {
     // Remove, clear, and kill through a fresh cursor.
     {
         let mut node = idb.netnode_mut(name);
+
+        // `remove` deletes the typed value `put` stored, not merely reporting success.
+        node.put::<u64>("removable", &42).expect("put removable");
+        assert!(node.get::<u64>("removable") == Some(42));
+        node.remove("removable").expect("remove");
+        assert!(
+            node.get::<u64>("removable").is_none(),
+            "remove did not delete the value"
+        );
+
         node.remove_alt(1).expect("remove_alt");
         assert!(node.alt(1) == 0, "a removed alt reads as 0");
         node.clear_alts().expect("clear_alts");
@@ -287,6 +415,4 @@ fn run(idb: &mut idakit::Database) {
         node.kill();
     }
     assert!(idb.netnode(name).is_none(), "node is gone after kill");
-
-    println!("netnode roundtrip OK");
 }

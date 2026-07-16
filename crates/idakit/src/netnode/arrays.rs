@@ -157,3 +157,55 @@ impl Iterator for HashEntries<'_> {
         Some((key, value))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+    use crate::Database;
+
+    // Debug formats only `id`/`tag`, so an unclaimed Database is safe to format against.
+
+    #[test]
+    fn alts_debug_renders_id_and_tag() {
+        let db = Database::new();
+        let iter = Alts {
+            db: &db,
+            id: NodeId::try_new(1).unwrap(),
+            tag: u32::from(b'A'),
+            next: None,
+        };
+        let rendered = format!("{iter:?}");
+        assert!(rendered.contains("NodeId(0x1)"));
+        assert!(rendered.contains("tag: 65"));
+    }
+
+    #[test]
+    fn sups_debug_renders_id_and_tag() {
+        let db = Database::new();
+        let iter = Sups {
+            db: &db,
+            id: NodeId::try_new(1).unwrap(),
+            tag: u32::from(b'S'),
+            next: None,
+        };
+        let rendered = format!("{iter:?}");
+        assert!(rendered.contains("NodeId(0x1)"));
+        assert!(rendered.contains("tag: 83"));
+    }
+
+    #[test]
+    fn hash_entries_debug_renders_id_and_tag() {
+        let db = Database::new();
+        let iter = HashEntries {
+            db: &db,
+            id: NodeId::try_new(1).unwrap(),
+            tag: u32::from(b'H'),
+            next: None,
+        };
+        let rendered = format!("{iter:?}");
+        assert!(rendered.contains("NodeId(0x1)"));
+        assert!(rendered.contains("tag: 72"));
+    }
+}

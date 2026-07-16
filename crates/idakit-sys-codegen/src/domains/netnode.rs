@@ -28,6 +28,21 @@ fn nn_return(expr: &str) -> String {
 /// and no length stores zero bytes in the first place.
 const EMPTY_VALUE_GUARD: &str = "  if (value.empty())\n    return false;\n";
 
+/// Rejects a value over `MAXSPECSIZE`, which the SDK setters accept and then truncate silently
+/// while still reporting success, so the caller would see `Ok` for a write that dropped bytes.
+const OVERSIZE_VALUE_GUARD: &str = "  if (value.size() > (size_t)MAXSPECSIZE)\n    return false;\n";
+
+/// A netnode read body copying at most `MAXSPECSIZE` bytes into a stack buffer via `call`, an
+/// `ssize_t`-returning expression over `buf`/`sizeof(buf)`.
+///
+/// The SDK reports the stored object's size, not the bytes it wrote into `buf`, so the length is
+/// clamped to the buffer before copying out.
+fn nn_clamped_bytes(call: &str, unset_msg: &str) -> String {
+    format!(
+        "  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = {call};\n  if (r < 0)\n    throw std::runtime_error(\"{unset_msg}\");\n  size_t len = (size_t)r < sizeof(buf) ? (size_t)r : sizeof(buf);\n  return to_rust_bytes(buf, len);\n"
+    )
+}
+
 /// A string-keyed netnode body: copy `key` into a `std::string k`, reconstruct `n`, then run
 /// `stmts`. The hash family keys by string, so every keyed hash body opens this way.
 fn nn_key_body(stmts: &str) -> String {
@@ -215,10 +230,17 @@ fn sup(v: &mut Vec<FnSpec>) {
         let (suf, cast, idx, at) = (k.suffix, k.idx_cast, k.idx_name, k.at);
         v.push(FnSpec::rendered(
             format!("netnode_supval{suf}"),
-            vec![Arg::new("node", ArgTy::U64), Arg::new(idx, k.idx_ty), Arg::new("tag", ArgTy::U32)],
+            vec![
+                Arg::new("node", ArgTy::U64),
+                Arg::new(idx, k.idx_ty),
+                Arg::new("tag", ArgTy::U32),
+            ],
             ret!(ResultVecU8),
             format!("Sup value {at} under `tag` as raw bytes; `Err` when unset."),
-            nn_body(&format!("  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = n.supval{suf}({cast}{idx}, buf, sizeof(buf), (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_bytes(buf, (size_t)r);\n")),
+            nn_body(&nn_clamped_bytes(
+                &format!("n.supval{suf}({cast}{idx}, buf, sizeof(buf), (uchar)tag)"),
+                "sup value is unset",
+            )),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_supstr{suf}"),
@@ -237,10 +259,10 @@ fn sup(v: &mut Vec<FnSpec>) {
             ],
             ret!(Bool),
             format!(
-                "Set the sup value {at} under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty, which the SDK cannot store."
+                "Set the sup value {at} under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty or over the cap, either of which the SDK cannot store."
             ),
             nn_body(&format!(
-                "{EMPTY_VALUE_GUARD}  return n.supset{suf}({cast}{idx}, value.data(), value.size(), (uchar)tag);\n"
+                "{EMPTY_VALUE_GUARD}{OVERSIZE_VALUE_GUARD}  return n.supset{suf}({cast}{idx}, value.data(), value.size(), (uchar)tag);\n"
             )),
         ));
         v.push(FnSpec::rendered(
@@ -310,7 +332,10 @@ fn hash(v: &mut Vec<FnSpec>) {
         key(),
         ret!(ResultVecU8),
         "Hash value for `key` under `tag` as raw bytes; `Err` when the key is unset.".into(),
-        nn_key_body("  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = n.hashval(k.c_str(), buf, sizeof(buf), (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_bytes(buf, (size_t)r);\n"),
+        nn_key_body(&nn_clamped_bytes(
+            "n.hashval(k.c_str(), buf, sizeof(buf), (uchar)tag)",
+            "hash key is unset",
+        )),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashstr".into(),
@@ -335,9 +360,9 @@ fn hash(v: &mut Vec<FnSpec>) {
             Arg::new("tag", ArgTy::U32),
         ],
         ret!(Bool),
-        "Set the hash value for `key` under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty, which the SDK cannot store.".into(),
+        "Set the hash value for `key` under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty or over the cap, either of which the SDK cannot store.".into(),
         nn_key_body(&format!(
-            "{EMPTY_VALUE_GUARD}  return n.hashset(k.c_str(), value.data(), value.size(), (uchar)tag);\n"
+            "{EMPTY_VALUE_GUARD}{OVERSIZE_VALUE_GUARD}  return n.hashset(k.c_str(), value.data(), value.size(), (uchar)tag);\n"
         )),
     ));
     v.push(FnSpec::rendered(

@@ -9,7 +9,7 @@
 use crate::Database;
 use crate::error::Result;
 
-use super::{HashEntries, NodeId, Sups, Tag, rejected, write_ops};
+use super::{HashEntries, NetnodeBytes, NetnodeBytesError, NodeId, Sups, Tag, rejected, write_ops};
 
 /// The read accessors shared by [`TaggedNetnode`] and [`TaggedNetnodeMut`], scoped to `self.tag`.
 macro_rules! tagged_reads {
@@ -132,12 +132,6 @@ impl<'db> TaggedNetnodeMut<'db> {
         /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
         fn set_int(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, this.tag.raw());
 
-        /// Set the numeric slot at `index` to bytes (max 1024 bytes).
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
-        fn set_value(this, index: u64, value: &[u8]) => this.db.netnode_supset(this.id.get(), index, value, this.tag.raw());
-
         /// Delete the numeric slot at `index`.
         ///
         /// # Errors
@@ -150,12 +144,6 @@ impl<'db> TaggedNetnodeMut<'db> {
         /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
         fn clear(this) => this.db.netnode_supdel_all(this.id.get(), this.tag.raw());
 
-        /// Set the hash value for `key` to raw bytes (max 1024 bytes).
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
-        fn set_hash(this, key: &str, value: &[u8]) => this.db.netnode_hashset(this.id.get(), key, value, this.tag.raw());
-
         /// Delete the hash value for `key`.
         ///
         /// # Errors
@@ -167,6 +155,44 @@ impl<'db> TaggedNetnodeMut<'db> {
         /// # Errors
         /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
         fn clear_hash(this) => this.db.netnode_hashdel_all(this.id.get(), this.tag.raw());
+    }
+
+    /// Set the numeric slot at `index` to bytes, from 1 to `MAXSPECSIZE` (1024) bytes.
+    ///
+    /// # Errors
+    /// [`Error::InvalidNetnodeBytes`](crate::Error::InvalidNetnodeBytes) if `value` is empty or
+    /// exceeds `MAXSPECSIZE`, or [`Error::WriteRejected`](crate::Error::WriteRejected) if the
+    /// kernel rejects the write.
+    #[doc(alias("netnode::supset"))]
+    pub fn set_value<'a>(
+        &mut self,
+        index: u64,
+        value: impl TryInto<NetnodeBytes<'a>, Error: Into<NetnodeBytesError>>,
+    ) -> Result<()> {
+        let bytes: NetnodeBytes<'_> = value.try_into().map_err(Into::into)?;
+        let ok = self
+            .db
+            .netnode_supset(self.id.get(), index, bytes.as_bytes(), self.tag.raw());
+        self.checked(ok, "set_value")
+    }
+
+    /// Set the hash value for `key` to raw bytes, from 1 to `MAXSPECSIZE` (1024) bytes.
+    ///
+    /// # Errors
+    /// [`Error::InvalidNetnodeBytes`](crate::Error::InvalidNetnodeBytes) if `value` is empty or
+    /// exceeds `MAXSPECSIZE`, or [`Error::WriteRejected`](crate::Error::WriteRejected) if the
+    /// kernel rejects the write.
+    #[doc(alias("netnode::hashset"))]
+    pub fn set_hash<'a>(
+        &mut self,
+        key: &str,
+        value: impl TryInto<NetnodeBytes<'a>, Error: Into<NetnodeBytesError>>,
+    ) -> Result<()> {
+        let bytes: NetnodeBytes<'_> = value.try_into().map_err(Into::into)?;
+        let ok = self
+            .db
+            .netnode_hashset(self.id.get(), key, bytes.as_bytes(), self.tag.raw());
+        self.checked(ok, "set_hash")
     }
 
     fn checked(&self, ok: bool, op: &'static str) -> Result<()> {
@@ -204,5 +230,30 @@ mod tests {
         let db = Database::new();
         let view = TaggedNetnode::new(&db, NodeId::try_new(1).unwrap(), Tag::new(b'X'));
         assert!(format!("{view:?}").starts_with("TaggedNetnode"));
+    }
+
+    #[test]
+    fn hash_reflects_id_and_tag() {
+        use std::hash::{Hash, Hasher};
+
+        fn hash_of<T: Hash>(x: &T) -> u64 {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            x.hash(&mut h);
+            h.finish()
+        }
+
+        let db = Database::new();
+        let a = TaggedNetnode::new(&db, NodeId::try_new(1).unwrap(), Tag::new(b'X'));
+        let b = TaggedNetnode::new(&db, NodeId::try_new(2).unwrap(), Tag::new(b'Y'));
+        assert!(hash_of(&a) != hash_of(&b));
+    }
+
+    #[test]
+    fn mut_debug_renders_id_and_tag() {
+        let mut db = Database::new();
+        let view = TaggedNetnodeMut::new(&mut db, NodeId::try_new(1).unwrap(), Tag::new(b'X'));
+        let rendered = format!("{view:?}");
+        assert!(rendered.contains("NodeId(0x1)"));
+        assert!(rendered.contains("Tag('X')"));
     }
 }
