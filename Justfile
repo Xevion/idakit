@@ -188,9 +188,11 @@ mutants jobs="3": require-corpus
 mutants-iterate jobs="3": require-corpus
     cargo mutants -p idakit --jobs {{ jobs }} --iterate
 
-# Only the mutants touching lines changed since `base`, for a per-PR loop.
+# Only the mutants touching lines changed since `base`, including uncommitted edits. `base`
+# takes any revision git resolves, including relative ones (`HEAD~5`), with no hash-typing
+# required. Diffs against the working tree, not `HEAD`, so staged and unstaged changes count too.
 mutants-diff base="master": require-corpus
-    git diff {{ base }}...HEAD > /tmp/idakit-mutants.diff
+    git diff {{ base }} > /tmp/idakit-mutants.diff
     cargo mutants -p idakit --in-diff /tmp/idakit-mutants.diff
 
 # One shard of N for CI fan-out, e.g. `just mutants-shard 0/8`.
