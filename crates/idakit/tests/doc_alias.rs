@@ -15,24 +15,27 @@ use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
-/// Public methods that reach the kernel yet carry no alias by design, for one of two reasons: the
-/// method name already *is* the SDK symbol (an alias would duplicate it, which clippy rejects), or
-/// the value is a composite over several forwarders that each carry their own alias.
+/// Public methods that reach the kernel yet carry no alias by design.
+///
+/// An entry is never justified by the bare fact that a method's name already matches an SDK
+/// symbol: that shape is a leak, and the fix is always a rename to a domain word plus an alias on
+/// the SDK spelling (`Segment::kind`, renamed off the SDK's `type`, is the reference). What earns
+/// a spot here is one of two things instead: the domain word and the SDK symbol are the same word
+/// with no better alternative, so an identical alias would be redundant and clippy rejects it; or
+/// the method composites more than one kernel call, so no single SDK symbol names the whole
+/// action.
 const COMPLETENESS_ALLOW: &[&str] = &[
-    // Name already equals the SDK symbol.
-    "next_head",
-    "prev_head",
+    // Domain word coincides with the SDK symbol; no better word exists.
+    "next_head", // "head" is IDA's own term, no plain-English equivalent
+    "prev_head", // same: no plain-English equivalent
     "set_enum_width",
     "is_public_name",
     "is_weak_name",
-    "sel",
     "color",
-    "align",
-    "comb",
     "flags",
     "has_external_refs",
     "has_jump_or_flow_xref",
-    // Composite over many forwarders; no single SDK symbol.
+    // Composites more than one kernel call; no single SDK symbol names the whole action.
     "info",
     "accept_eula",
 ];
