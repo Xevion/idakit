@@ -22,13 +22,19 @@ runs:
     # differently per OS).
     - name: Fetch runtime bundle
       shell: bash
-      run: |
+      # Inputs cross as env: `${{ }}` would expand into the script text before bash parses it.
+      env:
+        VERSION: ${{ inputs.version }}
+        PLATFORM: ${{ inputs.platform }}
+        SDK_TAG: ${{ inputs.sdk-tag }}
+      # Every GITHUB_ENV value below is built from RUNNER_TEMP, never from an input.
+      run: | # zizmor: ignore[github-env]
         set -euo pipefail
         tmp="$RUNNER_TEMP"
         [ "${RUNNER_OS:-}" = Windows ] && tmp="$(cygpath -u "$RUNNER_TEMP")"
         dest="$tmp/runtime"
         mkdir -p "$dest"
-        aws s3 cp "s3://$S3_BUCKET/lean/${{ inputs.version }}/${{ inputs.platform }}.tar.zst" \
+        aws s3 cp "s3://$S3_BUCKET/lean/$VERSION/$PLATFORM.tar.zst" \
           "$tmp/runtime.tar.zst" --endpoint-url "$S3_ENDPOINT" --only-show-errors
         tar --zstd -xf "$tmp/runtime.tar.zst" -C "$dest"
         rm -f "$tmp/runtime.tar.zst"
@@ -56,9 +62,9 @@ runs:
         esac
         # Pin the SDK headers build.rs compiles against (sparse: only src/include), so the build
         # never detects a version at runtime -- that probe is unreliable on macOS. Reuses $tmp.
-        if [ -n "${{ inputs.sdk-tag }}" ]; then
+        if [ -n "$SDK_TAG" ]; then
           sdk="$tmp/ida-sdk"
-          git clone --depth 1 --filter=blob:none --no-checkout --branch "${{ inputs.sdk-tag }}" \
+          git clone --depth 1 --filter=blob:none --no-checkout --branch "$SDK_TAG" \
             https://github.com/HexRaysSA/ida-sdk.git "$sdk"
           git -C "$sdk" sparse-checkout init --cone
           git -C "$sdk" sparse-checkout set src/include

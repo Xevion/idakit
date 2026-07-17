@@ -10,7 +10,8 @@ runs:
     # corpus test matrix and the dedicated tests' canonical database.
     - name: Fetch corpus
       shell: bash
-      run: |
+      # The exported GITHUB_ENV path is built from RUNNER_TEMP, never from an input.
+      run: | # zizmor: ignore[github-env]
         set -euo pipefail
         tmp="$RUNNER_TEMP"
         [ "${RUNNER_OS:-}" = Windows ] && tmp="$(cygpath -u "$RUNNER_TEMP")"

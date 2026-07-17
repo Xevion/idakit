@@ -9,7 +9,7 @@ default:
     @just --list
 
 # One-stop gate mirroring CI: a clean run here means CI will very likely pass.
-check: fmt-check actionlint clippy tidy (doc "hermetic") readme-check test
+check: fmt-check actionlint zizmor clippy tidy (doc "hermetic") readme-check test
 
 build:
     cargo build --workspace
@@ -139,6 +139,11 @@ doc mode="scrape":
 # Lint the GitHub Actions workflows (auto-discovers .github/workflows/).
 actionlint:
     actionlint
+
+# Audits the workflows. Needs a token: the pin audits resolve `uses:` SHAs against GitHub and are
+# silently skipped offline.
+zizmor:
+    GH_TOKEN="$(gh auth token)" zizmor .
 
 # Each crate's README is its crate-level `//!` doc run through cargo-rdme so the two can't drift;
 # intra-doc links resolve to live docs.rs URLs, which needs the pinned nightly

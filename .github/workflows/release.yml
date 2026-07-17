@@ -21,6 +21,9 @@ jobs:
     if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' && startsWith(github.event.release.tag_name, 'idakit-sys-v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # Mint the OIDC token trusted publishing exchanges for a registry token.
     env:
       RUST_BACKTRACE: "1"
       AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
@@ -31,21 +34,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      # Uncached: this build gets published, and any PR can write the cache it would restore.
       - name: Install toolchain
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          cache: false
       - name: Fetch IDA runtime
         uses: ./.github/actions/fetch-runtime
         with:
           version: 9.3.260421sp2
           platform: linux-x64
           sdk-tag: v9.3.1-release
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # Trusted publishing: crates.io trades this job's OIDC identity for a token scoped to these
+      # crates, revoked when the job ends. Both publishes share it, so one auth step covers them.
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: Publish idakit-sys
         run: cargo publish -p idakit-sys --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_API_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       - name: Publish idakit
         run: cargo publish -p idakit --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_API_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

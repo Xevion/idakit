@@ -5,7 +5,8 @@
 
 name: release-please
 
-on:
+# Safe despite workflow_run: this checks out nothing and only fires for `ci` on master.
+on: # zizmor: ignore[dangerous-triggers]
   workflow_dispatch:
   workflow_run:
     workflows: ["ci"]
