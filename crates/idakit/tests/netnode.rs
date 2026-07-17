@@ -27,6 +27,8 @@ const CASES: &[Case] = &[
     ("write rejection", write_rejection_run),
     ("large blob", large_blob_run),
     ("reused validated bytes", reused_bytes_run),
+    ("deletion ops", deletion_run),
+    ("tagged deletion ops", tagged_deletion_run),
 ];
 
 #[test]
@@ -300,6 +302,80 @@ fn large_blob_run(idb: &mut Database) {
     );
 
     node.kill();
+    assert!(idb.netnode(name).is_none(), "node is gone after kill");
+}
+
+/// Each deletion op removes exactly what it names, read back rather than trusting its `Ok`. A
+/// targeted delete leaves its siblings alone, so a mutant that clears the whole array fails here
+/// too.
+fn deletion_run(idb: &mut Database) {
+    let name = "$ idakit.netnode.deletion";
+    let renamed = "$ idakit.netnode.deletion.renamed";
+
+    let id = {
+        let mut node = idb.netnode_mut(name);
+
+        node.set_value(b"payload").expect("set_value");
+        assert!(node.value().is_some(), "set_value did not store");
+        node.clear_value().expect("clear_value");
+        assert!(node.value().is_none(), "clear_value left the node value");
+
+        node.set_sup(0, b"sup-zero").expect("set_sup 0");
+        node.set_sup(1, b"sup-one").expect("set_sup 1");
+        node.remove_sup(0).expect("remove_sup");
+        assert!(node.sup(0).is_none(), "remove_sup left the sup at 0");
+        assert!(node.sup(1).is_some(), "remove_sup took the sup at 1 too");
+        node.clear_sups().expect("clear_sups");
+        assert!(node.sups().next().is_none(), "clear_sups left a sup");
+
+        node.set_blob(&[1, 2, 3]).expect("set_blob");
+        assert!(node.blob().is_some(), "set_blob did not store");
+        node.remove_blob().expect("remove_blob");
+        assert!(node.blob().is_none(), "remove_blob left the blob");
+
+        node.rename(renamed).expect("rename");
+        node.id()
+    };
+
+    // The rename moved the node rather than copying it: the id is stable, the old name resolves
+    // to nothing, and the new one resolves back to the same node.
+    assert!(idb.netnode(name).is_none(), "the old name still resolves");
+    assert!(
+        idb.netnode(renamed).map(|n| n.id()) == Some(id),
+        "the new name does not resolve to the renamed node"
+    );
+    assert!(idb.netnode_at(id).name().as_deref() == Some(renamed));
+
+    idb.netnode_mut(renamed).kill();
+    assert!(idb.netnode(renamed).is_none(), "node is gone after kill");
+}
+
+/// The tagged cursor's hash deletions hit only their own tag, leaving the default tag's hash
+/// array intact.
+fn tagged_deletion_run(idb: &mut Database) {
+    use idakit::Tag;
+    let name = "$ idakit.netnode.deletion.tagged";
+    let user = Tag::new(b'Y');
+
+    {
+        let mut node = idb.netnode_mut(name);
+        node.set_hash("shared", b"default-tag").expect("set_hash");
+
+        let mut t = node.tag(user);
+        t.set_hash("a", b"1").expect("set_hash a");
+        t.set_hash("b", b"2").expect("set_hash b");
+        t.remove_hash("a").expect("remove_hash");
+        assert!(t.hash("a").is_none(), "remove_hash left the entry");
+        assert!(t.hash("b").is_some(), "remove_hash took the wrong entry");
+        t.clear_hash().expect("clear_hash");
+        assert!(t.hash("b").is_none(), "clear_hash left an entry");
+
+        assert!(
+            node.hash("shared").as_deref() == Some(b"default-tag".as_slice()),
+            "the tagged hash deletions reached the default tag"
+        );
+        node.kill();
+    }
     assert!(idb.netnode(name).is_none(), "node is gone after kill");
 }
 
