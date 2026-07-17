@@ -563,6 +563,7 @@ pub enum SegmentComb {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
     use rstest::rstest;
 
     use super::*;
@@ -586,8 +587,43 @@ mod tests {
         assert!(classified.to_string() == raw);
     }
 
+    /// Pin all three code sets to the facade's reported values: the facade lists each set in its
+    /// enum's discriminant order, so a header renumbering (or a mistyped discriminant)
+    /// mismatches, and a variant added without a facade entry trips the length check. The
+    /// `*_every_variant_round_trips` tests below cannot do this: the `num_enum` derives satisfy
+    /// them by construction, whatever the discriminants say. Pure constant source, no kernel, so
+    /// it runs as a unit test.
+    #[test]
+    fn segment_code_ids_align_with_the_facade() {
+        fn check<T: Copy + fmt::Debug + Into<u8>>(name: &str, variants: &[T], ids: &[u8]) {
+            assert!(
+                ids.len() == variants.len(),
+                "{name}: facade lists {} ids for {} variants",
+                ids.len(),
+                variants.len()
+            );
+            for (i, &v) in variants.iter().enumerate() {
+                let raw: u8 = v.into();
+                assert!(
+                    ids[i] == raw,
+                    "{name} {v:?}: facade code {} != discriminant {raw}",
+                    ids[i]
+                );
+            }
+        }
+
+        check("SegmentType", SegmentType::VARIANTS, &sys::seg_type_ids());
+        check(
+            "SegmentAlign",
+            SegmentAlign::VARIANTS,
+            &sys::seg_align_ids(),
+        );
+        check("SegmentComb", SegmentComb::VARIANTS, &sys::seg_comb_ids());
+    }
+
     /// Every modelled [`SegmentType`] variant round-trips through its raw discriminant, so a
-    /// variant whose discriminant drifts from the SDK's `SEG_*` value fails here.
+    /// `TryFrom` that stops agreeing with `Into` fails here. Pinning the discriminants to the
+    /// SDK is [`segment_code_ids_align_with_the_facade`]'s job.
     #[test]
     fn segment_type_every_variant_round_trips() {
         for &kind in SegmentType::VARIANTS {
@@ -610,7 +646,8 @@ mod tests {
     }
 
     /// Every modelled [`SegmentAlign`] variant round-trips through its raw discriminant, so a
-    /// variant whose discriminant drifts from the SDK's `sa*` value fails here.
+    /// `TryFrom` that stops agreeing with `Into` fails here. Pinning the discriminants to the
+    /// SDK is [`segment_code_ids_align_with_the_facade`]'s job.
     #[test]
     fn segment_align_every_variant_round_trips() {
         for &align in SegmentAlign::VARIANTS {
@@ -626,7 +663,8 @@ mod tests {
     }
 
     /// Every modelled [`SegmentComb`] variant round-trips through its raw discriminant, so a
-    /// variant whose discriminant drifts from the SDK's `sc*` value fails here.
+    /// `TryFrom` that stops agreeing with `Into` fails here. Pinning the discriminants to the
+    /// SDK is [`segment_code_ids_align_with_the_facade`]'s job.
     #[test]
     fn segment_comb_every_variant_round_trips() {
         for &comb in SegmentComb::VARIANTS {

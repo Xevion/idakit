@@ -12,6 +12,9 @@ use super::super::model::*;
 ///
 /// The ctree walk itself is a separate hand-written `cxx` bridge (`bridge_visitors`) fed the same
 /// `&CFunc`.
+///
+/// The `*_ctype_ids` functions expose this SDK's own `ctype_t` values as `Vec<u32>` alignment
+/// sources for idakit's mirror tests. They read header constants only, so they need no kernel.
 pub const HEXRAYS: Domain = Domain {
     name: "hexrays",
     // funcs.hpp (pulling bytes.hpp/xref.hpp) precedes hexrays.hpp so the generated header is
@@ -81,5 +84,17 @@ pub const HEXRAYS: Domain = Domain {
             clear_cached_cfuncs();
         "Whether `ea` has a cached decompilation; `false` if none or not initialized."
             has_cached_cfunc(ea: U64) -> Bool;
+        "This SDK's `ctype_t` (`cot_*`) values in idakit `BinaryOp`'s discriminant order, an \
+         alignment source pinning the Rust mirror to this SDK build in a test."
+            binop_ctype_ids() -> VecU32;
+        "This SDK's `ctype_t` (`cot_asg*`) values in idakit `AssignmentOp`'s discriminant order, \
+         an alignment source for a mirror test."
+            assignop_ctype_ids() -> VecU32;
+        "This SDK's `ctype_t` values in idakit `UnaryOp`'s discriminant order, an alignment \
+         source for a mirror test."
+            unop_ctype_ids() -> VecU32;
+        "This SDK's `ctype_t` values for the structural tags idakit's ctree extraction dispatches \
+         on, in its `StructuralTag` discriminant order, an alignment source for a mirror test."
+            structural_tag_ctype_ids() -> VecU32;
     },
 };

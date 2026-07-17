@@ -3,6 +3,10 @@ use super::super::model::*;
 /// The segment domain: mirrors the hand-written `bridge::seg_*` bridge one-for-one. Most bodies
 /// are templated, generated into `gen_seg_bodies.cc`; `gen_seg_cmt` is hand-written in
 /// `facade/segment.cpp` (its extra `repeatable` argument doesn't fit the `seg_string` template).
+///
+/// The `*_ids` functions there expose this SDK's own `SEG_*`/`sa*`/`sc*` values as `Vec<u8>`
+/// alignment sources for idakit's mirror tests. They read header constants only, so they need no
+/// kernel or open database.
 pub const SEGMENT: Domain = Domain {
     name: "seg",
     sdk_includes: &["<segment.hpp>", "<stdexcept>"],
@@ -42,5 +46,14 @@ pub const SEGMENT: Domain = Domain {
         "Comment of segment `n` (`repeatable` selects the repeatable channel); `Err` when `n` is \
          out of range."
             gen_seg_cmt(n: I32, repeatable: Bool) -> ResultString;
+        "This SDK's `SEG_*` values in idakit `SegmentType`'s discriminant order, an alignment \
+         source pinning the Rust mirror to this SDK build in a test."
+            seg_type_ids() -> VecU8;
+        "This SDK's `sa*` values in idakit `SegmentAlign`'s discriminant order, an alignment \
+         source for a mirror test."
+            seg_align_ids() -> VecU8;
+        "This SDK's `sc*` values in idakit `SegmentComb`'s discriminant order, an alignment \
+         source for a mirror test."
+            seg_comb_ids() -> VecU8;
     },
 };

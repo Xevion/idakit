@@ -678,6 +678,7 @@ pub(crate) fn walk(cfunc: &idakit_sys::CFunc) -> Result<Ctree, ExtractError> {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
 
     use super::*;
     use crate::types::{TypeMember, TypeShape};
@@ -953,12 +954,37 @@ mod tests {
         assert!(name == "SomeHandle");
     }
 
-    /// Completeness: every structural tag round-trips through its raw `ctype_t` value, so a
-    /// discriminant that drifts from the SDK fails here rather than misreading a real node.
+    /// Completeness: every structural tag round-trips through its raw value, so a `TryFrom` that
+    /// stops agreeing with `Into` fails here. Both derives read one discriminant list, so this
+    /// says nothing about whether that list matches the SDK; `structural_tag_ids_align_with_the_facade`
+    /// is what pins it.
     #[test]
     fn structural_tag_every_variant_round_trips() {
         for &tag in StructuralTag::VARIANTS {
             assert!(StructuralTag::try_from(u32::from(tag)) == Ok(tag));
+        }
+    }
+
+    /// Pin the tags to the facade's reported `ctype_t` values: the facade lists them in this
+    /// enum's discriminant order, so a header renumbering mismatches and a variant added without
+    /// a facade entry trips the length check. Pure constant source, no kernel, so it runs as a
+    /// unit test.
+    #[test]
+    fn structural_tag_ids_align_with_the_facade() {
+        let ids = sys::structural_tag_ctype_ids();
+        assert!(
+            ids.len() == StructuralTag::VARIANTS.len(),
+            "facade lists {} ids for {} variants",
+            ids.len(),
+            StructuralTag::VARIANTS.len()
+        );
+        for (i, &tag) in StructuralTag::VARIANTS.iter().enumerate() {
+            assert!(
+                ids[i] == u32::from(tag),
+                "structural tag {tag:?}: facade ctype_t {} != discriminant {}",
+                ids[i],
+                u32::from(tag)
+            );
         }
     }
 

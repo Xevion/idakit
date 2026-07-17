@@ -14,6 +14,7 @@
 #include <lines.hpp>  // tag_remove
 #include <loader.hpp> // load_plugin
 
+#include <initializer_list>
 #include <stdexcept>
 
 #include "gen_hexrays.h"
@@ -209,6 +210,49 @@ bool has_cached_cfunc(uint64_t addr) {
   if (get_hexdsp() == nullptr)
     return false;
   return ::has_cached_cfunc(static_cast<ea_t>(addr));
+}
+
+// Alignment sources. These name this SDK's own ctype_t enumerators, each list ordered to match the
+// discriminant order of the Rust enum mirroring it, so a header renumbering shows up as a mismatch
+// in that enum's alignment test rather than as a silently mislabeled node. Header constants only,
+// no kernel or decompiler needed.
+
+namespace {
+
+rust::Vec<uint32_t> collect(std::initializer_list<ctype_t> tags) {
+  rust::Vec<uint32_t> out;
+  for (ctype_t t : tags)
+    out.push_back(static_cast<uint32_t>(t));
+  return out;
+}
+
+} // namespace
+
+// idakit BinaryOp.
+rust::Vec<uint32_t> binop_ctype_ids() {
+  return collect({cot_comma, cot_lor,  cot_land, cot_bor,  cot_xor,  cot_band, cot_eq,   cot_ne,
+                  cot_sge,   cot_uge,  cot_sle,  cot_ule,  cot_sgt,  cot_ugt,  cot_slt,  cot_ult,
+                  cot_sshr,  cot_ushr, cot_shl,  cot_add,  cot_sub,  cot_mul,  cot_sdiv, cot_udiv,
+                  cot_smod,  cot_umod, cot_fadd, cot_fsub, cot_fmul, cot_fdiv});
+}
+
+// idakit AssignmentOp.
+rust::Vec<uint32_t> assignop_ctype_ids() {
+  return collect({cot_asg, cot_asgbor, cot_asgxor, cot_asgband, cot_asgadd, cot_asgsub, cot_asgmul,
+                  cot_asgsshr, cot_asgushr, cot_asgshl, cot_asgsdiv, cot_asgudiv, cot_asgsmod,
+                  cot_asgumod});
+}
+
+// idakit UnaryOp. cot_cast/cot_ptr are absent on purpose: they carry a type or an access size, so
+// idakit models them as their own expression variants rather than bare unaries.
+rust::Vec<uint32_t> unop_ctype_ids() {
+  return collect({cot_fneg, cot_neg, cot_lnot, cot_bnot, cot_ref, cot_postinc, cot_postdec,
+                  cot_preinc, cot_predec});
+}
+
+// idakit StructuralTag: the non-operator ctype_t values the extraction walker dispatches on.
+rust::Vec<uint32_t> structural_tag_ctype_ids() {
+  return collect({cot_empty, cot_tern, cot_cast, cot_idx, cot_insn, cot_sizeof, cot_type});
 }
 
 } // namespace gen
