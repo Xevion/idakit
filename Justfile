@@ -196,5 +196,10 @@ mutants-shard shard: require-corpus
 # specific fix without paying for the whole tree. Goes through `require-corpus` like the rest:
 # a bare `cargo mutants` misses this Justfile's dotenv-load, leaving the kernel tests without a
 # corpus to skip against, so every mutant reports MISSED against a run that checked nothing.
+#
+# Filters with `--re`, not `--file`: mutants.toml's `examine_globs` silently overrides `--file`,
+# so the obvious spelling runs the entire tree while reporting that it scoped to one file. `--re`
+# matches the `--list` line, which is `<path>:<line>:<col>: <mutant>`, so anchoring on the path
+# scopes it. Dots in `file` stay unescaped -- they match themselves in any real path.
 mutants-file file jobs="3": require-corpus
-    cargo mutants -p idakit --jobs {{ jobs }} -f {{ file }}
+    cargo mutants -p idakit --jobs {{ jobs }} --re '{{ file }}:'

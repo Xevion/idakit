@@ -828,18 +828,24 @@ pub struct FunctionChunks {
 impl FunctionChunks {
     #[inline]
     pub(crate) fn new(address: Address, db: &Database) -> Self {
-        let chunks = db
-            .range_all_chunks(address)
-            .into_iter()
-            .filter_map(|r| {
-                Some(FunctionChunk {
-                    start: Address::try_new(r.start)?,
-                    end: Address::try_new(r.end)?,
+        Self::from_chunks(
+            db.range_all_chunks(address)
+                .into_iter()
+                .filter_map(|r| {
+                    Some(FunctionChunk {
+                        start: Address::try_new(r.start)?,
+                        end: Address::try_new(r.end)?,
+                    })
                 })
-            })
-            .collect::<Vec<_>>()
-            .into_iter();
-        Self { chunks }
+                .collect(),
+        )
+    }
+
+    #[inline]
+    pub(crate) fn from_chunks(chunks: Vec<FunctionChunk>) -> Self {
+        Self {
+            chunks: chunks.into_iter(),
+        }
     }
 }
 

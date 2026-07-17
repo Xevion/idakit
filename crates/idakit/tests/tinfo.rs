@@ -30,10 +30,11 @@ fn run(idb: &mut Database) {
     handle_reuse(idb, entry);
     apply_unresolved_pointer_is_rejected(idb, entry);
     apply_through_both_cursors(idb, entry);
+    debug_renders_an_opaque_placeholder(idb);
 
     println!(
         "tinfo OK: leaf apply, composite apply, named ref, missing ref, parse roundtrip, parse \
-         reject, local-til parse, handle reuse, unresolved-pointer reject, both cursors"
+         reject, local-til parse, handle reuse, unresolved-pointer reject, both cursors, debug"
     );
 }
 
@@ -268,4 +269,11 @@ fn apply_through_both_cursors(idb: &mut Database, entry: Address) {
     let int32 = idb.type_int(4, true).expect("build int32");
     // The location cursor reaches the same helper; its outcome at a code entry is not asserted.
     let _ = idb.at_mut(entry).apply_type(&int32);
+}
+
+/// A live handle renders as the non-exhaustive struct placeholder. The `tinfo_t` behind it is
+/// opaque, so the name is all [`Debug`] can offer, and it must still reach the formatter.
+fn debug_renders_an_opaque_placeholder(idb: &Database) {
+    let int32 = idb.type_int(4, true).expect("build int32");
+    assert!(format!("{int32:?}") == "TypeInfo { .. }");
 }

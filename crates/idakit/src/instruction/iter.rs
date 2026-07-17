@@ -126,3 +126,40 @@ impl Iterator for InstructionsIn<'_> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+    use crate::function::FunctionChunk;
+
+    #[test]
+    fn instructions_debug_renders_the_chunk_cursor() {
+        let db = Database::new();
+        let start = Address::new_const(0x1000);
+        let end = Address::new_const(0x1010);
+        let iter = Instructions {
+            db: &db,
+            chunks: FunctionChunks::from_chunks(vec![FunctionChunk { start, end }]),
+            cursor: Some((start, end)),
+        };
+        let rendered = format!("{iter:?}");
+        assert!(rendered.starts_with("Instructions"));
+        assert!(rendered.contains("cursor"));
+    }
+
+    #[test]
+    fn instructions_in_debug_renders_the_walk_bounds() {
+        let db = Database::new();
+        let iter = InstructionsIn {
+            db: &db,
+            cursor: Address::new_const(0x1000),
+            end: Address::new_const(0x1010),
+        };
+        let rendered = format!("{iter:?}");
+        assert!(rendered.starts_with("InstructionsIn"));
+        assert!(rendered.contains("cursor"));
+        assert!(rendered.contains("end"));
+    }
+}
