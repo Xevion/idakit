@@ -42,9 +42,9 @@ struct ThisCall {
 
 /// Every vtable install in the tree: a plain assignment of a global's address into a
 /// `this`-relative slot. Composes the tolerant look-through primitives `base_var`
-/// (resolve a place expression to `(lvar, byte-offset)`) and `global_target`.
+/// (resolve a place expression to `(local, byte-offset)`) and `global_target`.
 fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
-    let Some(this) = tree.this_lvar() else {
+    let Some(this) = tree.this_local() else {
         return Vec::new();
     };
     tree.assigns()
@@ -69,7 +69,7 @@ fn vtable_installs(tree: &Ctree) -> Vec<VtableInstall> {
 /// Every direct call whose first argument is `this`-relative, base/subobject constructor
 /// calls and other `this`-threading calls.
 fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
-    let Some(this) = tree.this_lvar() else {
+    let Some(this) = tree.this_local() else {
         return Vec::new();
     };
     tree.calls()

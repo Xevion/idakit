@@ -1,4 +1,4 @@
-//! The typed [`GnFlags`] layer over `name.hpp`'s `GN_*` bits for `get_ea_name`.
+//! The typed [`NameFlags`] layer over `name.hpp`'s `GN_*` bits for `get_ea_name`.
 
 use std::ffi::c_int;
 
@@ -14,7 +14,7 @@ bitflags! {
         "GN_VISIBLE", "GN_COLORED", "GN_DEMANGLED", "GN_STRICT", "GN_SHORT", "GN_LONG",
         "GN_LOCAL", "GN_ISRET", "GN_NOT_ISRET", "GN_NOT_DUMMY"
     ))]
-    pub struct GnFlags: c_int {
+    pub struct NameFlags: c_int {
         /// Replace forbidden characters with `SUBSTCHAR` (`GN_VISIBLE`).
         #[doc(alias("GN_VISIBLE"))]
         const VISIBLE = 0x0001;
@@ -57,37 +57,37 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case::visible(GnFlags::VISIBLE, 0x0001)]
-    #[case::colored(GnFlags::COLORED, 0x0002)]
-    #[case::demangled(GnFlags::DEMANGLED, 0x0004)]
-    #[case::strict(GnFlags::STRICT, 0x0008)]
-    #[case::short(GnFlags::SHORT, 0x0010)]
-    #[case::long(GnFlags::LONG, 0x0020)]
-    #[case::local(GnFlags::LOCAL, 0x0040)]
-    #[case::isret(GnFlags::ISRET, 0x0080)]
-    #[case::not_isret(GnFlags::NOT_ISRET, 0x0100)]
-    #[case::not_dummy(GnFlags::NOT_DUMMY, 0x0200)]
-    fn flags_pin_the_raw_sdk_values(#[case] flag: GnFlags, #[case] raw: c_int) {
+    #[case::visible(NameFlags::VISIBLE, 0x0001)]
+    #[case::colored(NameFlags::COLORED, 0x0002)]
+    #[case::demangled(NameFlags::DEMANGLED, 0x0004)]
+    #[case::strict(NameFlags::STRICT, 0x0008)]
+    #[case::short(NameFlags::SHORT, 0x0010)]
+    #[case::long(NameFlags::LONG, 0x0020)]
+    #[case::local(NameFlags::LOCAL, 0x0040)]
+    #[case::isret(NameFlags::ISRET, 0x0080)]
+    #[case::not_isret(NameFlags::NOT_ISRET, 0x0100)]
+    #[case::not_dummy(NameFlags::NOT_DUMMY, 0x0200)]
+    fn flags_pin_the_raw_sdk_values(#[case] flag: NameFlags, #[case] raw: c_int) {
         assert!(flag.bits() == raw);
     }
 
     proptest! {
         #[test]
         fn from_bits_retain_round_trips_every_bit_pattern(raw: c_int) {
-            prop_assert_eq!(GnFlags::from_bits_retain(raw).bits(), raw);
+            prop_assert_eq!(NameFlags::from_bits_retain(raw).bits(), raw);
         }
 
         #[test]
         fn union_and_intersection_are_raw_bitwise_ops(a: c_int, b: c_int) {
-            let (fa, fb) = (GnFlags::from_bits_retain(a), GnFlags::from_bits_retain(b));
+            let (fa, fb) = (NameFlags::from_bits_retain(a), NameFlags::from_bits_retain(b));
             prop_assert_eq!((fa | fb).bits(), a | b);
             prop_assert_eq!((fa & fb).bits(), a & b);
         }
 
         #[test]
         fn complement_truncates_to_the_known_flag_mask(a: c_int) {
-            let fa = GnFlags::from_bits_retain(a);
-            prop_assert_eq!((!fa).bits(), !a & GnFlags::all().bits());
+            let fa = NameFlags::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & NameFlags::all().bits());
         }
     }
 }

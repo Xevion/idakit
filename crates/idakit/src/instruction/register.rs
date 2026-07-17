@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn register_serde_roundtrip() {
         let reg = Register {
-            num: 0,
+            number: 0,
             class: RegisterClass::GeneralPurpose,
             width: 8,
             name: "rax".into(),
@@ -297,7 +297,7 @@ mod tests {
 
 /// A register reference within an operand.
 ///
-/// `num` is the processor-local register number, meaningful together with the owning
+/// `number` is the processor-local register number, meaningful together with the owning
 /// [`Instruction`](super::Instruction)'s [`Isa`](super::Isa). `name` is IDA's resolved spelling for the
 /// operand's width (register `0` at width 4 is `eax`, at width 8 is `rax`), copied out at
 /// decode so it travels with the value.
@@ -305,7 +305,7 @@ mod tests {
 #[doc(alias("op_t::reg"))]
 pub struct Register {
     /// Processor-local register number.
-    pub num: u16,
+    pub number: u16,
     /// Which register file this belongs to.
     pub class: RegisterClass,
     /// Byte width the operand selects (drives which alias `name` holds).

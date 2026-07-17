@@ -1,6 +1,6 @@
 //! Asserts every `#[doc(alias)]` in this crate's hand-written source names a real SDK symbol.
 //!
-//! The mirror of `idakit`'s Check A, scoped to the flag and return-code layers here (`SegPerm`,
+//! The mirror of `idakit`'s Check A, scoped to the flag and return-code layers here (`SegmentPermissions`,
 //! `FrameVarFlags`, ...). The generated `cxx`-bridge reexport aliases are not scanned: they are
 //! stamped from the small, hand-verified `idakit-sys-codegen` `sdk_alias` map and are correct by
 //! construction. Needs the SDK headers via `IDA_SDK_INCLUDE` (emitted by this crate's build

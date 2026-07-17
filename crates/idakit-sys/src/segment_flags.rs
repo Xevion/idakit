@@ -1,4 +1,5 @@
-//! The typed [`SegPerm`]/[`SegFlags`] layers over `segment.hpp`'s `SEGPERM_*`/`SFL_*` bit masks.
+//! The typed [`SegmentPermissions`]/[`SegmentFlags`] layers over `segment.hpp`'s
+//! `SEGPERM_*`/`SFL_*` bit masks.
 
 use std::ffi::c_int;
 
@@ -11,7 +12,7 @@ bitflags! {
     /// `get_segm_attr(SEGATTR_PERM)`'s raw byte, which may carry bits this type does not name.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     #[doc(alias("SEGPERM_EXEC", "SEGPERM_WRITE", "SEGPERM_READ"))]
-    pub struct SegPerm: c_int {
+    pub struct SegmentPermissions: c_int {
         /// The segment is executable (`SEGPERM_EXEC`).
         #[doc(alias("SEGPERM_EXEC"))]
         const EXEC = 1;
@@ -31,7 +32,7 @@ bitflags! {
     /// `flags` word, which may carry bits this type does not name.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     #[doc(alias("SFL_COMORG", "SFL_OBOK", "SFL_HIDDEN", "SFL_DEBUG", "SFL_LOADER", "SFL_HIDETYPE", "SFL_HEADER"))]
-    pub struct SegFlags: c_int {
+    pub struct SegmentFlags: c_int {
         /// IDP-dependent: the ORG directive is not commented out (`SFL_COMORG`).
         #[doc(alias("SFL_COMORG"))]
         const COMORG = 0x01;
@@ -65,60 +66,60 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case::exec(SegPerm::EXEC, 1)]
-    #[case::write(SegPerm::WRITE, 2)]
-    #[case::read(SegPerm::READ, 4)]
-    fn flags_pin_the_raw_sdk_values(#[case] flag: SegPerm, #[case] raw: c_int) {
+    #[case::exec(SegmentPermissions::EXEC, 1)]
+    #[case::write(SegmentPermissions::WRITE, 2)]
+    #[case::read(SegmentPermissions::READ, 4)]
+    fn flags_pin_the_raw_sdk_values(#[case] flag: SegmentPermissions, #[case] raw: c_int) {
         assert!(flag.bits() == raw);
     }
 
     #[rstest]
-    #[case::comorg(SegFlags::COMORG, 0x01)]
-    #[case::obok(SegFlags::OBOK, 0x02)]
-    #[case::hidden(SegFlags::HIDDEN, 0x04)]
-    #[case::debug(SegFlags::DEBUG, 0x08)]
-    #[case::loader(SegFlags::LOADER, 0x10)]
-    #[case::hidetype(SegFlags::HIDETYPE, 0x20)]
-    #[case::header(SegFlags::HEADER, 0x40)]
-    fn seg_flags_pin_the_raw_sdk_values(#[case] flag: SegFlags, #[case] raw: c_int) {
+    #[case::comorg(SegmentFlags::COMORG, 0x01)]
+    #[case::obok(SegmentFlags::OBOK, 0x02)]
+    #[case::hidden(SegmentFlags::HIDDEN, 0x04)]
+    #[case::debug(SegmentFlags::DEBUG, 0x08)]
+    #[case::loader(SegmentFlags::LOADER, 0x10)]
+    #[case::hidetype(SegmentFlags::HIDETYPE, 0x20)]
+    #[case::header(SegmentFlags::HEADER, 0x40)]
+    fn seg_flags_pin_the_raw_sdk_values(#[case] flag: SegmentFlags, #[case] raw: c_int) {
         assert!(flag.bits() == raw);
     }
 
     proptest! {
         #[test]
         fn seg_perm_from_bits_retain_round_trips_every_bit_pattern(raw: c_int) {
-            prop_assert_eq!(SegPerm::from_bits_retain(raw).bits(), raw);
+            prop_assert_eq!(SegmentPermissions::from_bits_retain(raw).bits(), raw);
         }
 
         #[test]
         fn seg_perm_union_and_intersection_are_raw_bitwise_ops(a: c_int, b: c_int) {
-            let (fa, fb) = (SegPerm::from_bits_retain(a), SegPerm::from_bits_retain(b));
+            let (fa, fb) = (SegmentPermissions::from_bits_retain(a), SegmentPermissions::from_bits_retain(b));
             prop_assert_eq!((fa | fb).bits(), a | b);
             prop_assert_eq!((fa & fb).bits(), a & b);
         }
 
         #[test]
         fn seg_perm_complement_truncates_to_the_known_flag_mask(a: c_int) {
-            let fa = SegPerm::from_bits_retain(a);
-            prop_assert_eq!((!fa).bits(), !a & SegPerm::all().bits());
+            let fa = SegmentPermissions::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & SegmentPermissions::all().bits());
         }
 
         #[test]
         fn seg_flags_from_bits_retain_round_trips_every_bit_pattern(raw: c_int) {
-            prop_assert_eq!(SegFlags::from_bits_retain(raw).bits(), raw);
+            prop_assert_eq!(SegmentFlags::from_bits_retain(raw).bits(), raw);
         }
 
         #[test]
         fn seg_flags_union_and_intersection_are_raw_bitwise_ops(a: c_int, b: c_int) {
-            let (fa, fb) = (SegFlags::from_bits_retain(a), SegFlags::from_bits_retain(b));
+            let (fa, fb) = (SegmentFlags::from_bits_retain(a), SegmentFlags::from_bits_retain(b));
             prop_assert_eq!((fa | fb).bits(), a | b);
             prop_assert_eq!((fa & fb).bits(), a & b);
         }
 
         #[test]
         fn seg_flags_complement_truncates_to_the_known_flag_mask(a: c_int) {
-            let fa = SegFlags::from_bits_retain(a);
-            prop_assert_eq!((!fa).bits(), !a & SegFlags::all().bits());
+            let fa = SegmentFlags::from_bits_retain(a);
+            prop_assert_eq!((!fa).bits(), !a & SegmentFlags::all().bits());
         }
     }
 }

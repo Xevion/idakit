@@ -1,7 +1,7 @@
 //! A non-trivial consumer of the materialized ctree, used as a stress test and a benchmark.
 //!
 //! For every function in the database it runs a crude intra-procedural taint pass
-//! (call-return sources -> lvar def/use fixpoint -> dangerous-call sinks) and times the
+//! (call-return sources -> local def/use fixpoint -> dangerous-call sinks) and times the
 //! work in four separate phases:
 //!
 //!   decompile   -- Hex-Rays, kernel thread, serial and unavoidable
@@ -74,7 +74,7 @@ fn resolve_callees(tree: &Ctree) -> HashMap<ExpressionId, String> {
     map
 }
 
-/// Whether `e`'s subtree reads a tainted lvar or calls a source directly.
+/// Whether `e`'s subtree reads a tainted local or calls a source directly.
 ///
 /// Flow-insensitive and deliberately crude, doing real work proportional to tree size.
 fn expression_tainted(img: &TaintInput, e: ExpressionId, tainted: &HashSet<u32>) -> bool {
@@ -99,7 +99,7 @@ fn analyze(img: &TaintInput) -> usize {
         })
         .collect();
 
-    // Fixpoint: an lvar is tainted once any of its defining RHS is tainted.
+    // Fixpoint: a local is tainted once any of its defining RHS is tainted.
     let mut tainted: HashSet<u32> = HashSet::new();
     loop {
         let before = tainted.len();

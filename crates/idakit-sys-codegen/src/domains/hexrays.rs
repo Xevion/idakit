@@ -37,7 +37,7 @@ pub const HEXRAYS: Domain = Domain {
             doc: "Statement, expression, and call-site counts of a decompiled function's ctree, \
                   returned by value from [`cfunc_counts`].",
             fields: fields! {
-                insns: I32 = "Number of statement nodes.";
+                statements: I32 = "Number of statement nodes.";
                 expressions: I32 = "Number of expression nodes.";
                 calls: I32 = "Number of call sites.";
             },

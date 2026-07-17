@@ -349,7 +349,7 @@ impl Printer<'_> {
                 None => write!(self.out, "{address:#x}").unwrap(),
             },
             ExpressionKind::Var(v) => {
-                let name = self.lvar_name(*v);
+                let name = self.local_name(*v);
                 self.out.push_str(&name);
             }
             ExpressionKind::Helper(s) => self.out.push_str(s),
@@ -422,9 +422,9 @@ impl Printer<'_> {
         }
     }
 
-    fn lvar_name(&self, v: LocalId) -> String {
+    fn local_name(&self, v: LocalId) -> String {
         self.tree
-            .lvars()
+            .locals()
             .nth(v.0 as usize)
             .map_or_else(|| format!("v{}", v.0), |l| l.name.clone())
     }
@@ -519,7 +519,7 @@ mod tests {
         })
     }
 
-    fn lvar(name: &str, ty: TypeId) -> Local {
+    fn local(name: &str, ty: TypeId) -> Local {
         Local {
             name: name.into(),
             ty,
@@ -561,7 +561,7 @@ mod tests {
             shape: TypeShape::Ptr(derived),
             size: Some(8),
         });
-        let this = b.push_lvar(lvar("this", pderived));
+        let this = b.push_local(local("this", pderived));
         let v = b.var(pderived, this);
         let mp = b.member_ptr(base, v, 0);
         let st = b.expression_statement(mp);
@@ -576,8 +576,8 @@ mod tests {
     fn renders_return_of_binary() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_lvar(lvar("a", int));
-        let bb = b.push_lvar(lvar("b", int));
+        let a = b.push_local(local("a", int));
+        let bb = b.push_local(local("b", int));
         let va = b.var(int, a);
         let vb = b.var(int, bb);
         let add = b.binary(int, BinaryOp::Add, va, vb);
@@ -598,8 +598,8 @@ mod tests {
     fn binary_operator_renders_with_its_symbol(#[case] op: BinaryOp, #[case] expect: &str) {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_lvar(lvar("a", int));
-        let bb = b.push_lvar(lvar("b", int));
+        let a = b.push_local(local("a", int));
+        let bb = b.push_local(local("b", int));
         let va = b.var(int, a);
         let vb = b.var(int, bb);
         let bin = b.binary(int, op, va, vb);
@@ -615,9 +615,9 @@ mod tests {
     fn parenthesizes_lower_precedence_child() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_lvar(lvar("a", int));
-        let c = b.push_lvar(lvar("b", int));
-        let d = b.push_lvar(lvar("c", int));
+        let a = b.push_local(local("a", int));
+        let c = b.push_local(local("b", int));
+        let d = b.push_local(local("c", int));
         let va = b.var(int, a);
         let vb = b.var(int, c);
         let vc = b.var(int, d);
@@ -642,9 +642,9 @@ mod tests {
     fn omits_parens_for_left_associative_chain() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_lvar(lvar("a", int));
-        let c = b.push_lvar(lvar("b", int));
-        let d = b.push_lvar(lvar("c", int));
+        let a = b.push_local(local("a", int));
+        let c = b.push_local(local("b", int));
+        let d = b.push_local(local("c", int));
         let va = b.var(int, a);
         let vb = b.var(int, c);
         let vc = b.var(int, d);
@@ -663,7 +663,7 @@ mod tests {
     fn renders_call_with_args() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_lvar(lvar("a", int));
+        let a = b.push_local(local("a", int));
         let va = b.var(int, a);
         let callee = b.obj(int, Address::new_const(0x2000), Some("foo"));
         let n = b.num(int, 3);
@@ -683,10 +683,10 @@ mod tests {
     fn renders_unary_cast_and_literals() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_lvar(lvar("a", int));
+        let a = b.push_local(local("a", int));
         let va = b.var(int, a);
         let neg = b.unary(int, UnaryOp::Neg, va);
-        let r = b.push_lvar(lvar("r", int));
+        let r = b.push_local(local("r", int));
         let asg = b.var(int, r);
         let assign = b.assign(int, AssignmentOp::Assign, asg, neg);
         let st = b.expression_statement(assign);
@@ -723,7 +723,7 @@ mod tests {
     fn renders_if_else() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_lvar(lvar("a", int));
+        let a = b.push_local(local("a", int));
         let cond = b.var(int, a);
         let r1 = b.ret(None);
         let then_ = b.block(vec![r1]);
@@ -744,9 +744,9 @@ mod tests {
         assert!(out.contains("    break;\n"), "got: {out}");
     }
 
-    /// A `Var` whose lvar is missing falls back to a synthetic name rather than panicking.
+    /// A `Var` whose local is missing falls back to a synthetic name rather than panicking.
     #[test]
-    fn missing_lvar_does_not_panic() {
+    fn missing_local_does_not_panic() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
         let v = b.var(int, LocalId(7));

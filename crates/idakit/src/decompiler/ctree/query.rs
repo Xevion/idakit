@@ -68,7 +68,7 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 ///     shape: TypeShape::Unknown,
 ///     size: None,
 /// });
-/// let this = b.push_lvar(Local {
+/// let this = b.push_local(Local {
 ///     name: "this".into(),
 ///     ty,
 ///     is_arg: true,
@@ -156,7 +156,7 @@ mod tests {
         })
     }
 
-    fn this_lvar_def(name: &str, t: crate::types::TypeId) -> Local {
+    fn this_local_def(name: &str, t: crate::types::TypeId) -> Local {
         Local {
             name: name.into(),
             ty: t,
@@ -180,7 +180,7 @@ mod tests {
     fn ctor_tree() -> Ctree {
         let mut b = CtreeBuilder::new();
         let t = ty(&mut b);
-        let this = b.push_lvar(this_lvar_def("this", t));
+        let this = b.push_local(this_local_def("this", t));
 
         // primary vtable install: this->_vptr = (..)&vtbl_primary  (offset 0)
         let v0 = b.var(t, this);
@@ -226,9 +226,9 @@ mod tests {
     }
 
     #[test]
-    fn this_lvar_is_the_first_arg() {
+    fn this_local_is_the_first_arg() {
         let tree = ctor_tree();
-        assert!(tree.this_lvar() == Some(LocalId(0)));
+        assert!(tree.this_local() == Some(LocalId(0)));
     }
 
     /// Peels `(T)x` and `&x`, but stops at a dereference (a load names a different object).
@@ -285,7 +285,7 @@ mod tests {
             shape: TypeShape::Ptr(elem),
             size: Some(8),
         });
-        let this = b.push_lvar(this_lvar_def("this", ptr));
+        let this = b.push_local(this_local_def("this", ptr));
         let v = b.var(ptr, this);
         let cast = b.cast(ptr, v);
         let num = b.num(elem, index);
@@ -310,7 +310,7 @@ mod tests {
             },
             size: Some(4),
         });
-        let this = b.push_lvar(this_lvar_def("this", int));
+        let this = b.push_local(this_local_def("this", int));
         let v = b.var(int, this);
         let num = b.num(int, 4);
         let add = b.binary(int, BinaryOp::Add, v, num);

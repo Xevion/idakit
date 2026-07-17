@@ -208,14 +208,15 @@ pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExi
 pub use crate::import::{Import, Imports};
 pub use crate::location::{Location, LocationMut};
 pub use crate::meta::DatabaseInfo;
-pub use crate::name::{GnFlags, Name, Names};
+pub use crate::name::{Name, NameFlags, Names};
 pub use crate::netnode::{
-    Alts, HashEntries, MAXSPECSIZE, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut, Netnodes,
-    NodeId, Persist, Sups, Tag, TaggedNetnode, TaggedNetnodeMut,
+    Altvals, HashEntries, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut, Netnodes, NodeId,
+    Persist, Supvals, Tag, TaggedNetnode, TaggedNetnodeMut,
 };
 pub use crate::search::{Matches, Pattern};
 pub use crate::segment::{
-    SegFlags, Segment, SegmentAlign, SegmentClass, SegmentComb, SegmentType, Segments,
+    Segment, SegmentAlignment, SegmentClass, SegmentCombination, SegmentFlags, SegmentType,
+    Segments,
 };
 pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
 pub use crate::strings::{StringLiteral, Strings};
@@ -229,7 +230,7 @@ pub mod prelude {
     pub use crate::bitness::Bitness;
     pub use crate::decompiler::ctree::{AssignmentOp, BinaryOp, Ctree, UnaryOp};
     pub use crate::decompiler::{CtreeCounts, DecompiledFunction};
-    pub use crate::error::{CallError, Error, InitError, PatternRejection, Qerrno, Result};
+    pub use crate::error::{CallError, Error, InitError, KernelErrno, PatternRejection, Result};
     pub use crate::export::{Export, Exports};
     pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
     pub use crate::function::{
@@ -244,14 +245,15 @@ pub mod prelude {
     pub use crate::kernel::{Ida, IdaConfig, IdaConfigBuilder};
     pub use crate::location::{Location, LocationMut};
     pub use crate::meta::DatabaseInfo;
-    pub use crate::name::{GnFlags, Name, Names};
+    pub use crate::name::{Name, NameFlags, Names};
     pub use crate::netnode::{
-        Alts, HashEntries, MAXSPECSIZE, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut,
-        Netnodes, NodeId, Persist, Sups, Tag, TaggedNetnode, TaggedNetnodeMut,
+        Altvals, HashEntries, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut, Netnodes,
+        NodeId, Persist, Supvals, Tag, TaggedNetnode, TaggedNetnodeMut,
     };
     pub use crate::search::{Matches, Pattern};
     pub use crate::segment::{
-        SegFlags, Segment, SegmentAlign, SegmentClass, SegmentComb, SegmentType, Segments,
+        Segment, SegmentAlignment, SegmentClass, SegmentCombination, SegmentFlags, SegmentType,
+        Segments,
     };
     pub use crate::stack::{StackFrame, StackSlot, StackSlotKind};
     pub use crate::strings::{StringLiteral, Strings};
@@ -333,10 +335,10 @@ impl Database {
             // open_database's return value is an internal status, not an error_t: a locked
             // database returns 4 (which reads as eFileTooLarge) though the real failure is in
             // get_qerrno(). Read IDA's own error channel, as the write paths do.
-            let (qerrno, reason) = self.last_reason();
+            let (errno, reason) = self.last_reason();
             return Err(Error::Open {
                 path: path.to_owned(),
-                qerrno,
+                errno,
                 reason: reason.unwrap_or_else(|| format!("open failed (status {rc})")),
             });
         }

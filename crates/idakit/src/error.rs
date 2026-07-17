@@ -16,10 +16,11 @@ use crate::types::TypeWriteError;
 
 /// IDA's error code, with the documented generic values named.
 ///
-/// Carried by the operational errors below. The raw integer is available via [`Qerrno::code`].
+/// Carried by the operational errors below. The raw integer is available via
+/// [`KernelErrno::code`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[doc(alias("error_t"))]
-pub enum Qerrno {
+#[doc(alias("error_t", "qerrno", "get_qerrno"))]
+pub enum KernelErrno {
     /// `eOk`: no error.
     Ok,
     /// `eOS`: an OS error; the real reason is the C `errno`.
@@ -34,7 +35,7 @@ pub enum Qerrno {
     Other(i32),
 }
 
-impl Qerrno {
+impl KernelErrno {
     /// Classify a raw error code.
     #[must_use]
     pub const fn from_code(code: i32) -> Self {
@@ -62,7 +63,7 @@ impl Qerrno {
     }
 }
 
-impl fmt::Display for Qerrno {
+impl fmt::Display for KernelErrno {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
             Self::Ok => "no error",
@@ -180,7 +181,7 @@ pub enum Error {
         /// The database path that failed to open.
         path: String,
         /// IDA's error code for the failure.
-        qerrno: Qerrno,
+        errno: KernelErrno,
         /// Human-readable failure reason, from IDA's own error text.
         reason: String,
     },
@@ -268,9 +269,10 @@ pub enum Error {
         kind: PatternRejection,
     },
 
-    /// A netnode value/sup/hash write was given bytes outside the SDK's `1..=MAXSPECSIZE`
-    /// domain; carries the typed [`NetnodeBytesError`]. `?` flattens it into the crate
-    /// [`Result`] via [`From`] (`context(false)`).
+    /// A netnode value/supval/hash write was given bytes outside
+    /// [`NetnodeBytes`](crate::netnode::NetnodeBytes)'s accepted size domain; carries the typed
+    /// [`NetnodeBytesError`]. `?` flattens it into the crate [`Result`] via [`From`]
+    /// (`context(false)`).
     #[snafu(display("{source}"), context(false))]
     InvalidNetnodeBytes {
         /// The underlying validation failure.
@@ -287,7 +289,7 @@ pub enum Error {
         /// Address the write targeted.
         address: u64,
         /// IDA's error code, when one was set.
-        qerrno: Qerrno,
+        errno: KernelErrno,
         /// Human-readable reason, when the kernel left one.
         reason: Option<String>,
     },
@@ -474,25 +476,25 @@ mod tests {
         Error::WriteRejected {
             op: "set_comment",
             address: 0x40_1000,
-            qerrno: Qerrno::Os,
+            errno: KernelErrno::Os,
             reason: Some("permission denied".to_owned()),
         },
         "set_comment failed at 0x401000: permission denied",
     )]
     #[case::write_rejected_no_reason(
-        Error::WriteRejected { op: "rename", address: 0x40_1000, qerrno: Qerrno::Ok, reason: None },
+        Error::WriteRejected { op: "rename", address: 0x40_1000, errno: KernelErrno::Ok, reason: None },
         "rename failed at 0x401000",
     )]
     #[case::open(
         Error::Open {
             path: "/tmp/x.i64".into(),
-            qerrno: Qerrno::Os,
+            errno: KernelErrno::Os,
             reason: "No such file or directory".to_owned(),
         },
         "failed to open database \"/tmp/x.i64\": No such file or directory",
     )]
     #[case::extract(
-        Error::Extract { address: 0x1400_1000, source: ExtractError::BadEa },
+        Error::Extract { address: 0x1400_1000, source: ExtractError::BadAddress },
         "type extraction failed at 0x14001000: a node carries the BADADDR sentinel as a required address",
     )]
     #[case::kernel(
@@ -545,7 +547,7 @@ mod tests {
     )]
     #[case::invalid_netnode_bytes_flattens_through(
         Error::from(NetnodeBytesError::TooLarge { len: 1025, cap: 1024 }),
-        "netnode value is 1025 bytes, exceeding the 1024-byte MAXSPECSIZE cap",
+        "netnode value is 1025 bytes, exceeding the 1024-byte cap",
     )]
     fn error_displays(#[case] err: Error, #[case] expect: &str) {
         assert!(err.to_string() == expect);
@@ -594,24 +596,24 @@ mod tests {
         assert!(let Error::Kernel { .. } = err);
     }
 
-    /// `Qerrno` round-trips its raw code, with the named codes mapping by value and any
+    /// `KernelErrno` round-trips its raw code, with the named codes mapping by value and any
     /// other code preserved through `Other`, including negative and extreme codes.
     #[rstest]
-    #[case(0, Qerrno::Ok)]
-    #[case(1, Qerrno::Os)]
-    #[case(2, Qerrno::DiskFull)]
-    #[case(3, Qerrno::ReadError)]
-    #[case(4, Qerrno::FileTooLarge)]
-    #[case(7, Qerrno::Other(7))]
-    #[case(-1, Qerrno::Other(-1))]
-    #[case(i32::MIN, Qerrno::Other(i32::MIN))]
-    #[case(i32::MAX, Qerrno::Other(i32::MAX))]
-    fn qerrno_round_trips_codes(#[case] code: i32, #[case] expect: Qerrno) {
-        assert!(Qerrno::from_code(code) == expect);
+    #[case(0, KernelErrno::Ok)]
+    #[case(1, KernelErrno::Os)]
+    #[case(2, KernelErrno::DiskFull)]
+    #[case(3, KernelErrno::ReadError)]
+    #[case(4, KernelErrno::FileTooLarge)]
+    #[case(7, KernelErrno::Other(7))]
+    #[case(-1, KernelErrno::Other(-1))]
+    #[case(i32::MIN, KernelErrno::Other(i32::MIN))]
+    #[case(i32::MAX, KernelErrno::Other(i32::MAX))]
+    fn kernel_errno_round_trips_codes(#[case] code: i32, #[case] expect: KernelErrno) {
+        assert!(KernelErrno::from_code(code) == expect);
         assert!(expect.code() == code);
     }
 
-    mod qerrno_proptests {
+    mod kernel_errno_proptests {
         use proptest::prelude::*;
 
         use super::*;
@@ -620,19 +622,19 @@ mod tests {
             // Every raw i32 round-trips through from_code/code, across the whole domain.
             #[test]
             fn from_code_code_roundtrips(code in any::<i32>()) {
-                prop_assert_eq!(Qerrno::from_code(code).code(), code);
+                prop_assert_eq!(KernelErrno::from_code(code).code(), code);
             }
         }
     }
 
     /// `Display` names the error and carries its raw code.
     #[rstest]
-    #[case(Qerrno::Ok, "no error (code 0)")]
-    #[case(Qerrno::DiskFull, "disk full (code 2)")]
-    #[case(Qerrno::Other(9), "unrecognized error (code 9)")]
-    #[case(Qerrno::Other(-1), "unrecognized error (code -1)")]
-    fn qerrno_display_carries_code(#[case] qerrno: Qerrno, #[case] expect: &str) {
-        assert!(qerrno.to_string() == expect);
+    #[case(KernelErrno::Ok, "no error (code 0)")]
+    #[case(KernelErrno::DiskFull, "disk full (code 2)")]
+    #[case(KernelErrno::Other(9), "unrecognized error (code 9)")]
+    #[case(KernelErrno::Other(-1), "unrecognized error (code -1)")]
+    fn kernel_errno_display_carries_code(#[case] errno: KernelErrno, #[case] expect: &str) {
+        assert!(errno.to_string() == expect);
     }
 
     /// Two `InitError`s with equal payloads compare equal.

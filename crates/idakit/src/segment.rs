@@ -3,7 +3,7 @@
 use std::fmt;
 
 use idakit_sys as sys;
-pub use idakit_sys::SegFlags;
+pub use idakit_sys::SegmentFlags;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
@@ -120,8 +120,8 @@ impl<'db> Segment<'db> {
     /// The segment's raw permission bits.
     #[inline]
     #[must_use]
-    fn perm(&self) -> sys::SegPerm {
-        sys::SegPerm::from_bits_retain(self.db.seg_perm(self.index))
+    fn permissions(&self) -> sys::SegmentPermissions {
+        sys::SegmentPermissions::from_bits_retain(self.db.seg_perm(self.index))
     }
 
     /// Whether the segment is readable.
@@ -131,21 +131,21 @@ impl<'db> Segment<'db> {
     #[must_use]
     #[doc(alias("SEGPERM_READ"))]
     pub fn is_readable(&self) -> bool {
-        self.perm().contains(sys::SegPerm::READ)
+        self.permissions().contains(sys::SegmentPermissions::READ)
     }
 
     /// Whether the segment is writable.
     #[must_use]
     #[doc(alias("SEGPERM_WRITE"))]
     pub fn is_writable(&self) -> bool {
-        self.perm().contains(sys::SegPerm::WRITE)
+        self.permissions().contains(sys::SegmentPermissions::WRITE)
     }
 
     /// Whether the segment is executable.
     #[must_use]
     #[doc(alias("SEGPERM_EXEC"))]
     pub fn is_executable(&self) -> bool {
-        self.perm().contains(sys::SegPerm::EXEC)
+        self.permissions().contains(sys::SegmentPermissions::EXEC)
     }
 
     /// The segment's selector, unique across the database.
@@ -155,7 +155,8 @@ impl<'db> Segment<'db> {
     /// reports is always real.
     #[inline]
     #[must_use]
-    pub fn sel(&self) -> u64 {
+    #[doc(alias("sel"))]
+    pub fn selector(&self) -> u64 {
         self.db.seg_sel(self.index)
     }
 
@@ -172,8 +173,8 @@ impl<'db> Segment<'db> {
     /// needs to test bit combinations they don't expose.
     #[inline]
     #[must_use]
-    pub fn flags(&self) -> SegFlags {
-        SegFlags::from_bits_retain(self.db.seg_flags(self.index))
+    pub fn flags(&self) -> SegmentFlags {
+        SegmentFlags::from_bits_retain(self.db.seg_flags(self.index))
     }
 
     /// The segment's background color, or `None` when it uses the default color (`DEFCOLOR`).
@@ -187,36 +188,38 @@ impl<'db> Segment<'db> {
     /// The segment's alignment code, or `None` if it reports an unrecognized one.
     #[inline]
     #[must_use]
-    pub fn align(&self) -> Option<SegmentAlign> {
-        SegmentAlign::try_from(self.db.seg_align(self.index).max(0) as u8).ok()
+    #[doc(alias("align"))]
+    pub fn alignment(&self) -> Option<SegmentAlignment> {
+        SegmentAlignment::try_from(self.db.seg_align(self.index).max(0) as u8).ok()
     }
 
     /// The segment's combination code, or `None` if it reports an unrecognized one.
     #[inline]
     #[must_use]
-    pub fn comb(&self) -> Option<SegmentComb> {
-        SegmentComb::try_from(self.db.seg_comb(self.index).max(0) as u8).ok()
+    #[doc(alias("comb"))]
+    pub fn combination(&self) -> Option<SegmentCombination> {
+        SegmentCombination::try_from(self.db.seg_comb(self.index).max(0) as u8).ok()
     }
 
     /// Whether the segment is visible in the disassembly listing.
     #[must_use]
     #[doc(alias("is_visible_segm"))]
     pub fn is_visible(&self) -> bool {
-        !self.flags().contains(SegFlags::HIDDEN)
+        !self.flags().contains(SegmentFlags::HIDDEN)
     }
 
     /// Whether the segment was created for the debugger (temporary).
     #[must_use]
     #[doc(alias("is_debugger_segm"))]
     pub fn is_debugger(&self) -> bool {
-        self.flags().contains(SegFlags::DEBUG)
+        self.flags().contains(SegmentFlags::DEBUG)
     }
 
     /// Whether the segment was created by a loader.
     #[must_use]
     #[doc(alias("is_loader_segm"))]
     pub fn is_loader(&self) -> bool {
-        self.flags().contains(SegFlags::LOADER)
+        self.flags().contains(SegmentFlags::LOADER)
     }
 
     /// Whether the segment's *type* is hidden in the listing (`SFL_HIDETYPE`).
@@ -226,14 +229,14 @@ impl<'db> Segment<'db> {
     #[must_use]
     #[doc(alias("is_hidden_segtype"))]
     pub fn is_type_hidden(&self) -> bool {
-        self.flags().contains(SegFlags::HIDETYPE)
+        self.flags().contains(SegmentFlags::HIDETYPE)
     }
 
     /// Whether this is a header segment, into which no offsets are created.
     #[must_use]
     #[doc(alias("is_header_segm"))]
     pub fn is_header(&self) -> bool {
-        self.flags().contains(SegFlags::HEADER)
+        self.flags().contains(SegmentFlags::HEADER)
     }
 
     /// The segment's comment, or `None` if that channel carries none.
@@ -452,7 +455,7 @@ impl fmt::Display for SegmentType {
     }
 }
 
-/// A segment's alignment code (`sa*` from `segment.hpp`), from [`Segment::align`].
+/// A segment's alignment code (`sa*` from `segment.hpp`), from [`Segment::alignment`].
 ///
 /// A closed mirror of the SDK's `sa*` set: a byte outside it fails `TryFrom<u8>` instead of
 /// decoding.
@@ -470,7 +473,7 @@ impl fmt::Display for SegmentType {
     Deserialize,
 )]
 #[repr(u8)]
-pub enum SegmentAlign {
+pub enum SegmentAlignment {
     /// `saAbs`: absolute segment.
     #[doc(alias("saAbs"))]
     Absolute = 0,
@@ -518,7 +521,7 @@ pub enum SegmentAlign {
     Relocatable2048Bytes = 14,
 }
 
-/// A segment's combination code (`sc*` from `segment.hpp`), from [`Segment::comb`].
+/// A segment's combination code (`sc*` from `segment.hpp`), from [`Segment::combination`].
 ///
 /// A closed mirror of the SDK's `sc*` set: a byte outside it (3 is unassigned) fails
 /// `TryFrom<u8>` instead of decoding.
@@ -536,7 +539,7 @@ pub enum SegmentAlign {
     Deserialize,
 )]
 #[repr(u8)]
-pub enum SegmentComb {
+pub enum SegmentCombination {
     /// `scPriv`: private, do not combine with any other segment.
     #[doc(alias("scPriv"))]
     Private = 0,
@@ -614,11 +617,15 @@ mod tests {
 
         check("SegmentType", SegmentType::VARIANTS, &sys::seg_type_ids());
         check(
-            "SegmentAlign",
-            SegmentAlign::VARIANTS,
+            "SegmentAlignment",
+            SegmentAlignment::VARIANTS,
             &sys::seg_align_ids(),
         );
-        check("SegmentComb", SegmentComb::VARIANTS, &sys::seg_comb_ids());
+        check(
+            "SegmentCombination",
+            SegmentCombination::VARIANTS,
+            &sys::seg_comb_ids(),
+        );
     }
 
     /// Every modelled [`SegmentType`] variant round-trips through its raw discriminant, so a
@@ -645,37 +652,37 @@ mod tests {
         assert!(serde_json::from_str::<SegmentType>(&json).unwrap() == SegmentType::Code);
     }
 
-    /// Every modelled [`SegmentAlign`] variant round-trips through its raw discriminant, so a
+    /// Every modelled [`SegmentAlignment`] variant round-trips through its raw discriminant, so a
     /// `TryFrom` that stops agreeing with `Into` fails here. Pinning the discriminants to the
     /// SDK is [`segment_code_ids_align_with_the_facade`]'s job.
     #[test]
     fn segment_align_every_variant_round_trips() {
-        for &align in SegmentAlign::VARIANTS {
-            assert!(SegmentAlign::try_from(u8::from(align)).ok() == Some(align));
+        for &align in SegmentAlignment::VARIANTS {
+            assert!(SegmentAlignment::try_from(u8::from(align)).ok() == Some(align));
         }
     }
 
     /// A byte outside the modelled `sa*` set (the set is contiguous 0-14) does not decode.
     #[test]
     fn segment_align_rejects_unmapped_byte() {
-        assert!(SegmentAlign::try_from(15u8).is_err());
-        assert!(SegmentAlign::try_from(255u8).is_err());
+        assert!(SegmentAlignment::try_from(15u8).is_err());
+        assert!(SegmentAlignment::try_from(255u8).is_err());
     }
 
-    /// Every modelled [`SegmentComb`] variant round-trips through its raw discriminant, so a
+    /// Every modelled [`SegmentCombination`] variant round-trips through its raw discriminant, so a
     /// `TryFrom` that stops agreeing with `Into` fails here. Pinning the discriminants to the
     /// SDK is [`segment_code_ids_align_with_the_facade`]'s job.
     #[test]
     fn segment_comb_every_variant_round_trips() {
-        for &comb in SegmentComb::VARIANTS {
-            assert!(SegmentComb::try_from(u8::from(comb)).ok() == Some(comb));
+        for &comb in SegmentCombination::VARIANTS {
+            assert!(SegmentCombination::try_from(u8::from(comb)).ok() == Some(comb));
         }
     }
 
     /// A byte outside the modelled `sc*` set (3 is unassigned) does not decode.
     #[test]
     fn segment_comb_rejects_unmapped_byte() {
-        assert!(SegmentComb::try_from(3u8).is_err());
-        assert!(SegmentComb::try_from(255u8).is_err());
+        assert!(SegmentCombination::try_from(3u8).is_err());
+        assert!(SegmentCombination::try_from(255u8).is_err());
     }
 }

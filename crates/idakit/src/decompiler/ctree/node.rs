@@ -64,12 +64,12 @@ impl NodeRef {
     }
 }
 
-/// A typed handle into a decompiled function's lvar table, resolved via
-/// [`Ctree::lvar`](super::Ctree::lvar).
+/// A typed handle into a decompiled function's local table, resolved via
+/// [`Ctree::local`](super::Ctree::local).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 #[doc(alias("lvar_t"))]
 pub struct LocalId(
-    /// The variable's index in the lvar table.
+    /// The variable's index in the local table.
     pub u32,
 );
 
@@ -165,7 +165,7 @@ pub struct LocationPiece {
 }
 
 /// One local variable of a decompiled function: its name, resolved type, and role.
-/// [`ExpressionKind::Var`] indexes the tree's lvar table to one of these.
+/// [`ExpressionKind::Var`] indexes the tree's local table to one of these.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("lvar_t"))]
 pub struct Local {

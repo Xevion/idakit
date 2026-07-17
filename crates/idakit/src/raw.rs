@@ -32,7 +32,7 @@ use idakit_sys as sys;
 
 use crate::Database;
 use crate::address::Address;
-use crate::error::Qerrno;
+use crate::error::KernelErrno;
 use crate::ffi::cstr;
 
 impl Database {
@@ -40,13 +40,13 @@ impl Database {
     // kernel-thread token (see module note), not a source of instance state.
 
     /// IDA's thread-local last error code.
-    pub(crate) fn qerrno(&self) -> Qerrno {
-        Qerrno::from_code(unsafe { sys::get_qerrno() })
+    pub(crate) fn qerrno(&self) -> KernelErrno {
+        KernelErrno::from_code(unsafe { sys::get_qerrno() })
     }
 
     /// Human-readable reason for `code`; the C `errno` text is already folded in for an
     /// OS error. Never empty, since it falls back to the raw error code.
-    pub(crate) fn error_reason(&self, code: Qerrno) -> String {
+    pub(crate) fn error_reason(&self, code: KernelErrno) -> String {
         // SAFETY: qstrerror returns a borrowed thread-local string; copied now.
         let reason = unsafe { cstr(sys::qstrerror(code.code())) };
         if reason.is_empty() {
@@ -56,13 +56,14 @@ impl Database {
         }
     }
 
-    /// The current [`Qerrno`] plus its reason, but `None` reason when it is [`Qerrno::Ok`].
+    /// The current [`KernelErrno`] plus its reason, but `None` reason when it is
+    /// [`KernelErrno::Ok`].
     ///
     /// A failing path that set no code would otherwise borrow a stale, misleading reason.
-    pub(crate) fn last_reason(&self) -> (Qerrno, Option<String>) {
+    pub(crate) fn last_reason(&self) -> (KernelErrno, Option<String>) {
         let qerrno = self.qerrno();
         let reason = match qerrno {
-            Qerrno::Ok => None,
+            KernelErrno::Ok => None,
             code => Some(self.error_reason(code)),
         };
         (qerrno, reason)

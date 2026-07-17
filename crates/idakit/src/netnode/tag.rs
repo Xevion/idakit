@@ -2,23 +2,24 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A netnode array tag: the `uchar` selector namespacing an alt, sup, or hash array.
+/// A netnode array tag: the `uchar` selector namespacing an altval, supval, or hash array.
 ///
-/// The default accessors use the reserved [`ALT`](Self::ALT)/[`SUP`](Self::SUP)/[`HASH`](Self::HASH)
-/// tags; [`Netnode::tag`](super::Netnode::tag) reaches the same arrays under any other tag.
+/// The default accessors use the reserved
+/// [`ALTVAL`](Self::ALTVAL)/[`SUPVAL`](Self::SUPVAL)/[`HASH`](Self::HASH) tags;
+/// [`Netnode::tag`](super::Netnode::tag) reaches the same arrays under any other tag.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Tag(u8);
 
 impl Tag {
-    /// The reserved alt-array tag (`atag`).
-    pub const ALT: Self = Self(b'A');
-    /// The reserved sup-array tag (`stag`).
-    pub const SUP: Self = Self(b'S');
+    /// The reserved altval-array tag (`atag`).
+    pub const ALTVAL: Self = Self(b'A');
+    /// The reserved supval-array tag (`stag`).
+    pub const SUPVAL: Self = Self(b'S');
     /// The reserved hash tag (`htag`).
     pub const HASH: Self = Self(b'H');
 
-    /// idakit's default blob tag, a free user tag kept distinct from [`SUP`](Self::SUP) so a
-    /// blob never collides with the sup array. Not an SDK-reserved tag.
+    /// idakit's default blob tag, a free user tag kept distinct from [`SUPVAL`](Self::SUPVAL) so
+    /// a blob never collides with the supval array. Not an SDK-reserved tag.
     pub(crate) const BLOB: Self = Self(b'B');
 
     /// A tag from a raw selector byte, e.g. `Tag::new(b'X')` for a user array.
@@ -56,14 +57,14 @@ mod tests {
 
     #[test]
     fn orders_by_raw_byte() {
-        assert!(Tag::ALT < Tag::HASH);
-        assert!(Tag::HASH < Tag::SUP);
-        assert!(Tag::new(b'A') == Tag::ALT);
+        assert!(Tag::ALTVAL < Tag::HASH);
+        assert!(Tag::HASH < Tag::SUPVAL);
+        assert!(Tag::new(b'A') == Tag::ALTVAL);
     }
 
     #[test]
     fn debug_renders_the_selector_char() {
-        assert!(format!("{:?}", Tag::ALT) == "Tag('A')");
+        assert!(format!("{:?}", Tag::ALTVAL) == "Tag('A')");
     }
 
     #[test]

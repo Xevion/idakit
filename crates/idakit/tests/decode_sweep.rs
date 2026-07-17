@@ -56,9 +56,9 @@ fn run(idb: &mut Database, db: &str) {
                             // the documented bound also held by the disasm budget check.
                             for op in &insn.ops {
                                 assert!(
-                                    op.idx < 8,
-                                    "operand index {} out of range at {address:#x}",
-                                    op.idx
+                                    op.slot < 8,
+                                    "operand slot {} out of range at {address:#x}",
+                                    op.slot
                                 );
                                 ops += 1;
                             }

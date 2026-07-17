@@ -29,8 +29,8 @@ fn fmt_op(op: &Operand) -> String {
             if let Some(i) = &m.index {
                 let _ = write!(s, "+{}*{}", i.name, m.scale);
             }
-            if m.disp != 0 {
-                let _ = write!(s, "{:+#x}", m.disp);
+            if m.displacement != 0 {
+                let _ = write!(s, "{:+#x}", m.displacement);
             }
             s.push(']');
             s
@@ -98,21 +98,21 @@ fn check_straight_line_decode_invariants(idb: &Database) {
             );
             assert!(
                 !instruction.mnemonic.is_empty(),
-                "empty mnemonic at {address:#x} (itype {})",
-                instruction.itype
+                "empty mnemonic at {address:#x} (canonical_code {})",
+                instruction.canonical_code
             );
             // Every operand's original slot index stays within IDA's operand array, and its byte
             // offset never exceeds the instruction it belongs to.
             for op in &instruction.ops {
                 assert!(
-                    op.idx < 8,
-                    "operand index {} out of range at {address:#x}",
-                    op.idx
+                    op.slot < 8,
+                    "operand slot {} out of range at {address:#x}",
+                    op.slot
                 );
                 assert!(
-                    op.offb <= instruction.len,
-                    "operand offb {} exceeds instruction length {} at {address:#x}",
-                    op.offb,
+                    op.byte_offset <= instruction.len,
+                    "operand byte_offset {} exceeds instruction length {} at {address:#x}",
+                    op.byte_offset,
                     instruction.len
                 );
             }

@@ -212,11 +212,11 @@ fn check_segment_type_codes(segs: &[Segment<'_>]) {
         "at least one segment should report a recognized type code"
     );
     assert!(
-        segs.iter().any(|s| s.align().is_some()),
+        segs.iter().any(|s| s.alignment().is_some()),
         "at least one segment should report a recognized alignment code"
     );
     assert!(
-        segs.iter().any(|s| s.comb().is_some()),
+        segs.iter().any(|s| s.combination().is_some()),
         "at least one segment should report a recognized combination code"
     );
 }
@@ -225,11 +225,11 @@ fn check_segment_type_codes(segs: &[Segment<'_>]) {
 fn check_segment_flag_predicates(segs: &[Segment<'_>]) {
     for seg in segs {
         let flags = seg.flags();
-        assert!(seg.is_visible() != flags.contains(SegFlags::HIDDEN));
-        assert!(seg.is_debugger() == flags.contains(SegFlags::DEBUG));
-        assert!(seg.is_loader() == flags.contains(SegFlags::LOADER));
-        assert!(seg.is_type_hidden() == flags.contains(SegFlags::HIDETYPE));
-        assert!(seg.is_header() == flags.contains(SegFlags::HEADER));
+        assert!(seg.is_visible() != flags.contains(SegmentFlags::HIDDEN));
+        assert!(seg.is_debugger() == flags.contains(SegmentFlags::DEBUG));
+        assert!(seg.is_loader() == flags.contains(SegmentFlags::LOADER));
+        assert!(seg.is_type_hidden() == flags.contains(SegmentFlags::HIDETYPE));
+        assert!(seg.is_header() == flags.contains(SegmentFlags::HEADER));
     }
 }
 
@@ -240,11 +240,11 @@ fn print_exec_segment_scalars(exec: &Segment<'_>) {
     println!(
         "exec segment scalars: sel={:#x} type={:?} color={:?} align={:?} comb={:?} \
          visible={} debugger={} loader={} type_hidden={} header={}",
-        exec.sel(),
+        exec.selector(),
         exec.kind(),
         exec.color(),
-        exec.align(),
-        exec.comb(),
+        exec.alignment(),
+        exec.combination(),
         exec.is_visible(),
         exec.is_debugger(),
         exec.is_loader(),

@@ -48,7 +48,7 @@ fn main() {
     }
     println!(
         "\nctree: statements={} expressions={} calls={}",
-        counts.insns, counts.expressions, counts.calls
+        counts.statements, counts.expressions, counts.calls
     );
 
     // Free the cfunc before tearing down the database.

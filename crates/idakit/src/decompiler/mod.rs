@@ -138,7 +138,7 @@ impl Database {
 #[doc(alias("ctree_visitor_t"))]
 pub struct CtreeCounts {
     /// Number of statement nodes (`StatementKind`).
-    pub insns: i32,
+    pub statements: i32,
     /// Number of expression nodes (`ExpressionKind`).
     pub expressions: i32,
     /// Number of call sites.
@@ -202,7 +202,7 @@ impl<'db> DecompiledFunction<'db> {
     pub fn counts(&self) -> CtreeCounts {
         let c = sys::cfunc_counts(self.cfunc());
         CtreeCounts {
-            insns: c.insns,
+            statements: c.statements,
             expressions: c.expressions,
             calls: c.calls,
         }
@@ -251,12 +251,12 @@ mod tests {
     #[test]
     fn ctree_counts_hashes() {
         let a = CtreeCounts {
-            insns: 3,
+            statements: 3,
             expressions: 7,
             calls: 1,
         };
         let b = CtreeCounts {
-            insns: 3,
+            statements: 3,
             expressions: 7,
             calls: 1,
         };

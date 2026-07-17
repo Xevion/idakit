@@ -6,7 +6,7 @@
 //! displays), and its [`kind`](StackSlot::kind) distinguishes a real stack variable from IDA's
 //! reserved return-address and saved-register slots. Materialized on the kernel thread and handed
 //! back owned, so it analyzes anywhere. This is the disassembly-level counterpart to the
-//! decompiler's lvars ([`Ctree::lvars`](crate::decompiler::ctree::Ctree::lvars)), and needs no decompilation.
+//! decompiler's locals ([`Ctree::locals`](crate::decompiler::ctree::Ctree::locals)), and needs no decompilation.
 //!
 //! The [`StackSlot`]/[`StackSlotKind`] split is a deliberate divergence from idalib's flat UDT
 //! members: `offset`/`size` are universal, but a name and type only mean anything for a real

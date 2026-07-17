@@ -4,7 +4,7 @@
 //! [`Database::address_of`], [`Database::demangle`], [`Database::is_public_name`],
 //! [`Database::is_weak_name`], and the [`Names`] iterator.
 
-pub use idakit_sys::GnFlags;
+pub use idakit_sys::NameFlags;
 use serde::{Deserialize, Serialize};
 
 use crate::Database;
@@ -34,10 +34,10 @@ impl Database {
     ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
-    /// use idakit::GnFlags;
+    /// use idakit::NameFlags;
     ///
     /// let address = db.functions().next().unwrap().address();
-    /// let flags = GnFlags::VISIBLE | GnFlags::DEMANGLED | GnFlags::SHORT;
+    /// let flags = NameFlags::VISIBLE | NameFlags::DEMANGLED | NameFlags::SHORT;
     /// assert_eq!(db.name_with(address, flags), db.short_name(address));
     /// # Ok(())
     /// # }).unwrap();
@@ -50,7 +50,7 @@ impl Database {
         "get_long_name",
         "get_demangled_name"
     ))]
-    pub fn name_with(&self, address: Address, flags: GnFlags) -> Option<String> {
+    pub fn name_with(&self, address: Address, flags: NameFlags) -> Option<String> {
         self.get_ea_name_flags(address, flags.bits())
     }
 
@@ -58,7 +58,7 @@ impl Database {
     /// the address is unnamed.
     ///
     /// The SDK's `get_visible_name` convenience wrapper: [`Database::name_with`] under
-    /// [`GnFlags::VISIBLE`].
+    /// [`NameFlags::VISIBLE`].
     ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
@@ -70,13 +70,13 @@ impl Database {
     #[must_use]
     #[doc(alias("get_visible_name"))]
     pub fn visible_name(&self, address: Address) -> Option<String> {
-        self.name_with(address, GnFlags::VISIBLE)
+        self.name_with(address, NameFlags::VISIBLE)
     }
 
     /// The short demangled name at `address`, or `None` if the address is unnamed.
     ///
     /// The SDK's `get_short_name` convenience wrapper: [`Database::name_with`] under
-    /// [`GnFlags::VISIBLE`] `|` [`GnFlags::DEMANGLED`] `|` [`GnFlags::SHORT`].
+    /// [`NameFlags::VISIBLE`] `|` [`NameFlags::DEMANGLED`] `|` [`NameFlags::SHORT`].
     ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
@@ -90,14 +90,14 @@ impl Database {
     pub fn short_name(&self, address: Address) -> Option<String> {
         self.name_with(
             address,
-            GnFlags::VISIBLE | GnFlags::DEMANGLED | GnFlags::SHORT,
+            NameFlags::VISIBLE | NameFlags::DEMANGLED | NameFlags::SHORT,
         )
     }
 
     /// The long demangled name at `address`, or `None` if the address is unnamed.
     ///
     /// The SDK's `get_long_name` convenience wrapper: [`Database::name_with`] under
-    /// [`GnFlags::VISIBLE`] `|` [`GnFlags::DEMANGLED`] `|` [`GnFlags::LONG`].
+    /// [`NameFlags::VISIBLE`] `|` [`NameFlags::DEMANGLED`] `|` [`NameFlags::LONG`].
     ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
@@ -111,7 +111,7 @@ impl Database {
     pub fn long_name(&self, address: Address) -> Option<String> {
         self.name_with(
             address,
-            GnFlags::VISIBLE | GnFlags::DEMANGLED | GnFlags::LONG,
+            NameFlags::VISIBLE | NameFlags::DEMANGLED | NameFlags::LONG,
         )
     }
 
@@ -120,7 +120,7 @@ impl Database {
     ///
     /// Approximates the SDK's `get_demangled_name`, which additionally takes demangling
     /// inhibitor/form arguments this crate does not yet expose: [`Database::name_with`] under
-    /// plain [`GnFlags::DEMANGLED`].
+    /// plain [`NameFlags::DEMANGLED`].
     ///
     /// ```
     /// # idakit::doctest::with_db(|db| {
@@ -132,7 +132,7 @@ impl Database {
     #[must_use]
     #[doc(alias("get_demangled_name"))]
     pub fn demangled_name(&self, address: Address) -> Option<String> {
-        self.name_with(address, GnFlags::DEMANGLED)
+        self.name_with(address, NameFlags::DEMANGLED)
     }
 
     /// Whether the name at `address` is public (exported for external linkage), or `false` if

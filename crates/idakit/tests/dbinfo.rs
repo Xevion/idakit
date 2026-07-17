@@ -211,11 +211,11 @@ fn assert_substitution(idb: &Database, anchors: &Anchors) {
     assert!(idb.long_name(*addr).as_deref() == Some(visible.as_str()));
     assert!(idb.demangled_name(*addr).as_deref() == Some(visible.as_str()));
     assert!(
-        idb.name_with(*addr, GnFlags::VISIBLE).as_deref() == Some(visible.as_str()),
+        idb.name_with(*addr, NameFlags::VISIBLE).as_deref() == Some(visible.as_str()),
         "name_with(VISIBLE) did not substitute the forbidden character"
     );
     assert!(
-        idb.name_with(*addr, GnFlags::empty()).as_deref() == Some(raw.as_str()),
+        idb.name_with(*addr, NameFlags::empty()).as_deref() == Some(raw.as_str()),
         "name_with(no flags) unexpectedly substituted"
     );
 }

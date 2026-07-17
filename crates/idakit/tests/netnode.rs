@@ -26,8 +26,8 @@ type Case = (&'static str, fn(&mut Database));
 const CASES: &[Case] = &[
     ("roundtrip", roundtrip_run),
     ("tag view", tag_run),
-    ("boundary alt", boundary_alt_run),
-    ("boundary sup", boundary_sup_run),
+    ("boundary altval", boundary_altval_run),
+    ("boundary supval", boundary_supval_run),
     ("empty value rejection", empty_value_run),
     ("oversized value rejection", oversized_value_run),
     ("write rejection", write_rejection_run),
@@ -38,7 +38,7 @@ const CASES: &[Case] = &[
     ("model", model_run),
 ];
 
-/// Alt/sup indices the model generates over. Small, so overwrites and deletes collide often.
+/// Altval/supval indices the model generates over. Small, so overwrites and deletes collide often.
 const INDICES: u64 = 4;
 /// Hash keys the model generates over, kept equally small and in lexical order.
 const KEYS: [&str; 3] = ["a", "b", "c"];
@@ -48,14 +48,14 @@ const KEYS: [&str; 3] = ["a", "b", "c"];
 enum Op {
     SetValue(Vec<u8>),
     ClearValue,
-    SetAlt(u64, u64),
-    RemoveAlt(u64),
-    ClearAlts,
-    SetSup(u64, Vec<u8>),
-    RemoveSup(u64),
-    ClearSups,
+    SetAltval(u64, u64),
+    RemoveAltval(u64),
+    ClearAltvals,
+    SetSupval(u64, Vec<u8>),
+    RemoveSupval(u64),
+    ClearSupvals,
     SetHash(String, Vec<u8>),
-    SetHashInt(String, u64),
+    SetHashInteger(String, u64),
     RemoveHash(String),
     ClearHash,
     SetBlob(Vec<u8>),
@@ -64,13 +64,13 @@ enum Op {
 
 /// The netnode state a reader can observe, tracked alongside the real node.
 ///
-/// An alt present with value `0` is deliberately distinct from an absent one: `altset` stores an
-/// object, so the slot enumerates, while `altval` reads `0` either way.
+/// An altval present with value `0` is deliberately distinct from an absent one: `altset` stores
+/// an object, so the slot enumerates, while `altval` reads `0` either way.
 #[derive(Default)]
 struct Model {
     value: Option<Vec<u8>>,
-    alts: BTreeMap<u64, u64>,
-    sups: BTreeMap<u64, Vec<u8>>,
+    altvals: BTreeMap<u64, u64>,
+    supvals: BTreeMap<u64, Vec<u8>>,
     hash: BTreeMap<String, Vec<u8>>,
     blob: Option<Vec<u8>>,
 }
@@ -85,33 +85,33 @@ impl Model {
                 true
             }
             Op::ClearValue => self.value.take().is_some(),
-            Op::SetAlt(i, v) => {
-                self.alts.insert(*i, *v);
+            Op::SetAltval(i, v) => {
+                self.altvals.insert(*i, *v);
                 true
             }
-            Op::RemoveAlt(i) => self.alts.remove(i).is_some(),
-            Op::ClearAlts => {
-                let had = !self.alts.is_empty();
-                self.alts.clear();
+            Op::RemoveAltval(i) => self.altvals.remove(i).is_some(),
+            Op::ClearAltvals => {
+                let had = !self.altvals.is_empty();
+                self.altvals.clear();
                 had
             }
-            Op::SetSup(i, v) => {
-                self.sups.insert(*i, v.clone());
+            Op::SetSupval(i, v) => {
+                self.supvals.insert(*i, v.clone());
                 true
             }
-            Op::RemoveSup(i) => self.sups.remove(i).is_some(),
-            Op::ClearSups => {
-                let had = !self.sups.is_empty();
-                self.sups.clear();
+            Op::RemoveSupval(i) => self.supvals.remove(i).is_some(),
+            Op::ClearSupvals => {
+                let had = !self.supvals.is_empty();
+                self.supvals.clear();
                 had
             }
             Op::SetHash(k, v) => {
                 self.hash.insert(k.clone(), v.clone());
                 true
             }
-            // The int setter is `hashset(idx, &value, sizeof(value))`, so it lands in the same
+            // The integer setter is `hashset(idx, &value, sizeof(value))`, so it lands in the same
             // array as the byte setter, as the host's 8 raw bytes.
-            Op::SetHashInt(k, v) => {
+            Op::SetHashInteger(k, v) => {
                 self.hash.insert(k.clone(), v.to_le_bytes().to_vec());
                 true
             }
@@ -139,14 +139,14 @@ fn op_strategy() -> impl Strategy<Value = Op> {
     prop_oneof![
         bytes.clone().prop_map(Op::SetValue),
         Just(Op::ClearValue),
-        (index.clone(), any::<u64>()).prop_map(|(i, v)| Op::SetAlt(i, v)),
-        index.clone().prop_map(Op::RemoveAlt),
-        Just(Op::ClearAlts),
-        (index.clone(), bytes.clone()).prop_map(|(i, v)| Op::SetSup(i, v)),
-        index.prop_map(Op::RemoveSup),
-        Just(Op::ClearSups),
+        (index.clone(), any::<u64>()).prop_map(|(i, v)| Op::SetAltval(i, v)),
+        index.clone().prop_map(Op::RemoveAltval),
+        Just(Op::ClearAltvals),
+        (index.clone(), bytes.clone()).prop_map(|(i, v)| Op::SetSupval(i, v)),
+        index.prop_map(Op::RemoveSupval),
+        Just(Op::ClearSupvals),
         (key.clone(), bytes.clone()).prop_map(|(k, v)| Op::SetHash(k, v)),
-        (key.clone(), any::<u64>()).prop_map(|(k, v)| Op::SetHashInt(k, v)),
+        (key.clone(), any::<u64>()).prop_map(|(k, v)| Op::SetHashInteger(k, v)),
         key.prop_map(Op::RemoveHash),
         Just(Op::ClearHash),
         bytes.prop_map(Op::SetBlob),
@@ -159,14 +159,14 @@ fn apply_real(node: &mut NetnodeMut<'_>, op: &Op) -> bool {
     match op {
         Op::SetValue(v) => node.set_value(v.as_slice()).is_ok(),
         Op::ClearValue => node.clear_value(),
-        Op::SetAlt(i, v) => node.set_alt(*i, *v).is_ok(),
-        Op::RemoveAlt(i) => node.remove_alt(*i),
-        Op::ClearAlts => node.clear_alts(),
-        Op::SetSup(i, v) => node.set_sup(*i, v.as_slice()).is_ok(),
-        Op::RemoveSup(i) => node.remove_sup(*i),
-        Op::ClearSups => node.clear_sups(),
+        Op::SetAltval(i, v) => node.set_altval(*i, *v).is_ok(),
+        Op::RemoveAltval(i) => node.remove_altval(*i),
+        Op::ClearAltvals => node.clear_altvals(),
+        Op::SetSupval(i, v) => node.set_supval(*i, v.as_slice()).is_ok(),
+        Op::RemoveSupval(i) => node.remove_supval(*i),
+        Op::ClearSupvals => node.clear_supvals(),
         Op::SetHash(k, v) => node.set_hash(k, v.as_slice()).is_ok(),
-        Op::SetHashInt(k, v) => node.set_hash_int(k, *v).is_ok(),
+        Op::SetHashInteger(k, v) => node.set_hash_integer(k, *v).is_ok(),
         Op::RemoveHash(k) => node.remove_hash(k),
         Op::ClearHash => node.clear_hash(),
         Op::SetBlob(v) => node.set_blob(v).is_ok(),
@@ -185,9 +185,14 @@ fn check(node: &NetnodeMut<'_>, model: &Model) -> Result<(), TestCaseError> {
     );
 
     for i in 0..INDICES {
-        let alt = model.alts.get(&i).copied().unwrap_or(0);
-        prop_assert_eq!(node.alt(i), alt, "alt {}", i);
-        prop_assert_eq!(node.sup(i), model.sups.get(&i).cloned(), "sup {}", i);
+        let altval = model.altvals.get(&i).copied().unwrap_or(0);
+        prop_assert_eq!(node.altval(i), altval, "altval {}", i);
+        prop_assert_eq!(
+            node.supval(i),
+            model.supvals.get(&i).cloned(),
+            "supval {}",
+            i
+        );
     }
 
     for key in KEYS {
@@ -196,22 +201,22 @@ fn check(node: &NetnodeMut<'_>, model: &Model) -> Result<(), TestCaseError> {
         // `hashval_long` is only defined over what the int setter wrote, so a byte value of some
         // other width has no expected reading; an absent key is documented to read 0.
         match stored {
-            None => prop_assert_eq!(node.hash_int(key), 0, "hash_int {} unset", key),
+            None => prop_assert_eq!(node.hash_integer(key), 0, "hash_integer {} unset", key),
             Some(bytes) if bytes.len() == 8 => {
                 let want = u64::from_le_bytes(bytes.try_into().expect("8 bytes"));
-                prop_assert_eq!(node.hash_int(key), want, "hash_int {}", key);
+                prop_assert_eq!(node.hash_integer(key), want, "hash_integer {}", key);
             }
             Some(_) => {}
         }
     }
 
-    let alts: Vec<(u64, u64)> = node.alts().collect();
-    let want: Vec<(u64, u64)> = model.alts.iter().map(|(i, v)| (*i, *v)).collect();
-    prop_assert_eq!(alts, want, "alts enumeration");
+    let altvals: Vec<(u64, u64)> = node.altvals().collect();
+    let want: Vec<(u64, u64)> = model.altvals.iter().map(|(i, v)| (*i, *v)).collect();
+    prop_assert_eq!(altvals, want, "altvals enumeration");
 
-    let sups: Vec<(u64, Vec<u8>)> = node.sups().collect();
-    let want: Vec<(u64, Vec<u8>)> = model.sups.iter().map(|(i, v)| (*i, v.clone())).collect();
-    prop_assert_eq!(sups, want, "sups enumeration");
+    let supvals: Vec<(u64, Vec<u8>)> = node.supvals().collect();
+    let want: Vec<(u64, Vec<u8>)> = model.supvals.iter().map(|(i, v)| (*i, v.clone())).collect();
+    prop_assert_eq!(supvals, want, "supvals enumeration");
 
     let entries: Vec<(String, Vec<u8>)> = node.hash_entries().collect();
     let want: Vec<(String, Vec<u8>)> = model
@@ -307,7 +312,7 @@ fn tag_run(idb: &mut Database) {
     let id = {
         let mut node = idb.netnode_mut(name);
         let mut t = node.tag(user);
-        t.set_int(1, 111).expect("set_int");
+        t.set_integer(1, 111).expect("set_integer");
         t.set_value(2, b"data").expect("set_value");
         t.set_hash("k", b"v").expect("set_hash");
         node.id()
@@ -315,55 +320,57 @@ fn tag_run(idb: &mut Database) {
 
     let node = idb.netnode_at(id);
     let t = node.tag(user);
-    assert!(t.int(1) == 111);
+    assert!(t.integer(1) == 111);
     assert!(t.value(2).as_deref() == Some(b"data".as_slice()));
     assert!(t.hash("k").as_deref() == Some(b"v".as_slice()));
 
-    // int and value are two views of one numeric array, so both slots enumerate together.
+    // integer and value are two views of one numeric array, so both slots enumerate together.
     let indices: Vec<u64> = t.values().map(|(i, _)| i).collect();
     assert!(indices == vec![1, 2]);
 
     // A different tag is a separate array: the default-tag slot at index 2 is untouched.
     assert!(
-        node.sup(2).is_none(),
+        node.supval(2).is_none(),
         "tag 'X' is isolated from the default tag"
     );
 
     idb.netnode_mut(name).kill();
 }
 
-/// The alt array's boundary indices (`0`, `u64::MAX`) both store and read back.
-fn boundary_alt_run(idb: &mut Database) {
-    let name = "$ idakit.netnode.boundary.alt";
+/// The altval array's boundary indices (`0`, `u64::MAX`) both store and read back.
+fn boundary_altval_run(idb: &mut Database) {
+    let name = "$ idakit.netnode.boundary.altval";
     let mut node = idb.netnode_mut(name);
 
-    node.set_alt(0, 0xAAAA).expect("set_alt at index 0");
-    assert!(node.alt(0) == 0xAAAA, "alt at index 0 did not stick");
+    node.set_altval(0, 0xAAAA).expect("set_altval at index 0");
+    assert!(node.altval(0) == 0xAAAA, "altval at index 0 did not stick");
 
-    node.set_alt(u64::MAX, 0xBBBB).expect("set_alt at u64::MAX");
+    node.set_altval(u64::MAX, 0xBBBB)
+        .expect("set_altval at u64::MAX");
     assert!(
-        node.alt(u64::MAX) == 0xBBBB,
-        "alt at index u64::MAX did not stick"
+        node.altval(u64::MAX) == 0xBBBB,
+        "altval at index u64::MAX did not stick"
     );
 
     node.kill();
 }
 
-/// The sup array's boundary indices (`0`, `u64::MAX`) both store and read back.
-fn boundary_sup_run(idb: &mut Database) {
-    let name = "$ idakit.netnode.boundary.sup";
+/// The supval array's boundary indices (`0`, `u64::MAX`) both store and read back.
+fn boundary_supval_run(idb: &mut Database) {
+    let name = "$ idakit.netnode.boundary.supval";
     let mut node = idb.netnode_mut(name);
 
-    node.set_sup(0, b"zero").expect("set_sup at index 0");
+    node.set_supval(0, b"zero").expect("set_supval at index 0");
     assert!(
-        node.sup(0).as_deref() == Some(b"zero".as_slice()),
-        "sup at index 0 did not stick"
+        node.supval(0).as_deref() == Some(b"zero".as_slice()),
+        "supval at index 0 did not stick"
     );
 
-    node.set_sup(u64::MAX, b"max").expect("set_sup at u64::MAX");
+    node.set_supval(u64::MAX, b"max")
+        .expect("set_supval at u64::MAX");
     assert!(
-        node.sup(u64::MAX).as_deref() == Some(b"max".as_slice()),
-        "sup at index u64::MAX did not stick"
+        node.supval(u64::MAX).as_deref() == Some(b"max".as_slice()),
+        "supval at index u64::MAX did not stick"
     );
 
     node.kill();
@@ -384,10 +391,10 @@ fn empty_value_run(idb: &mut Database) {
 
     // The typed variant proves the rejection happened in `NetnodeBytes::try_from`, not the
     // kernel (which would be `Error::WriteRejected`).
-    assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::Empty }) = node.set_sup(1, b""));
+    assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::Empty }) = node.set_supval(1, b""));
     assert!(
-        node.sup(1).is_none(),
-        "the rejected sup write left no value"
+        node.supval(1).is_none(),
+        "the rejected supval write left no value"
     );
 
     assert!(let Err(Error::InvalidNetnodeBytes { source: NetnodeBytesError::Empty }) = node.set_hash("k", b""));
@@ -403,18 +410,19 @@ fn empty_value_run(idb: &mut Database) {
     );
 
     // A one-byte value is the smallest the SDK can represent, and it must still round-trip.
-    node.set_sup(1, b"\0").expect("set_sup with a single NUL");
+    node.set_supval(1, b"\0")
+        .expect("set_supval with a single NUL");
     assert!(
-        node.sup(1).as_deref() == Some(b"\0".as_slice()),
-        "a one-byte sup value did not round-trip"
+        node.supval(1).as_deref() == Some(b"\0".as_slice()),
+        "a one-byte supval did not round-trip"
     );
 
     node.kill();
 }
 
-/// Every byte-valued setter enforces `MAXSPECSIZE` rather than silently truncating.
+/// Every byte-valued setter enforces [`NetnodeBytes::MAX_SIZE`] rather than silently truncating.
 ///
-/// An over-cap `supset` returns success while storing only the first `MAXSPECSIZE` bytes, so a
+/// An over-cap `supset` returns success while storing only the first `MAX_SIZE` bytes, so a
 /// caller trusting the `Ok` would silently lose data. idakit rejects the write client-side
 /// instead, matching the empty-value guard.
 fn oversized_value_run(idb: &mut Database) {
@@ -426,9 +434,9 @@ fn oversized_value_run(idb: &mut Database) {
 
     // Exactly the cap: stores and round-trips in full.
     let at_cap = vec![0x11u8; 1024];
-    node.set_sup(0, &at_cap).expect("set_sup at MAXSPECSIZE");
+    node.set_supval(0, &at_cap).expect("set_supval at MAX_SIZE");
     assert!(
-        node.sup(0).as_deref() == Some(at_cap.as_slice()),
+        node.supval(0).as_deref() == Some(at_cap.as_slice()),
         "a value at the cap did not round-trip exactly"
     );
 
@@ -437,11 +445,11 @@ fn oversized_value_run(idb: &mut Database) {
     assert!(
         let Err(Error::InvalidNetnodeBytes {
             source: NetnodeBytesError::TooLarge { len: 1025, cap: 1024 },
-        }) = node.set_sup(1, &over_cap)
+        }) = node.set_supval(1, &over_cap)
     );
     assert!(
-        node.sup(1).is_none(),
-        "the rejected sup write left no value"
+        node.supval(1).is_none(),
+        "the rejected supval write left no value"
     );
 
     // Far over the cap: same rejection.
@@ -449,11 +457,11 @@ fn oversized_value_run(idb: &mut Database) {
     assert!(
         let Err(Error::InvalidNetnodeBytes {
             source: NetnodeBytesError::TooLarge { len: 4096, cap: 1024 },
-        }) = node.set_sup(2, &far_over)
+        }) = node.set_supval(2, &far_over)
     );
     assert!(
-        node.sup(2).is_none(),
-        "the rejected sup write left no value"
+        node.supval(2).is_none(),
+        "the rejected supval write left no value"
     );
 
     // hashset shares the same guard.
@@ -508,17 +516,18 @@ fn reused_bytes_run(idb: &mut Database) {
     let mut node = idb.netnode_mut(name);
 
     let bytes = NetnodeBytes::try_from(b"shared".as_slice()).expect("valid bytes");
-    node.set_sup(0, bytes).expect("set_sup with a NetnodeBytes");
+    node.set_supval(0, bytes)
+        .expect("set_supval with a NetnodeBytes");
     node.set_hash("k", bytes)
         .expect("set_hash with the same NetnodeBytes");
 
-    assert!(node.sup(0).as_deref() == Some(b"shared".as_slice()));
+    assert!(node.supval(0).as_deref() == Some(b"shared".as_slice()));
     assert!(node.hash("k").as_deref() == Some(b"shared".as_slice()));
 
     node.kill();
 }
 
-/// A 64 KiB blob, well past the 1024-byte cap that binds the hash/sup arrays, round-trips
+/// A 64 KiB blob, well past the 1024-byte cap that binds the hash/supval arrays, round-trips
 /// exactly, proving blobs are genuinely unbounded rather than sharing that cap.
 fn large_blob_run(idb: &mut Database) {
     let name = "$ idakit.netnode.boundary.blob";
@@ -558,20 +567,35 @@ fn deletion_run(idb: &mut Database) {
             "clearing an absent value removed something"
         );
 
-        node.set_sup(0, b"sup-zero").expect("set_sup 0");
-        node.set_sup(1, b"sup-one").expect("set_sup 1");
-        assert!(node.remove_sup(0), "remove_sup did not report the removal");
-        assert!(node.sup(0).is_none(), "remove_sup left the sup at 0");
-        assert!(node.sup(1).is_some(), "remove_sup took the sup at 1 too");
+        node.set_supval(0, b"sup-zero").expect("set_supval 0");
+        node.set_supval(1, b"sup-one").expect("set_supval 1");
         assert!(
-            !node.remove_sup(0),
-            "removing an absent sup removed something"
+            node.remove_supval(0),
+            "remove_supval did not report the removal"
         );
-        assert!(node.clear_sups(), "clear_sups did not report the removal");
-        assert!(node.sups().next().is_none(), "clear_sups left a sup");
         assert!(
-            !node.clear_sups(),
-            "clearing an empty sup array removed something"
+            node.supval(0).is_none(),
+            "remove_supval left the supval at 0"
+        );
+        assert!(
+            node.supval(1).is_some(),
+            "remove_supval took the supval at 1 too"
+        );
+        assert!(
+            !node.remove_supval(0),
+            "removing an absent supval removed something"
+        );
+        assert!(
+            node.clear_supvals(),
+            "clear_supvals did not report the removal"
+        );
+        assert!(
+            node.supvals().next().is_none(),
+            "clear_supvals left a supval"
+        );
+        assert!(
+            !node.clear_supvals(),
+            "clearing an empty supval array removed something"
         );
 
         node.set_blob(&[1, 2, 3]).expect("set_blob");
@@ -642,11 +666,11 @@ fn roundtrip_run(idb: &mut Database) {
     let id = {
         let mut node = idb.netnode_mut(name);
         node.set_value(b"payload").expect("set_value");
-        node.set_alt(1, 111).expect("set_alt 1");
-        node.set_alt(2, 222).expect("set_alt 2");
-        node.set_sup(0, b"sup-zero").expect("set_sup");
+        node.set_altval(1, 111).expect("set_altval 1");
+        node.set_altval(2, 222).expect("set_altval 2");
+        node.set_supval(0, b"sup-zero").expect("set_supval");
         node.set_hash("greeting", b"hi").expect("set_hash");
-        node.set_hash_int("count", 7).expect("set_hash_int");
+        node.set_hash_integer("count", 7).expect("set_hash_integer");
         node.set_blob(&[1, 2, 3, 4, 5]).expect("set_blob");
         node.put::<u64>("typed_u64", &0xdead_beef).expect("put u64");
         node.put::<String>("typed_str", &"idakit".to_string())
@@ -667,13 +691,13 @@ fn roundtrip_run(idb: &mut Database) {
     // Scalar reads.
     assert!(node.value().as_deref() == Some(b"payload".as_slice()));
     assert!(node.value_str().as_deref() == Some("payload"));
-    assert!(node.alt(1) == 111);
-    assert!(node.alt(2) == 222);
-    assert!(node.alt(99) == 0, "an unset alt reads as 0");
-    assert!(node.sup(0).as_deref() == Some(b"sup-zero".as_slice()));
-    assert!(node.sup(1).is_none(), "an unset sup is None");
+    assert!(node.altval(1) == 111);
+    assert!(node.altval(2) == 222);
+    assert!(node.altval(99) == 0, "an unset altval reads as 0");
+    assert!(node.supval(0).as_deref() == Some(b"sup-zero".as_slice()));
+    assert!(node.supval(1).is_none(), "an unset supval is None");
     assert!(node.hash("greeting").as_deref() == Some(b"hi".as_slice()));
-    assert!(node.hash_int("count") == 7);
+    assert!(node.hash_integer("count") == 7);
     assert!(node.blob().as_deref() == Some([1, 2, 3, 4, 5].as_slice()));
     assert!(node.blob_size() == 5);
 
@@ -690,18 +714,18 @@ fn roundtrip_run(idb: &mut Database) {
     // Iterators enumerate exactly the populated entries, in ascending order, checked per item
     // as it's pulled rather than via collect(): a mutant next() that repeats or fabricates an
     // item then fails on that item instead of hanging an unbounded collect() forever.
-    let mut alts = node.alts();
+    let mut altvals = node.altvals();
     for expected in [(1u64, 111u64), (2, 222)] {
-        assert!(alts.next() == Some(expected), "alts item mismatch");
+        assert!(altvals.next() == Some(expected), "altvals item mismatch");
     }
-    assert!(alts.next().is_none(), "alts: unexpected extra entry");
+    assert!(altvals.next().is_none(), "altvals: unexpected extra entry");
 
-    let mut sups = node.sups();
+    let mut supvals = node.supvals();
     assert!(
-        sups.next() == Some((0u64, b"sup-zero".to_vec())),
-        "sups item mismatch"
+        supvals.next() == Some((0u64, b"sup-zero".to_vec())),
+        "supvals item mismatch"
     );
-    assert!(sups.next().is_none(), "sups: unexpected extra entry");
+    assert!(supvals.next().is_none(), "supvals: unexpected extra entry");
 
     let mut hash_entries = node.hash_entries();
     for expected_key in ["count", "greeting", "typed_str", "typed_u64"] {
@@ -737,10 +761,16 @@ fn roundtrip_run(idb: &mut Database) {
             "remove did not delete the value"
         );
 
-        assert!(node.remove_alt(1), "remove_alt did not report the removal");
-        assert!(node.alt(1) == 0, "a removed alt reads as 0");
-        assert!(node.clear_alts(), "clear_alts did not report the removal");
-        assert!(node.alts().next().is_none(), "alts empty after clear");
+        assert!(
+            node.remove_altval(1),
+            "remove_altval did not report the removal"
+        );
+        assert!(node.altval(1) == 0, "a removed altval reads as 0");
+        assert!(
+            node.clear_altvals(),
+            "clear_altvals did not report the removal"
+        );
+        assert!(node.altvals().next().is_none(), "altvals empty after clear");
         assert!(node.clear_hash(), "clear_hash did not report the removal");
         assert!(
             node.hash_entries().next().is_none(),

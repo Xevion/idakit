@@ -411,11 +411,11 @@ impl LocationMut<'_> {
         } else {
             // patch_bytes has no kernel error channel; the facade rejects an unmapped range, so
             // there is usually no error code set. Fall back to naming the actual failure.
-            let (qerrno, reason) = self.db.last_reason();
+            let (errno, reason) = self.db.last_reason();
             Err(Error::WriteRejected {
                 op: "patch",
                 address: self.address.get(),
-                qerrno,
+                errno,
                 reason: reason.or_else(|| Some("target range is not fully mapped".to_owned())),
             })
         };
@@ -485,11 +485,11 @@ impl LocationMut<'_> {
 
     /// Builds an [`Error::WriteRejected`] for `op` from the kernel's current error channel.
     fn rejected(&self, op: &'static str) -> Error {
-        let (qerrno, reason) = self.db.last_reason();
+        let (errno, reason) = self.db.last_reason();
         Error::WriteRejected {
             op,
             address: self.address.get(),
-            qerrno,
+            errno,
             reason,
         }
     }

@@ -72,51 +72,54 @@ pub enum DecodeError {
     /// A supported processor produced an operand this decoder cannot model. Unreachable
     /// for x86, which enumerates all of its operand types; a loud safety net, not a normal
     /// path.
-    #[snafu(display("unmodeled operand {op} (raw optype {optype}) at {address:#x}"))]
+    #[snafu(display("unmodeled operand {slot} (raw operand type {operand_type}) at {address:#x}"))]
     UnsupportedOperand {
         /// Address of the instruction.
         address: u64,
         /// The operand slot that could not be modelled.
-        op: u8,
-        /// The raw `optype` byte the decoder did not recognize.
-        optype: u8,
+        slot: u8,
+        /// The raw operand-type byte the decoder did not recognize.
+        #[doc(alias("optype_t"))]
+        operand_type: u8,
     },
 
     /// A register operand referred to a register in no modelled [`RegisterClass`] (flags,
     /// fpu/sse control-status, or a number outside the register file). Rejected loudly rather
     /// than mislabeled `GeneralPurpose`; empirically never emitted for a real x86 operand.
-    #[snafu(display("unmodeled register {regnum} at operand {op}, {address:#x}"))]
+    #[snafu(display("unmodeled register {register_number} at operand {slot}, {address:#x}"))]
     UnsupportedRegister {
         /// Address of the instruction.
         address: u64,
         /// The operand slot carrying the register.
-        op: u8,
+        slot: u8,
         /// The processor-local register number that has no modelled class.
-        regnum: u8,
+        #[doc(alias("regnum"))]
+        register_number: u8,
     },
 
     /// An operand's value type fell outside the modeled [`OperandDataType`] domain, since
     /// only this IDA version's set of value types is modeled, so a newer version's value is
     /// a deliberate break, not a silent `Void`.
-    #[snafu(display("unmodeled data type {dtype} at operand {op}, {address:#x}"))]
+    #[snafu(display("unmodeled data type {data_type} at operand {slot}, {address:#x}"))]
     UnsupportedDataType {
         /// Address of the instruction.
         address: u64,
         /// The operand slot carrying the value type.
-        op: u8,
+        slot: u8,
         /// The raw value-type byte outside the modeled domain.
-        dtype: u8,
+        #[doc(alias("dtype"))]
+        data_type: u8,
     },
 
     /// A modelled operand kind arrived with a payload that contradicts it, such as a near
     /// branch whose target did not resolve, or a register operand with no register. A facade
     /// contract violation; empirically impossible, kept as a loud guard rather than a panic.
-    #[snafu(display("malformed operand {op} at {address:#x}: {reason}"))]
+    #[snafu(display("malformed operand {slot} at {address:#x}: {reason}"))]
     MalformedOperand {
         /// Address of the instruction.
         address: u64,
         /// The offending operand slot.
-        op: u8,
+        slot: u8,
         /// What made the operand malformed.
         reason: &'static str,
     },
@@ -149,13 +152,14 @@ pub struct Instruction {
     pub address: Address,
     /// Encoded length in bytes.
     pub len: u8,
-    /// The architecture this was decoded under; makes `itype`, register numbers, and the
-    /// mnemonic self-describing off-thread.
+    /// The architecture this was decoded under; makes `canonical_code`, register numbers, and
+    /// the mnemonic self-describing off-thread.
     pub isa: Isa,
     /// Processor-local canonical instruction id (x86 `NN_*`). Numeric and cheap to match;
     /// meaningful only together with [`isa`](Self::isa). This is the trustable machine
     /// identity, of which `mnemonic` is the human projection.
-    pub itype: u16,
+    #[doc(alias("itype"))]
+    pub canonical_code: u16,
     /// IDA's canonical mnemonic, resolved at decode.
     pub mnemonic: Box<str>,
     /// Explicit operands in encoding order. Trailing empty operand slots are dropped, so
@@ -188,10 +192,11 @@ impl Instruction {
 pub struct Operand {
     /// The operand's original slot index (0-based). Void slots are dropped from
     /// [`ops`](Instruction::ops), so a slot's position in that vector need not equal this; anything
-    /// keyed by IDA's per-operand slots correlates through `idx`.
-    pub idx: u8,
+    /// keyed by IDA's per-operand slots correlates through `slot`.
+    pub slot: u8,
     /// The operand's byte offset within the encoded instruction.
-    pub offb: u8,
+    #[doc(alias("offb"))]
+    pub byte_offset: u8,
     /// What the operand refers to.
     pub kind: OperandKind,
     /// The operand's value type.
@@ -245,7 +250,7 @@ pub struct Memory {
     /// Index scale multiplier (1, 2, 4, or 8).
     pub scale: u8,
     /// Signed displacement.
-    pub disp: i64,
+    pub displacement: i64,
     /// Segment-override register. Currently always `None`, since reliably distinguishing an
     /// explicit override from the default segment is deferred, so this is left unpopulated
     /// rather than guessed.
@@ -308,7 +313,7 @@ mod tests {
 
     fn reg(name: &str) -> Register {
         Register {
-            num: 0,
+            number: 0,
             class: RegisterClass::GeneralPurpose,
             width: 8,
             name: name.into(),
@@ -317,8 +322,8 @@ mod tests {
 
     fn op(kind: OperandKind) -> Operand {
         Operand {
-            idx: 0,
-            offb: 0,
+            slot: 0,
+            byte_offset: 0,
             kind,
             data_type: OperandDataType::Qword,
             access: Access::default(),
@@ -331,7 +336,7 @@ mod tests {
             address: Address::try_new(0x1000).expect("valid"),
             len: 4,
             isa: Isa::X64,
-            itype: 0,
+            canonical_code: 0,
             mnemonic: "lea".into(),
             ops: vec![
                 op(OperandKind::Register(reg("rax"))),
@@ -339,7 +344,7 @@ mod tests {
                     base: Some(reg("rbx")),
                     index: Some(reg("rcx")),
                     scale: 1,
-                    disp: 0,
+                    displacement: 0,
                     segment: None,
                     target: None,
                 })),
@@ -363,7 +368,7 @@ mod tests {
             address: Address::try_new(0x1000).expect("valid"),
             len: 4,
             isa: Isa::X64,
-            itype: 0,
+            canonical_code: 0,
             mnemonic: "lea".into(),
             ops: vec![
                 op(OperandKind::Register(reg("rax"))),
@@ -371,7 +376,7 @@ mod tests {
                     base: Some(reg("rbx")),
                     index: Some(reg("rcx")),
                     scale: 1,
-                    disp: -8,
+                    displacement: -8,
                     segment: None,
                     target: Some(Address::try_new(0x2000).expect("valid")),
                 })),

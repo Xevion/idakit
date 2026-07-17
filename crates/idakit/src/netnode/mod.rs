@@ -5,14 +5,16 @@
 //! name, carrying a single value plus several typed arrays. idakit surfaces the arrays as native
 //! Rust collections and hides IDA's 8-bit tag selectors behind fixed defaults:
 //!
-//! - the **alt** array ([`alts`](Netnode::alts)), a sparse map of [`u64`] indices to [`u64`] values;
-//! - the **sup** array ([`sups`](Netnode::sups)), a sparse map of [`u64`] indices to byte objects;
+//! - the **altval** array ([`altvals`](Netnode::altvals)), a sparse map of [`u64`] indices to
+//!   [`u64`] values;
+//! - the **supval** array ([`supvals`](Netnode::supvals)), a sparse map of [`u64`] indices to
+//!   byte objects;
 //! - the **hash** ([`hash_entries`](Netnode::hash_entries)), a string-keyed map of byte objects, and
 //!   the typed key/value store ([`get`](Netnode::get)/[`put`](NetnodeMut::put)) layered on it;
 //! - **blobs** ([`blob`](Netnode::blob)), unlimited-size byte objects.
 //!
-//! Every value/sup/hash byte write goes through [`NetnodeBytes`], validating the SDK's
-//! `1..=MAXSPECSIZE` object-size domain at conversion time. Blobs alone are unbounded.
+//! Every value/supval/hash byte write goes through [`NetnodeBytes`], validating the object-size
+//! domain against [`NetnodeBytes::MAX_SIZE`] at conversion time. Blobs alone are unbounded.
 //!
 //! [`Netnode`] reads (absence is [`None`], never an error); [`NetnodeMut`], acquired by
 //! [`netnode_mut`](Database::netnode_mut) from `&mut Database`, writes. The whole layer holds no
@@ -41,8 +43,8 @@ use serde::{Deserialize, Serialize};
 use crate::Database;
 use crate::error::{Error, Result};
 
-pub use self::arrays::{Alts, HashEntries, Sups};
-pub use self::bytes::{MAXSPECSIZE, NetnodeBytes, NetnodeBytesError};
+pub use self::arrays::{Altvals, HashEntries, Supvals};
+pub use self::bytes::{NetnodeBytes, NetnodeBytesError};
 pub use self::persist::Persist;
 pub use self::tag::Tag;
 pub use self::tagged::{TaggedNetnode, TaggedNetnodeMut};
@@ -52,11 +54,11 @@ const BADNODE: u64 = u64::MAX;
 
 /// Build an [`Error::WriteRejected`] for `op` from the kernel's error channel after a failed write.
 fn rejected(db: &Database, address: u64, op: &'static str) -> Error {
-    let (qerrno, reason) = db.last_reason();
+    let (errno, reason) = db.last_reason();
     Error::WriteRejected {
         op,
         address,
-        qerrno,
+        errno,
         reason,
     }
 }
@@ -256,22 +258,22 @@ macro_rules! netnode_reads {
             self.db.netnode_value_str(self.id.get())
         }
 
-        /// The alt value at `index`, or `0` when unset (the SDK does not distinguish the two).
+        /// The altval at `index`, or `0` when unset (the SDK does not distinguish the two).
         #[inline]
         #[must_use]
         #[doc(alias("netnode::altval"))]
-        pub fn alt(&self, index: u64) -> u64 {
+        pub fn altval(&self, index: u64) -> u64 {
             self.db
-                .netnode_altval(self.id.get(), index, $crate::netnode::Tag::ALT.raw())
+                .netnode_altval(self.id.get(), index, $crate::netnode::Tag::ALTVAL.raw())
         }
 
-        /// The sup byte object at `index`, or `None` if unset.
+        /// The supval byte object at `index`, or `None` if unset.
         #[inline]
         #[must_use]
         #[doc(alias("netnode::supval"))]
-        pub fn sup(&self, index: u64) -> Option<Vec<u8>> {
+        pub fn supval(&self, index: u64) -> Option<Vec<u8>> {
             self.db
-                .netnode_supval(self.id.get(), index, $crate::netnode::Tag::SUP.raw())
+                .netnode_supval(self.id.get(), index, $crate::netnode::Tag::SUPVAL.raw())
         }
 
         /// The hash value for `key` as raw bytes, or `None` if the key is unset.
@@ -287,7 +289,7 @@ macro_rules! netnode_reads {
         #[inline]
         #[must_use]
         #[doc(alias("netnode::hashval_long"))]
-        pub fn hash_int(&self, key: &str) -> u64 {
+        pub fn hash_integer(&self, key: &str) -> u64 {
             self.db
                 .netnode_hashval_long(self.id.get(), key, $crate::netnode::Tag::HASH.raw())
         }
@@ -310,20 +312,20 @@ macro_rules! netnode_reads {
                 .netnode_blobsize(self.id.get(), 0, $crate::netnode::Tag::BLOB.raw())
         }
 
-        /// Lazily iterate the alt array as `(index, value)` pairs, in ascending index order.
+        /// Lazily iterate the altval array as `(index, value)` pairs, in ascending index order.
         #[inline]
         #[must_use]
         #[doc(alias("netnode::altfirst"))]
-        pub fn alts(&self) -> $crate::netnode::Alts<'_> {
-            $crate::netnode::Alts::new(&*self.db, self.id, $crate::netnode::Tag::ALT.raw())
+        pub fn altvals(&self) -> $crate::netnode::Altvals<'_> {
+            $crate::netnode::Altvals::new(&*self.db, self.id, $crate::netnode::Tag::ALTVAL.raw())
         }
 
-        /// Lazily iterate the sup array as `(index, bytes)` pairs, in ascending index order.
+        /// Lazily iterate the supval array as `(index, bytes)` pairs, in ascending index order.
         #[inline]
         #[must_use]
         #[doc(alias("netnode::supfirst"))]
-        pub fn sups(&self) -> $crate::netnode::Sups<'_> {
-            $crate::netnode::Sups::new(&*self.db, self.id, $crate::netnode::Tag::SUP.raw())
+        pub fn supvals(&self) -> $crate::netnode::Supvals<'_> {
+            $crate::netnode::Supvals::new(&*self.db, self.id, $crate::netnode::Tag::SUPVAL.raw())
         }
 
         /// Lazily iterate the hash as `(key, bytes)` pairs, in lexical key order.
@@ -477,19 +479,19 @@ impl NetnodeMut<'_> {
     }
 
     write_ops! {
-        /// Set the alt value at `index`.
+        /// Set the altval at `index`.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
         #[doc(alias("netnode::altset"))]
-        fn set_alt(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, Tag::ALT.raw());
+        fn set_altval(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, Tag::ALTVAL.raw());
 
         /// Set the hash value for `key` to an integer.
         ///
         /// # Errors
         /// [`Error::WriteRejected`] if the kernel rejects the write.
         #[doc(alias("netnode::hashset"))]
-        fn set_hash_int(this, key: &str, value: u64) => this.db.netnode_hashset_long(this.id.get(), key, value, Tag::HASH.raw());
+        fn set_hash_integer(this, key: &str, value: u64) => this.db.netnode_hashset_long(this.id.get(), key, value, Tag::HASH.raw());
 
         /// Store the default blob (`start = 0`), replacing any existing one.
         ///
@@ -511,21 +513,21 @@ impl NetnodeMut<'_> {
         #[doc(alias("netnode::delvalue"))]
         fn clear_value(this) => this.db.netnode_del_value(this.id.get());
 
-        /// Delete the alt value at `index`, returning whether it was set.
+        /// Delete the altval at `index`, returning whether it was set.
         #[doc(alias("netnode::altdel"))]
-        fn remove_alt(this, index: u64) => this.db.netnode_altdel(this.id.get(), index, Tag::ALT.raw());
+        fn remove_altval(this, index: u64) => this.db.netnode_altdel(this.id.get(), index, Tag::ALTVAL.raw());
 
-        /// Delete every alt value, returning whether any were set.
+        /// Delete every altval, returning whether any were set.
         #[doc(alias("netnode::altdel_all"))]
-        fn clear_alts(this) => this.db.netnode_altdel_all(this.id.get(), Tag::ALT.raw());
+        fn clear_altvals(this) => this.db.netnode_altdel_all(this.id.get(), Tag::ALTVAL.raw());
 
-        /// Delete the sup byte object at `index`, returning whether it was set.
+        /// Delete the supval byte object at `index`, returning whether it was set.
         #[doc(alias("netnode::supdel"))]
-        fn remove_sup(this, index: u64) => this.db.netnode_supdel(this.id.get(), index, Tag::SUP.raw());
+        fn remove_supval(this, index: u64) => this.db.netnode_supdel(this.id.get(), index, Tag::SUPVAL.raw());
 
-        /// Delete every sup byte object, returning whether any were set.
+        /// Delete every supval byte object, returning whether any were set.
         #[doc(alias("netnode::supdel_all"))]
-        fn clear_sups(this) => this.db.netnode_supdel_all(this.id.get(), Tag::SUP.raw());
+        fn clear_supvals(this) => this.db.netnode_supdel_all(this.id.get(), Tag::SUPVAL.raw());
 
         /// Delete the hash value for `key`, returning whether it was set.
         #[doc(alias("netnode::hashdel"))]
@@ -543,11 +545,11 @@ impl NetnodeMut<'_> {
         fn remove_blob(this) => this.db.netnode_delblob(this.id.get(), 0, Tag::BLOB.raw()) > 0;
     }
 
-    /// Set the node value, from 1 to `MAXSPECSIZE` (1024) bytes.
+    /// Set the node value, from 1 to [`NetnodeBytes::MAX_SIZE`] bytes.
     ///
     /// # Errors
-    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds `MAXSPECSIZE`, or
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
+    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds [`NetnodeBytes::MAX_SIZE`],
+    /// or [`Error::WriteRejected`] if the kernel rejects the write.
     #[doc(alias("netnode::set"))]
     pub fn set_value<'a>(
         &mut self,
@@ -558,13 +560,13 @@ impl NetnodeMut<'_> {
         checked(&*self.db, self.id, ok, "set_value")
     }
 
-    /// Set the sup byte object at `index`, from 1 to `MAXSPECSIZE` (1024) bytes.
+    /// Set the supval byte object at `index`, from 1 to [`NetnodeBytes::MAX_SIZE`] bytes.
     ///
     /// # Errors
-    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds `MAXSPECSIZE`, or
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
+    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds [`NetnodeBytes::MAX_SIZE`],
+    /// or [`Error::WriteRejected`] if the kernel rejects the write.
     #[doc(alias("netnode::supset"))]
-    pub fn set_sup<'a>(
+    pub fn set_supval<'a>(
         &mut self,
         index: u64,
         value: impl TryInto<NetnodeBytes<'a>, Error: Into<NetnodeBytesError>>,
@@ -572,15 +574,15 @@ impl NetnodeMut<'_> {
         let bytes: NetnodeBytes<'_> = value.try_into().map_err(Into::into)?;
         let ok = self
             .db
-            .netnode_supset(self.id.get(), index, bytes.as_bytes(), Tag::SUP.raw());
-        checked(&*self.db, self.id, ok, "set_sup")
+            .netnode_supset(self.id.get(), index, bytes.as_bytes(), Tag::SUPVAL.raw());
+        checked(&*self.db, self.id, ok, "set_supval")
     }
 
-    /// Set the hash value for `key` to raw bytes, from 1 to `MAXSPECSIZE` (1024) bytes.
+    /// Set the hash value for `key` to raw bytes, from 1 to [`NetnodeBytes::MAX_SIZE`] bytes.
     ///
     /// # Errors
-    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds `MAXSPECSIZE`, or
-    /// [`Error::WriteRejected`] if the kernel rejects the write.
+    /// [`Error::InvalidNetnodeBytes`] if `value` is empty or exceeds [`NetnodeBytes::MAX_SIZE`],
+    /// or [`Error::WriteRejected`] if the kernel rejects the write.
     #[doc(alias("netnode::hashset"))]
     pub fn set_hash<'a>(
         &mut self,

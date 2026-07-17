@@ -1,4 +1,4 @@
-//! Tally a database's name list by weak/public binding and by which `GnFlags` spellings disagree,
+//! Tally a database's name list by weak/public binding and by which `NameFlags` spellings disagree,
 //! printing examples of each. Verifies whether a fixture can distinguish the name accessors.
 //!
 //!   `cargo run -p idakit --example probe_names -- <db.i64> [max-names]`
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     demangles += 1;
                 }
 
-                let raw = idb.name_with(address, GnFlags::empty());
+                let raw = idb.name_with(address, NameFlags::empty());
                 let visible = idb.visible_name(address);
                 if raw != visible {
                     substitutes += 1;

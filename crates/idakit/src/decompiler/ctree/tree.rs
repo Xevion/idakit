@@ -53,7 +53,7 @@ fn for_each_child(
 ///     shape: TypeShape::Unknown,
 ///     size: None,
 /// });
-/// let arg = b.push_lvar(Local {
+/// let arg = b.push_local(Local {
 ///     name: "a".into(),
 ///     ty,
 ///     is_arg: true,
@@ -85,7 +85,7 @@ pub struct Ctree {
     expressions: Arena<ExpressionNode>,
     statements: Arena<StatementNode>,
     types: TypeTable,
-    lvars: Vec<Local>,
+    locals: Vec<Local>,
     root: StatementId,
 }
 
@@ -136,24 +136,26 @@ impl Ctree {
     /// The local variable a [`ExpressionKind::Var`] refers to.
     #[inline]
     #[must_use]
-    pub fn lvar(&self, id: LocalId) -> &Local {
-        &self.lvars[id.0 as usize]
+    #[doc(alias("lvar_t"))]
+    pub fn local(&self, id: LocalId) -> &Local {
+        &self.locals[id.0 as usize]
     }
 
-    /// Every local variable of the function, in lvar-index order.
+    /// Every local variable of the function, in local-index order.
     #[must_use]
-    pub fn lvars(&self) -> impl ExactSizeIterator<Item = &Local> {
-        self.lvars.iter()
+    #[doc(alias("get_lvars"))]
+    pub fn locals(&self) -> impl ExactSizeIterator<Item = &Local> {
+        self.locals.iter()
     }
 
     /// The function's first argument local: the implicit `this` in a member function, or
     /// simply the first parameter otherwise. `None` if the function takes no arguments.
     ///
-    /// A pure structural accessor: it reads the lvar table's argument flags and makes no
+    /// A pure structural accessor: it reads the local table's argument flags and makes no
     /// assumption about calling convention.
     #[must_use]
-    pub fn this_lvar(&self) -> Option<LocalId> {
-        self.lvars
+    pub fn this_local(&self) -> Option<LocalId> {
+        self.locals
             .iter()
             .position(|lv| lv.is_arg)
             .map(|i| LocalId(i as u32))
@@ -190,7 +192,7 @@ impl Ctree {
             .filter_map(|(id, node)| node.kind.as_assign().map(|(op, x, y)| (id, op, x, y)))
     }
 
-    /// Every local-variable reference in the tree as `(node, lvar)`.
+    /// Every local-variable reference in the tree as `(node, local)`.
     pub fn vars(&self) -> impl Iterator<Item = (ExpressionId, LocalId)> {
         self.expressions()
             .filter_map(|(id, node)| node.kind.as_var().map(|v| (id, v)))
@@ -321,7 +323,7 @@ pub struct CtreeBuilder {
     expressions: Arena<ExpressionNode>,
     statements: Arena<StatementNode>,
     types: TypeBuilder,
-    lvars: Vec<Local>,
+    locals: Vec<Local>,
 }
 
 impl CtreeBuilder {
@@ -332,7 +334,7 @@ impl CtreeBuilder {
             expressions: Arena::new(),
             statements: Arena::new(),
             types: TypeBuilder::new(),
-            lvars: Vec::new(),
+            locals: Vec::new(),
         }
     }
 
@@ -375,15 +377,15 @@ impl CtreeBuilder {
     ///
     /// # Panics
     /// If the ctree exceeds `u32::MAX` locals (unreachable in practice).
-    pub fn push_lvar(&mut self, lvar: Local) -> LocalId {
-        let id = LocalId(u32::try_from(self.lvars.len()).expect("ctree exceeded u32 lvars"));
-        self.lvars.push(lvar);
+    pub fn push_local(&mut self, local: Local) -> LocalId {
+        let id = LocalId(u32::try_from(self.locals.len()).expect("ctree exceeded u32 locals"));
+        self.locals.push(local);
         id
     }
 
-    /// `Var(lvar)`.
-    pub fn var(&mut self, ty: TypeId, lvar: LocalId) -> ExpressionId {
-        self.expression(ty, ExpressionKind::Var(lvar)).call()
+    /// `Var(local)`.
+    pub fn var(&mut self, ty: TypeId, local: LocalId) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Var(local)).call()
     }
 
     /// An integer literal (raw bits; signedness rides on `ty`).
@@ -555,7 +557,7 @@ impl CtreeBuilder {
             expressions: self.expressions,
             statements: self.statements,
             types: self.types.into_table(),
-            lvars: self.lvars,
+            locals: self.locals,
             root,
         }
     }
@@ -623,7 +625,7 @@ mod tests {
         }
     }
 
-    fn lvar(name: &str, ty: TypeId, is_arg: bool) -> Local {
+    fn local(name: &str, ty: TypeId, is_arg: bool) -> Local {
         Local {
             name: name.into(),
             ty,
@@ -795,31 +797,31 @@ mod tests {
         );
     }
 
-    /// `this_lvar` returns the first argument local (the implicit receiver), or `None` when
+    /// `this_local` returns the first argument local (the implicit receiver), or `None` when
     /// the function takes no arguments.
     #[test]
-    fn this_lvar_is_the_first_argument() {
+    fn this_local_is_the_first_argument() {
         let mut b = CtreeBuilder::new();
         let int = b.intern_type(int32());
         // A leading non-arg local must not be mistaken for the receiver.
-        b.push_lvar(lvar("local", int, false));
-        let this = b.push_lvar(lvar("this", int, true));
-        b.push_lvar(lvar("arg2", int, true));
+        b.push_local(local("local", int, false));
+        let this = b.push_local(local("this", int, true));
+        b.push_local(local("arg2", int, true));
         let v = b.var(int, this);
         let st = b.expression_statement(v);
         let block = b.block(vec![st]);
         let tree = b.finish(block);
-        assert!(tree.this_lvar() == Some(this));
+        assert!(tree.this_local() == Some(this));
     }
 
     #[test]
-    fn this_lvar_is_none_without_arguments() {
+    fn this_local_is_none_without_arguments() {
         let mut b = CtreeBuilder::new();
         let int = b.intern_type(int32());
-        b.push_lvar(lvar("local", int, false));
+        b.push_local(local("local", int, false));
         let block = b.block(vec![]);
         let tree = b.finish(block);
-        assert!(let None = tree.this_lvar());
+        assert!(let None = tree.this_local());
     }
 
     /// The marquee invariant: a materialized ctree is `Send + Sync`, so

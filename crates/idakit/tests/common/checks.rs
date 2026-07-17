@@ -127,9 +127,9 @@ pub fn disasm(idb: &Database) -> String {
             );
             for op in &instruction.ops {
                 assert!(
-                    op.idx < 8,
-                    "operand index {} out of range at {address:#x}",
-                    op.idx
+                    op.slot < 8,
+                    "operand slot {} out of range at {address:#x}",
+                    op.slot
                 );
             }
             if !instruction.ops.is_empty() {
@@ -239,7 +239,7 @@ pub fn decompile(idb: &Database) -> String {
         // Statements are never elided (cit_empty materializes as StatementKind::Empty), so their
         // count matches the SDK visitor exactly, unlike expressions, checked above.
         assert!(
-            tree.statements().count() == cf.counts().insns as usize,
+            tree.statements().count() == cf.counts().statements as usize,
             "extracted statement count disagrees with the visitor"
         );
         let reachable = tree.descendants(NodeRef::Statement(root)).count();
@@ -350,7 +350,7 @@ pub fn argloc(idb: &Database) -> String {
         let Ok(cf) = f.decompile() else { continue };
         let Ok(tree) = cf.ctree() else { continue };
         decompiled += 1;
-        for lv in tree.lvars() {
+        for lv in tree.locals() {
             lvars += 1;
             n[index(&lv.location)] += 1;
             if let LocalLocation::Scattered(pieces) = &lv.location {
@@ -427,15 +427,15 @@ pub fn segment_attrs(idb: &Database) -> String {
         if seg.kind().is_some() {
             typed += 1;
         }
-        if seg.align().is_some() {
+        if seg.alignment().is_some() {
             aligned += 1;
         }
-        if seg.comb().is_some() {
+        if seg.combination().is_some() {
             combined += 1;
         }
         // Neither accessor has an independent oracle here; calling them without panicking is
         // the invariant.
-        let _ = seg.sel();
+        let _ = seg.selector();
         let _ = seg.color();
         let _ = seg.comment(false);
         let _ = seg.comment(true);

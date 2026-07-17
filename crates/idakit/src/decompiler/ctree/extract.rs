@@ -60,7 +60,7 @@ pub enum ExtractError {
 
     /// A node required an address but carried the `BADADDR` sentinel.
     #[snafu(display("a node carries the BADADDR sentinel as a required address"))]
-    BadEa,
+    BadAddress,
 
     /// A scalar's byte width exceeds any real scalar.
     #[snafu(display("a scalar reports {bytes} bytes, wider than any real scalar"))]
@@ -78,7 +78,7 @@ pub enum ExtractError {
 }
 
 /// A node's own source address: `None` for a synthetic node (the BADADDR sentinel).
-fn node_ea(raw: u64) -> Option<Address> {
+fn node_address(raw: u64) -> Option<Address> {
     Address::try_new(raw)
 }
 
@@ -130,7 +130,7 @@ impl CallbackBuilder {
         raw(self
             .b
             .expression(tid(ty), kind)
-            .maybe_address(node_ea(address))
+            .maybe_address(node_address(address))
             .call())
     }
 
@@ -138,7 +138,7 @@ impl CallbackBuilder {
         raw(self
             .b
             .statement(kind)
-            .maybe_address(node_ea(address))
+            .maybe_address(node_address(address))
             .call())
     }
 
@@ -161,7 +161,7 @@ impl CallbackBuilder {
                 },
             )
         } else {
-            self.fail(ExtractError::BadEa);
+            self.fail(ExtractError::BadAddress);
             self.push_expression(address, ty, ExpressionKind::Empty)
         }
     }
@@ -343,7 +343,7 @@ impl CallbackBuilder {
         for &a in addrs {
             match Address::try_new(a) {
                 Some(e) => out.push(e),
-                None => self.fail(ExtractError::BadEa),
+                None => self.fail(ExtractError::BadAddress),
             }
         }
         self.push_statement(address, StatementKind::Asm(out))
@@ -376,8 +376,8 @@ impl CallbackBuilder {
         self.push_statement(address, StatementKind::Empty)
     }
 
-    fn push_lvar(&mut self, lvar: Local) {
-        self.b.push_lvar(lvar);
+    fn push_local(&mut self, local: Local) {
+        self.b.push_local(local);
     }
 
     fn finish(mut self, root: u32) -> Result<Ctree, ExtractError> {
@@ -637,7 +637,7 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
             .collect();
         let location = LocalLocation::from_argloc(atype, reg1, reg2, sval, pieces);
         let comment = (!comment.is_empty()).then_some(comment);
-        let lvar = Local {
+        let local = Local {
             name,
             ty: tid(ty),
             is_arg: flags & 1 != 0,
@@ -647,7 +647,7 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
             comment,
             location,
         };
-        self.push_lvar(lvar);
+        self.push_local(local);
     }
 }
 
@@ -1033,12 +1033,12 @@ mod tests {
         assert!(matches!(tree.expression(eid(f)).kind, ExpressionKind::Fnum(v) if v == 3.5));
     }
 
-    /// Lvars land in the table in push order and `Var` resolves to them.
+    /// Locals land in the table in push order and `Var` resolves to them.
     #[test]
-    fn lvars_resolve_through_the_table() {
+    fn locals_resolve_through_the_table() {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
-        cb.push_lvar(Local {
+        cb.push_local(Local {
             name: "argc".into(),
             ty: tid(it),
             is_arg: true,
@@ -1054,7 +1054,7 @@ mod tests {
         let tree = cb.finish(blk).expect("well-formed");
 
         assert!(let ExpressionKind::Var(id) = &tree.expression(eid(v)).kind);
-        let lv = tree.lvar(*id);
+        let lv = tree.local(*id);
         assert!(lv.name == "argc");
         assert!(lv.is_arg);
         assert!(lv.location == LocalLocation::Stack(-4));

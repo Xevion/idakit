@@ -49,14 +49,14 @@ rust::Vec<uint8_t> seg_type_ids() {
                   SEG_BSS, SEG_ABSSYM, SEG_COMM, SEG_IMEM});
 }
 
-// idakit SegmentAlign.
+// idakit SegmentAlignment.
 rust::Vec<uint8_t> seg_align_ids() {
   return collect({saAbs, saRelByte, saRelWord, saRelPara, saRelPage, saRelDble, saRel4K, saGroup,
                   saRel32Bytes, saRel64Bytes, saRelQword, saRel128Bytes, saRel512Bytes,
                   saRel1024Bytes, saRel2048Bytes});
 }
 
-// idakit SegmentComb.
+// idakit SegmentCombination.
 rust::Vec<uint8_t> seg_comb_ids() {
   return collect({scPriv, scGroup, scPub, scPub2, scStack, scCommon, scPub3});
 }

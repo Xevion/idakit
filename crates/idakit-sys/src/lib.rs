@@ -28,7 +28,7 @@
 //!   hand-written companions, returning structured values, owning handles as `UniquePtr<T>`, or
 //!   driving a walk through an opaque visitor ([`CtreeVisitor`], [`TypeWalkVisitor`]).
 //! - **A typed flag layer**: the one deliberate exception to "raw declarations only". OR-able bit
-//!   masks that also cross as FFI fields become `bitflags` types ([`SegPerm`], [`FlowFlags`],
+//!   masks that also cross as FFI fields become `bitflags` types ([`SegmentPermissions`], [`FlowFlags`],
 //!   [`FrameVarFlags`], [`FlowChartFlags`], [`BinSearchFlags`]), and closed return-code sets become
 //!   validated `num_enum` enums ([`SigWriteCode`], [`TypeApplyCode`]); both stay sound at the
 //!   boundary and spare every caller a hand-rolled bit test. Safe idiomatic wrappers still belong in

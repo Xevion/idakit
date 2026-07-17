@@ -156,7 +156,7 @@ CtreeCounts cfunc_counts(const ::cfuncptr_t &cfunc) {
   ctree_counter_t vis;
   vis.apply_to(&p->body, nullptr);
   CtreeCounts out{};
-  out.insns = vis.n_insn;
+  out.statements = vis.n_insn;
   out.expressions = vis.n_expr;
   out.calls = vis.n_calls;
   return out;

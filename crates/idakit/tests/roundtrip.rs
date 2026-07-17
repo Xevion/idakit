@@ -520,7 +520,7 @@ fn run(idb: &mut Database) {
             let cref = cf.as_ref().expect("non-null cxx handle");
             let gc = sys::cfunc_counts(cref);
             assert!(
-                gc.insns >= 0 && gc.expressions >= 0 && gc.calls >= 0,
+                gc.statements >= 0 && gc.expressions >= 0 && gc.calls >= 0,
                 "ctree counts should be non-negative"
             );
             let gp = sys::cfunc_pseudocode(cref).expect("cxx pseudocode");
@@ -530,8 +530,8 @@ fn run(idb: &mut Database) {
             );
             // `cf` (UniquePtr<CFunc>) drops here, running the cxx deleter (~cfuncptr_t / release()).
             println!(
-                "cxx hexrays bridge OK: {} insns, {} expressions, {} calls",
-                gc.insns, gc.expressions, gc.calls
+                "cxx hexrays bridge OK: {} statements, {} expressions, {} calls",
+                gc.statements, gc.expressions, gc.calls
             );
         }
     }
@@ -542,10 +542,10 @@ fn run(idb: &mut Database) {
             use idakit::decompiler::ctree::{ExpressionKind, NodeRef, StatementKind};
 
             let c = cf.counts();
-            assert!(c.expressions >= 0 && c.insns >= 0);
+            assert!(c.expressions >= 0 && c.statements >= 0);
             println!(
-                "decompiled first fn: {} insns, {} expressions, {} calls",
-                c.insns, c.expressions, c.calls
+                "decompiled first fn: {} statements, {} expressions, {} calls",
+                c.statements, c.expressions, c.calls
             );
 
             // Materialize the whole ctree and cross-check it against the
@@ -561,7 +561,7 @@ fn run(idb: &mut Database) {
             );
             assert_eq!(
                 tree.statements().count(),
-                c.insns as usize,
+                c.statements as usize,
                 "extracted statement count should match the visitor"
             );
             // Every allocated node is reachable from the root: confirms the
@@ -581,15 +581,15 @@ fn run(idb: &mut Database) {
 
             // Round-trip the owned tree back to C-like pseudocode and check it
             // against IDA's own rendering. Exact text won't match (IDA has its own
-            // formatting), but every lvar our tree references must appear in IDA's
-            // pseudocode: the names come from the same lvar table, so a dropped or
+            // formatting), but every local our tree references must appear in IDA's
+            // pseudocode: the names come from the same local table, so a dropped or
             // misresolved `Var` surfaces here as a missing name.
             let rendered = tree.to_pseudocode();
             if let Some(ida_pc) = cf.pseudocode() {
                 let mut referenced: Vec<String> = tree
                     .expressions()
                     .filter_map(|(_, e)| match &e.kind {
-                        ExpressionKind::Var(v) => Some(tree.lvar(*v).name.clone()),
+                        ExpressionKind::Var(v) => Some(tree.local(*v).name.clone()),
                         _ => None,
                     })
                     .collect();
@@ -601,11 +601,11 @@ fn run(idb: &mut Database) {
                     .collect();
                 assert!(
                     missing.is_empty(),
-                    "lvar names referenced by the tree but absent from IDA's \
+                    "local names referenced by the tree but absent from IDA's \
                              pseudocode (extraction dropped or misresolved a Var): {missing:?}"
                 );
                 println!(
-                    "round-trip OK: {} referenced lvars all present in IDA's pseudocode",
+                    "round-trip OK: {} referenced locals all present in IDA's pseudocode",
                     referenced.len()
                 );
                 println!("--- idakit render ---\n{rendered}\n--- IDA pseudocode ---\n{ida_pc}");

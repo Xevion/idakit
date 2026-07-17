@@ -49,10 +49,10 @@ pub const SEGMENT: Domain = Domain {
         "This SDK's `SEG_*` values in idakit `SegmentType`'s discriminant order, an alignment \
          source pinning the Rust mirror to this SDK build in a test."
             seg_type_ids() -> VecU8;
-        "This SDK's `sa*` values in idakit `SegmentAlign`'s discriminant order, an alignment \
+        "This SDK's `sa*` values in idakit `SegmentAlignment`'s discriminant order, an alignment \
          source for a mirror test."
             seg_align_ids() -> VecU8;
-        "This SDK's `sc*` values in idakit `SegmentComb`'s discriminant order, an alignment \
+        "This SDK's `sc*` values in idakit `SegmentCombination`'s discriminant order, an alignment \
          source for a mirror test."
             seg_comb_ids() -> VecU8;
     },

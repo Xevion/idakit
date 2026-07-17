@@ -1,4 +1,4 @@
-//! Lazy iterators over a netnode's alt, sup, and hash arrays.
+//! Lazy iterators over a netnode's altval, supval, and hash arrays.
 //!
 //! Each retires IDA's `*first`/`*next` cursor dance into a Rust [`Iterator`], re-querying the
 //! kernel per step and borrowing `&Database` so it can't coexist with a write. None knows its
@@ -14,42 +14,42 @@ fn index_or_end(raw: u64) -> Option<u64> {
     (raw != BADNODE).then_some(raw)
 }
 
-/// A lazy iterator over one netnode's alt array as `(index, value)` pairs, from
-/// [`Netnode::alts`](super::Netnode::alts).
+/// A lazy iterator over one netnode's altval array as `(index, value)` pairs, from
+/// [`Netnode::altvals`](super::Netnode::altvals).
 ///
 /// ```
 /// # idakit::doctest::with_db(|db| {
-/// let id = db.netnode_mut("$ idakit-alts-debug-doctest").id();
+/// let id = db.netnode_mut("$ idakit-altvals-debug-doctest").id();
 /// let node = db.netnode_at(id);
-/// let iter = node.alts();
-/// assert!(format!("{iter:?}").starts_with("Alts"));
+/// let iter = node.altvals();
+/// assert!(format!("{iter:?}").starts_with("Altvals"));
 /// # Ok(())
 /// # }).unwrap();
 /// ```
-pub struct Alts<'db> {
+pub struct Altvals<'db> {
     db: &'db Database,
     id: NodeId,
     tag: u32,
     next: Option<u64>,
 }
 
-impl<'db> Alts<'db> {
+impl<'db> Altvals<'db> {
     pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
         let next = index_or_end(db.netnode_altfirst(id.get(), tag));
         Self { db, id, tag, next }
     }
 }
 
-impl std::fmt::Debug for Alts<'_> {
+impl std::fmt::Debug for Altvals<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Alts")
+        f.debug_struct("Altvals")
             .field("id", &self.id)
             .field("tag", &self.tag)
             .finish_non_exhaustive()
     }
 }
 
-impl Iterator for Alts<'_> {
+impl Iterator for Altvals<'_> {
     type Item = (u64, u64);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -60,42 +60,42 @@ impl Iterator for Alts<'_> {
     }
 }
 
-/// A lazy iterator over one netnode's sup array as `(index, bytes)` pairs, from
-/// [`Netnode::sups`](super::Netnode::sups).
+/// A lazy iterator over one netnode's supval array as `(index, bytes)` pairs, from
+/// [`Netnode::supvals`](super::Netnode::supvals).
 ///
 /// ```
 /// # idakit::doctest::with_db(|db| {
-/// let id = db.netnode_mut("$ idakit-sups-debug-doctest").id();
+/// let id = db.netnode_mut("$ idakit-supvals-debug-doctest").id();
 /// let node = db.netnode_at(id);
-/// let iter = node.sups();
-/// assert!(format!("{iter:?}").starts_with("Sups"));
+/// let iter = node.supvals();
+/// assert!(format!("{iter:?}").starts_with("Supvals"));
 /// # Ok(())
 /// # }).unwrap();
 /// ```
-pub struct Sups<'db> {
+pub struct Supvals<'db> {
     db: &'db Database,
     id: NodeId,
     tag: u32,
     next: Option<u64>,
 }
 
-impl<'db> Sups<'db> {
+impl<'db> Supvals<'db> {
     pub(crate) fn new(db: &'db Database, id: NodeId, tag: u32) -> Self {
         let next = index_or_end(db.netnode_supfirst(id.get(), tag));
         Self { db, id, tag, next }
     }
 }
 
-impl std::fmt::Debug for Sups<'_> {
+impl std::fmt::Debug for Supvals<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Sups")
+        f.debug_struct("Supvals")
             .field("id", &self.id)
             .field("tag", &self.tag)
             .finish_non_exhaustive()
     }
 }
 
-impl Iterator for Sups<'_> {
+impl Iterator for Supvals<'_> {
     type Item = (u64, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -168,9 +168,9 @@ mod tests {
     // Debug formats only `id`/`tag`, so an unclaimed Database is safe to format against.
 
     #[test]
-    fn alts_debug_renders_id_and_tag() {
+    fn altvals_debug_renders_id_and_tag() {
         let db = Database::new();
-        let iter = Alts {
+        let iter = Altvals {
             db: &db,
             id: NodeId::try_new(1).unwrap(),
             tag: u32::from(b'A'),
@@ -182,9 +182,9 @@ mod tests {
     }
 
     #[test]
-    fn sups_debug_renders_id_and_tag() {
+    fn supvals_debug_renders_id_and_tag() {
         let db = Database::new();
-        let iter = Sups {
+        let iter = Supvals {
             db: &db,
             id: NodeId::try_new(1).unwrap(),
             tag: u32::from(b'S'),

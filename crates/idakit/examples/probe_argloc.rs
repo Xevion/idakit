@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let Ok(cf) = idb.decompile(ea) else { continue };
                 let Ok(tree) = cf.ctree() else { continue };
                 decompiled += 1;
-                for lv in tree.lvars() {
+                for lv in tree.locals() {
                     let i = match &lv.location {
                         L::Register(_) => 0,
                         L::RegisterPair { .. } => 1,

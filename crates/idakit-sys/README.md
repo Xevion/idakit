@@ -30,7 +30,7 @@ of item live here:
   hand-written companions, returning structured values, owning handles as `UniquePtr<T>`, or
   driving a walk through an opaque visitor ([`CtreeVisitor`](https://docs.rs/idakit-sys/latest/idakit_sys/bridge_visitors/struct.CtreeVisitor.html), [`TypeWalkVisitor`](https://docs.rs/idakit-sys/latest/idakit_sys/bridge_visitors/struct.TypeWalkVisitor.html)).
 - **A typed flag layer**: the one deliberate exception to "raw declarations only". OR-able bit
-  masks that also cross as FFI fields become `bitflags` types ([`SegPerm`](https://docs.rs/idakit-sys/latest/idakit_sys/segment_flags/struct.SegPerm.html), [`FlowFlags`](https://docs.rs/idakit-sys/latest/idakit_sys/instruction/struct.FlowFlags.html),
+  masks that also cross as FFI fields become `bitflags` types ([`SegmentPermissions`](https://docs.rs/idakit-sys/latest/idakit_sys/segment_flags/struct.SegmentPermissions.html), [`FlowFlags`](https://docs.rs/idakit-sys/latest/idakit_sys/instruction/struct.FlowFlags.html),
   [`FrameVarFlags`](https://docs.rs/idakit-sys/latest/idakit_sys/frame_flags/struct.FrameVarFlags.html), [`FlowChartFlags`](https://docs.rs/idakit-sys/latest/idakit_sys/cfg_flags/struct.FlowChartFlags.html), [`BinSearchFlags`](https://docs.rs/idakit-sys/latest/idakit_sys/bytes/struct.BinSearchFlags.html)), and closed return-code sets become
   validated `num_enum` enums ([`SigWriteCode`](https://docs.rs/idakit-sys/latest/idakit_sys/ty_build/enum.SigWriteCode.html), [`TypeApplyCode`](https://docs.rs/idakit-sys/latest/idakit_sys/ty_build/enum.TypeApplyCode.html)); both stay sound at the
   boundary and spare every caller a hand-rolled bit test. Safe idiomatic wrappers still belong in

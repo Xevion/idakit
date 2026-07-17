@@ -1,4 +1,4 @@
-//! [`NetnodeBytes`], the validated byte domain shared by every netnode value/sup/hash write.
+//! [`NetnodeBytes`], the validated byte domain shared by every netnode value/supval/hash write.
 //!
 //! The SDK's `set`/`supset`/`hashset` read a `length` of `0` as "measure the value with
 //! `strlen`", which would walk an empty slice's dangling pointer, and silently truncate past
@@ -8,7 +8,6 @@
 
 use std::convert::Infallible;
 
-pub use idakit_sys::MAXSPECSIZE;
 use snafu::Snafu;
 
 /// A byte slice validated against the SDK's `1..=MAXSPECSIZE` object-size domain.
@@ -17,17 +16,18 @@ use snafu::Snafu;
 /// [`Tag`](super::Tag)-scoped twin [`TaggedNetnodeMut`](super::TaggedNetnodeMut).
 ///
 /// ```
-/// use idakit::netnode::{MAXSPECSIZE, NetnodeBytes, NetnodeBytesError};
+/// use idakit::netnode::{NetnodeBytes, NetnodeBytesError};
 ///
 /// assert!(matches!(
 ///     NetnodeBytes::try_from(b"".as_slice()),
 ///     Err(NetnodeBytesError::Empty)
 /// ));
 ///
-/// let over_cap = vec![0u8; MAXSPECSIZE + 1];
+/// let over_cap = vec![0u8; NetnodeBytes::MAX_SIZE + 1];
 /// assert!(matches!(
 ///     NetnodeBytes::try_from(&over_cap),
-///     Err(NetnodeBytesError::TooLarge { len, cap }) if len == over_cap.len() && cap == MAXSPECSIZE
+///     Err(NetnodeBytesError::TooLarge { len, cap })
+///         if len == over_cap.len() && cap == NetnodeBytes::MAX_SIZE
 /// ));
 ///
 /// let ok = NetnodeBytes::try_from(b"hi".as_slice()).unwrap();
@@ -37,6 +37,10 @@ use snafu::Snafu;
 pub struct NetnodeBytes<'a>(&'a [u8]);
 
 impl<'a> NetnodeBytes<'a> {
+    /// The largest number of bytes the SDK accepts for one value/supval/hash object.
+    #[doc(alias("MAXSPECSIZE"))]
+    pub const MAX_SIZE: usize = idakit_sys::MAXSPECSIZE;
+
     /// The validated bytes.
     #[inline]
     #[must_use]
@@ -44,13 +48,13 @@ impl<'a> NetnodeBytes<'a> {
         self.0
     }
 
-    /// Validate `value` against the `1..=MAXSPECSIZE` domain.
+    /// Validate `value` against the `1..=MAX_SIZE` domain.
     fn validate(value: &'a [u8]) -> Result<Self, NetnodeBytesError> {
         match value.len() {
             0 => Err(NetnodeBytesError::Empty),
-            len if len > MAXSPECSIZE => Err(NetnodeBytesError::TooLarge {
+            len if len > Self::MAX_SIZE => Err(NetnodeBytesError::TooLarge {
                 len,
-                cap: MAXSPECSIZE,
+                cap: Self::MAX_SIZE,
             }),
             _ => Ok(Self(value)),
         }
@@ -107,11 +111,11 @@ pub enum NetnodeBytesError {
     Empty,
 
     /// The value exceeded `cap`, past which the kernel truncates silently.
-    #[snafu(display("netnode value is {len} bytes, exceeding the {cap}-byte MAXSPECSIZE cap"))]
+    #[snafu(display("netnode value is {len} bytes, exceeding the {cap}-byte cap"))]
     TooLarge {
         /// The value's actual length in bytes.
         len: usize,
-        /// The enforced cap (`MAXSPECSIZE`).
+        /// The enforced cap ([`NetnodeBytes::MAX_SIZE`]).
         cap: usize,
     },
 }
@@ -131,19 +135,19 @@ mod tests {
 
     #[test]
     fn oversized_slice_is_rejected() {
-        let over = vec![0u8; MAXSPECSIZE + 1];
+        let over = vec![0u8; NetnodeBytes::MAX_SIZE + 1];
         let err = NetnodeBytes::try_from(over.as_slice()).unwrap_err();
         assert!(
             err == NetnodeBytesError::TooLarge {
-                len: MAXSPECSIZE + 1,
-                cap: MAXSPECSIZE,
+                len: NetnodeBytes::MAX_SIZE + 1,
+                cap: NetnodeBytes::MAX_SIZE,
             }
         );
     }
 
     #[test]
     fn at_cap_is_accepted() {
-        let at_cap = vec![0u8; MAXSPECSIZE];
+        let at_cap = vec![0u8; NetnodeBytes::MAX_SIZE];
         let bytes = NetnodeBytes::try_from(at_cap.as_slice()).unwrap();
         assert!(bytes.as_bytes() == at_cap.as_slice());
     }
@@ -164,7 +168,7 @@ mod tests {
     #[case::empty_display(NetnodeBytesError::Empty, "netnode byte objects cannot be empty")]
     #[case::too_large_display(
         NetnodeBytesError::TooLarge { len: 1025, cap: 1024 },
-        "netnode value is 1025 bytes, exceeding the 1024-byte MAXSPECSIZE cap",
+        "netnode value is 1025 bytes, exceeding the 1024-byte cap",
     )]
     fn error_displays(#[case] err: NetnodeBytesError, #[case] expect: &str) {
         assert!(err.to_string() == expect);

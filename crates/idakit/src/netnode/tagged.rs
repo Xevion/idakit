@@ -3,14 +3,15 @@
 //! [`Netnode::tag`](super::Netnode::tag) and [`NetnodeMut::tag`](super::NetnodeMut::tag) reach the
 //! arrays under any tag rather than the reserved defaults. A tag addresses one numeric-indexed
 //! array plus one string-keyed hash. The default view keeps integers and bytes apart by tag (`atag`
-//! vs `stag`); under a single tag they are the same storage, so [`int`](TaggedNetnode::int) and
-//! [`value`](TaggedNetnode::value) are the integer and byte views of one slot, not two arrays.
+//! vs `stag`); under a single tag they are the same storage, so [`integer`](TaggedNetnode::integer)
+//! and [`value`](TaggedNetnode::value) are the integer and byte views of one slot, not two arrays.
 
 use crate::Database;
 use crate::error::Result;
 
 use super::{
-    HashEntries, NetnodeBytes, NetnodeBytesError, NodeId, Sups, Tag, checked, delete_ops, write_ops,
+    HashEntries, NetnodeBytes, NetnodeBytesError, NodeId, Supvals, Tag, checked, delete_ops,
+    write_ops,
 };
 
 /// The read accessors shared by [`TaggedNetnode`] and [`TaggedNetnodeMut`], scoped to `self.tag`.
@@ -26,7 +27,7 @@ macro_rules! tagged_reads {
         /// The numeric slot at `index` read as an integer, or `0` if unset.
         #[inline]
         #[must_use]
-        pub fn int(&self, index: u64) -> u64 {
+        pub fn integer(&self, index: u64) -> u64 {
             self.db.netnode_altval(self.id.get(), index, self.tag.raw())
         }
 
@@ -47,8 +48,8 @@ macro_rules! tagged_reads {
         /// Lazily iterate the numeric array as `(index, bytes)` pairs, in ascending index order.
         #[inline]
         #[must_use]
-        pub fn values(&self) -> Sups<'_> {
-            Sups::new(&*self.db, self.id, self.tag.raw())
+        pub fn values(&self) -> Supvals<'_> {
+            Supvals::new(&*self.db, self.id, self.tag.raw())
         }
 
         /// Lazily iterate the hash as `(key, bytes)` pairs, in lexical key order.
@@ -132,7 +133,7 @@ impl<'db> TaggedNetnodeMut<'db> {
         ///
         /// # Errors
         /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
-        fn set_int(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, this.tag.raw());
+        fn set_integer(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, this.tag.raw());
     }
 
     delete_ops! {
@@ -149,12 +150,13 @@ impl<'db> TaggedNetnodeMut<'db> {
         fn clear_hash(this) => this.db.netnode_hashdel_all(this.id.get(), this.tag.raw());
     }
 
-    /// Set the numeric slot at `index` to bytes, from 1 to `MAXSPECSIZE` (1024) bytes.
+    /// Set the numeric slot at `index` to bytes, from 1 to
+    /// [`NetnodeBytes::MAX_SIZE`] bytes.
     ///
     /// # Errors
     /// [`Error::InvalidNetnodeBytes`](crate::Error::InvalidNetnodeBytes) if `value` is empty or
-    /// exceeds `MAXSPECSIZE`, or [`Error::WriteRejected`](crate::Error::WriteRejected) if the
-    /// kernel rejects the write.
+    /// exceeds [`NetnodeBytes::MAX_SIZE`], or [`Error::WriteRejected`](crate::Error::WriteRejected)
+    /// if the kernel rejects the write.
     #[doc(alias("netnode::supset"))]
     pub fn set_value<'a>(
         &mut self,
@@ -168,12 +170,13 @@ impl<'db> TaggedNetnodeMut<'db> {
         checked(&*self.db, self.id, ok, "set_value")
     }
 
-    /// Set the hash value for `key` to raw bytes, from 1 to `MAXSPECSIZE` (1024) bytes.
+    /// Set the hash value for `key` to raw bytes, from 1 to
+    /// [`NetnodeBytes::MAX_SIZE`] bytes.
     ///
     /// # Errors
     /// [`Error::InvalidNetnodeBytes`](crate::Error::InvalidNetnodeBytes) if `value` is empty or
-    /// exceeds `MAXSPECSIZE`, or [`Error::WriteRejected`](crate::Error::WriteRejected) if the
-    /// kernel rejects the write.
+    /// exceeds [`NetnodeBytes::MAX_SIZE`], or [`Error::WriteRejected`](crate::Error::WriteRejected)
+    /// if the kernel rejects the write.
     #[doc(alias("netnode::hashset"))]
     pub fn set_hash<'a>(
         &mut self,

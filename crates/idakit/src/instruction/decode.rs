@@ -26,7 +26,7 @@ fn register(r: &sys::RegisterData) -> Option<Register> {
     let class = RegisterClass::try_from(r.cls)
         .unwrap_or_else(|_| unreachable!("facade emitted an out-of-range reg class {}", r.cls));
     Some(Register {
-        num: r.num,
+        number: r.num,
         class,
         width: r.width,
         name: r.name.as_str().into(),
@@ -38,7 +38,7 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
         sys::OP_REG => OperandKind::Register(register(&o.reg).ok_or_else(|| {
             DecodeError::MalformedOperand {
                 address: address.get(),
-                op: o.idx,
+                slot: o.idx,
                 reason: "register operand carries no register",
             }
         })?),
@@ -46,7 +46,7 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
             base: register(&o.base),
             index: register(&o.index),
             scale: o.scale,
-            disp: o.disp,
+            displacement: o.disp,
             segment: None,
             target: Address::try_new(o.addr),
         }),
@@ -54,7 +54,7 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
         sys::OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or_else(|| {
             DecodeError::MalformedOperand {
                 address: address.get(),
-                op: o.idx,
+                slot: o.idx,
                 reason: "near operand has no resolved target",
             }
         })?),
@@ -69,12 +69,12 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
     let data_type =
         OperandDataType::try_from(o.data_type).map_err(|_| DecodeError::UnsupportedDataType {
             address: address.get(),
-            op: o.idx,
-            dtype: o.data_type,
+            slot: o.idx,
+            data_type: o.data_type,
         })?;
     Ok(Operand {
-        idx: o.idx,
-        offb: o.offb,
+        slot: o.idx,
+        byte_offset: o.offb,
         kind,
         data_type,
         access: {
@@ -106,7 +106,7 @@ pub(crate) fn insn_from_data(
         address,
         len: data.len,
         isa: if data.isa == 1 { Isa::X64 } else { Isa::X86 },
-        itype: data.itype,
+        canonical_code: data.itype,
         mnemonic: data.mnemonic.as_str().into(),
         ops,
         flow: Flow {
@@ -134,14 +134,14 @@ pub(crate) fn classify(
         -2 => Err(DecodeError::UnsupportedProcessor),
         -3 => Err(DecodeError::UnsupportedOperand {
             address: address.get(),
-            op: data.err_op,
-            optype: data.err_optype,
+            slot: data.err_op,
+            operand_type: data.err_optype,
         }),
         -4 => Err(DecodeError::UnsupportedRegister {
             address: address.get(),
-            op: data.err_op,
+            slot: data.err_op,
             // for -4 the facade repurposes err_optype to carry the register number.
-            regnum: data.err_optype,
+            register_number: data.err_optype,
         }),
         // -1 (no instruction) and any other negative status.
         _ => Err(DecodeError::NotCode {
@@ -230,7 +230,7 @@ mod tests {
         assert!(r.name.as_ref() == "rax");
         assert!(r.class == RegisterClass::GeneralPurpose);
         assert!(r.width == 8);
-        assert!(mapped.offb == 2);
+        assert!(mapped.byte_offset == 2);
         assert!(mapped.data_type == OperandDataType::Qword);
         assert!(
             mapped.access
@@ -259,7 +259,7 @@ mod tests {
         assert!(let Some(index) = &m.index);
         assert!(index.name.as_ref() == "rax");
         assert!(m.scale == 4);
-        assert!(m.disp == 8);
+        assert!(m.displacement == 8);
         assert!(m.target.is_none());
         assert!(m.segment.is_none());
     }
@@ -377,7 +377,7 @@ mod tests {
         let mut op = blank_op();
         op.kind = sys::OP_IMM;
         op.data_type = 200; // outside the modeled scalar/float domain
-        assert!(let Err(DecodeError::UnsupportedDataType { dtype: 200, .. }) = operand(&op, at()));
+        assert!(let Err(DecodeError::UnsupportedDataType { data_type: 200, .. }) = operand(&op, at()));
     }
 
     /// A successful status rebuilds the instruction via `insn_from_data`.
@@ -407,15 +407,15 @@ mod tests {
             -3 => assert!(
                 err == DecodeError::UnsupportedOperand {
                     address: at().get(),
-                    op: 3,
-                    optype: 7,
+                    slot: 3,
+                    operand_type: 7,
                 }
             ),
             -4 => assert!(
                 err == DecodeError::UnsupportedRegister {
                     address: at().get(),
-                    op: 3,
-                    regnum: 7,
+                    slot: 3,
+                    register_number: 7,
                 }
             ),
             _ => assert!(
