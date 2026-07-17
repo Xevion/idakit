@@ -480,7 +480,7 @@ impl TypeEdit<'_> {
         let type_name = self.name.clone();
         let result = self.db.enum_set_repr(
             nul_checked(&type_name, "type name")?,
-            repr.format.to_frb(),
+            u32::from(repr.format),
             repr.signed,
             repr.leading_zeros,
         );
@@ -850,7 +850,7 @@ impl MemberEdit<'_> {
                 tp,
                 mp,
                 bit,
-                repr.format.to_frb(),
+                u32::from(repr.format),
                 repr.signed,
                 repr.leading_zeros,
             )

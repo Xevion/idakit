@@ -131,11 +131,13 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
                 bit_offset: m.bit_offset,
                 ty: tid(m.ty),
                 bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
-                repr: NumberFormat::from_frb(m.repr_vtype).map(|format| ValueRepr {
-                    format,
-                    signed: m.repr_signed,
-                    leading_zeros: m.repr_leading_zeros,
-                }),
+                repr: NumberFormat::try_from(m.repr_vtype)
+                    .ok()
+                    .map(|format| ValueRepr {
+                        format,
+                        signed: m.repr_signed,
+                        leading_zeros: m.repr_leading_zeros,
+                    }),
             })
             .collect();
         self.0.fill_struct(id, is_union, members, size, has_size);

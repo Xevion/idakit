@@ -8,62 +8,43 @@
 //! of the unmodeled forms reads back as `None` from `TypeMember::repr`/`TypeShape::Enum::repr`
 //! rather than a mislabeled variant.
 
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
+use strum::VariantArray;
 
 /// How a struct/union member's numeric value displays.
 ///
 /// The non-info-carrying subset of `value_repr_t`'s value-type nibble (`FRB_*`, `typeinf.hpp`).
 /// The nibble never crosses the public API; it is folded into
 /// [`MemberEdit::set_repr`](crate::types::MemberEdit::set_repr) and read back from
-/// `TypeMember::repr` (`crate::types::TypeMember::repr`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// `TypeMember::repr` (`crate::types::TypeMember::repr`). A nibble outside this subset is
+/// rejected by [`TryFrom`], not absorbed into a catch-all.
+// raw FRB_* values from typeinf.hpp (IDA 9.3)
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    IntoPrimitive,
+    TryFromPrimitive,
+    VariantArray,
+)]
+#[repr(u32)]
 pub enum NumberFormat {
     /// Binary.
-    Binary,
+    Binary = 0x1,
     /// Octal.
-    Octal,
+    Octal = 0x2,
     /// Hexadecimal.
-    Hexadecimal,
+    Hexadecimal = 0x3,
     /// Decimal.
-    Decimal,
+    Decimal = 0x4,
     /// Char.
-    Char,
-}
-
-/// Raw `value_repr_t::FRB_*` value-type nibbles (typeinf.hpp, IDA 9.3). Crate-private: the facade
-/// boundary is the only place a nibble crosses, and [`NumberFormat`] never exposes it publicly.
-const FRB_NUMB: u32 = 0x1;
-const FRB_NUMO: u32 = 0x2;
-const FRB_NUMH: u32 = 0x3;
-const FRB_NUMD: u32 = 0x4;
-const FRB_CHAR: u32 = 0x6;
-
-impl NumberFormat {
-    /// The `value_repr_t` FRB_* nibble this format writes.
-    #[inline]
-    pub(crate) const fn to_frb(self) -> u32 {
-        match self {
-            Self::Binary => FRB_NUMB,
-            Self::Octal => FRB_NUMO,
-            Self::Hexadecimal => FRB_NUMH,
-            Self::Decimal => FRB_NUMD,
-            Self::Char => FRB_CHAR,
-        }
-    }
-
-    /// The format for a raw FRB_* nibble, or `None` outside the modeled numeric subset
-    /// (`FRB_UNK`, or an info-carrying/float/segment nibble idakit does not model).
-    #[inline]
-    pub(crate) const fn from_frb(vtype: u32) -> Option<Self> {
-        Some(match vtype {
-            FRB_NUMB => Self::Binary,
-            FRB_NUMO => Self::Octal,
-            FRB_NUMH => Self::Hexadecimal,
-            FRB_NUMD => Self::Decimal,
-            FRB_CHAR => Self::Char,
-            _ => return None,
-        })
-    }
+    Char = 0x6,
 }
 
 /// A struct/union member's or enum's value representation: radix or char format, forced sign,
@@ -113,8 +94,17 @@ mod tests {
     #[case(NumberFormat::Decimal, 0x4)]
     #[case(NumberFormat::Char, 0x6)]
     fn number_format_round_trips_and_pins_frb(#[case] format: NumberFormat, #[case] frb: u32) {
-        assert!(format.to_frb() == frb);
-        assert!(NumberFormat::from_frb(frb) == Some(format));
+        assert!(u32::from(format) == frb);
+        assert!(NumberFormat::try_from(frb) == Ok(format));
+    }
+
+    /// Completeness: every variant round-trips through its nibble, so a drifted discriminant
+    /// fails here rather than silently writing the wrong `value_repr_t`.
+    #[test]
+    fn every_variant_round_trips() {
+        for &format in NumberFormat::VARIANTS {
+            assert!(NumberFormat::try_from(u32::from(format)) == Ok(format));
+        }
     }
 
     /// A nibble outside the modeled numeric subset (unknown, or an info-carrying/float/segment
@@ -125,7 +115,7 @@ mod tests {
     #[case::seg(0x7)]
     #[case::enum_linked(0x8)]
     #[case::out_of_range(0xff)]
-    fn from_frb_rejects_unmodeled(#[case] vtype: u32) {
-        assert!(NumberFormat::from_frb(vtype).is_none());
+    fn try_from_rejects_unmodeled(#[case] vtype: u32) {
+        assert!(NumberFormat::try_from(vtype).is_err());
     }
 }

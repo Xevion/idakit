@@ -195,11 +195,13 @@ impl TypeBuilder {
         repr_leading_zeros: bool,
     ) {
         let name = self.take_name(id);
-        let repr = NumberFormat::from_frb(repr_vtype).map(|format| ValueRepr {
-            format,
-            signed: repr_signed,
-            leading_zeros: repr_leading_zeros,
-        });
+        let repr = NumberFormat::try_from(repr_vtype)
+            .ok()
+            .map(|format| ValueRepr {
+                format,
+                signed: repr_signed,
+                leading_zeros: repr_leading_zeros,
+            });
         self.fill(
             id,
             TypeValue {

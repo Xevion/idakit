@@ -16,24 +16,41 @@ use super::ops::{BinaryOp, UnaryOp};
 use super::tree::Ctree;
 use crate::types::{TypeId, TypeShape};
 
-// C operator precedence, higher binds tighter. A child is parenthesized when its own
-// precedence is below the minimum its position requires (see `Printer::expression`).
-const P_COMMA: u8 = 1;
-const P_ASSIGN: u8 = 2;
-const P_TERNARY: u8 = 3;
-const P_LOGOR: u8 = 4;
-const P_LOGAND: u8 = 5;
-const P_BITOR: u8 = 6;
-const P_BITXOR: u8 = 7;
-const P_BITAND: u8 = 8;
-const P_EQ: u8 = 9;
-const P_REL: u8 = 10;
-const P_SHIFT: u8 = 11;
-const P_ADD: u8 = 12;
-const P_MUL: u8 = 13;
-const P_UNARY: u8 = 14;
-const P_POSTFIX: u8 = 15;
-const P_PRIMARY: u8 = 16;
+/// A C operator precedence level, ordered so a higher level binds tighter.
+///
+/// A child expression is parenthesized when its own level is below the minimum its position
+/// requires, which [`Printer::expression`] applies.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Prec(u8);
+
+impl Prec {
+    /// No minimum, so the position never parenthesizes its child. Used where the grammar
+    /// already delimits a full expression, as between `?` and `:` or inside `[]`.
+    const ANY: Self = Self(0);
+    const COMMA: Self = Self(1);
+    const ASSIGN: Self = Self(2);
+    const TERNARY: Self = Self(3);
+    const LOGOR: Self = Self(4);
+    const LOGAND: Self = Self(5);
+    const BITOR: Self = Self(6);
+    const BITXOR: Self = Self(7);
+    const BITAND: Self = Self(8);
+    const EQ: Self = Self(9);
+    const REL: Self = Self(10);
+    const SHIFT: Self = Self(11);
+    const ADD: Self = Self(12);
+    const MUL: Self = Self(13);
+    const UNARY: Self = Self(14);
+    const POSTFIX: Self = Self(15);
+    const PRIMARY: Self = Self(16);
+
+    /// One level tighter, which is what an operand must bind to stay unparenthesized against
+    /// its own operator. A left-associative operator asks this of its right operand, so
+    /// `a - (b - c)` keeps its parentheses while `a - b - c` does not.
+    const fn tighter(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
 
 impl Ctree {
     /// Render this function's body as C-like pseudocode.
@@ -85,14 +102,14 @@ impl Printer<'_> {
             StatementKind::Expression(e) => {
                 let e = *e;
                 self.push_indent();
-                self.expression(e, 0);
+                self.expression(e, Prec::ANY);
                 self.out.push_str(";\n");
             }
             StatementKind::If { cond, then_, else_ } => {
                 let (cond, then_, else_) = (*cond, *then_, *else_);
                 self.push_indent();
                 self.out.push_str("if ( ");
-                self.expression(cond, 0);
+                self.expression(cond, Prec::ANY);
                 self.out.push_str(" )\n");
                 self.statement(then_);
                 if let Some(e) = else_ {
@@ -110,15 +127,15 @@ impl Printer<'_> {
                 self.push_indent();
                 self.out.push_str("for ( ");
                 if let Some(e) = init {
-                    self.expression(e, 0);
+                    self.expression(e, Prec::ANY);
                 }
                 self.out.push_str("; ");
                 if let Some(e) = cond {
-                    self.expression(e, 0);
+                    self.expression(e, Prec::ANY);
                 }
                 self.out.push_str("; ");
                 if let Some(e) = step {
-                    self.expression(e, 0);
+                    self.expression(e, Prec::ANY);
                 }
                 self.out.push_str(" )\n");
                 self.statement(body);
@@ -127,7 +144,7 @@ impl Printer<'_> {
                 let (cond, body) = (*cond, *body);
                 self.push_indent();
                 self.out.push_str("while ( ");
-                self.expression(cond, 0);
+                self.expression(cond, Prec::ANY);
                 self.out.push_str(" )\n");
                 self.statement(body);
             }
@@ -137,7 +154,7 @@ impl Printer<'_> {
                 self.statement(body);
                 self.push_indent();
                 self.out.push_str("while ( ");
-                self.expression(cond, 0);
+                self.expression(cond, Prec::ANY);
                 self.out.push_str(" );\n");
             }
             StatementKind::Switch { expression, cases } => {
@@ -145,7 +162,7 @@ impl Printer<'_> {
                 let cases = cases.clone();
                 self.push_indent();
                 self.out.push_str("switch ( ");
-                self.expression(expression, 0);
+                self.expression(expression, Prec::ANY);
                 self.out.push_str(" )\n");
                 self.line("{");
                 for case in &cases {
@@ -161,7 +178,7 @@ impl Printer<'_> {
                 self.out.push_str("return");
                 if let Some(e) = e {
                     self.out.push(' ');
-                    self.expression(e, 0);
+                    self.expression(e, Prec::ANY);
                 }
                 self.out.push_str(";\n");
             }
@@ -190,7 +207,7 @@ impl Printer<'_> {
                 self.out.push_str("throw");
                 if let Some(e) = e {
                     self.out.push(' ');
-                    self.expression(e, 0);
+                    self.expression(e, Prec::ANY);
                 }
                 self.out.push_str(";\n");
             }
@@ -212,7 +229,7 @@ impl Printer<'_> {
 
     /// Render `id`, parenthesizing it when its own precedence is below `min_prec`: the
     /// minimum the surrounding operator position requires.
-    fn expression(&mut self, id: ExpressionId, min_prec: u8) {
+    fn expression(&mut self, id: ExpressionId, min_prec: Prec) {
         let paren = self.prec(id) < min_prec;
         if paren {
             self.out.push('(');
@@ -229,74 +246,74 @@ impl Printer<'_> {
             ExpressionKind::Binary { op, x, y } => {
                 let (op, x, y) = (*op, *x, *y);
                 if op == BinaryOp::Comma {
-                    self.expression(x, P_COMMA);
+                    self.expression(x, Prec::COMMA);
                     self.out.push_str(", ");
-                    self.expression(y, P_COMMA + 1);
+                    self.expression(y, Prec::COMMA.tighter());
                 } else {
                     let p = bin_prec(op);
                     self.expression(x, p);
                     write!(self.out, " {} ", op.symbol()).unwrap();
-                    self.expression(y, p + 1);
+                    self.expression(y, p.tighter());
                 }
             }
             ExpressionKind::Assign { op, x, y } => {
                 let (op, x, y) = (*op, *x, *y);
-                self.expression(x, P_ASSIGN + 1);
+                self.expression(x, Prec::ASSIGN.tighter());
                 write!(self.out, " {} ", op.symbol()).unwrap();
-                self.expression(y, P_ASSIGN);
+                self.expression(y, Prec::ASSIGN);
             }
             ExpressionKind::Unary { op, x } => {
                 let (op, x) = (*op, *x);
                 match op {
                     UnaryOp::PostInc | UnaryOp::PostDec => {
-                        self.expression(x, P_POSTFIX);
+                        self.expression(x, Prec::POSTFIX);
                         self.out.push_str(op.symbol());
                     }
                     _ => {
                         self.out.push_str(op.symbol());
-                        self.expression(x, P_UNARY);
+                        self.expression(x, Prec::UNARY);
                     }
                 }
             }
             ExpressionKind::Ternary { cond, then_, else_ } => {
                 let (cond, then_, else_) = (*cond, *then_, *else_);
-                self.expression(cond, P_TERNARY + 1);
+                self.expression(cond, Prec::TERNARY.tighter());
                 self.out.push_str(" ? ");
-                self.expression(then_, 0);
+                self.expression(then_, Prec::ANY);
                 self.out.push_str(" : ");
-                self.expression(else_, P_TERNARY);
+                self.expression(else_, Prec::TERNARY);
             }
             ExpressionKind::Call { callee, args } => {
                 let callee = *callee;
                 let args = args.clone();
-                self.expression(callee, P_POSTFIX);
+                self.expression(callee, Prec::POSTFIX);
                 self.out.push('(');
                 for (i, a) in args.into_iter().enumerate() {
                     if i > 0 {
                         self.out.push_str(", ");
                     }
-                    self.expression(a, P_ASSIGN);
+                    self.expression(a, Prec::ASSIGN);
                 }
                 self.out.push(')');
             }
             ExpressionKind::Index { array, index } => {
                 let (array, index) = (*array, *index);
-                self.expression(array, P_POSTFIX);
+                self.expression(array, Prec::POSTFIX);
                 self.out.push('[');
-                self.expression(index, 0);
+                self.expression(index, Prec::ANY);
                 self.out.push(']');
             }
             ExpressionKind::MemberRef { obj, byte_offset } => {
                 let (obj, offset) = (*obj, *byte_offset);
                 let name = self.field_name(obj, offset, false);
-                self.expression(obj, P_POSTFIX);
+                self.expression(obj, Prec::POSTFIX);
                 self.out.push('.');
                 self.out.push_str(&name);
             }
             ExpressionKind::MemberPtr { obj, byte_offset } => {
                 let (obj, offset) = (*obj, *byte_offset);
                 let name = self.field_name(obj, offset, true);
-                self.expression(obj, P_POSTFIX);
+                self.expression(obj, Prec::POSTFIX);
                 self.out.push_str("->");
                 self.out.push_str(&name);
             }
@@ -304,17 +321,17 @@ impl Printer<'_> {
                 let x = *x;
                 let ts = self.print_type(tree.expression(id).ty);
                 write!(self.out, "({ts})").unwrap();
-                self.expression(x, P_UNARY);
+                self.expression(x, Prec::UNARY);
             }
             ExpressionKind::Deref { x, .. } => {
                 let x = *x;
                 self.out.push('*');
-                self.expression(x, P_UNARY);
+                self.expression(x, Prec::UNARY);
             }
             ExpressionKind::Sizeof(x) => {
                 let x = *x;
                 self.out.push_str("sizeof(");
-                self.expression(x, 0);
+                self.expression(x, Prec::ANY);
                 self.out.push(')');
             }
             ExpressionKind::Num(v) => {
@@ -346,23 +363,23 @@ impl Printer<'_> {
     }
 
     /// The precedence of the operator at the root of `id` (primary for leaves).
-    fn prec(&self, id: ExpressionId) -> u8 {
+    fn prec(&self, id: ExpressionId) -> Prec {
         match self.tree.kind(id) {
             ExpressionKind::Binary { op, .. } => bin_prec(*op),
-            ExpressionKind::Assign { .. } => P_ASSIGN,
-            ExpressionKind::Ternary { .. } => P_TERNARY,
+            ExpressionKind::Assign { .. } => Prec::ASSIGN,
+            ExpressionKind::Ternary { .. } => Prec::TERNARY,
             ExpressionKind::Unary { op, .. } => match op {
-                UnaryOp::PostInc | UnaryOp::PostDec => P_POSTFIX,
-                _ => P_UNARY,
+                UnaryOp::PostInc | UnaryOp::PostDec => Prec::POSTFIX,
+                _ => Prec::UNARY,
             },
             ExpressionKind::Call { .. }
             | ExpressionKind::Index { .. }
             | ExpressionKind::MemberRef { .. }
-            | ExpressionKind::MemberPtr { .. } => P_POSTFIX,
+            | ExpressionKind::MemberPtr { .. } => Prec::POSTFIX,
             ExpressionKind::Cast { .. }
             | ExpressionKind::Deref { .. }
-            | ExpressionKind::Sizeof(_) => P_UNARY,
-            _ => P_PRIMARY,
+            | ExpressionKind::Sizeof(_) => Prec::UNARY,
+            _ => Prec::PRIMARY,
         }
     }
 
@@ -452,15 +469,15 @@ impl Printer<'_> {
     }
 }
 
-fn bin_prec(op: BinaryOp) -> u8 {
+fn bin_prec(op: BinaryOp) -> Prec {
     match op {
-        BinaryOp::Comma => P_COMMA,
-        BinaryOp::LogOr => P_LOGOR,
-        BinaryOp::LogAnd => P_LOGAND,
-        BinaryOp::BitOr => P_BITOR,
-        BinaryOp::BitXor => P_BITXOR,
-        BinaryOp::BitAnd => P_BITAND,
-        BinaryOp::Eq | BinaryOp::Ne => P_EQ,
+        BinaryOp::Comma => Prec::COMMA,
+        BinaryOp::LogOr => Prec::LOGOR,
+        BinaryOp::LogAnd => Prec::LOGAND,
+        BinaryOp::BitOr => Prec::BITOR,
+        BinaryOp::BitXor => Prec::BITXOR,
+        BinaryOp::BitAnd => Prec::BITAND,
+        BinaryOp::Eq | BinaryOp::Ne => Prec::EQ,
         BinaryOp::Sge
         | BinaryOp::Uge
         | BinaryOp::Sle
@@ -468,16 +485,16 @@ fn bin_prec(op: BinaryOp) -> u8 {
         | BinaryOp::Sgt
         | BinaryOp::Ugt
         | BinaryOp::Slt
-        | BinaryOp::Ult => P_REL,
-        BinaryOp::Sshr | BinaryOp::Ushr | BinaryOp::Shl => P_SHIFT,
-        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Fadd | BinaryOp::Fsub => P_ADD,
+        | BinaryOp::Ult => Prec::REL,
+        BinaryOp::Sshr | BinaryOp::Ushr | BinaryOp::Shl => Prec::SHIFT,
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Fadd | BinaryOp::Fsub => Prec::ADD,
         BinaryOp::Mul
         | BinaryOp::Sdiv
         | BinaryOp::Udiv
         | BinaryOp::Smod
         | BinaryOp::Umod
         | BinaryOp::Fmul
-        | BinaryOp::Fdiv => P_MUL,
+        | BinaryOp::Fdiv => Prec::MUL,
     }
 }
 

@@ -8,12 +8,14 @@
 //! the in-progress arenas; its safe methods are also what the tests drive directly.
 //!
 //! All identity and meaning live here, not in the facade: an operator's `ctype` maps to
-//! [`BinaryOp`]/[`AssignmentOp`]/[`UnaryOp`] (their discriminants *are* the ctype values) or one of
-//! the structural [`ct`] constants; named aggregate types are interned by name with a
-//! placeholder so recursion resolves; structural types dedup through the type table.
+//! [`BinaryOp`]/[`AssignmentOp`]/[`UnaryOp`] (their discriminants *are* the ctype values) or a
+//! [`StructuralTag`]; named aggregate types are interned by name with a placeholder so
+//! recursion resolves; structural types dedup through the type table.
 
 use idakit_sys::{EnumConstInfo, MemberInfo, NONE};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use snafu::Snafu;
+use strum::VariantArray;
 
 use super::node::{
     Case, ExpressionId, ExpressionKind, Local, LocalId, LocalLocation, LocationPiece, StatementId,
@@ -25,18 +27,24 @@ use crate::address::Address;
 use crate::arena::Idx;
 use crate::types::{SinkAdapter, TypeBuilder, TypeSink, raw, tid};
 
-/// Structural operator-tag values the generic operator callback dispatches by name
-/// (operators proper go through the `TryFrom<u16>` derives).
-mod ct {
-    pub const EMPTY: u32 = 0;
-    pub const TERN: u32 = 16;
-    pub const CAST: u32 = 48;
-    pub const IDX: u32 = 58;
+/// A structural `ctype_t` tag the generic operator callback dispatches by name.
+///
+/// Operators proper go through the [`BinaryOp`]/[`AssignmentOp`]/[`UnaryOp`] `TryFrom<u16>`
+/// derives instead; this covers the rest of the range idakit models. A tag outside the set is
+/// rejected as [`ExtractError::UnknownExpressionTag`], not absorbed.
+// raw ctype_t values from hexrays.hpp (IDA 9.3)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, VariantArray)]
+#[repr(u32)]
+enum StructuralTag {
+    Empty = 0,
+    Tern = 16,
+    Cast = 48,
+    Idx = 58,
     /// A statement appearing in expression position. Never present in a finalized tree;
-    /// collapsed to [`ExpressionKind::Internal`](super::ExpressionKind::Internal) rather than erroring.
-    pub const INSN: u32 = 66;
-    pub const SIZEOF: u32 = 67;
-    pub const TYPE: u32 = 69;
+    /// collapsed to [`ExpressionKind::Internal`] rather than erroring.
+    Insn = 66,
+    Sizeof = 67,
+    Type = 69,
 }
 
 /// Why a ctree walk could not be turned into a [`Ctree`].
@@ -216,7 +224,7 @@ impl CallbackBuilder {
     /// Map a generic operator `ctype` to its expression kind. Assignment ctypes overlap
     /// the binary numeric range, so probe assignments first.
     fn classify(&mut self, ctype: u32, x: u32, y: u32, z: u32) -> ExpressionKind {
-        if ctype == ct::INSN {
+        if ctype == u32::from(StructuralTag::Insn) {
             return ExpressionKind::Internal;
         }
         let op16 = u16::try_from(ctype).ok();
@@ -237,22 +245,24 @@ impl CallbackBuilder {
         if let Some(op) = op16.and_then(|v| UnaryOp::try_from(v).ok()) {
             return ExpressionKind::Unary { op, x: eid(x) };
         }
-        match ctype {
-            ct::TERN => ExpressionKind::Ternary {
+        match StructuralTag::try_from(ctype) {
+            Ok(StructuralTag::Tern) => ExpressionKind::Ternary {
                 cond: eid(x),
                 then_: eid(y),
                 else_: eid(z),
             },
-            ct::CAST => ExpressionKind::Cast { x: eid(x) },
-            ct::IDX => ExpressionKind::Index {
+            Ok(StructuralTag::Cast) => ExpressionKind::Cast { x: eid(x) },
+            Ok(StructuralTag::Idx) => ExpressionKind::Index {
                 array: eid(x),
                 index: eid(y),
             },
-            ct::SIZEOF => ExpressionKind::Sizeof(eid(x)),
-            ct::EMPTY => ExpressionKind::Empty,
-            ct::TYPE => ExpressionKind::TypeExpression,
-            other => {
-                self.fail(ExtractError::UnknownExpressionTag { tag: other });
+            Ok(StructuralTag::Sizeof) => ExpressionKind::Sizeof(eid(x)),
+            Ok(StructuralTag::Empty) => ExpressionKind::Empty,
+            Ok(StructuralTag::Type) => ExpressionKind::TypeExpression,
+            // Consumed by the early return above; collapsed the same way if it ever reaches here.
+            Ok(StructuralTag::Insn) => ExpressionKind::Internal,
+            Err(_) => {
+                self.fail(ExtractError::UnknownExpressionTag { tag: ctype });
                 ExpressionKind::Internal
             }
         }
@@ -943,6 +953,15 @@ mod tests {
         assert!(name == "SomeHandle");
     }
 
+    /// Completeness: every structural tag round-trips through its raw `ctype_t` value, so a
+    /// discriminant that drifts from the SDK fails here rather than misreading a real node.
+    #[test]
+    fn structural_tag_every_variant_round_trips() {
+        for &tag in StructuralTag::VARIANTS {
+            assert!(StructuralTag::try_from(u32::from(tag)) == Ok(tag));
+        }
+    }
+
     /// An unmodeled ctype is a loud error (the `Internal` fallback is reserved for
     /// `cot_insn`), surfaced at `finish`.
     #[test]
@@ -962,7 +981,7 @@ mod tests {
     fn cot_insn_collapses_to_internal() {
         let mut cb = CallbackBuilder::new();
         let it = int_ty(&mut cb);
-        let instruction = cb.op(0, ct::INSN, NONE, NONE, NONE, it);
+        let instruction = cb.op(0, u32::from(StructuralTag::Insn), NONE, NONE, NONE, it);
         let s = cb.expression_statement(0, instruction);
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("internal is not an error");

@@ -17,6 +17,10 @@ impl Tag {
     /// The reserved hash tag (`htag`).
     pub const HASH: Self = Self(b'H');
 
+    /// idakit's default blob tag, a free user tag kept distinct from [`SUP`](Self::SUP) so a
+    /// blob never collides with the sup array. Not an SDK-reserved tag.
+    pub(crate) const BLOB: Self = Self(b'B');
+
     /// A tag from a raw selector byte, e.g. `Tag::new(b'X')` for a user array.
     #[inline]
     #[must_use]
