@@ -107,12 +107,38 @@ pub enum CallingConvention {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
     use rstest::rstest;
 
     use super::*;
 
-    /// Every `CallingConvention` round-trips its byte, so a drifted value fails here rather than
-    /// silently setting the wrong convention at the facade.
+    /// Pin the conventions to the facade's reported `CM_CC_*` values: the facade lists them in
+    /// this enum's discriminant order, so a header renumbering mismatches and a variant added
+    /// without a facade entry trips the length check. Both sides speak the raw pre-shifted
+    /// high-nibble space (`CM_CC_CDECL` is `0x30`), which is what `func_set_cc` casts straight to
+    /// `callcnv_t`. Pure constant source, no kernel, so it runs as a unit test.
+    #[test]
+    fn cm_cc_ids_align_with_the_facade() {
+        let ids = sys::cm_cc_ids();
+        assert!(
+            ids.len() == CallingConvention::VARIANTS.len(),
+            "facade lists {} ids for {} variants",
+            ids.len(),
+            CallingConvention::VARIANTS.len()
+        );
+        for (i, &cc) in CallingConvention::VARIANTS.iter().enumerate() {
+            assert!(
+                ids[i] == u8::from(cc),
+                "calling convention {cc:?}: facade CM_CC_ {:#x} != discriminant {:#x}",
+                ids[i],
+                u8::from(cc)
+            );
+        }
+    }
+
+    /// Every `CallingConvention` round-trips its byte, so a `TryFrom` that stops agreeing with
+    /// `Into` fails here. Pinning the discriminants to the SDK is
+    /// [`cm_cc_ids_align_with_the_facade`]'s job.
     #[test]
     fn calling_convention_round_trips() {
         for &cc in CallingConvention::VARIANTS {

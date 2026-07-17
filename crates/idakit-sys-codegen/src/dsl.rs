@@ -62,6 +62,9 @@ macro_rules! ret {
     (VecU32) => {
         RetKind::Value(RetShape::VecU32)
     };
+    (VecI32) => {
+        RetKind::Value(RetShape::VecI32)
+    };
     (VecU8) => {
         RetKind::Value(RetShape::VecU8)
     };

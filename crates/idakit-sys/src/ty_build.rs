@@ -59,8 +59,9 @@ mod tests {
 
     use super::*;
 
-    /// Every `SigWriteCode` variant round-trips its raw value, so a drifted discriminant fails
-    /// here rather than silently misreading the facade.
+    /// Every `SigWriteCode` variant round-trips its raw value, so a `TryFrom` that stops agreeing
+    /// with `Into` fails here. Pinning the discriminants to the facade is
+    /// [`sig_write_code_pins_the_generated_facade_values`]'s job.
     #[test]
     fn sig_write_code_round_trips() {
         for &code in SigWriteCode::VARIANTS {

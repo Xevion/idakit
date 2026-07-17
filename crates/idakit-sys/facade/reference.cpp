@@ -51,4 +51,31 @@ bool has_jump_or_flow_xref(uint64_t addr) {
   return ::has_jump_or_flow_xref(static_cast<ea_t>(addr));
 }
 
+// Alignment sources. These name this SDK's own cref_t/dref_t enumerators, each list ordered to
+// match the discriminant order of the Rust enum mirroring it, so a header renumbering shows up as
+// a mismatch in that enum's alignment test rather than as a silently mislabeled edge. Emitted
+// unmasked, matching xrefs_build: xrefblk_t::type carries the bare type, with XREF_USER/_TAIL/
+// _BASE living in its own `user`/`_flags` fields. Header constants only, no kernel needed.
+
+namespace {
+
+template <typename T> rust::Vec<uint8_t> collect(std::initializer_list<T> codes) {
+  rust::Vec<uint8_t> out;
+  for (T c : codes)
+    out.push_back(static_cast<uint8_t>(c));
+  return out;
+}
+
+} // namespace
+
+// idakit CodeXref.
+rust::Vec<uint8_t> cref_type_ids() {
+  return collect<cref_t>({fl_U, fl_CF, fl_CN, fl_JF, fl_JN, fl_USobsolete, fl_F});
+}
+
+// idakit DataXref.
+rust::Vec<uint8_t> dref_type_ids() {
+  return collect<dref_t>({dr_U, dr_O, dr_W, dr_R, dr_T, dr_I, dr_S});
+}
+
 } // namespace gen

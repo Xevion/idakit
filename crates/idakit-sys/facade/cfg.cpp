@@ -10,6 +10,7 @@
 #include <funcs.hpp>
 #include <gdl.hpp>
 
+#include <initializer_list>
 #include <stdexcept>
 
 #include "gen_cfg.h"
@@ -99,6 +100,18 @@ rust::Vec<uint32_t> cfg_preds(const ::qflow_chart_t &flow, size_t n) {
   out.reserve(preds.size());
   for (int pred : preds)
     out.push_back(static_cast<uint32_t>(pred));
+  return out;
+}
+
+// Alignment source. Names this SDK's own fc_block_type_t enumerators in idakit BasicBlockKind's
+// discriminant order, so a header renumbering shows up as a mismatch in that enum's alignment test
+// rather than as a silently mislabeled block. fcb_enoret/fcb_extern are absent because idakit
+// lifts IDA's external blocks to ExternalExit instead of modelling them as a kind. Header
+// constants only, no kernel needed.
+rust::Vec<uint8_t> block_kind_ids() {
+  rust::Vec<uint8_t> out;
+  for (fc_block_type_t k : {fcb_normal, fcb_indjump, fcb_ret, fcb_cndret, fcb_noret, fcb_error})
+    out.push_back(static_cast<uint8_t>(k));
   return out;
 }
 

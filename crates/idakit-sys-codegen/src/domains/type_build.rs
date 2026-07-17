@@ -8,6 +8,10 @@ use super::super::model::*;
 /// `facade/type_apply.cpp`, `facade/type_define.cpp`, `facade/udt_edit.cpp`, `facade/enum_edit.cpp`,
 /// `facade/func_sig.cpp`, and `facade/tinfo_build.cpp`, sharing helpers from
 /// `facade/type_write_common.cpp`.
+///
+/// The `*_ids` functions in the shared TU expose this SDK's own `CM_CC_*`, `FRB_*`, and
+/// `tinfo_code_t` values as alignment sources for idakit's mirror tests. They read header
+/// constants only, so they need no kernel.
 pub const TYPE_BUILD: Domain = Domain {
     name: "type_build",
     sdk_includes: &["<kernwin.hpp>", "<nalt.hpp>", "<typeinf.hpp>"],
@@ -344,5 +348,17 @@ pub const TYPE_BUILD: Domain = Domain {
         "Apply the built `handle` at `ea` (`apply_tinfo`, `TINFO_DEFINITE | flags`). `code` is \
          `TYPE_OK`/`_ERR_APPLY`; the handle is not consumed."
             tinfo_apply(ea: U64, handle: ExternRef("TInfo"), flags: I32) -> Shared("TypeWriteResult");
+        "This SDK's `CM_CC_*` values in idakit `CallingConvention`'s discriminant order, an \
+         alignment source pinning the Rust mirror to this SDK build in a test. Emitted in the \
+         raw pre-shifted high-nibble space the SDK stores them in (`CM_CC_CDECL` is `0x30`); \
+         covers only the modelled plain conventions."
+            cm_cc_ids() -> VecU8;
+        "This SDK's `FRB_*` value-type nibbles in idakit `NumberFormat`'s discriminant order, an \
+         alignment source for a mirror test. Covers only the modelled non-info-carrying subset."
+            frb_vtype_ids() -> VecU32;
+        "This SDK's `tinfo_code_t` (`TERR_*`) values in idakit `TypeEditCode`'s discriminant \
+         order, an alignment source for a mirror test. Signed: every code but `TERR_OK` is \
+         negative. The `TERR_COUNT` sentinel is not a code and is absent."
+            tinfo_code_ids() -> VecI32;
     },
 };

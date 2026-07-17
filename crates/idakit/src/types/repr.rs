@@ -81,6 +81,7 @@ pub struct ValueRepr {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
     use rstest::rstest;
 
     use super::*;
@@ -98,8 +99,33 @@ mod tests {
         assert!(NumberFormat::try_from(frb) == Ok(format));
     }
 
-    /// Completeness: every variant round-trips through its nibble, so a drifted discriminant
-    /// fails here rather than silently writing the wrong `value_repr_t`.
+    /// Pin the formats to the facade's reported `FRB_*` nibbles: the facade lists them in this
+    /// enum's discriminant order, so a header renumbering mismatches and a variant added without
+    /// a facade entry trips the length check. Both sides speak bare nibbles, which is what
+    /// `value_repr_t::get_vtype`/`set_vtype` read and write behind `FRB_MASK`. Pure constant
+    /// source, no kernel, so it runs as a unit test.
+    #[test]
+    fn frb_vtype_ids_align_with_the_facade() {
+        let ids = sys::frb_vtype_ids();
+        assert!(
+            ids.len() == NumberFormat::VARIANTS.len(),
+            "facade lists {} ids for {} variants",
+            ids.len(),
+            NumberFormat::VARIANTS.len()
+        );
+        for (i, &format) in NumberFormat::VARIANTS.iter().enumerate() {
+            assert!(
+                ids[i] == u32::from(format),
+                "number format {format:?}: facade FRB_ {} != discriminant {}",
+                ids[i],
+                u32::from(format)
+            );
+        }
+    }
+
+    /// Completeness: every variant round-trips through its nibble, so a `TryFrom` that stops
+    /// agreeing with `Into` fails here. Pinning the discriminants to the SDK is
+    /// [`frb_vtype_ids_align_with_the_facade`]'s job.
     #[test]
     fn every_variant_round_trips() {
         for &format in NumberFormat::VARIANTS {

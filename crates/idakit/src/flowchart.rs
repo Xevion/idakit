@@ -397,6 +397,7 @@ fn block_range(start: u64, end: u64) -> Range<Address> {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
     use rstest::rstest;
 
     use super::*;
@@ -445,8 +446,33 @@ mod tests {
         assert!(kind.is_noreturn() == noret);
     }
 
-    /// For completeness, every variant round-trips through its raw discriminant, so a newly
-    /// added variant that forgets a discriminant fails here.
+    /// Pin the kinds to the facade's reported `fc_block_type_t` values: the facade lists them in
+    /// this enum's discriminant order, so a header renumbering mismatches and a variant added
+    /// without a facade entry trips the length check. Both sides cover only the modelled
+    /// in-function kinds, since `fcb_enoret`/`fcb_extern` lift to [`ExternalExit`] rather than
+    /// becoming a kind. Pure constant source, no kernel, so it runs as a unit test.
+    #[test]
+    fn block_kind_ids_align_with_the_facade() {
+        let ids = sys::block_kind_ids();
+        assert!(
+            ids.len() == BasicBlockKind::VARIANTS.len(),
+            "facade lists {} ids for {} variants",
+            ids.len(),
+            BasicBlockKind::VARIANTS.len()
+        );
+        for (i, &kind) in BasicBlockKind::VARIANTS.iter().enumerate() {
+            assert!(
+                ids[i] == u8::from(kind),
+                "block kind {kind:?}: facade fc_block_type_t {} != discriminant {}",
+                ids[i],
+                u8::from(kind)
+            );
+        }
+    }
+
+    /// For completeness, every variant round-trips through its raw discriminant, so a `TryFrom`
+    /// that stops agreeing with `Into` fails here. Pinning the discriminants to the SDK is
+    /// [`block_kind_ids_align_with_the_facade`]'s job.
     #[test]
     fn every_variant_round_trips() {
         for &kind in BasicBlockKind::VARIANTS {

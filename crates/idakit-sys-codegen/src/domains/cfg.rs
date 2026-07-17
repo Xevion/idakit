@@ -57,5 +57,9 @@ pub const CFG: Domain = Domain {
         "The whole predecessor edge list of block `n` as one owned `Vec<u32>`; `Err` when `n` is \
          out of range."
             cfg_preds(fc: ExternRef("FlowChart"), n: Usize) -> ResultVecU32;
+        "This SDK's `fc_block_type_t` (`fcb_*`) values in idakit `BasicBlockKind`'s discriminant \
+         order, an alignment source pinning the Rust mirror to this SDK build in a test. Covers \
+         only the modelled in-function kinds; `fcb_enoret`/`fcb_extern` are deliberately absent."
+            block_kind_ids() -> VecU8;
     },
 };

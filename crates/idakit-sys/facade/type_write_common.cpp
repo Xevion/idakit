@@ -271,4 +271,46 @@ bool load_named_type(const char *type_name, tinfo_t &tif) {
   return tif.get_named_type(get_idati(), type_name) && !tif.empty();
 }
 
+// Alignment sources. These name this SDK's own typeinf.hpp constants, each list ordered to match
+// the discriminant order of the Rust enum mirroring it, so a header renumbering shows up as a
+// mismatch in that enum's alignment test rather than as a silently wrong write. Each list covers
+// only what idakit models: the plain calling conventions, the non-info-carrying FRB_* nibbles, and
+// every real TERR_* code (TERR_COUNT is a count, not a code). Header constants only, no kernel
+// needed.
+
+// idakit CallingConvention. Raw pre-shifted high-nibble space, matching func_set_cc, which casts
+// the code straight to callcnv_t without masking or shifting.
+rust::Vec<uint8_t> cm_cc_ids() {
+  rust::Vec<uint8_t> out;
+  for (callcnv_t c : {CM_CC_UNKNOWN, CM_CC_CDECL, CM_CC_STDCALL, CM_CC_PASCAL, CM_CC_FASTCALL,
+                      CM_CC_THISCALL, CM_CC_SWIFT, CM_CC_GOLANG})
+    out.push_back(static_cast<uint8_t>(c));
+  return out;
+}
+
+// idakit NumberFormat. Bare nibbles, matching what value_repr_t::get_vtype/set_vtype read and
+// write behind FRB_MASK.
+rust::Vec<uint32_t> frb_vtype_ids() {
+  rust::Vec<uint32_t> out;
+  for (uint32_t v : {FRB_NUMB, FRB_NUMO, FRB_NUMH, FRB_NUMD, FRB_CHAR})
+    out.push_back(v);
+  return out;
+}
+
+// idakit TypeEditCode.
+rust::Vec<int32_t> tinfo_code_ids() {
+  rust::Vec<int32_t> out;
+  for (tinfo_code_t c :
+       {TERR_OK,          TERR_SAVE_ERROR,  TERR_SERIALIZE,   TERR_BAD_NAME,   TERR_BAD_ARG,
+        TERR_BAD_TYPE,    TERR_BAD_SIZE,    TERR_BAD_INDEX,   TERR_BAD_ARRAY,  TERR_BAD_BF,
+        TERR_BAD_OFFSET,  TERR_BAD_UNIVAR,  TERR_BAD_VARLAST, TERR_OVERLAP,    TERR_BAD_SUBTYPE,
+        TERR_BAD_VALUE,   TERR_NO_BMASK,    TERR_BAD_BMASK,   TERR_BAD_MSKVAL, TERR_BAD_REPR,
+        TERR_GRP_NOEMPTY, TERR_DUPNAME,     TERR_UNION_BF,    TERR_BAD_TAH,    TERR_BAD_BASE,
+        TERR_BAD_GAP,     TERR_NESTED,      TERR_NOT_COMPAT,  TERR_BAD_LAYOUT, TERR_BAD_GROUPS,
+        TERR_BAD_SERIAL,  TERR_ALIEN_NAME,  TERR_STOCK,       TERR_ENUM_SIZE,  TERR_NOT_IMPL,
+        TERR_TYPE_WORSE,  TERR_BAD_FX_SIZE, TERR_STRUCT_SIZE, TERR_NOT_FOUND})
+    out.push_back(static_cast<int32_t>(c));
+  return out;
+}
+
 } // namespace gen

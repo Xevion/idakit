@@ -230,6 +230,7 @@ impl RetShape {
                 quote!(Vec<#t>)
             }
             Self::VecU32 => quote!(Vec<u32>),
+            Self::VecI32 => quote!(Vec<i32>),
             Self::VecU8 => quote!(Vec<u8>),
         }
     }
@@ -252,6 +253,7 @@ impl RetShape {
             Self::UniquePtr(n) => format!("std::unique_ptr<::{}>", ExternTy::cxx_name_of(n)),
             Self::Vec(n) => format!("rust::Vec<{}>", ExternTy::vec_elem_cxx(n)),
             Self::VecU32 => "rust::Vec<uint32_t>".into(),
+            Self::VecI32 => "rust::Vec<int32_t>".into(),
             Self::VecU8 => "rust::Vec<uint8_t>".into(),
         }
     }

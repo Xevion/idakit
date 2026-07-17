@@ -1338,12 +1338,38 @@ impl fmt::Display for TypeEditCode {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
     use rstest::rstest;
 
     use super::*;
 
-    /// Every modelled code round-trips through its raw `tinfo_code_t` value, so a drifted
-    /// discriminant fails here.
+    /// Pin every code to the facade's reported `tinfo_code_t` values: the facade lists them in
+    /// this enum's discriminant order, so a header renumbering mismatches and a variant added
+    /// without a facade entry trips the length check. This is what covers the whole set;
+    /// [`type_edit_code_pins_terr_values`] spot-checks four literals as an oracle independent of
+    /// the facade. Pure constant source, no kernel, so it runs as a unit test.
+    #[test]
+    fn tinfo_code_ids_align_with_the_facade() {
+        let ids = sys::tinfo_code_ids();
+        assert!(
+            ids.len() == TypeEditCode::VARIANTS.len(),
+            "facade lists {} ids for {} variants",
+            ids.len(),
+            TypeEditCode::VARIANTS.len()
+        );
+        for (i, &code) in TypeEditCode::VARIANTS.iter().enumerate() {
+            assert!(
+                ids[i] == i32::from(code),
+                "type edit code {code:?}: facade TERR_ {} != discriminant {}",
+                ids[i],
+                i32::from(code)
+            );
+        }
+    }
+
+    /// Every modelled code round-trips through its raw `tinfo_code_t` value, so a `TryFrom` that
+    /// stops agreeing with `Into` fails here. Pinning the discriminants to the SDK is
+    /// [`tinfo_code_ids_align_with_the_facade`]'s job.
     #[test]
     fn type_edit_code_round_trips() {
         for &v in TypeEditCode::VARIANTS {

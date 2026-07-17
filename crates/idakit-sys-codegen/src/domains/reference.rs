@@ -3,6 +3,10 @@ use super::super::model::*;
 /// The cross-reference domain: every xref edge at an address returned as one owned `Vec<XrefRec>`
 /// snapshot, retiring the raw open-cursor/next/close dance. The single body is hand-written in
 /// `facade/reference.cpp` (one walk of an `xrefblk_t`).
+///
+/// The `*_type_ids` functions there expose this SDK's own `cref_t`/`dref_t` values as `Vec<u8>`
+/// alignment sources for idakit's mirror tests. They read header constants only, so they need no
+/// kernel.
 pub const REFERENCE: Domain = Domain {
     name: "reference",
     sdk_includes: &["<xref.hpp>"],
@@ -30,5 +34,11 @@ pub const REFERENCE: Domain = Domain {
             has_external_refs(ea: U64) -> Bool;
         "Whether `ea` has an incoming jump or ordinary-flow code cross-reference."
             has_jump_or_flow_xref(ea: U64) -> Bool;
+        "This SDK's `cref_t` (`fl_*`) values in idakit `CodeXref`'s discriminant order, an \
+         alignment source pinning the Rust mirror to this SDK build in a test."
+            cref_type_ids() -> VecU8;
+        "This SDK's `dref_t` (`dr_*`) values in idakit `DataXref`'s discriminant order, an \
+         alignment source for a mirror test."
+            dref_type_ids() -> VecU8;
     },
 };

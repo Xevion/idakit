@@ -245,6 +245,8 @@ pub enum RetShape {
     Vec(&'static str),
     /// An owned `Vec` of a scalar (`u32`).
     VecU32,
+    /// An owned `Vec<i32>`, for an SDK set whose values are signed (`tinfo_code_t`'s `TERR_*`).
+    VecI32,
     /// An owned `Vec<u8>` (a raw byte-range snapshot, or an alignment-id list).
     VecU8,
 }

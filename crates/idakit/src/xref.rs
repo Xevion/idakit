@@ -357,6 +357,7 @@ impl fmt::Display for DataXref {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
+    use idakit_sys as sys;
     use rstest::rstest;
 
     use super::*;
@@ -402,8 +403,38 @@ mod tests {
         assert!(Xref::from_raw(0x1000, 0x2000, ty, iscode, 0).is_none());
     }
 
-    /// Every modelled variant round-trips through its raw discriminant, so a variant whose
-    /// discriminant drifts from the SDK value fails here.
+    /// Pin both spaces to the facade's reported `cref_t`/`dref_t` values: the facade lists each
+    /// in its enum's discriminant order, so a header renumbering mismatches and a variant added
+    /// without a facade entry trips the length check. Emitted unmasked, matching the read path:
+    /// `xrefblk_t` keeps the bare type apart from the `XREF_USER`/`_TAIL`/`_BASE` bits, so
+    /// nothing strips them on the way in. Pure constant source, no kernel, so it runs as a unit
+    /// test.
+    #[test]
+    fn xref_type_ids_align_with_the_facade() {
+        fn check<T: Copy + fmt::Debug + Into<u8>>(name: &str, variants: &[T], ids: &[u8]) {
+            assert!(
+                ids.len() == variants.len(),
+                "{name}: facade lists {} ids for {} variants",
+                ids.len(),
+                variants.len()
+            );
+            for (i, &v) in variants.iter().enumerate() {
+                let raw: u8 = v.into();
+                assert!(
+                    ids[i] == raw,
+                    "{name} {v:?}: facade code {} != discriminant {raw}",
+                    ids[i]
+                );
+            }
+        }
+
+        check("CodeXref", CodeXref::VARIANTS, &sys::cref_type_ids());
+        check("DataXref", DataXref::VARIANTS, &sys::dref_type_ids());
+    }
+
+    /// Every modelled variant round-trips through its raw discriminant, so a `TryFrom` that stops
+    /// agreeing with `Into` fails here. Pinning the discriminants to the SDK is
+    /// [`xref_type_ids_align_with_the_facade`]'s job.
     #[test]
     fn every_variant_round_trips() {
         for &c in CodeXref::VARIANTS {
