@@ -13,3 +13,5 @@ compile_commands.json
 **/*.til
 # cargo-mutants rotates its output dir to mutants.out.old on each run, so match both.
 mutants.out*
+# `just coverage` writes its lcov/html/json reports here; CI uploads them as artifacts instead.
+/coverage

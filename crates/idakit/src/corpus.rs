@@ -15,6 +15,8 @@
 //! each caller: [`working_copy`] copies beside the corpus (so large matrix fixtures under fan-out
 //! never fill a RAM disk), whereas the doctest harness and single-DB tests copy to RAM.
 
+#![cfg_attr(coverage_nightly, coverage(off))]
+
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};

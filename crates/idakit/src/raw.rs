@@ -14,6 +14,7 @@
 //! adds exclusivity for writes. Raw buffer pointers are valid for the call, and
 //! string getters fill `(buf, cap)` and return the value's full length.
 
+#![cfg_attr(coverage_nightly, coverage(off))]
 // `&self`/`&mut self` here is the kernel-thread token proven live by holding a `Database` (see
 // the module doc above), not a source of instance state, so several forwarders never touch it.
 #![expect(

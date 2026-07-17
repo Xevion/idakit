@@ -115,6 +115,19 @@ sanitize mode="address":
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+# Line coverage over the workspace, written to coverage/ (gitignored); needs cargo-llvm-cov.
+# Every step carries the cfg, else the `coverage(off)` exceptions go inert and count against the
+# total. Doctests are left out: `--doctests` is still incomplete. Advisory, not part of `check`.
+coverage:
+    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov nextest --workspace --all-features --no-fail-fast --hide-progress-bar
+    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov report --html --output-dir coverage/html
+    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov report --lcov --output-path coverage/lcov.info
+    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov report --json --output-path coverage/coverage.json
+
+# `just coverage`, then open the HTML report.
+coverage-open: coverage
+    cargo +nightly llvm-cov report --html --output-dir coverage/html --open
+
 # Build API docs, warnings-as-errors (broken links, bad code blocks, bare URLs, invalid HTML
 # tags in example doc comments all fail). Default scrapes example call-sites onto each item
 # (nightly + real runtime); `hermetic` skips scraping and builds under DOCS_RS, so no IDA

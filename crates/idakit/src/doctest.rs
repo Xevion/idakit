@@ -9,6 +9,8 @@
 //! The copy lands in a RAM-backed scratch dir (unlike the matrix's corpus-colocated
 //! [`crate::corpus::working_copy`]): a doctest opens one small fixture, so RAM is the fast choice.
 
+#![cfg_attr(coverage_nightly, coverage(off))]
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 

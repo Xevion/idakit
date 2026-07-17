@@ -18,6 +18,15 @@ filter = 'kind(test)'
 test-group = 'kernel'
 slow-timeout = { period = "60s", terminate-after = 3 }
 
+# For the coverage workflow, which uploads this junit report to Codecov beside the lcov one.
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+store-failure-output = true
+store-success-output = false
+
 # For `just mutants`, which asks a different question than `just test` does. A run there wants to
 # know only whether *some* test rejects the mutant, and roughly three quarters of them do, so
 # finishing the suite past the first failure buys nothing and costs a kernel per remaining test.

@@ -9,6 +9,9 @@ repository = "https://github.com/Xevion/idakit"
 rust-version = "1.88"
 
 [workspace.lints.rust]
+# `coverage_nightly` is set only by `just coverage`; declaring it keeps the cfg_attrs it gates
+# from tripping unexpected_cfgs on a normal build.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 missing_docs = "warn"
 unused_lifetimes = "warn"
 unused_qualifications = "warn"

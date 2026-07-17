@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/Xevion/idakit/actions/workflows/ci.yml"><img src="https://github.com/Xevion/idakit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/Xevion/idakit"><img src="https://codecov.io/gh/Xevion/idakit/branch/master/graph/badge.svg" alt="Coverage"></a>
   <a href="https://crates.io/crates/idakit"><img src="https://img.shields.io/crates/v/idakit.svg" alt="crates.io"></a>
   <a href="https://docs.rs/idakit"><img src="https://img.shields.io/docsrs/idakit" alt="docs.rs"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
