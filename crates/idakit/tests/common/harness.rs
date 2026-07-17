@@ -255,7 +255,18 @@ fn dispatch(ida: &Ida, case: &CaseEntry, skip: Option<String>, failures: &mut Ve
         println!("{}: skipped ({reason})", case.name);
         return;
     }
-    match invoke(ida, case) {
+    // Set IDAKIT_PROFILE to emit a per-check wall time on stderr, so `just profile-checks` can
+    // attribute a fixture's runtime to individual checks without perturbing the normal output.
+    let started = std::time::Instant::now();
+    let result = invoke(ida, case);
+    if std::env::var_os("IDAKIT_PROFILE").is_some() {
+        eprintln!(
+            "PROFILE\t{}\t{:.3}",
+            case.name,
+            started.elapsed().as_secs_f64()
+        );
+    }
+    match result {
         Ok(Outcome::Passed(Some(summary))) => println!("{}: {summary}", case.name),
         Ok(Outcome::Passed(None)) => println!("{}: ok", case.name),
         Ok(Outcome::Skipped(reason)) => println!("{}: skipped ({reason})", case.name),
