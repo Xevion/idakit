@@ -10,8 +10,14 @@
 
 mod common;
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+
 use assert2::assert;
 use idakit::Database;
+use idakit::netnode::NetnodeMut;
+use proptest::prelude::*;
+use proptest::test_runner::{Config, TestRunner};
 
 /// A named case, run against the shared session's database.
 type Case = (&'static str, fn(&mut Database));
@@ -29,7 +35,232 @@ const CASES: &[Case] = &[
     ("reused validated bytes", reused_bytes_run),
     ("deletion ops", deletion_run),
     ("tagged deletion ops", tagged_deletion_run),
+    ("model", model_run),
 ];
+
+/// Alt/sup indices the model generates over. Small, so overwrites and deletes collide often.
+const INDICES: u64 = 4;
+/// Hash keys the model generates over, kept equally small and in lexical order.
+const KEYS: [&str; 3] = ["a", "b", "c"];
+
+/// One generated write against the default tag.
+#[derive(Debug, Clone)]
+enum Op {
+    SetValue(Vec<u8>),
+    ClearValue,
+    SetAlt(u64, u64),
+    RemoveAlt(u64),
+    ClearAlts,
+    SetSup(u64, Vec<u8>),
+    RemoveSup(u64),
+    ClearSups,
+    SetHash(String, Vec<u8>),
+    SetHashInt(String, u64),
+    RemoveHash(String),
+    ClearHash,
+    SetBlob(Vec<u8>),
+    RemoveBlob,
+}
+
+/// The netnode state a reader can observe, tracked alongside the real node.
+///
+/// An alt present with value `0` is deliberately distinct from an absent one: `altset` stores an
+/// object, so the slot enumerates, while `altval` reads `0` either way.
+#[derive(Default)]
+struct Model {
+    value: Option<Vec<u8>>,
+    alts: BTreeMap<u64, u64>,
+    sups: BTreeMap<u64, Vec<u8>>,
+    hash: BTreeMap<String, Vec<u8>>,
+    blob: Option<Vec<u8>>,
+}
+
+impl Model {
+    /// Apply `op` and predict the kernel's answer: a setter reports whether it succeeded, a delete
+    /// reports whether there was anything there to remove.
+    fn apply(&mut self, op: &Op) -> bool {
+        match op {
+            Op::SetValue(v) => {
+                self.value = Some(v.clone());
+                true
+            }
+            Op::ClearValue => self.value.take().is_some(),
+            Op::SetAlt(i, v) => {
+                self.alts.insert(*i, *v);
+                true
+            }
+            Op::RemoveAlt(i) => self.alts.remove(i).is_some(),
+            Op::ClearAlts => {
+                let had = !self.alts.is_empty();
+                self.alts.clear();
+                had
+            }
+            Op::SetSup(i, v) => {
+                self.sups.insert(*i, v.clone());
+                true
+            }
+            Op::RemoveSup(i) => self.sups.remove(i).is_some(),
+            Op::ClearSups => {
+                let had = !self.sups.is_empty();
+                self.sups.clear();
+                had
+            }
+            Op::SetHash(k, v) => {
+                self.hash.insert(k.clone(), v.clone());
+                true
+            }
+            // The int setter is `hashset(idx, &value, sizeof(value))`, so it lands in the same
+            // array as the byte setter, as the host's 8 raw bytes.
+            Op::SetHashInt(k, v) => {
+                self.hash.insert(k.clone(), v.to_le_bytes().to_vec());
+                true
+            }
+            Op::RemoveHash(k) => self.hash.remove(k).is_some(),
+            Op::ClearHash => {
+                let had = !self.hash.is_empty();
+                self.hash.clear();
+                had
+            }
+            Op::SetBlob(v) => {
+                self.blob = Some(v.clone());
+                true
+            }
+            Op::RemoveBlob => self.blob.take().is_some(),
+        }
+    }
+}
+
+fn op_strategy() -> impl Strategy<Value = Op> {
+    let index = 0..INDICES;
+    let key = (0..KEYS.len()).prop_map(|i| KEYS[i].to_string());
+    // Never empty and never over MAXSPECSIZE: both are rejected before the kernel by
+    // `NetnodeBytes`, and the client-side guard has its own cases above.
+    let bytes = prop::collection::vec(any::<u8>(), 1..=8);
+    prop_oneof![
+        bytes.clone().prop_map(Op::SetValue),
+        Just(Op::ClearValue),
+        (index.clone(), any::<u64>()).prop_map(|(i, v)| Op::SetAlt(i, v)),
+        index.clone().prop_map(Op::RemoveAlt),
+        Just(Op::ClearAlts),
+        (index.clone(), bytes.clone()).prop_map(|(i, v)| Op::SetSup(i, v)),
+        index.prop_map(Op::RemoveSup),
+        Just(Op::ClearSups),
+        (key.clone(), bytes.clone()).prop_map(|(k, v)| Op::SetHash(k, v)),
+        (key.clone(), any::<u64>()).prop_map(|(k, v)| Op::SetHashInt(k, v)),
+        key.prop_map(Op::RemoveHash),
+        Just(Op::ClearHash),
+        bytes.prop_map(Op::SetBlob),
+        Just(Op::RemoveBlob),
+    ]
+}
+
+/// Run `op` against the real node, reducing both shapes to the one bit the model predicts.
+fn apply_real(node: &mut NetnodeMut<'_>, op: &Op) -> bool {
+    match op {
+        Op::SetValue(v) => node.set_value(v.as_slice()).is_ok(),
+        Op::ClearValue => node.clear_value(),
+        Op::SetAlt(i, v) => node.set_alt(*i, *v).is_ok(),
+        Op::RemoveAlt(i) => node.remove_alt(*i),
+        Op::ClearAlts => node.clear_alts(),
+        Op::SetSup(i, v) => node.set_sup(*i, v.as_slice()).is_ok(),
+        Op::RemoveSup(i) => node.remove_sup(*i),
+        Op::ClearSups => node.clear_sups(),
+        Op::SetHash(k, v) => node.set_hash(k, v.as_slice()).is_ok(),
+        Op::SetHashInt(k, v) => node.set_hash_int(k, *v).is_ok(),
+        Op::RemoveHash(k) => node.remove_hash(k),
+        Op::ClearHash => node.clear_hash(),
+        Op::SetBlob(v) => node.set_blob(v).is_ok(),
+        Op::RemoveBlob => node.remove_blob(),
+    }
+}
+
+/// Every scalar read and every iterator agrees with the model.
+fn check(node: &NetnodeMut<'_>, model: &Model) -> Result<(), TestCaseError> {
+    prop_assert_eq!(node.value(), model.value.clone(), "value");
+    prop_assert_eq!(node.blob(), model.blob.clone(), "blob");
+    prop_assert_eq!(
+        node.blob_size(),
+        model.blob.as_ref().map_or(0, Vec::len),
+        "blob_size"
+    );
+
+    for i in 0..INDICES {
+        let alt = model.alts.get(&i).copied().unwrap_or(0);
+        prop_assert_eq!(node.alt(i), alt, "alt {}", i);
+        prop_assert_eq!(node.sup(i), model.sups.get(&i).cloned(), "sup {}", i);
+    }
+
+    for key in KEYS {
+        let stored = model.hash.get(key).cloned();
+        prop_assert_eq!(node.hash(key), stored.clone(), "hash {}", key);
+        // `hashval_long` is only defined over what the int setter wrote, so a byte value of some
+        // other width has no expected reading; an absent key is documented to read 0.
+        match stored {
+            None => prop_assert_eq!(node.hash_int(key), 0, "hash_int {} unset", key),
+            Some(bytes) if bytes.len() == 8 => {
+                let want = u64::from_le_bytes(bytes.try_into().expect("8 bytes"));
+                prop_assert_eq!(node.hash_int(key), want, "hash_int {}", key);
+            }
+            Some(_) => {}
+        }
+    }
+
+    let alts: Vec<(u64, u64)> = node.alts().collect();
+    let want: Vec<(u64, u64)> = model.alts.iter().map(|(i, v)| (*i, *v)).collect();
+    prop_assert_eq!(alts, want, "alts enumeration");
+
+    let sups: Vec<(u64, Vec<u8>)> = node.sups().collect();
+    let want: Vec<(u64, Vec<u8>)> = model.sups.iter().map(|(i, v)| (*i, v.clone())).collect();
+    prop_assert_eq!(sups, want, "sups enumeration");
+
+    let entries: Vec<(String, Vec<u8>)> = node.hash_entries().collect();
+    let want: Vec<(String, Vec<u8>)> = model
+        .hash
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    prop_assert_eq!(entries, want, "hash_entries enumeration");
+
+    Ok(())
+}
+
+/// A random op sequence drives the real node and a model in lockstep, asserting both the accepted
+/// or rejected outcome and the full observable state after every step.
+///
+/// The `write_ops!` macro generates most of this surface, and cargo-mutants never expands macros,
+/// so none of those bodies emits a mutant to kill. This covers by construction what mutation
+/// testing structurally cannot reach here.
+///
+/// The runner is driven inline rather than through `proptest!` so the whole sweep reuses this
+/// session's kernel and database instead of standing up its own.
+fn model_run(idb: &mut Database) {
+    let name = "$ idakit.netnode.model";
+    let mut runner = TestRunner::new(Config {
+        cases: 48,
+        ..Config::default()
+    });
+
+    // The runner takes an `Fn`, so the database reaches it through a RefCell rather than a
+    // captured `&mut`.
+    let db = RefCell::new(idb);
+    let result = runner.run(&prop::collection::vec(op_strategy(), 1..16), |ops| {
+        let mut idb = db.borrow_mut();
+        // Each case starts from an empty node, so a sequence never inherits the last one.
+        idb.netnode_mut(name).kill();
+        let mut node = idb.netnode_mut(name);
+        let mut model = Model::default();
+
+        for op in &ops {
+            let expected = model.apply(op);
+            prop_assert_eq!(apply_real(&mut node, op), expected, "outcome of {:?}", op);
+            check(&node, &model)?;
+        }
+        Ok(())
+    });
+
+    db.into_inner().netnode_mut(name).kill();
+    result.expect("the model and the kernel agree");
+}
 
 #[test]
 fn netnode() {
@@ -243,26 +474,29 @@ fn oversized_value_run(idb: &mut Database) {
 }
 
 /// A kernel-level rejection, unlike the client-side `NetnodeBytes` guard above, surfaces as
-/// `Error::WriteRejected` through both `NetnodeMut::checked` and `TaggedNetnodeMut::checked`,
-/// which are separate implementations rather than one delegating to the other.
+/// `Error::WriteRejected` carrying the kernel's own error channel.
 ///
-/// `netnode::altdel`/`supdel` return `false` when the slot was never set, a deterministic
-/// kernel-side rejection reachable with no invalid input.
+/// Renaming onto a name another node already holds is the one write here the kernel refuses on
+/// valid input. Deletes cannot stand in: their `false` means the slot was empty, which is an
+/// answer rather than a refusal, so they report it as `bool` and never reach this path.
 fn write_rejection_run(idb: &mut Database) {
-    use idakit::Tag;
     use idakit::error::Error;
 
+    let taken = "$ idakit.netnode.checked.taken";
     let name = "$ idakit.netnode.checked";
+
+    let _ = idb.netnode_mut(taken);
     let mut node = idb.netnode_mut(name);
 
-    assert!(let Err(Error::WriteRejected { .. }) = node.remove_alt(9_999));
-
-    {
-        let mut t = node.tag(Tag::new(b'Z'));
-        assert!(let Err(Error::WriteRejected { .. }) = t.remove(9_999));
-    }
+    let rejected = node.rename(taken);
+    assert!(let Err(Error::WriteRejected { op: "rename", .. }) = rejected);
+    assert!(
+        node.name().as_deref() == Some(name),
+        "the rejected rename left the node's name alone"
+    );
 
     node.kill();
+    idb.netnode_mut(taken).kill();
 }
 
 /// A `NetnodeBytes` validated once is itself accepted back into the setters it exists for, so
@@ -317,21 +551,37 @@ fn deletion_run(idb: &mut Database) {
 
         node.set_value(b"payload").expect("set_value");
         assert!(node.value().is_some(), "set_value did not store");
-        node.clear_value().expect("clear_value");
+        assert!(node.clear_value(), "clear_value did not report the removal");
         assert!(node.value().is_none(), "clear_value left the node value");
+        assert!(
+            !node.clear_value(),
+            "clearing an absent value removed something"
+        );
 
         node.set_sup(0, b"sup-zero").expect("set_sup 0");
         node.set_sup(1, b"sup-one").expect("set_sup 1");
-        node.remove_sup(0).expect("remove_sup");
+        assert!(node.remove_sup(0), "remove_sup did not report the removal");
         assert!(node.sup(0).is_none(), "remove_sup left the sup at 0");
         assert!(node.sup(1).is_some(), "remove_sup took the sup at 1 too");
-        node.clear_sups().expect("clear_sups");
+        assert!(
+            !node.remove_sup(0),
+            "removing an absent sup removed something"
+        );
+        assert!(node.clear_sups(), "clear_sups did not report the removal");
         assert!(node.sups().next().is_none(), "clear_sups left a sup");
+        assert!(
+            !node.clear_sups(),
+            "clearing an empty sup array removed something"
+        );
 
         node.set_blob(&[1, 2, 3]).expect("set_blob");
         assert!(node.blob().is_some(), "set_blob did not store");
-        node.remove_blob().expect("remove_blob");
+        assert!(node.remove_blob(), "remove_blob did not report the removal");
         assert!(node.blob().is_none(), "remove_blob left the blob");
+        assert!(
+            !node.remove_blob(),
+            "removing an absent blob removed something"
+        );
 
         node.rename(renamed).expect("rename");
         node.id()
@@ -364,11 +614,16 @@ fn tagged_deletion_run(idb: &mut Database) {
         let mut t = node.tag(user);
         t.set_hash("a", b"1").expect("set_hash a");
         t.set_hash("b", b"2").expect("set_hash b");
-        t.remove_hash("a").expect("remove_hash");
+        assert!(t.remove_hash("a"), "remove_hash did not report the removal");
         assert!(t.hash("a").is_none(), "remove_hash left the entry");
         assert!(t.hash("b").is_some(), "remove_hash took the wrong entry");
-        t.clear_hash().expect("clear_hash");
+        assert!(
+            !t.remove_hash("a"),
+            "removing an absent entry removed something"
+        );
+        assert!(t.clear_hash(), "clear_hash did not report the removal");
         assert!(t.hash("b").is_none(), "clear_hash left an entry");
+        assert!(!t.clear_hash(), "clearing an empty hash removed something");
 
         assert!(
             node.hash("shared").as_deref() == Some(b"default-tag".as_slice()),
@@ -473,17 +728,20 @@ fn roundtrip_run(idb: &mut Database) {
         // `remove` deletes the typed value `put` stored, not merely reporting success.
         node.put::<u64>("removable", &42).expect("put removable");
         assert!(node.get::<u64>("removable") == Some(42));
-        node.remove("removable").expect("remove");
+        assert!(
+            node.remove("removable"),
+            "remove did not report the removal"
+        );
         assert!(
             node.get::<u64>("removable").is_none(),
             "remove did not delete the value"
         );
 
-        node.remove_alt(1).expect("remove_alt");
+        assert!(node.remove_alt(1), "remove_alt did not report the removal");
         assert!(node.alt(1) == 0, "a removed alt reads as 0");
-        node.clear_alts().expect("clear_alts");
+        assert!(node.clear_alts(), "clear_alts did not report the removal");
         assert!(node.alts().next().is_none(), "alts empty after clear");
-        node.clear_hash().expect("clear_hash");
+        assert!(node.clear_hash(), "clear_hash did not report the removal");
         assert!(
             node.hash_entries().next().is_none(),
             "hash empty after clear"

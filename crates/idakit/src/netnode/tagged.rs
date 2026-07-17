@@ -9,7 +9,9 @@
 use crate::Database;
 use crate::error::Result;
 
-use super::{HashEntries, NetnodeBytes, NetnodeBytesError, NodeId, Sups, Tag, rejected, write_ops};
+use super::{
+    HashEntries, NetnodeBytes, NetnodeBytesError, NodeId, Sups, Tag, checked, delete_ops, write_ops,
+};
 
 /// The read accessors shared by [`TaggedNetnode`] and [`TaggedNetnodeMut`], scoped to `self.tag`.
 macro_rules! tagged_reads {
@@ -131,29 +133,19 @@ impl<'db> TaggedNetnodeMut<'db> {
         /// # Errors
         /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
         fn set_int(this, index: u64, value: u64) => this.db.netnode_altset(this.id.get(), index, value, this.tag.raw());
+    }
 
-        /// Delete the numeric slot at `index`.
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
+    delete_ops! {
+        /// Delete the numeric slot at `index`, returning whether it was set.
         fn remove(this, index: u64) => this.db.netnode_supdel(this.id.get(), index, this.tag.raw());
 
-        /// Delete every numeric slot under this tag.
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
+        /// Delete every numeric slot under this tag, returning whether any were set.
         fn clear(this) => this.db.netnode_supdel_all(this.id.get(), this.tag.raw());
 
-        /// Delete the hash value for `key`.
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
+        /// Delete the hash value for `key`, returning whether it was set.
         fn remove_hash(this, key: &str) => this.db.netnode_hashdel(this.id.get(), key, this.tag.raw());
 
-        /// Delete every hash entry under this tag.
-        ///
-        /// # Errors
-        /// [`Error::WriteRejected`](crate::Error::WriteRejected) if the kernel rejects the write.
+        /// Delete every hash entry under this tag, returning whether any were set.
         fn clear_hash(this) => this.db.netnode_hashdel_all(this.id.get(), this.tag.raw());
     }
 
@@ -173,7 +165,7 @@ impl<'db> TaggedNetnodeMut<'db> {
         let ok = self
             .db
             .netnode_supset(self.id.get(), index, bytes.as_bytes(), self.tag.raw());
-        self.checked(ok, "set_value")
+        checked(&*self.db, self.id, ok, "set_value")
     }
 
     /// Set the hash value for `key` to raw bytes, from 1 to `MAXSPECSIZE` (1024) bytes.
@@ -192,15 +184,7 @@ impl<'db> TaggedNetnodeMut<'db> {
         let ok = self
             .db
             .netnode_hashset(self.id.get(), key, bytes.as_bytes(), self.tag.raw());
-        self.checked(ok, "set_hash")
-    }
-
-    fn checked(&self, ok: bool, op: &'static str) -> Result<()> {
-        if ok {
-            Ok(())
-        } else {
-            Err(rejected(&*self.db, self.id.get(), op))
-        }
+        checked(&*self.db, self.id, ok, "set_hash")
     }
 }
 
