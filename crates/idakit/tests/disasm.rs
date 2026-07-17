@@ -522,12 +522,9 @@ fn check_xref_edges_are_symmetric(idb: &Database) {
     println!("xref edge symmetry OK: {checked} edges mirrored in both directions");
 }
 
-/// A string literal in the canonical fixture, a known data address to check `is_data`/`is_code`
-/// against.
-const KNOWN_STRING_ADDRESS: u64 = 0x0030_106b;
-
-/// A function entry classifies as code, never data; the known string address classifies as
-/// data, never code.
+/// A function entry classifies as code, never data; the first entry in IDA's own string list
+/// classifies as data, never code. Derived from the database's structure rather than a fixed
+/// address, so it needs no per-fixture constant.
 fn check_is_code_and_is_data(idb: &Database) {
     let code_addr = idb.functions().next().expect("a function").address();
     assert!(
@@ -539,7 +536,7 @@ fn check_is_code_and_is_data(idb: &Database) {
         "function entry should not classify as data"
     );
 
-    let data_addr = Address::new_const(KNOWN_STRING_ADDRESS);
+    let data_addr = idb.strings().next().expect("a string literal").address();
     assert!(
         idb.is_data(data_addr),
         "known string address should classify as data"

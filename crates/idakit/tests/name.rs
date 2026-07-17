@@ -1,6 +1,6 @@
 //! Name lookups against a real database: [`Database::visible_name`]/[`Database::short_name`]/
-//! [`Database::long_name`] resolve wherever [`Database::name`] does, and at least one sampled
-//! name is public. Read-only; opens `save = false`. Skips when no test database is present.
+//! [`Database::long_name`] resolve wherever [`Database::name`] does, and the list holds at least
+//! one public name. Read-only; opens `save = false`. Skips when no test database is present.
 
 mod common;
 
@@ -18,8 +18,22 @@ fn run(idb: &mut Database) {
     let mut public = 0usize;
     let mut weak = 0usize;
 
-    for entry in idb.names().take(4000) {
+    let mut prev = None;
+
+    // The whole list, not a leading window: a stripped library sorts its import thunks and local
+    // symbols below its exported ones, so any fixed sample of the front can hold no public name
+    // at all (libstdc++'s first is entry 6262 of 14479).
+    for entry in idb.names() {
         checked += 1;
+
+        // The list is address-ascending; a cursor that fails to advance repeats an address here
+        // rather than running the loop forever.
+        assert!(
+            prev.is_none_or(|p| p < entry.address),
+            "name list is not strictly increasing at {:#x}",
+            entry.address.get()
+        );
+        prev = Some(entry.address);
 
         // GN_VISIBLE substitutes forbidden characters, so `name_with`/`name` need not agree
         // exactly; the real invariant is that a named address resolves under both, and that
@@ -48,11 +62,8 @@ fn run(idb: &mut Database) {
     }
 
     assert!(checked > 0, "expected at least one named address");
-    assert!(named > 0, "no sampled address resolved a name");
-    assert!(
-        public > 0,
-        "expected at least one public name in the sampled range"
-    );
+    assert!(named > 0, "no listed address resolved a name");
+    assert!(public > 0, "expected at least one public name in the list");
 
     println!("name flags OK: {checked} names checked, {named} named, {public} public, {weak} weak");
 }

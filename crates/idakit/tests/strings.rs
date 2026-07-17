@@ -12,9 +12,9 @@ fn strings() {
     common::with_canonical_db(run);
 }
 
-// A string literal at a fixed address in the canonical fixture.
-const ANCHOR_ADDRESS: u64 = 0x0030_106b;
-const ANCHOR_TEXT: &str = "crypto/aes/aes_ige.c";
+// libstdc++'s null-construction guard message: baked into rodata by every build of the
+// library, regardless of stripping, so it survives a fixture swap where a fixed address would not.
+const ANCHOR_TEXT: &str = "basic_string: construction from null is not valid";
 
 fn run(idb: &mut Database) {
     let mut strings = idb.strings();
@@ -44,9 +44,8 @@ fn run(idb: &mut Database) {
 
         if let Some(text) = s.text() {
             decoded += 1;
-            if s.address() == Address::new_const(ANCHOR_ADDRESS) {
+            if !found_anchor && text == ANCHOR_TEXT {
                 found_anchor = true;
-                assert!(text == ANCHOR_TEXT, "anchor text mismatch: {text:?}");
                 assert!(
                     s.escaped().as_deref() == Some(ANCHOR_TEXT),
                     "anchor escaped mismatch: {:?}",
@@ -63,7 +62,7 @@ fn run(idb: &mut Database) {
     assert!(total > 0, "string list enumeration yielded nothing");
     assert!(
         found_anchor,
-        "expected known string {ANCHOR_TEXT:?} at {ANCHOR_ADDRESS:#x} not found"
+        "expected known string {ANCHOR_TEXT:?} not found in string list"
     );
     assert!(
         decoded > 0,

@@ -178,3 +178,10 @@ mutants-diff base="master": require-corpus
 # One shard of N for CI fan-out, e.g. `just mutants-shard 0/8`.
 mutants-shard shard: require-corpus
     cargo mutants -p idakit --shard {{ shard }}
+
+# Only one file's mutants, e.g. `just mutants-file crates/idakit/src/name.rs`, for checking a
+# specific fix without paying for the whole tree. Goes through `require-corpus` like the rest:
+# a bare `cargo mutants` misses this Justfile's dotenv-load, leaving the kernel tests without a
+# corpus to skip against, so every mutant reports MISSED against a run that checked nothing.
+mutants-file file jobs="3": require-corpus
+    cargo mutants -p idakit --jobs {{ jobs }} -f {{ file }}
