@@ -277,50 +277,61 @@ fn refresh_text_reflects_rename() {
 /// A held [`DecompiledFunction`] re-prints a callee rename through `refresh_text` with no
 /// re-decompile: the cached ctext is stale, but re-walking the ctree resolves the new name.
 fn refresh_text_reflects_rename_body(idb: &mut Database) {
-    let entries: Vec<Address> = idb.functions().map(|f| f.address()).collect();
+    let order: Vec<Address> = idb.functions().map(|f| f.address()).collect();
+    let entries: HashSet<Address> = order.iter().copied().collect();
 
-    for &callee in &entries {
-        let sources: Vec<Address> = idb
-            .xrefs_to(callee)
-            .filter(Xref::is_code)
-            .map(|x| x.from)
-            .collect();
-
-        for src in sources {
-            let Some(caller) = idb.function_at(src).map(|f| f.address()) else {
+    // Caller-driven so each expensive decompile is amortized across every callee the caller
+    // names. Probing per callee instead re-decompiles a large fraction of the database, since most
+    // callees' names never render in any one caller, so almost every probe is a wasted decompile.
+    let mut attempt = 0u32;
+    for &caller in &order {
+        let (baseline, baseline_counts) = {
+            let Ok(cf) = idb.decompile(caller) else {
                 continue;
             };
-            if caller == callee {
+            let Some(text) = cf.pseudocode() else {
                 continue;
-            }
+            };
+            (text, cf.counts())
+        };
 
+        // Function-entry callees this caller reaches by a code xref, deduplicated.
+        let mut callees: Vec<Address> = idb
+            .xrefs_from(caller)
+            .filter(Xref::is_code)
+            .map(|x| x.to)
+            .filter(|to| *to != caller && entries.contains(to))
+            .collect();
+        callees.sort_unstable();
+        callees.dedup();
+
+        for callee in callees {
             // The caller's pseudocode must actually name the callee for the refresh to prove
-            // anything, so establish the baseline before mutating.
+            // anything; skip callees it doesn't render.
             let old_name = String::from(
                 idb.function_at(callee)
                     .expect("callee is a function")
                     .name(),
             );
-            let (baseline, baseline_counts) = {
-                let Ok(cf) = idb.decompile(caller) else {
-                    continue;
-                };
-                (cf.pseudocode(), cf.counts())
-            };
-            let Some(baseline) = baseline else { continue };
             if old_name.is_empty() || !baseline.contains(&old_name) {
-                continue; // this caller does not render the callee's name; try another pair
+                continue;
             }
 
-            // Rename the callee, opting out so the caller's cache survives.
+            // Rename the callee with a unique name, opting out of idakit's own eviction.
+            attempt += 1;
+            let new_name = format!("idakit_refreshed_callee_{attempt}");
             idb.at_mut(callee)
                 .auto_invalidate(false)
-                .rename("idakit_refreshed_callee")
+                .rename(&new_name)
                 .expect("rename the callee");
-            assert!(
-                idb.is_decompilation_cached(caller),
-                "auto_invalidate(false) should leave the caller cached"
-            );
+
+            // Some callees are ones the kernel itself tracks as a call-name dependency, so it
+            // evicts the caller on the rename regardless of idakit's opt-out; such a pair can't
+            // demonstrate a stale-cache refresh. Move to a fresh caller and keep looking for one
+            // the kernel leaves cached, which is the case this test exercises.
+            if !idb.is_decompilation_cached(caller) {
+                break;
+            }
 
             // The cached ctext still shows the old name; refresh re-prints from the ctree.
             let cf = idb.decompile(caller).expect("re-decompile hits the cache");
@@ -334,7 +345,7 @@ fn refresh_text_reflects_rename_body(idb: &mut Database) {
                 .refresh_text()
                 .expect("refresh_text renders the pseudocode");
             check!(
-                refreshed.contains("idakit_refreshed_callee"),
+                refreshed.contains(&new_name),
                 "refresh_text should reflect the callee's new name"
             );
             check!(
