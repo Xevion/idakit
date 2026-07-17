@@ -3,3 +3,10 @@
 # runs one kernel thread, so this can never actually deadlock.
 deadlock:bring_up_kernel
 deadlock:guarded_close
+
+# IDA's own exit teardown runs on the main thread and frees mutexes and heap that a worker
+# thread libida spawned inside open_database is still using; libida never joins it and offers
+# no way to reach it. Both sides are IDA's own memory, raced after idakit's kernel thread has
+# stopped: `Database` is !Send with no `Drop`, so idakit's only close runs on that thread.
+race:qmutex_free
+race:qrealloc
