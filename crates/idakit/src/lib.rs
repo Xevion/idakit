@@ -85,9 +85,9 @@
 //! For lower-level control, [`idakit_sys`](crate::sys) exposes IDA's raw C bindings directly.
 //!
 //! Both crates carry `#[doc(alias)]` tags mapping items to their IDA SDK names, so a rustdoc search
-//! resolves an SDK spelling like `SEGPERM_READ` or `netnode::altval` to the binding. Aliases are
-//! per crate: search the [`idakit_sys`](crate::sys) page for raw-binding names and this page for the
-//! idiomatic wrappers.
+//! resolves an SDK spelling like `SEGPERM_READ` or `netnode::altval` to the binding. Aliases are per
+//! crate: [`idakit_sys`](crate::sys) carries the raw-binding names, `idakit` carries the idiomatic
+//! wrappers.
 //!
 //! # Conventions
 //!

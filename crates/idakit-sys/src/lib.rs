@@ -36,10 +36,10 @@
 //!
 //! # SDK-name aliases
 //!
-//! Every binding carries `#[doc(alias)]` tags for its IDA SDK spelling, so a rustdoc search on this
-//! page resolves a name like `SEGPERM_READ`, `FC_NOEXT`, or `open_database` to the binding. Aliases
-//! are per crate: search here for raw-binding and SDK names, and the
-//! [`idakit`](https://docs.rs/idakit) page for the idiomatic wrappers.
+//! Every binding carries `#[doc(alias)]` tags for its IDA SDK spelling, so a rustdoc search
+//! resolves a name like `SEGPERM_READ`, `FC_NOEXT`, or `open_database` to the binding. Aliases
+//! are per crate: `idakit_sys` carries the raw-binding and SDK names, [`idakit`](https://docs.rs/idakit)
+//! carries the idiomatic wrappers.
 //!
 //! # Buffer conventions
 //!
