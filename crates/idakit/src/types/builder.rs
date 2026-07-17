@@ -248,3 +248,60 @@ impl TypeBuilder {
         self.table
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    /// Each scalar-kind tag maps to its own [`TypeShape`], with an unknown tag falling to the
+    /// defensive catch-all: deleting any arm would silently mislabel that kind as `Unknown`.
+    #[test]
+    fn scalar_kinds_map_to_their_shapes() {
+        let mut b = TypeBuilder::new();
+        let void = b.scalar(scalar_kind::VOID, 0, 0, 0, 0);
+        let boolean = b.scalar(scalar_kind::BOOL, 1, 0, 0, 0);
+        let int = b.scalar(scalar_kind::INT, 4, 1, 0, 0);
+        let float = b.scalar(scalar_kind::FLOAT, 4, 0, 0, 0);
+        let unknown = b.scalar(u32::MAX, 0, 0, 0, 0);
+        let table = b.into_table();
+        assert!(matches!(table.get(void).shape, TypeShape::Void));
+        assert!(matches!(table.get(boolean).shape, TypeShape::Bool));
+        assert!(matches!(
+            table.get(int).shape,
+            TypeShape::Int {
+                bytes: 4,
+                signed: true
+            }
+        ));
+        assert!(matches!(
+            table.get(float).shape,
+            TypeShape::Float { bytes: 4 }
+        ));
+        assert!(matches!(table.get(unknown).shape, TypeShape::Unknown));
+    }
+
+    /// A scalar wider than a `u8` can hold records its byte count in [`too_wide`](TypeBuilder::too_wide)
+    /// and stands a zero-width placeholder in its place.
+    #[test]
+    fn over_wide_scalar_is_recorded() {
+        let mut b = TypeBuilder::new();
+        let id = b.scalar(scalar_kind::INT, 300, 0, 0, 0);
+        assert!(b.too_wide() == Some(300));
+        assert!(matches!(
+            b.into_table().get(id).shape,
+            TypeShape::Int { bytes: 0, .. }
+        ));
+    }
+
+    /// A reserved-but-unfilled placeholder counts as [`unfilled`](TypeBuilder::unfilled); an empty
+    /// builder has none.
+    #[test]
+    fn a_reserved_placeholder_counts_as_unfilled() {
+        let mut b = TypeBuilder::new();
+        assert!(b.unfilled() == 0);
+        b.anon();
+        assert!(b.unfilled() == 1);
+    }
+}

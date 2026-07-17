@@ -286,6 +286,47 @@ mod tests {
         );
     }
 
+    /// Structural identity: equal types compare and hash equal, different types differ, and
+    /// `Display` renders the canonical form. A no-op `eq`, a flipped `==`, a `hash` that writes
+    /// nothing, or an empty `Display` all fail here.
+    #[test]
+    fn equality_hashing_and_display_track_structure() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        fn scalar_image(signed: bool) -> Type {
+            let mut types = TypeTable::new();
+            let root = types.intern(TypeValue {
+                shape: TypeShape::Int { bytes: 4, signed },
+                size: Some(4),
+            });
+            Type {
+                types,
+                root,
+                key: OnceCell::new(),
+            }
+        }
+
+        fn hash_of(t: &Type) -> u64 {
+            let mut h = DefaultHasher::new();
+            t.hash(&mut h);
+            h.finish()
+        }
+
+        let a = scalar_image(false);
+        let b = scalar_image(false);
+        let c = scalar_image(true);
+
+        assert!(a == b, "structurally identical types should be equal");
+        assert!(a != c, "unsigned and signed should differ");
+        assert!(hash_of(&a) == hash_of(&b), "equal types must hash equally");
+        assert!(
+            hash_of(&a) != hash_of(&c),
+            "different types should hash apart"
+        );
+        assert!(!format!("{a}").is_empty(), "Display should render the type");
+    }
+
     /// A tagged root reports the nominal identity the type catalog keys on, and an anonymous one
     /// reports none, since it is structural and has no name to match across databases.
     #[test]

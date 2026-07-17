@@ -300,6 +300,14 @@ fn type_member_ref() {
         assert!(r.index() == 1);
         assert!(r.type_name() == "idakit_ref_probe");
 
+        // A ref to the first member reports index 0, so a constant `index` accessor is caught.
+        let r0 = idb
+            .types_mut()
+            .edit("idakit_ref_probe")
+            .member_ref(0)
+            .expect("mint a ref to the first member");
+        assert!(r0.index() == 0);
+
         // Renaming another member leaves offsets unchanged, so the ref stays valid; edit through it.
         idb.types_mut()
             .edit("idakit_ref_probe")

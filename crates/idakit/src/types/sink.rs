@@ -187,3 +187,37 @@ pub(crate) fn tid(raw: u32) -> TypeId {
 pub(crate) fn raw<X>(id: Idx<X>) -> u32 {
     id.index() as u32
 }
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    struct TestSink(TypeBuilder);
+
+    impl TypeSink for TestSink {
+        fn type_builder(&mut self) -> &mut TypeBuilder {
+            &mut self.0
+        }
+    }
+
+    /// `anon` hands out a fresh placeholder handle on every call, both directly and through the
+    /// adapter: a constant return would collide two anonymous types onto one handle.
+    #[test]
+    fn anon_handles_are_distinct() {
+        let mut sink = TestSink(TypeBuilder::new());
+        let a = sink.anon();
+        let b = sink.anon();
+        assert!(a != b, "TypeSink::anon reused a handle: {a} == {b}");
+
+        let mut adapter = SinkAdapter(&mut sink);
+        let c = TypeWalkSink::anon(&mut adapter);
+        let d = TypeWalkSink::anon(&mut adapter);
+        assert!(c != d, "SinkAdapter::anon reused a handle: {c} == {d}");
+        assert!(
+            [a, b].iter().all(|&x| x != c && x != d),
+            "adapter handles collided with direct ones"
+        );
+    }
+}

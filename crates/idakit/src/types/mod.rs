@@ -350,6 +350,14 @@ mod tests {
     }
 
     #[test]
+    fn is_empty_tracks_whether_a_type_is_interned() {
+        let mut table = TypeTable::new();
+        assert!(table.is_empty());
+        table.intern(int(4, true));
+        assert!(!table.is_empty());
+    }
+
+    #[test]
     fn recursive_struct_uses_a_placeholder_back_reference() {
         // struct node { struct node *next; }: reserve the struct's handle first, so the
         // member pointer can target it before the body is filled. The table stays finite.

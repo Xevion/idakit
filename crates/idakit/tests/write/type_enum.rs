@@ -244,7 +244,17 @@ fn type_enum_width_edit() {
 #[test]
 fn type_enum_forcename() {
     crate::common::with_canonical_db(|idb| {
-        use idakit::types::{TypeEditCode, TypeWriteError};
+        use idakit::types::{TypeEditCode, TypeShape, TypeWriteError};
+
+        fn constants(idb: &Database, ty: &str) -> Vec<(String, u64)> {
+            let t = idb.type_named(ty).expect("resolve the enum");
+            match t.shape() {
+                TypeShape::Enum { members, .. } => {
+                    members.iter().map(|m| (m.name.clone(), m.value)).collect()
+                }
+                other => panic!("expected an enum, got {other:?}"),
+            }
+        }
 
         idb.types_mut()
             .define("enum idakit_forcename_owner { IDAKIT_FORCENAME_TAKEN = 1 };")
@@ -269,11 +279,17 @@ fn type_enum_forcename() {
             }
         );
 
-        // add_constant_forced forces the same name through.
+        // add_constant_forced forces the same name through, and the constant actually lands.
         idb.types_mut()
             .edit("idakit_forcename_add")
             .add_constant_forced("IDAKIT_FORCENAME_TAKEN", 2)
             .expect("add_constant_forced should force the name through the collision");
+        assert!(
+            constants(idb, "idakit_forcename_add")
+                .contains(&("IDAKIT_FORCENAME_TAKEN".to_owned(), 2)),
+            "the forced constant should be present, got {:?}",
+            constants(idb, "idakit_forcename_add")
+        );
 
         // Plain rename rejects the same collision.
         let rejected = idb
@@ -289,12 +305,76 @@ fn type_enum_forcename() {
             }
         );
 
-        // rename_forced forces it through.
+        // rename_forced forces it through, and the constant actually takes the new name.
         idb.types_mut()
             .edit("idakit_forcename_rename")
             .constant("IDAKIT_FORCENAME_MINE")
             .rename_forced("IDAKIT_FORCENAME_TAKEN")
             .expect("rename_forced should force the name through the collision");
+        let names: Vec<String> = constants(idb, "idakit_forcename_rename")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "IDAKIT_FORCENAME_TAKEN")
+                && !names.iter().any(|n| n == "IDAKIT_FORCENAME_MINE"),
+            "the constant should be renamed through the collision, got {names:?}"
+        );
+    });
+}
+
+/// `TypeEdit::add_flag_forced` (`ETF_FORCENAME`) forces a masked flag's name through the alien-name
+/// collision (`TERR_ALIEN_NAME`) that plain `add_flag` rejects, and the flag lands on the enum.
+#[test]
+fn type_enum_flag_forcename() {
+    crate::common::with_canonical_db(|idb| {
+        use idakit::types::{TypeEditCode, TypeShape, TypeWriteError};
+
+        fn constants(idb: &Database, ty: &str) -> Vec<(String, u64)> {
+            let t = idb.type_named(ty).expect("resolve the enum");
+            match t.shape() {
+                TypeShape::Enum { members, .. } => {
+                    members.iter().map(|m| (m.name.clone(), m.value)).collect()
+                }
+                other => panic!("expected an enum, got {other:?}"),
+            }
+        }
+
+        idb.types_mut()
+            .define("enum idakit_flagforce_owner { IDAKIT_FLAGFORCE_TAKEN = 1 };")
+            .expect("define the enum that owns the name");
+        idb.types_mut()
+            .define("enum idakit_flagforce_bits { IDAKIT_FLAGFORCE_RESERVED = 8 };")
+            .expect("define a bitmask enum to add a colliding flag to");
+        idb.types_mut()
+            .edit("idakit_flagforce_bits")
+            .set_bitmask(true)
+            .expect("mark as a bitmask enum");
+
+        // Plain add_flag rejects the cross-enum name collision.
+        let rejected =
+            idb.types_mut()
+                .edit("idakit_flagforce_bits")
+                .add_flag("IDAKIT_FLAGFORCE_TAKEN", 1, 1);
+        assert_type_write_err!(
+            rejected,
+            TypeWriteError::Rejected {
+                code: TypeEditCode::AlienName,
+                ..
+            }
+        );
+
+        // add_flag_forced forces the same name through, and the flag actually lands.
+        idb.types_mut()
+            .edit("idakit_flagforce_bits")
+            .add_flag_forced("IDAKIT_FLAGFORCE_TAKEN", 1, 1)
+            .expect("add_flag_forced should force the name through the collision");
+        assert!(
+            constants(idb, "idakit_flagforce_bits")
+                .contains(&("IDAKIT_FLAGFORCE_TAKEN".to_owned(), 1)),
+            "the forced flag should be present, got {:?}",
+            constants(idb, "idakit_flagforce_bits")
+        );
     });
 }
 

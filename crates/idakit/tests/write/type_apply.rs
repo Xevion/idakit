@@ -100,6 +100,117 @@ fn type_define() {
     });
 }
 
+/// `TypesMut::delete` removes a named type entirely, and deleting a name no type carries is a typed
+/// `NoType` rejection rather than a silent no-op.
+#[test]
+fn type_delete() {
+    crate::common::with_canonical_db(|idb| {
+        use idakit::types::TypeWriteError;
+
+        idb.types_mut()
+            .define("struct idakit_delete_probe { int x; };")
+            .expect("define a type to delete");
+        assert!(
+            idb.named_types().any(|t| t.name() == "idakit_delete_probe"),
+            "the type should exist before delete"
+        );
+
+        idb.types_mut()
+            .delete("idakit_delete_probe")
+            .expect("delete the type");
+        assert!(
+            !idb.named_types().any(|t| t.name() == "idakit_delete_probe"),
+            "the type should be gone after delete"
+        );
+
+        // Deleting a name no type carries is a typed rejection, not a silent success.
+        let ghost = idb.types_mut().delete("idakit_no_such_type");
+        assert_type_write_err!(ghost, TypeWriteError::NoType { .. });
+    });
+}
+
+/// `Database::type_at` reads the tinfo applied at an address: after a function prototype is set,
+/// the entry resolves to a `Function` shape, so a `type_at` that always yields `None` is caught.
+#[test]
+fn type_at_reads_applied_type() {
+    crate::common::with_canonical_db(|idb| {
+        use idakit::types::TypeShape;
+
+        let entry = idb.functions().next().expect("a function").address();
+        idb.function_mut(entry)
+            .expect("a function at the entry")
+            .set_type("int idakit_type_at_probe(int a)")
+            .expect("apply a prototype");
+
+        let ty = idb
+            .type_at(entry)
+            .expect("type_at should not error")
+            .expect("a type should be applied at the entry");
+        assert!(
+            matches!(ty.shape(), TypeShape::Function { .. }),
+            "type_at should read the applied function type, got {:?}",
+            ty.shape()
+        );
+    });
+}
+
+/// `NamedType::ordinal` returns each type's own til ordinal, and `named_types` walks them in order,
+/// so the ordinals come back strictly increasing. A constant `ordinal` accessor collapses them.
+#[test]
+fn named_type_ordinals_are_distinct_and_increasing() {
+    crate::common::with_canonical_db(|idb| {
+        idb.types_mut()
+            .define("struct idakit_ord_a { int x; };")
+            .expect("define a type");
+        idb.types_mut()
+            .define("struct idakit_ord_b { int y; };")
+            .expect("define a second type");
+
+        let ordinals: Vec<u32> = idb.named_types().map(|t| t.ordinal()).collect();
+        assert!(
+            ordinals.len() >= 2,
+            "expected at least the two defined types, got {ordinals:?}"
+        );
+        assert!(
+            ordinals.windows(2).all(|w| w[0] < w[1]),
+            "ordinals should be strictly increasing, got {ordinals:?}"
+        );
+    });
+}
+
+/// The type-write cursors' `Debug` renders identifying detail, never an empty string: a
+/// hand-written `fmt` that writes nothing is caught here.
+#[test]
+fn write_cursor_debug_is_nonempty() {
+    crate::common::with_canonical_db(|idb| {
+        idb.types_mut()
+            .define("enum idakit_dbg_probe { IDAKIT_DBG_A = 1 };")
+            .expect("define an enum for the cursors");
+        idb.types_mut()
+            .define("struct idakit_dbg_struct { int a; };")
+            .expect("define a struct for the member cursor");
+
+        assert!(!format!("{:?}", idb.types_mut()).is_empty());
+        assert!(!format!("{:?}", idb.types_mut().edit("idakit_dbg_probe")).is_empty());
+        assert!(
+            !format!(
+                "{:?}",
+                idb.types_mut().edit("idakit_dbg_struct").member("a")
+            )
+            .is_empty()
+        );
+        assert!(
+            !format!(
+                "{:?}",
+                idb.types_mut()
+                    .edit("idakit_dbg_probe")
+                    .constant("IDAKIT_DBG_A")
+            )
+            .is_empty()
+        );
+    });
+}
+
 /// A built recipe, a scalar leaf or a pointer/array composite, lowers through the
 /// serialize-and-build path: the encoder emits postfix bytecode, the facade interpreter rebuilds
 /// the `tinfo` bottom-up and applies it. A composite agrees with its text declaration, and one over

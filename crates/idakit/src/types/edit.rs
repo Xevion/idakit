@@ -1343,6 +1343,20 @@ mod tests {
 
     use super::*;
 
+    /// Every code carries a non-empty human message, specific codes keep their exact wording, and
+    /// `Display` forwards to it: a `message` body replaced with `""` or one constant string, or a
+    /// `Display` that writes nothing, all fail here.
+    #[test]
+    fn message_and_display_report_the_code() {
+        for &code in TypeEditCode::VARIANTS {
+            assert!(!code.message().is_empty(), "{code:?} has an empty message");
+        }
+        assert!(TypeEditCode::Ok.message() == "ok");
+        assert!(TypeEditCode::NotFound.message() == "the member was not found");
+        assert!(format!("{}", TypeEditCode::AlienName) == TypeEditCode::AlienName.message());
+        assert!(!format!("{}", TypeEditCode::Ok).is_empty());
+    }
+
     /// Pin every code to the facade's reported `tinfo_code_t` values: the facade lists them in
     /// this enum's discriminant order, so a header renumbering mismatches and a variant added
     /// without a facade entry trips the length check. This is what covers the whole set;
