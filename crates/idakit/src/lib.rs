@@ -239,8 +239,8 @@ pub mod prelude {
     };
     pub use crate::import::{Import, Imports};
     pub use crate::instruction::{
-        Access, DecodeError, Flow, Instruction, Instructions, InstructionsIn, Isa, Memory, Operand,
-        OperandDataType, OperandKind, Register, RegisterClass,
+        Access, DecodeError, Flow, FpControl, Instruction, Instructions, InstructionsIn, Isa,
+        Masking, Memory, Operand, OperandDataType, OperandKind, Register, RegisterClass, RoundMode,
     };
     pub use crate::kernel::{Ida, IdaConfig, IdaConfigBuilder};
     pub use crate::location::{Location, LocationMut};

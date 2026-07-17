@@ -42,6 +42,7 @@ pub const INSTRUCTION: Domain = Domain {
                 value: U64 = "Immediate value (kind = imm) or far offset (kind = far).";
                 addr: U64 = "Near target, or memory static target / `BADADDR` (kind = near/mem).";
                 sel: U16 = "Far selector (kind = far).";
+                broadcast: U8 = "EVEX embedded-broadcast factor N of a `{1toN}` memory operand, as IDA renders it, else 0.";
             },
         },
         SharedStruct {
@@ -62,6 +63,10 @@ pub const INSTRUCTION: Domain = Domain {
                 flow: U8 = "`FLOW_*` bit flags.";
                 mnemonic: Str = "Canonical mnemonic.";
                 ops: VecStruct("OperandData") = "Decoded operands; only meaningful when `status == 0`.";
+                mask: Struct("RegisterData") = "EVEX write-mask opmask register (k1..k7), or the `REG_NONE` sentinel if unmasked.";
+                zeroing: U8 = "EVEX zeroing-masking flag: 1 = `{z}` (zero masked lanes), 0 = merge. Meaningful only with a `mask`.";
+                fp_control: U8 = "EVEX register-form FP control: `FPC_*` (0 none, 1 static rounding, 2 suppress-exceptions-only).";
+                round_mode: U8 = "EVEX static rounding mode `ROUND_*` (0 nearest, 1 down, 2 up, 3 zero), meaningful when `fp_control == FPC_ROUNDING`.";
             },
         },
     ],
@@ -137,6 +142,48 @@ pub const INSTRUCTION: Domain = Domain {
             ty: ConstTy::U8,
             value: 0x10,
             doc: "`InstructionData::flow` bit: sequential flow stops after this instruction.",
+        },
+        ConstDef {
+            name: "FPC_NONE",
+            ty: ConstTy::U8,
+            value: 0,
+            doc: "`InstructionData::fp_control`: no EVEX register-form FP control.",
+        },
+        ConstDef {
+            name: "FPC_ROUNDING",
+            ty: ConstTy::U8,
+            value: 1,
+            doc: "`InstructionData::fp_control`: EVEX static rounding (`{r?-sae}`), mode in `round_mode`.",
+        },
+        ConstDef {
+            name: "FPC_SAE",
+            ty: ConstTy::U8,
+            value: 2,
+            doc: "`InstructionData::fp_control`: EVEX suppress-all-exceptions only (`{sae}`), no rounding.",
+        },
+        ConstDef {
+            name: "ROUND_NEAREST",
+            ty: ConstTy::U8,
+            value: 0,
+            doc: "`InstructionData::round_mode`: round to nearest (even).",
+        },
+        ConstDef {
+            name: "ROUND_DOWN",
+            ty: ConstTy::U8,
+            value: 1,
+            doc: "`InstructionData::round_mode`: round toward negative infinity.",
+        },
+        ConstDef {
+            name: "ROUND_UP",
+            ty: ConstTy::U8,
+            value: 2,
+            doc: "`InstructionData::round_mode`: round toward positive infinity.",
+        },
+        ConstDef {
+            name: "ROUND_ZERO",
+            ty: ConstTy::U8,
+            value: 3,
+            doc: "`InstructionData::round_mode`: round toward zero (truncate).",
         },
     ],
     custom_tus: &["facade/instruction.cpp"],

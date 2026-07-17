@@ -17,10 +17,12 @@
 
 mod data_type;
 mod decode;
+mod evex;
 mod iter;
 mod register;
 
 pub use data_type::OperandDataType;
+pub use evex::{FpControl, Masking, RoundMode};
 pub use iter::{Instructions, InstructionsIn};
 pub use register::{Register, RegisterClass};
 
@@ -163,10 +165,18 @@ pub struct Instruction {
     /// IDA's canonical mnemonic, resolved at decode.
     pub mnemonic: Box<str>,
     /// Explicit operands in encoding order. Trailing empty operand slots are dropped, so
-    /// `ops.len()` is the real operand count.
+    /// `ops.len()` is the real operand count. The EVEX write-mask is not an entry here; it is
+    /// [`masking`](Self::masking).
     pub ops: Vec<Operand>,
     /// Control-flow classification, resolved on the kernel thread.
     pub flow: Flow,
+    /// The EVEX write-mask, when this AVX-512 instruction selects one (`k1`..`k7`). `None` for
+    /// unmasked and non-EVEX instructions.
+    pub masking: Option<Masking>,
+    /// The EVEX embedded floating-point control on a register-form instruction (static rounding
+    /// or exception suppression). `None` when absent; embedded broadcast is on the memory operand
+    /// instead, as [`Memory::broadcast`].
+    pub fp_control: Option<FpControl>,
 }
 
 impl Instruction {
@@ -258,6 +268,9 @@ pub struct Memory {
     /// The static target address, when IDA resolved the reference to one (direct memory
     /// operands, including RIP-relative that the kernel folded to an absolute).
     pub target: Option<Address>,
+    /// The EVEX embedded-broadcast factor N of a `{1toN}` operand: one memory element is read and
+    /// fanned out to N vector lanes, as IDA renders it. `None` for an ordinary memory operand.
+    pub broadcast: Option<u8>,
 }
 
 /// Whether an instruction reads and/or writes a given operand.
@@ -347,9 +360,12 @@ mod tests {
                     displacement: 0,
                     segment: None,
                     target: None,
+                    broadcast: None,
                 })),
                 op(OperandKind::Immediate { value: 5 }),
             ],
+            masking: None,
+            fp_control: None,
             flow: Flow {
                 is_call: false,
                 is_ret: false,
@@ -379,6 +395,7 @@ mod tests {
                     displacement: -8,
                     segment: None,
                     target: Some(Address::try_new(0x2000).expect("valid")),
+                    broadcast: None,
                 })),
                 op(OperandKind::Immediate { value: 5 }),
                 op(OperandKind::Near(Address::try_new(0x3000).expect("valid"))),
@@ -387,6 +404,8 @@ mod tests {
                     offset: 0x400,
                 }),
             ],
+            masking: None,
+            fp_control: None,
             flow: Flow {
                 is_call: false,
                 is_ret: false,

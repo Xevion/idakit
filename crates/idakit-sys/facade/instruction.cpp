@@ -11,6 +11,7 @@
 
 #include <idp.hpp>
 #include <intel.hpp> // x86 operand types + REX-aware SIB accessors (x86_base_reg, ...)
+#include <lines.hpp> // generate_disasm_line (read IDA's rendered broadcast decoration)
 #include <ua.hpp>    // decode_insn, insn_t, op_t
 
 #include "gen_instruction.h"
@@ -126,6 +127,151 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
   dst.disp = op.type == o_phrase ? 0 : static_cast<int64_t>(op.addr);
   // o_mem resolves to a static address (incl. RIP-relative IDA already folded).
   dst.addr = op.type == o_mem ? static_cast<uint64_t>(op.addr) : static_cast<uint64_t>(BADADDR);
+  // EVEX embedded broadcast: with EVEX.b and a memory operand, one element is read and fanned out
+  // to N lanes. The factor N is vector width / element width, but neither is cleanly available:
+  // op.dtype is the whole vector, and element width depends on the instruction (2 bytes for fp16,
+  // and mixed for int/float converts), so no bit-level formula gets every form right. IDA already
+  // computes N and renders it as `{1toN}`, so read it back from the rendered line (an EVEX.b
+  // memory form has exactly one broadcast operand, so the line's single `{1to` is this one).
+  // print_operand does not surface the decoration headless; generate_disasm_line does.
+  if (evexpr(insn) && (insn.evex_flags & EVEX_b) != 0) {
+    qstring line;
+    if (generate_disasm_line(&line, insn.ea, GENDSM_REMOVE_TAGS)) {
+      size_t at = line.find("{1to");
+      if (at != qstring::npos) {
+        uint32_t factor = 0;
+        for (size_t i = at + 4; i < line.length() && qisdigit(line[i]); i++)
+          factor = factor * 10 + static_cast<uint32_t>(line[i] - '0');
+        dst.broadcast = static_cast<uint8_t>(factor);
+      }
+    }
+  }
+}
+
+// Whether an x86 EVEX instruction supports embedded static rounding-control (`{r?-sae}`), as
+// opposed to only suppress-all-exceptions (`{sae}`). The SDK exposes no such predicate, so this
+// mirrors the Intel SDM's rounding-capable set: FP arithmetic, the FMA family, and the rounding
+// conversions. A miss degrades to SAE-only, which is still true (EVEX.b always suppresses
+// exceptions); it loses only the rounding mode.
+bool is_rounding_capable(uint16_t itype) {
+  switch (itype) {
+  // Arithmetic (ps/pd/ss/sd).
+  case NN_vaddps:
+  case NN_vaddpd:
+  case NN_vaddss:
+  case NN_vaddsd:
+  case NN_vsubps:
+  case NN_vsubpd:
+  case NN_vsubss:
+  case NN_vsubsd:
+  case NN_vmulps:
+  case NN_vmulpd:
+  case NN_vmulss:
+  case NN_vmulsd:
+  case NN_vdivps:
+  case NN_vdivpd:
+  case NN_vdivss:
+  case NN_vdivsd:
+  case NN_vsqrtps:
+  case NN_vsqrtpd:
+  case NN_vsqrtss:
+  case NN_vsqrtsd:
+  case NN_vscalefps:
+  case NN_vscalefpd:
+  case NN_vscalefss:
+  case NN_vscalefsd:
+  // Fused multiply-add family (132/213/231 forms, ps/pd/ss/sd).
+  case NN_vfmadd132ps:
+  case NN_vfmadd132pd:
+  case NN_vfmadd132ss:
+  case NN_vfmadd132sd:
+  case NN_vfmadd213ps:
+  case NN_vfmadd213pd:
+  case NN_vfmadd213ss:
+  case NN_vfmadd213sd:
+  case NN_vfmadd231ps:
+  case NN_vfmadd231pd:
+  case NN_vfmadd231ss:
+  case NN_vfmadd231sd:
+  case NN_vfmsub132ps:
+  case NN_vfmsub132pd:
+  case NN_vfmsub132ss:
+  case NN_vfmsub132sd:
+  case NN_vfmsub213ps:
+  case NN_vfmsub213pd:
+  case NN_vfmsub213ss:
+  case NN_vfmsub213sd:
+  case NN_vfmsub231ps:
+  case NN_vfmsub231pd:
+  case NN_vfmsub231ss:
+  case NN_vfmsub231sd:
+  case NN_vfnmadd132ps:
+  case NN_vfnmadd132pd:
+  case NN_vfnmadd132ss:
+  case NN_vfnmadd132sd:
+  case NN_vfnmadd213ps:
+  case NN_vfnmadd213pd:
+  case NN_vfnmadd213ss:
+  case NN_vfnmadd213sd:
+  case NN_vfnmadd231ps:
+  case NN_vfnmadd231pd:
+  case NN_vfnmadd231ss:
+  case NN_vfnmadd231sd:
+  case NN_vfnmsub132ps:
+  case NN_vfnmsub132pd:
+  case NN_vfnmsub132ss:
+  case NN_vfnmsub132sd:
+  case NN_vfnmsub213ps:
+  case NN_vfnmsub213pd:
+  case NN_vfnmsub213ss:
+  case NN_vfnmsub213sd:
+  case NN_vfnmsub231ps:
+  case NN_vfnmsub231pd:
+  case NN_vfnmsub231ss:
+  case NN_vfnmsub231sd:
+  // Fused multiply-add/subtract interleaved (ps/pd only).
+  case NN_vfmaddsub132ps:
+  case NN_vfmaddsub132pd:
+  case NN_vfmaddsub213ps:
+  case NN_vfmaddsub213pd:
+  case NN_vfmaddsub231ps:
+  case NN_vfmaddsub231pd:
+  case NN_vfmsubadd132ps:
+  case NN_vfmsubadd132pd:
+  case NN_vfmsubadd213ps:
+  case NN_vfmsubadd213pd:
+  case NN_vfmsubadd231ps:
+  case NN_vfmsubadd231pd:
+  // Rounding conversions (int<->float and float-narrowing that round; truncating `vcvtt*` and
+  // exact widenings are excluded, since they carry no rounding mode).
+  case NN_vcvtdq2ps:
+  case NN_vcvtudq2ps:
+  case NN_vcvtqq2ps:
+  case NN_vcvtqq2pd:
+  case NN_vcvtuqq2ps:
+  case NN_vcvtuqq2pd:
+  case NN_vcvtps2dq:
+  case NN_vcvtps2udq:
+  case NN_vcvtps2qq:
+  case NN_vcvtps2uqq:
+  case NN_vcvtpd2dq:
+  case NN_vcvtpd2udq:
+  case NN_vcvtpd2qq:
+  case NN_vcvtpd2uqq:
+  case NN_vcvtpd2ps:
+  case NN_vcvtsd2ss:
+  case NN_vcvtsd2si:
+  case NN_vcvtsd2usi:
+  case NN_vcvtss2si:
+  case NN_vcvtss2usi:
+  case NN_vcvtsi2ss:
+  case NN_vcvtsi2sd:
+  case NN_vcvtusi2ss:
+  case NN_vcvtusi2sd:
+    return true;
+  default:
+    return false;
+  }
 }
 
 // Fold one raw op_t into a semantic OperandData. Returns 0, -3 for a raw operand type this decoder
@@ -248,7 +394,9 @@ InstructionData decode_insn(uint64_t addr) {
   uint32 feature = insn.get_canon_feature(PH);
   ea_t tgt = BADADDR;
   rust::Vec<OperandData> ops;
-  for (int i = 0; i < UA_MAXOP && static_cast<int>(ops.size()) < static_cast<int>(MAX_OPS); i++) {
+  // Stop at PROC_MAXOP (x86's real operand count), not UA_MAXOP: slot 5 (Op6) is not an operand
+  // but the EVEX opmask/extension storage, lifted to InstructionData::mask below.
+  for (int i = 0; i < PROC_MAXOP && static_cast<int>(ops.size()) < static_cast<int>(MAX_OPS); i++) {
     const op_t &op = insn.ops[i];
     if (op.type == o_void)
       continue;
@@ -267,6 +415,42 @@ InstructionData decode_insn(uint64_t addr) {
     ops.push_back(std::move(dst));
   }
   out.nops = static_cast<uint8_t>(ops.size());
+
+  // EVEX modifiers (x86 EVEX; Op6 = ops[5] carries the opmask, evex_flags extends insn_t). The
+  // opmask is deliberately not an entry in `ops`; embedded broadcast rode along per-operand in
+  // fill_mem above. mask defaults to the absent sentinel since InstructionData value-inits its
+  // RegisterData to register 0, a real register, not REG_NONE.
+  out.mask = none_reg();
+  if (evexpr(insn)) {
+    const op_t &op6 = insn.ops[5];
+    // k1..k7 select a mask; k0 encodes "no mask" and IDA leaves the slot void, never reaching here.
+    if (op6.type == o_reg && op6.reg > R_k0 && op6.reg <= R_k7)
+      fill_reg(out.mask, op6.reg, RC_MASK, static_cast<int>(get_dtype_size(op6.dtype)));
+    if ((insn.evex_flags & EVEX_z) != 0)
+      out.zeroing = 1;
+    if ((insn.evex_flags & EVEX_b) != 0) {
+      bool has_mem = false;
+      for (int i = 0; i < PROC_MAXOP; i++) {
+        optype_t ot = insn.ops[i].type;
+        if (ot == o_mem || ot == o_phrase || ot == o_displ) {
+          has_mem = true;
+          break;
+        }
+      }
+      // A memory operand makes EVEX.b broadcast (already recorded in fill_mem); register-only makes
+      // it FP control. EVEX.b always suppresses exceptions, so a non-rounding op is SAE-only; the
+      // rounding mode, when the op rounds, is EVEX.L'L = (EVEX_L << 1) | VEX_L.
+      if (!has_mem) {
+        if (is_rounding_capable(insn.itype)) {
+          out.fp_control = FPC_ROUNDING;
+          out.round_mode = static_cast<uint8_t>(((insn.evex_flags & EVEX_L) != 0 ? 2 : 0) |
+                                                ((insn.rex & VEX_L) != 0 ? 1 : 0));
+        } else {
+          out.fp_control = FPC_SAE;
+        }
+      }
+    }
+  }
 
   bool call = is_call_insn(insn);
   bool ret = is_ret_insn(insn);

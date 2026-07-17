@@ -8,8 +8,8 @@
 use idakit_sys as sys;
 
 use super::{
-    Access, DecodeError, Flow, Instruction, Isa, Memory, Operand, OperandDataType, OperandKind,
-    Register, RegisterClass,
+    Access, DecodeError, Flow, FpControl, Instruction, Isa, Masking, Memory, Operand,
+    OperandDataType, OperandKind, Register, RegisterClass, RoundMode,
 };
 use crate::address::Address;
 
@@ -49,6 +49,7 @@ fn operand(o: &sys::OperandData, address: Address) -> Result<Operand, DecodeErro
             displacement: o.disp,
             segment: None,
             target: Address::try_new(o.addr),
+            broadcast: (o.broadcast != 0).then_some(o.broadcast),
         }),
         sys::OP_IMM => OperandKind::Immediate { value: o.value },
         sys::OP_NEAR => OperandKind::Near(Address::try_new(o.addr).ok_or_else(|| {
@@ -101,6 +102,25 @@ pub(crate) fn insn_from_data(
         .iter()
         .map(|o| operand(o, address))
         .collect::<Result<Vec<_>, _>>()?;
+    // The opmask register (or the REG_NONE sentinel) rides alongside the operands; `register`
+    // returns None for the sentinel, so an unmasked instruction lifts to `None` here.
+    let masking = register(&data.mask).map(|register| Masking {
+        register,
+        zeroing: data.zeroing != 0,
+    });
+    let fp_control = match data.fp_control {
+        sys::FPC_NONE => None,
+        sys::FPC_ROUNDING => Some(FpControl::Rounding {
+            mode: RoundMode::try_from(data.round_mode).unwrap_or_else(|_| {
+                unreachable!(
+                    "facade emitted an out-of-range round mode {}",
+                    data.round_mode
+                )
+            }),
+        }),
+        sys::FPC_SAE => Some(FpControl::SuppressExceptions),
+        other => unreachable!("facade emitted unknown fp_control {other}"),
+    };
     let flow = sys::FlowFlags::from_bits_retain(data.flow);
     Ok(Instruction {
         address,
@@ -109,6 +129,8 @@ pub(crate) fn insn_from_data(
         canonical_code: data.itype,
         mnemonic: data.mnemonic.as_str().into(),
         ops,
+        masking,
+        fp_control,
         flow: Flow {
             is_call: flow.contains(sys::FlowFlags::CALL),
             is_ret: flow.contains(sys::FlowFlags::RET),
@@ -196,6 +218,16 @@ mod tests {
             value: 0,
             addr: sys::BADADDR,
             sel: 0,
+            broadcast: 0,
+        }
+    }
+
+    fn kreg(num: u16, nm: &str) -> sys::RegisterData {
+        sys::RegisterData {
+            num,
+            cls: u8::from(RegisterClass::Mask),
+            width: 8,
+            name: nm.to_owned(),
         }
     }
 
@@ -213,6 +245,10 @@ mod tests {
             flow: 0,
             mnemonic: String::new(),
             ops: Vec::new(),
+            mask: none_reg(),
+            zeroing: 0,
+            fp_control: sys::FPC_NONE,
+            round_mode: sys::ROUND_NEAREST,
         }
     }
 
@@ -303,6 +339,84 @@ mod tests {
         assert!(let OperandKind::Far { selector, offset } = operand(&far, at()).expect("far").kind);
         assert!(selector == 0x07);
         assert!(offset == 0xdead_beef);
+    }
+
+    #[test]
+    fn evex_masking_maps_register_and_zeroing() {
+        let mut raw = blank_insn();
+        raw.mask = kreg(166, "k1");
+        raw.zeroing = 1;
+        let insn = insn_from_data(&raw, at()).expect("valid instruction");
+        assert!(let Some(m) = &insn.masking);
+        assert!(m.register.name.as_ref() == "k1");
+        assert!(m.register.class == RegisterClass::Mask);
+        assert!(m.zeroing);
+    }
+
+    #[test]
+    fn merge_masking_has_zeroing_false() {
+        let mut raw = blank_insn();
+        raw.mask = kreg(167, "k2");
+        raw.zeroing = 0;
+        let insn = insn_from_data(&raw, at()).expect("valid instruction");
+        assert!(let Some(m) = &insn.masking);
+        assert!(!m.zeroing);
+    }
+
+    #[test]
+    fn absent_mask_is_none() {
+        let raw = blank_insn(); // mask defaults to the REG_NONE sentinel
+        let insn = insn_from_data(&raw, at()).expect("valid instruction");
+        assert!(insn.masking.is_none());
+    }
+
+    #[test]
+    fn broadcast_maps_to_memory_operand() {
+        let mut op = blank_op();
+        op.kind = sys::OP_MEM;
+        op.base = gpr(7, 8, "rdi");
+        op.broadcast = 16;
+        let mapped = operand(&op, at()).expect("valid mem operand");
+        assert!(let OperandKind::Memory(m) = &mapped.kind);
+        assert!(m.broadcast == Some(16));
+    }
+
+    #[test]
+    fn no_broadcast_is_none() {
+        let mut op = blank_op();
+        op.kind = sys::OP_MEM;
+        op.base = gpr(7, 8, "rdi");
+        let mapped = operand(&op, at()).expect("valid mem operand");
+        assert!(let OperandKind::Memory(m) = &mapped.kind);
+        assert!(m.broadcast.is_none());
+    }
+
+    #[rstest]
+    #[case::nearest(sys::ROUND_NEAREST, RoundMode::Nearest)]
+    #[case::down(sys::ROUND_DOWN, RoundMode::Down)]
+    #[case::up(sys::ROUND_UP, RoundMode::Up)]
+    #[case::zero(sys::ROUND_ZERO, RoundMode::Zero)]
+    fn fp_control_rounding_carries_mode(#[case] raw_mode: u8, #[case] mode: RoundMode) {
+        let mut raw = blank_insn();
+        raw.fp_control = sys::FPC_ROUNDING;
+        raw.round_mode = raw_mode;
+        let insn = insn_from_data(&raw, at()).expect("valid instruction");
+        assert!(insn.fp_control == Some(FpControl::Rounding { mode }));
+    }
+
+    #[test]
+    fn fp_control_sae_only() {
+        let mut raw = blank_insn();
+        raw.fp_control = sys::FPC_SAE;
+        let insn = insn_from_data(&raw, at()).expect("valid instruction");
+        assert!(insn.fp_control == Some(FpControl::SuppressExceptions));
+    }
+
+    #[test]
+    fn no_fp_control_is_none() {
+        let raw = blank_insn(); // fp_control defaults to FPC_NONE
+        let insn = insn_from_data(&raw, at()).expect("valid instruction");
+        assert!(insn.fp_control.is_none());
     }
 
     #[test]
