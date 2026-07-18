@@ -787,6 +787,21 @@ mod tests {
     }
 
     #[test]
+    fn pointers_of_different_width_are_a_whole_retype() {
+        let a = CanonicalType::Ptr {
+            pointee: Box::new(int(4)),
+            width: Some(4),
+        };
+        let b = CanonicalType::Ptr {
+            pointee: Box::new(int(4)),
+            width: Some(8),
+        };
+        let d = a.diff(&b);
+        assert!(!d.is_empty());
+        assert!(let ChangeKind::Retyped { .. } = &d.changes()[0].kind);
+    }
+
+    #[test]
     fn arrays_of_different_length_are_a_whole_retype() {
         let a = CanonicalType::Array {
             elem: Box::new(int(4)),
