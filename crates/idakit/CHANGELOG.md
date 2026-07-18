@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.1.2](https://github.com/Xevion/idakit/compare/idakit-v0.1.1...idakit-v0.1.2) (2026-07-18)
+
+
+### Features
+
+* **accessors:** Expand read accessors across function, segment, name, xref, and instruction ([0c0c93b](https://github.com/Xevion/idakit/commit/0c0c93bf001dc107a0496d6114aa36113f7df051))
+* **coverage:** Add cargo-llvm-cov CI workflow and Codecov integration ([5ab7d7f](https://github.com/Xevion/idakit/commit/5ab7d7fda598efbce81396586d8700d882644934))
+* **decompiler:** Add cache invalidation API, auto-invalidate FunctionEdit writes ([8ddd4ae](https://github.com/Xevion/idakit/commit/8ddd4aedfe4e86be3140e6f59593533e631ac790))
+* **enum:** Add is_bitmask to TypeShape::Enum, set_bitmask/add_flag to TypeEdit ([ce3b1d0](https://github.com/Xevion/idakit/commit/ce3b1d067cec602a93d9bce25340ee8771d218cf))
+* **idakit:** Make all public types serializable, orderable, and display-capable ([1419db8](https://github.com/Xevion/idakit/commit/1419db82c5947ba8a7a2e0acf065e9ba4e470f43))
+* **instruction:** Surface EVEX masking, broadcast, and FP control ([b2da07d](https://github.com/Xevion/idakit/commit/b2da07d135ee0caaebe7388a9133e067d6f86610))
+* **location:** Push cache invalidation into LocationMut, add refresh_text ([d480555](https://github.com/Xevion/idakit/commit/d4805559df670c5751458203d5732075e81d3c4b))
+* **member:** Add set_udm_cmt via MemberEdit::comment, expr::bitfield leaf ([833d2a2](https://github.com/Xevion/idakit/commit/833d2a2101eebdfb47becb21d47844f017b08ecb))
+* **netnode-facade:** Emit SDK doc aliases on generated re-exports ([3587bb9](https://github.com/Xevion/idakit/commit/3587bb9a98aa4bcf5d4e0d370b99697cffa98a5a))
+* **netnode:** Add serde feature for typed hash and blob netnode storage ([5cd2521](https://github.com/Xevion/idakit/commit/5cd252152efcf461ce285e592ebbf9acf8f32696))
+* **netnode:** Add Tag type and tag-scoped views for non-default arrays ([fb162ef](https://github.com/Xevion/idakit/commit/fb162ef0d0a9f3c278465cb2d1419141984cb325))
+* **profile:** Add samply/JUnit profiling recipes and per-check stopwatch ([753639e](https://github.com/Xevion/idakit/commit/753639e29712b28c37e831cf9a9a3989d8eb336e))
+* **repr:** Add MemberRepr/NumberFormat, MemberEdit::set_repr for value_repr_t ([98f5ed8](https://github.com/Xevion/idakit/commit/98f5ed81f1cb4b27083f225dd8e2eba5ac1746ab))
+* **repr:** Unify MemberRepr into ValueRepr, add TypeShape::Enum::repr, TypeEdit set_repr/width ([563b957](https://github.com/Xevion/idakit/commit/563b957e9494ac30c6a4cac183b251949aeee919))
+* **types:** Expose forward-declare and enum-del-by-value through the write API ([9574886](https://github.com/Xevion/idakit/commit/9574886132d9328a3b484b117d3e1b97011409a5))
+* **types:** Expose TypesMut::delete and TypesMut::rename for til types ([edd427d](https://github.com/Xevion/idakit/commit/edd427d6ea83699ef195df250d541fa7b7cdc656))
+* **udm:** Pass etf_flag_t through set_udm_type, add_edm, and rename_edm ([12f6fa7](https://github.com/Xevion/idakit/commit/12f6fa705afb5253e5002c9dae284ef5d0efd4cf))
+
+
+### Bug Fixes
+
+* **decompiler:** Stop the refresh_text cache test decompiling the whole database ([b65a7f2](https://github.com/Xevion/idakit/commit/b65a7f2d68fdb3cd8614c5da1bf620e4c25c5da9))
+* **netnode:** Reject netnode values over MAXSPECSIZE and clamp truncated reads ([5825d63](https://github.com/Xevion/idakit/commit/5825d63a1f4f851e07a35854046faa24b2e9f793))
+* **patch:** Guard patch_bytes wrap, drop stale HexRaysInit field, dedupe invalidation ([e80a5d2](https://github.com/Xevion/idakit/commit/e80a5d281cf5f5d6544336e079de359ee782b7d3))
+
+
+### Code Refactoring
+
+* **codegen:** Fold ExternTy free helpers and visitor raw constructors into impl blocks ([ccb3f33](https://github.com/Xevion/idakit/commit/ccb3f33713da3ca92eafa0033f6da792d28e85e8))
+* **codegen:** Generate bytes and ty domains, retire raw binpat/patch/type FFI ([9fa0b2d](https://github.com/Xevion/idakit/commit/9fa0b2decf471051e9ddaded66a53d02d28f0c7b))
+* **codegen:** Spec-drive integer sentinels via ConstDef, retire facade #defines ([f36d518](https://github.com/Xevion/idakit/commit/f36d5187520e5986828ddb7790089fa40f907837))
+* **ctree:** Migrate ctree walk from raw fn-pointer table to cxx bridge ([8beddcf](https://github.com/Xevion/idakit/commit/8beddcf073ebdc30f0d9f2260ef322b351ea27c0))
+* **diff:** Decompose monolithic canonical.rs and restructure write integration tests ([982e387](https://github.com/Xevion/idakit/commit/982e387aad785ed034734eb777ae1141df3039be))
+* **diff:** Split AggregateKind into RecordKind for the canonical diff engine ([5727516](https://github.com/Xevion/idakit/commit/57275164903bccd7e7e155242b4433de9f2b85f8))
+* **facade:** Codegen NONE/EXIT_TRAPPED/FATAL_* into gen_facade_consts.h, strip IDAKIT_ prefix ([76b16b1](https://github.com/Xevion/idakit/commit/76b16b1be4a0ef31d259ecf9773a8050b7e36499))
+* **facade:** Convert raw flag/result constants to typed bitflags and enums, add doc aliases ([ed8a06d](https://github.com/Xevion/idakit/commit/ed8a06d1ab60e561243068b05324a76b0ad18c96))
+* **facade:** Migrate &[u8]/&str args to owned String, add strlit_escaped ([e54afb4](https://github.com/Xevion/idakit/commit/e54afb44f446028104d6fa0b40aed94af4293cdd))
+* **facade:** Rename gen_* facade TUs to *_custom, flag modules to *_flags, cfg2 to cfg_check ([33308c0](https://github.com/Xevion/idakit/commit/33308c0129e110bc15f02b6e5d597b6874665879))
+* **facade:** Rename TUs to bare domain names, fold db.cpp into bytes.cpp, broaden tidy scope ([66bcbd1](https://github.com/Xevion/idakit/commit/66bcbd16841b826327168609825618377e419bc6))
+* **facade:** Retire cfg_check/AddrCursor/WriteOutcome bridges, promote flags to typed bitflags ([5104e1e](https://github.com/Xevion/idakit/commit/5104e1eb6de5e9c1b884b11e97413310b7e657d0))
+* **facade:** Strip idakit_ prefix from all C facade symbols ([76527f8](https://github.com/Xevion/idakit/commit/76527f8fc7af80ff040a3c523ce67884962459a0))
+* **netnode:** Add proptest model coverage, narrow delete ops to return bools ([e607356](https://github.com/Xevion/idakit/commit/e6073563794957f70337d1f8cffe1d3f8ecf1654))
+* **raw:** Collapse Database forwarders and view identity impls into declarative macros ([16ca12f](https://github.com/Xevion/idakit/commit/16ca12f52e64f4d039b91e0281b5d08034f35a7f))
+* Rename SDK-flavoured public names to domain words ([a9969de](https://github.com/Xevion/idakit/commit/a9969def2b0f46590e789f0082a08f9d73eb1287))
+* Replace free const ladders with typed newtypes and enums ([749fcae](https://github.com/Xevion/idakit/commit/749fcae93ca4154e33d57d457b1c784ef17b502a))
+
+
+### Documentation
+
+* Drop self-referential "this page" wording from alias-search docs ([dff249c](https://github.com/Xevion/idakit/commit/dff249c5d3e0960c0d48aefab67c75b7fc4f9912))
+
+
+### Miscellaneous
+
+* **lint:** Rollout workspace-level lints, Self pattern adoption, and FFI doc coverage ([6afc283](https://github.com/Xevion/idakit/commit/6afc28328bdb60a220166f0e56ba1700ae74640d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * idakit-sys bumped from 0.1.1 to 0.1.2
+
 ## [0.1.1](https://github.com/Xevion/idakit/compare/idakit-v0.1.0...idakit-v0.1.1) (2026-07-12)
 
 
