@@ -30,45 +30,25 @@ examine_globs = [
     "crates/idakit/src/types/sink.rs",
 ]
 
-# Mutants no test could ever kill. The remaining ones are equivalent-by-construction: a
-# defensive counter that never runs (`skipped`), and disjoint-bit OR/XOR swaps in
-# `parse_hex_token` and `short_name`/`long_name` (the col-30 `| -> &` sibling, which drops
-# GN_VISIBLE, stays real and is caught via a substitution test). The col-51 `| -> &` swap
-# (collapsing `DEMANGLED & SHORT`/`DEMANGLED & LONG` to zero) and `is_weak_name -> false` used to
-# be excluded here too: the old canonical fixture (libcrypto, a C library with no weak symbols)
-# couldn't distinguish them. The canonical fixture is now a C++ shared object with both weak and
-# mangled symbols, so `dbinfo.rs`'s `Anchors` scan kills all three directly.
-#
-# `Instructions`/`InstructionsIn::next`'s `stepped > address` guard is equivalent too:
-# bytes.hpp documents `get_item_size(ea)` (`get_item_end(ea) - ea`) as zero only for `BADADDR`,
-# a raw value `Address` can never hold, so `get_item_end` never echoes its input back. The one
-# residual path, a raw result landing exactly on `BADADDR` and falling back through `item_end`'s
-# `unwrap_or(address)`, is closed because both loops only call `item_end` on `address < end` with
-# `end: Address`, keeping `address` below `Address`'s own ceiling (`BADADDR - 1`) too, so the
-# "unexplored bytes step by one" case can never overflow into the sentinel.
-#
-# `predecessors`'s `< -> <=` is equivalent too: `qflow_chart_t` scopes a flow chart to one
-# function's own range (`bounds`/`pfn`, gdl.hpp), and external blocks (index >= `nproper`) exist
-# solely as materialized jump *targets*, per `FC_NOEXT`'s own doc; nothing in the SDK's shape lets
-# a chart decode past one to give it succ edges of its own. `FC_NOPREDS` names predecessor lists as
-# a derived pass over the already-built succ edges, not an independent analysis, so an index that
-# is never a source in any block's succ list can never land in another block's pred list either.
-# `cfg_preds` therefore never actually yields `nproper`, and `<`/`<=` agree on every real input.
-#
-# `NamedTypes::next`'s `< -> <=` is equivalent for the same reason: ordinals run `1..limit`
-# (`get_ordinal_limit` returns one past the last), and the loop skips any candidate whose
-# `name()` is empty, so the extra `next == limit` slot a `<=` would visit is out of range, reads
-# an empty name, and is filtered out. `<` and `<=` yield the identical sequence. Its `+= -> *=`
-# sibling is a genuine infinite loop (`next` sticks at 1), not a defect a test can fail fast on,
-# so it can only ever time out.
+# Mutants no test can kill: equivalent-by-construction, or a real infinite loop that only times
+# out. One line each says why.
 exclude_re = [
+    # defensive counter that never runs
     "replace \\+= with .* in Database::type_catalog_with",
+    # disjoint-bit OR/XOR swap; the real GN_VISIBLE-dropping sibling is caught by a substitution test
     "replace \\| with \\^ in parse_hex_token",
+    # disjoint-bit OR/XOR swap over demangle flags, no observable change
     "replace \\| with \\^ in Database::(short|long)_name",
+    # get_item_end never echoes its input (BADADDR-only per bytes.hpp), so > and >= agree
     "replace > with >= in <impl Iterator for Instructions(In)?<'_>>::next",
+    # external blocks never gain succ edges, so cfg_preds never yields nproper; < and <= agree
     "replace < with <= in predecessors",
+    # ordinals run 1..limit and empty-named slots are skipped, so < and <= yield the same sequence
     "replace < with <= in <impl Iterator for NamedTypes<'db>>::next",
+    # next sticks at 1: a real infinite loop, only ever times out
     "replace \\+= with \\*= in <impl Iterator for NamedTypes<'db>>::next",
+    # constant handle builds a cyclic table that hangs the walk; the -> 0 sibling is caught
+    "replace raw -> u32 with 1",
 ]
 
 # Matches what `just test` builds; a feature-gated function excluded here would get mutants no
