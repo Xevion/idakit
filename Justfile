@@ -68,7 +68,7 @@ pedantic:
     set -uo pipefail
     IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
     sdk_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-isystem")) + 1]' crates/idakit-sys/compile_commands.json)"
-    out_include="$(jq -r '.[0].arguments[(.[0].arguments | index("-Ifacade")) + 1]' crates/idakit-sys/compile_commands.json)"
+    out_include="$(jq -r '.[0].arguments | map(select(startswith("-I") and (endswith("/facade") | not))) | first' crates/idakit-sys/compile_commands.json)"
     extra_args=(-isystem "$sdk_include" "$out_include")
     if [ "$(uname -s)" = Darwin ]; then
       extra_args+=(-isysroot "$(xcrun --show-sdk-path)")

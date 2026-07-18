@@ -313,6 +313,9 @@ fn emit_compile_commands(sdk_include: &str, out_dir: &str) {
     let dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset");
     // OUT_DIR carries the generated gen_*.h; a facade .cpp now includes gen_facade_consts.h.
     let out_inc = format!("-I{out_dir}");
+    // Absolute paths, so a consumer that doesn't chdir to `directory` (ctcache's cache-key
+    // preprocess pass) still resolves the source and the facade include.
+    let facade_inc = format!("-I{dir}/facade");
 
     let mut sources: Vec<&str> = FACADE_SOURCES.to_vec();
     sources.push("facade/cfunc_shims.cpp");
@@ -331,11 +334,12 @@ fn emit_compile_commands(sdk_include: &str, out_dir: &str) {
             json.push_str(",\n");
         }
         let plat = format!("-D{PLATFORM_DEFINE}");
+        let abs_src = format!("{dir}/{src}");
         let _ = write!(
             json,
-            "  {{\"directory\": {dir:?}, \"file\": {src:?}, \"arguments\": \
-             [\"c++\", \"-std=c++17\", \"-Ifacade\", {out_inc:?}, \"-isystem\", {sdk_include:?}, \
-             \"-D__EA64__\", {plat:?}, \"-c\", {src:?}]}}"
+            "  {{\"directory\": {dir:?}, \"file\": {abs_src:?}, \"arguments\": \
+             [\"c++\", \"-std=c++17\", {facade_inc:?}, {out_inc:?}, \"-isystem\", {sdk_include:?}, \
+             \"-D__EA64__\", {plat:?}, \"-c\", {abs_src:?}]}}"
         );
     }
     json.push_str("\n]\n");
