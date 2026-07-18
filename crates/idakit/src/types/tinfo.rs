@@ -32,6 +32,7 @@ impl Database {
     #[must_use]
     #[doc(alias("BTF_VOID"))]
     pub fn type_void(&self) -> TypeInfo {
+        crate::claim::ensure_kernel_thread();
         TypeInfo::from_handle(sys::tinfo_void())
     }
 
@@ -39,6 +40,7 @@ impl Database {
     #[must_use]
     #[doc(alias("BTF_BOOL"))]
     pub fn type_bool(&self) -> TypeInfo {
+        crate::claim::ensure_kernel_thread();
         TypeInfo::from_handle(sys::tinfo_bool())
     }
 
@@ -59,6 +61,7 @@ impl Database {
     /// ```
     #[doc(alias("BTF_INT"))]
     pub fn type_int(&self, bytes: u32, signed: bool) -> Result<TypeInfo> {
+        crate::claim::ensure_kernel_thread();
         TypeInfo::from_nullable(sys::tinfo_int(bytes, signed)).ok_or_else(|| {
             TypeWriteError::BuildFailed {
                 reason: format!("{bytes} is not a valid integer width (1, 2, 4, 8, or 16)"),
@@ -73,6 +76,7 @@ impl Database {
     /// [`TypeWriteError::BuildFailed`] if `bytes` is not 4 or 8.
     #[doc(alias("BTF_FLOAT"))]
     pub fn type_float(&self, bytes: u32) -> Result<TypeInfo> {
+        crate::claim::ensure_kernel_thread();
         TypeInfo::from_nullable(sys::tinfo_float(bytes)).ok_or_else(|| {
             TypeWriteError::BuildFailed {
                 reason: format!("{bytes} is not a valid float width (4 or 8)"),
@@ -135,6 +139,7 @@ impl Database {
     #[doc(alias("parse_decl"))]
     pub fn parse_type(&self, decl: impl AsRef<str>) -> Result<TypeInfo> {
         let decl = nul_checked(decl.as_ref(), "decl")?;
+        crate::claim::ensure_kernel_thread();
         match sys::tinfo_decl(decl) {
             Ok(handle) => Ok(TypeInfo::from_handle(handle)),
             Err(e) => Err(TypeWriteError::ParseFailed {

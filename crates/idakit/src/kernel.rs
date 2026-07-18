@@ -69,10 +69,10 @@ impl Ida {
 
     /// Brings the kernel up on the current thread and returns the open database.
     ///
-    /// No kernel thread, no closure. The `!Send` [`Database`] lives here, and dropping it
-    /// releases the kernel. For scripts, tests, and CLIs that own their thread; prefer
-    /// [`run`](Self::run) when the current thread must stay free or many threads drive the
-    /// kernel. Configure bring-up with [`new`](Self::new).
+    /// No kernel thread, no closure. The returned [`Database`] is `Send`, so it can move to
+    /// another thread, and dropping it releases the kernel. For scripts, tests, and CLIs that
+    /// own their thread; prefer [`run`](Self::run) when the current thread must stay free or
+    /// many threads drive the kernel. Configure bring-up with [`new`](Self::new).
     ///
     /// # Errors
     /// [`InitError::AlreadyRunning`] if a kernel is already live in the process,

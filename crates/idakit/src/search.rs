@@ -126,6 +126,7 @@ impl<'db> Pattern<'db> {
             kind,
         })?;
         // An empty mask slice tells the facade every byte is concrete.
+        crate::claim::ensure_kernel_thread();
         let handle = sys::binpat_from_bytes(bytes, mask.unwrap_or(&[]));
         Ok(Self {
             handle,
@@ -363,8 +364,9 @@ impl Iterator for Matches<'_, '_> {
             self.cur = None;
             return None;
         }
-        // The borrowed pattern holds the compiled-against database open, and `!Send` keeps us
-        // on the kernel thread.
+        // The borrowed pattern holds the compiled-against database open; re-point the kernel
+        // at this thread in case the database moved here since the pattern was built.
+        crate::claim::ensure_kernel_thread();
         let hit = sys::bin_search(
             start.get(),
             self.end.get(),

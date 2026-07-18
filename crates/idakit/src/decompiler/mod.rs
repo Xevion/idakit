@@ -36,6 +36,7 @@ impl Database {
     /// fatal exit.
     #[doc(alias("decompile_func"))]
     pub fn decompile(&self, address: Address) -> Result<DecompiledFunction<'_>> {
+        crate::claim::ensure_kernel_thread();
         if !self.hexrays_ready.get() {
             if !self.hexrays_init() {
                 return Err(Error::HexRaysInit);

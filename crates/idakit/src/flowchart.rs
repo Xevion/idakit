@@ -282,6 +282,7 @@ impl Database {
         address: Address,
         flags: sys::FlowChartFlags,
     ) -> Result<FlowChart> {
+        crate::claim::ensure_kernel_thread();
         let chart = sys::cfg_build(address.get(), flags.bits()).map_err(|_| Error::NoFunction {
             address: address.get(),
         })?;

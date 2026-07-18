@@ -223,6 +223,7 @@ impl Database {
     /// # Errors
     /// [`Error::Extract`] if a variable's type could not be structured.
     pub fn frame(&self, address: Address) -> Result<Option<StackFrame>> {
+        crate::claim::ensure_kernel_thread();
         let mut ft = FrameTypes {
             types: TypeBuilder::new(),
         };

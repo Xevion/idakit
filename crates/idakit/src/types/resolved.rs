@@ -32,7 +32,7 @@ impl Database {
     /// malformed.
     #[doc(alias("get_named_type"))]
     pub fn type_named(&self, name: &str) -> Result<Type> {
-        // The kernel is claimed for `&self`; the driver marshals `name` and walks it into the sink.
+        crate::claim::ensure_kernel_thread();
         match walk_type(|sink| sys::walk_type_named(name, sink)) {
             Ok(Some(image)) => Ok(image),
             Ok(None) => Err(Error::TypeNotFound {
@@ -65,8 +65,9 @@ impl Database {
     /// [`Error::Extract`] if the walked type is malformed.
     #[doc(alias("get_tinfo"))]
     pub fn type_at(&self, address: Address) -> Result<Option<Type>> {
-        // The kernel is claimed for `&self`; get_tinfo(address) is address-generic, not
-        // function-specific, so this reuses the same driver `Function::prototype_type` does.
+        // get_tinfo(address) is address-generic, not function-specific, so this reuses the same
+        // driver `Function::prototype_type` does.
+        crate::claim::ensure_kernel_thread();
         walk_type(|sink| sys::walk_func_type(address.get(), sink)).map_err(|source| {
             Error::Extract {
                 address: address.get(),

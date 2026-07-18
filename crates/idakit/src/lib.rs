@@ -74,9 +74,10 @@
 //! # }
 //! ```
 //!
-//! The open database stays on the kernel thread ([`Database`] is `!Send`). Reads borrow it and
-//! return lightweight views like [`Function`] and [`Segment`]; writes take it by mutable
-//! reference, so a read can't outlive a mutation.
+//! The open database is a single-owner kernel ([`Database`] is `Send + !Sync`), so it can move
+//! between threads but is never shared. Reads borrow it and return lightweight views like
+//! [`Function`] and [`Segment`]; writes take it by mutable reference, so a read can't outlive a
+//! mutation.
 //!
 //! Only one database is live at a time. [`Ida::here`](kernel::Ida::here) and
 //! [`Ida::run`](kernel::Ida::run) return [`InitError::AlreadyRunning`](error::InitError::AlreadyRunning)
@@ -275,24 +276,50 @@ use crate::kernel::KernelClaim;
 
 /// The open database.
 ///
-/// `!Send + !Sync`, so it stays on the kernel thread. Reads borrow `&Database` (returning
+/// `Send + !Sync`: a single-owner kernel that moves between threads but is never shared. One
+/// thread touches it at a time, so it can be brought up on any thread, handed off, held across
+/// an await, or given to a pool worker. Reads borrow `&Database` (returning
 /// [`Function`]/[`Segment`] views); writes take `&mut Database`, so a read view can't be held
 /// across a write.
 ///
-/// The `!Send` bound is load-bearing and enforced at compile time:
+/// The kernel is thread-affine (its heavy ops run only on the thread that owns libida's
+/// `g_main`), but every kernel-touching call first re-points `g_main` at the current thread
+/// when the database has moved. That runtime re-steal is what makes the `Send` sound; `!Sync`
+/// stays, because two threads touching one open database at once is undefined behavior.
+///
+/// The `!Sync` bound is load-bearing and enforced at compile time:
 ///
 /// ```compile_fail
 /// # use idakit::Database;
-/// fn assert_send<T: Send>() {}
-/// assert_send::<Database>(); // fails to compile: Database is !Send
+/// fn assert_sync<T: Sync>() {}
+/// assert_sync::<Database>(); // fails to compile: Database is !Sync
 /// ```
 pub struct Database {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.
     hexrays_ready: Cell<bool>,
     /// `Some` for an in-place `Database`; `None` for the actor's, whose claim `run` holds.
     _claim: Option<KernelClaim>,
-    _not_send: PhantomData<*const ()>,
+    /// Suppresses the auto `Send`/`Sync` impls. `Send` is re-granted below by a guarded
+    /// `unsafe impl` (single-owner, re-steals `g_main` on a thread change); `Sync` is not.
+    _not_sync: PhantomData<*const ()>,
 }
+
+// SAFETY: a `Database` is a single-owner handle to the process-global kernel, never shared
+// (`!Sync`). Rust's `Send`-not-`Sync` guarantee means at most one thread accesses it at a time,
+// which is exactly the kernel's precondition. The one thing a raw move would break, thread
+// affinity, is repaired at runtime: every kernel-touching call runs
+// `claim::ensure_kernel_thread` first, re-pointing libida's `g_main` at the current thread when
+// the database has migrated (verified movable across threads, origin thread parked or dead).
+unsafe impl Send for Database {}
+
+// Prove the `Send` grant holds (a later non-`Send` field, or a stray `Sync`-forcing one, fails
+// here). `Database` is deliberately not `Sync`; that half is pinned by the `compile_fail`
+// doctest on the type.
+#[cfg(test)]
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<Database>();
+};
 
 impl std::fmt::Debug for Database {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -357,7 +384,7 @@ impl Database {
         Self {
             hexrays_ready: Cell::new(false),
             _claim: None,
-            _not_send: PhantomData,
+            _not_sync: PhantomData,
         }
     }
 
@@ -366,7 +393,7 @@ impl Database {
         Self {
             hexrays_ready: Cell::new(false),
             _claim: Some(claim),
-            _not_send: PhantomData,
+            _not_sync: PhantomData,
         }
     }
 

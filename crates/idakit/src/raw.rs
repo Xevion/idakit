@@ -6,13 +6,15 @@
 //!
 //! # Safety
 //!
-//! Every method below is sound by one invariant, discharged here once. A [`Database`]
-//! is `!Send` and constructed only inside the kernel-thread pump of
-//! [`Ida::run`](crate::Ida::run), so holding `&self` proves we are on the kernel
-//! thread with the library initialized and a database open, exactly the
-//! thread-affinity and live-database preconditions the kernel demands. `&mut self`
-//! adds exclusivity for writes. Raw buffer pointers are valid for the call, and
-//! string getters fill `(buf, cap)` and return the value's full length.
+//! Every method below is sound by one invariant, discharged here once. Holding a
+//! [`Database`] proves the library is initialized and a database is open (the
+//! live-database precondition); the kernel's other demand, thread affinity, is met at
+//! call time because each forwarder opens with
+//! [`ensure_kernel_thread`](crate::claim::ensure_kernel_thread), which re-points
+//! libida's `g_main` at the calling thread when the `Send` database has moved. `&self`
+//! is that proof token (not instance state); `&mut self` adds exclusivity for writes.
+//! Raw buffer pointers are valid for the call, and string getters fill `(buf, cap)` and
+//! return the value's full length.
 
 #![cfg_attr(coverage_nightly, coverage(off))]
 // `&self`/`&mut self` here is the kernel-thread token proven live by holding a `Database` (see
@@ -75,6 +77,7 @@ impl Database {
     /// trapped and surfaced as the [`sys::EXIT_TRAPPED`] sentinel instead of killing
     /// the process.
     pub(crate) fn open_database(&mut self, path: *const c_char, run_auto: bool) -> c_int {
+        crate::claim::ensure_kernel_thread();
         unsafe { sys::guarded_open(path, run_auto as c_int) }
     }
 
@@ -92,6 +95,7 @@ impl Database {
 
     /// Records EULA acceptance in IDA's registry, and returns whether it now reads accepted.
     pub(crate) fn reg_accept_eula(&self) -> bool {
+        crate::claim::ensure_kernel_thread();
         unsafe { sys::accept_eula() != 0 }
     }
 
@@ -99,6 +103,7 @@ impl Database {
     /// `open_database(run_auto = true)`, which enables but does not await analysis.
     /// Guarded: returns [`sys::EXIT_TRAPPED`] if analysis hit a fatal exit().
     pub(crate) fn auto_wait(&self) -> c_int {
+        crate::claim::ensure_kernel_thread();
         unsafe { sys::guarded_auto_wait() }
     }
 
@@ -106,6 +111,7 @@ impl Database {
     /// than killing the process. Best-effort, since by the time we close, the result is
     /// moot.
     pub(crate) fn close_database(&mut self, save: bool) {
+        crate::claim::ensure_kernel_thread();
         unsafe { sys::guarded_close(save as c_int) };
     }
 
@@ -120,10 +126,12 @@ impl Database {
     ///
     /// [`get_bytes_owned`]: Self::get_bytes_owned
     pub(crate) fn get_bytes(&self, address: Address, buf: *mut c_void, size: usize) -> i64 {
+        crate::claim::ensure_kernel_thread();
         unsafe { sys::get_bytes_into(address.get(), buf, size) }
     }
 
     pub(crate) fn set_name(&mut self, address: Address, name: *const c_char) -> bool {
+        crate::claim::ensure_kernel_thread();
         unsafe { sys::set_name(address.get(), name, 0) }
     }
 
@@ -133,6 +141,7 @@ impl Database {
         comment: *const c_char,
         repeatable: bool,
     ) -> bool {
+        crate::claim::ensure_kernel_thread();
         unsafe { sys::set_cmt(address.get(), comment, repeatable) }
     }
 
@@ -195,6 +204,7 @@ impl Database {
         is_to: bool,
         flow: bool,
     ) -> Vec<sys::XrefRec> {
+        crate::claim::ensure_kernel_thread();
         sys::xrefs_build(address.get(), is_to, flow)
     }
 
@@ -237,6 +247,7 @@ impl Database {
     /// Every chunk of the function at `address` (entry chunk first), as an owned range snapshot;
     /// empty when no function lives there.
     pub(crate) fn range_all_chunks(&self, address: Address) -> Vec<sys::RangeT> {
+        crate::claim::ensure_kernel_thread();
         sys::range_all_chunks(address.get()).unwrap_or_default()
     }
 
@@ -333,11 +344,13 @@ impl Database {
     ///
     /// [`Imports`]: crate::Imports
     pub(crate) fn imports_build(&self) -> Vec<sys::ImportRec> {
+        crate::claim::ensure_kernel_thread();
         sys::imports_build()
     }
 
     /// (Re)builds IDA's global string list, a query-time scan, not a database mutation.
     pub(crate) fn strlist_build(&self) {
+        crate::claim::ensure_kernel_thread();
         sys::strlist_build();
     }
 

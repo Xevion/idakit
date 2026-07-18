@@ -164,7 +164,8 @@ impl<'db> Function<'db> {
     /// [`Error::Extract`] if the walked type is malformed.
     #[doc(alias("get_tinfo"))]
     pub fn prototype_type(&self) -> Result<Option<Type>> {
-        // The kernel is claimed for `self.db`; the driver walks the prototype into the sink.
+        // Re-point the kernel at this thread if the database moved, then walk the prototype.
+        crate::claim::ensure_kernel_thread();
         walk_type(|sink| sys::walk_func_type(self.address.get(), sink)).map_err(|source| {
             Error::Extract {
                 address: self.address.get(),
@@ -635,8 +636,8 @@ impl std::fmt::Debug for FunctionEdit<'_> {
 
 /// An owned, `Send` snapshot of a function's scalar facts, detached from the database.
 ///
-/// `Function` borrows a `!Send` [`Database`]; collect snapshots inside an
-/// [`Ida::call`](crate::kernel::Ida::call) job to carry results back out.
+/// A [`Function`] borrows the [`Database`], so it is `!Send` and can't leave the kernel's
+/// current thread; collect snapshots to carry results across a thread boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FunctionSnapshot {
     /// Entry address.

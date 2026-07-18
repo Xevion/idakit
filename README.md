@@ -70,9 +70,10 @@ Ida::run(|ida| {
 })??;
 ```
 
-The open database stays on the kernel thread ([`Database`](https://docs.rs/idakit/latest/idakit/struct.Database.html) is `!Send`). Reads borrow it and
-return lightweight views like [`Function`](https://docs.rs/idakit/latest/idakit/function/struct.Function.html) and [`Segment`](https://docs.rs/idakit/latest/idakit/segment/struct.Segment.html); writes take it by mutable
-reference, so a read can't outlive a mutation.
+The open database is a single-owner kernel ([`Database`](https://docs.rs/idakit/latest/idakit/struct.Database.html) is `Send + !Sync`), so it can move
+between threads but is never shared. Reads borrow it and return lightweight views like
+[`Function`](https://docs.rs/idakit/latest/idakit/function/struct.Function.html) and [`Segment`](https://docs.rs/idakit/latest/idakit/segment/struct.Segment.html); writes take it by mutable reference, so a read can't outlive a
+mutation.
 
 Only one database is live at a time. [`Ida::here`](https://docs.rs/idakit/latest/idakit/kernel/struct.Ida.html#method.here) and
 [`Ida::run`](https://docs.rs/idakit/latest/idakit/kernel/struct.Ida.html#method.run) return [`InitError::AlreadyRunning`](https://docs.rs/idakit/latest/idakit/error/enum.InitError.html#variant.AlreadyRunning)

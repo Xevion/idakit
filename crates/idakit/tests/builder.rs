@@ -46,7 +46,7 @@ fn new_here_brings_up_kernel() {
     std::thread::Builder::new()
         .stack_size(8 << 20)
         .spawn(|| {
-            // here() hands back the !Send Database bound to this thread; dropping it releases the kernel.
+            // here() hands back a Send Database owned by this thread; dropping it releases the kernel.
             let idb = Ida::new().here().expect("kernel init failed");
             drop(idb);
         })

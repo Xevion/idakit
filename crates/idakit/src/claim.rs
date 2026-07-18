@@ -148,6 +148,24 @@ pub(crate) fn steal_main() -> Result<(), String> {
     MainClaim::locate()?.reclaim()
 }
 
+/// Re-points `g_main` at the calling thread if it doesn't already own it.
+///
+/// A `Send` [`Database`](crate::Database) can move between threads (single-owner handoff), so
+/// the thread now touching the kernel may not be the one that last claimed `g_main`. Every
+/// kernel-touching call runs this first: [`is_main_thread`](sys::is_main_thread) is the
+/// authoritative O(1) check (it compares the caller to `g_main`), and the re-steal fires only
+/// on an actual migration, which is rare. On the pinned actor thread and on a non-migrated
+/// owned database it is a single predicate call that returns immediately.
+#[inline]
+pub(crate) fn ensure_kernel_thread() {
+    // SAFETY: plain C-ABI predicate; reads `g_main` and compares it to the calling thread.
+    if !unsafe { sys::is_main_thread() } {
+        // The database moved here; re-point `g_main` before the kernel call. `steal_main`
+        // only fails if `g_main` can't be located, which already held at bring-up.
+        steal_main().expect("re-steal g_main after Database migrated to this thread");
+    }
+}
+
 // The decoders do dense pointer/bit math over machine-code bytes; exercise them on synthetic
 // buffers with hand-computed expected addresses, so a regression surfaces here instead of as an
 // opaque "re-claim did not take" from a full kernel bring-up. Each arch tests its own decoder.

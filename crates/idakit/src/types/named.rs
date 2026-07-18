@@ -75,7 +75,7 @@ impl<'db> NamedType<'db> {
     /// [`Error::Extract`] if the walked table is malformed.
     #[doc(alias("get_numbered_type"))]
     pub fn resolve(&self) -> Result<Type> {
-        // The kernel is claimed for `self.db`; the driver walks the ordinal's type into the sink.
+        crate::claim::ensure_kernel_thread();
         match walk_type(|sink| sys::walk_type_ordinal(self.ordinal, sink)) {
             Ok(Some(ty)) => Ok(ty),
             // A live ordinal that refuses to walk is near-unreachable; report it addressless.

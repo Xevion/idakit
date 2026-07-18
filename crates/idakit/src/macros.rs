@@ -14,6 +14,10 @@
 /// at the call site. Invoke it in associated-item position inside `impl Database`. Both `&self`
 /// and `&mut self` receivers are accepted; a muncher walks the list so keep each block well under
 /// the recursion limit.
+///
+/// Every generated body opens with [`ensure_kernel_thread`](crate::claim::ensure_kernel_thread):
+/// [`Database`](crate::Database) is `Send`, so the thread reaching a forwarder may not be the one
+/// that last claimed `g_main`, and each kernel call must re-point it first.
 macro_rules! forward {
     () => {};
     (
@@ -22,7 +26,10 @@ macro_rules! forward {
         $($rest:tt)*
     ) => {
         $(#[$meta])*
-        pub(crate) fn $name(&mut self $(, $arg: $aty)*) $(-> $ret)? { $body }
+        pub(crate) fn $name(&mut self $(, $arg: $aty)*) $(-> $ret)? {
+            $crate::claim::ensure_kernel_thread();
+            $body
+        }
         forward! { $($rest)* }
     };
     (
@@ -31,7 +38,10 @@ macro_rules! forward {
         $($rest:tt)*
     ) => {
         $(#[$meta])*
-        pub(crate) fn $name(&self $(, $arg: $aty)*) $(-> $ret)? { $body }
+        pub(crate) fn $name(&self $(, $arg: $aty)*) $(-> $ret)? {
+            $crate::claim::ensure_kernel_thread();
+            $body
+        }
         forward! { $($rest)* }
     };
 }
