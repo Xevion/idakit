@@ -10,3 +10,14 @@ deadlock:guarded_close
 # stopped: `Database` is !Send with no `Drop`, so idakit's only close runs on that thread.
 race:qmutex_free
 race:qrealloc
+
+# Same exit-teardown race, surfacing as a mutex-invalid-use report instead of a plain race: a
+# freed mutex's memory gets reused, so a worker thread's late qmutex_lock/qmutex_unlock lands on
+# what TSan sees as a freshly "created" or already-destroyed mutex, both frames entirely inside
+# libida.so. Seen once in CI on 2887373 -- a commit with no code path anywhere near decode_sweep
+# or the kernel -- and only after decode_sweep's own assertions had already passed; 7/7 clean
+# local reruns since (2x full `just sanitize thread`, 5x direct binary). idakit never calls
+# qmutex_lock/qmutex_unlock itself (grep confirms), so this is libida's own teardown hazard, not
+# ours to fix.
+mutex:qmutex_lock
+mutex:qmutex_unlock
