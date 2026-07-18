@@ -21,6 +21,41 @@ test:
     cargo nextest run --workspace --all-features
     cargo test --workspace --all-features --doc
 
+# Proof for the warm-kernel harness (idakit-test): build the smoke binary, bring its daemon up once
+# (kernel init + open paid once), run every case through nextest's proxies, then tear the daemon
+# down and print its admit/reap/weight log. Skips cleanly (cases self-skip) when no corpus is
+# configured, since the daemon has nothing to open.
+test-harness:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    sock="${TMPDIR:-/tmp}/idakit-test.$$.sock"
+    dlog="${TMPDIR:-/tmp}/idakit-test.$$.daemon.log"
+    cargo build --tests -p idakit-test || exit 1
+    bin=$(find target/debug/deps -maxdepth 1 -type f -executable -name 'smoke-*' \
+          -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+    [ -n "$bin" ] || { echo "smoke test binary not found"; exit 1; }
+    "$bin" --daemon "" "$sock" >"$dlog" 2>&1 &
+    dpid=$!
+    for _ in $(seq 1 250); do
+        [ -S "$sock" ] && break
+        kill -0 "$dpid" 2>/dev/null || break
+        sleep 0.2
+    done
+    if [ -S "$sock" ]; then
+        IDAKIT_TEST_SOCK="$sock" cargo nextest run -p idakit-test --no-fail-fast
+        rc=$?
+    else
+        echo "daemon did not come up (no corpus?); running suite so cases self-skip"
+        cargo nextest run -p idakit-test --no-fail-fast
+        rc=$?
+    fi
+    kill "$dpid" 2>/dev/null
+    wait "$dpid" 2>/dev/null
+    echo "== daemon log =="
+    cat "$dlog"
+    rm -f "$sock" "$dlog"
+    exit $rc
+
 fmt: fmt-rust fmt-cpp
 
 fmt-rust:
