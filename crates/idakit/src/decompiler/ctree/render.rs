@@ -532,11 +532,37 @@ mod tests {
         }
     }
 
-    /// A base-class subobject member arrives with an empty name; it should render as the
-    /// subobject's type name (what IDA shows for `this->Base`), never blank.
-    #[test]
-    fn empty_member_name_falls_back_to_type_name() {
-        let mut b = CtreeBuilder::new();
+    /// A fresh local of type `ty` plus a `Var` referencing it.
+    fn var_named(b: &mut CtreeBuilder, name: &str, ty: TypeId) -> ExpressionId {
+        let l = b.push_local(local(name, ty));
+        b.var(ty, l)
+    }
+
+    /// Wrap `e` in a one-statement block and render it.
+    fn render_expr(mut b: CtreeBuilder, e: ExpressionId) -> String {
+        let st = b.expression_statement(e);
+        let block = b.block(vec![st]);
+        b.finish(block).to_pseudocode()
+    }
+
+    /// A struct with one empty-named base member at bit offset 0, of type `ty`.
+    fn empty_base_member(b: &mut CtreeBuilder, ty: TypeId) -> TypeId {
+        b.intern_type(TypeValue {
+            shape: TypeShape::Struct {
+                name: Some("Derived".into()),
+                members: vec![TypeMember {
+                    name: String::new(),
+                    bit_offset: 0,
+                    ty,
+                    bitfield_width: None,
+                    repr: None,
+                }],
+            },
+            size: Some(8),
+        })
+    }
+
+    fn base_struct_via_ptr(b: &mut CtreeBuilder) -> ExpressionId {
         let base = b.intern_type(TypeValue {
             shape: TypeShape::Struct {
                 name: Some("Base".into()),
@@ -544,31 +570,39 @@ mod tests {
             },
             size: Some(8),
         });
-        let derived = b.intern_type(TypeValue {
-            shape: TypeShape::Struct {
-                name: Some("Derived".into()),
-                members: vec![TypeMember {
-                    name: String::new(),
-                    bit_offset: 0,
-                    ty: base,
-                    bitfield_width: None,
-                    repr: None,
-                }],
-            },
-            size: Some(8),
-        });
+        let derived = empty_base_member(b, base);
         let pderived = b.intern_type(TypeValue {
             shape: TypeShape::Ptr(derived),
             size: Some(8),
         });
-        let this = b.push_local(local("this", pderived));
-        let v = b.var(pderived, this);
-        let mp = b.member_ptr(base, v, 0);
-        let st = b.expression_statement(mp);
-        let block = b.block(vec![st]);
-        let tree = b.finish(block);
-        let out = tree.to_pseudocode();
-        assert!(out.contains("this->Base"), "got: {out}");
+        let v = var_named(b, "this", pderived);
+        b.member_ptr(base, v, 0)
+    }
+
+    fn base_opaque_via_value(b: &mut CtreeBuilder) -> ExpressionId {
+        let opaque = b.intern_type(TypeValue {
+            shape: TypeShape::Opaque("Foo".into()),
+            size: Some(8),
+        });
+        let derived = empty_base_member(b, opaque);
+        let v = var_named(b, "s", derived);
+        b.member_ref(opaque, v, 0)
+    }
+
+    /// A base-class subobject arrives with an empty member name and renders as the subobject's
+    /// type name (what IDA shows for `this->Base`), never blank. Covers both `type_tag_name`
+    /// arms: a named `Struct` base peeled through a pointer, and an `Opaque` base on a value.
+    #[rstest]
+    #[case(base_struct_via_ptr, "this->Base")]
+    #[case(base_opaque_via_value, "s.Foo")]
+    fn empty_member_renders_base_type_name(
+        #[case] build: fn(&mut CtreeBuilder) -> ExpressionId,
+        #[case] expect: &str,
+    ) {
+        let mut b = CtreeBuilder::new();
+        let mr = build(&mut b);
+        let out = render_expr(b, mr);
+        assert!(out.contains(expect), "got: {out}");
     }
 
     /// `{ return a + b; }`: the canonical small tree, rendered exactly.
@@ -608,29 +642,6 @@ mod tests {
         let tree = b.finish(block);
         let out = tree.to_pseudocode();
         assert!(out.contains(expect), "got: {out}");
-    }
-
-    /// A lower-precedence right operand must be parenthesized.
-    #[test]
-    fn parenthesizes_lower_precedence_child() {
-        let mut b = CtreeBuilder::new();
-        let int = int32(&mut b);
-        let a = b.push_local(local("a", int));
-        let c = b.push_local(local("b", int));
-        let d = b.push_local(local("c", int));
-        let va = b.var(int, a);
-        let vb = b.var(int, c);
-        let vc = b.var(int, d);
-        let add = b.binary(int, BinaryOp::Add, vb, vc);
-        let mul = b.binary(int, BinaryOp::Mul, va, add);
-        let ret = b.ret(Some(mul));
-        let block = b.block(vec![ret]);
-        let tree = b.finish(block);
-        assert!(
-            tree.to_pseudocode().contains("a * (b + c)"),
-            "got: {}",
-            tree.to_pseudocode()
-        );
     }
 
     /// Left-associative same-precedence chains need no parentheses.
@@ -678,44 +689,28 @@ mod tests {
         );
     }
 
-    /// Unary, cast, and string/number leaves.
+    /// A prefix unary inside an assignment statement renders `r = -a;`.
     #[test]
-    fn renders_unary_cast_and_literals() {
+    fn renders_negation_assignment() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
-        let a = b.push_local(local("a", int));
-        let va = b.var(int, a);
+        let va = var_named(&mut b, "a", int);
         let neg = b.unary(int, UnaryOp::Neg, va);
-        let r = b.push_local(local("r", int));
-        let asg = b.var(int, r);
+        let asg = var_named(&mut b, "r", int);
         let assign = b.assign(int, AssignmentOp::Assign, asg, neg);
-        let st = b.expression_statement(assign);
-        let block = b.block(vec![st]);
-        let tree = b.finish(block);
-        assert!(
-            tree.to_pseudocode().contains("r = -a;"),
-            "got: {}",
-            tree.to_pseudocode()
-        );
+        let out = render_expr(b, assign);
+        assert!(out.contains("r = -a;"), "got: {out}");
     }
 
-    /// String and hex/decimal number formatting.
+    /// A string literal renders quoted; the real decompiler surfaces these rarely, so unit
+    /// coverage stands in. Number formatting is pinned by `num_switches_to_hex_at_ten`.
     #[test]
-    fn renders_string_and_numbers() {
+    fn renders_string_literal() {
         let mut b = CtreeBuilder::new();
         let int = int32(&mut b);
         let s = b.string(int, "hi");
-        let big = b.num(int, 255);
-        let small = b.num(int, 7);
-        let st1 = b.expression_statement(s);
-        let st2 = b.expression_statement(big);
-        let st3 = b.expression_statement(small);
-        let block = b.block(vec![st1, st2, st3]);
-        let tree = b.finish(block);
-        let out = tree.to_pseudocode();
+        let out = render_expr(b, s);
         assert!(out.contains("\"hi\";"), "got: {out}");
-        assert!(out.contains("0xff;"), "got: {out}");
-        assert!(out.contains("  7;"), "got: {out}");
     }
 
     /// `if/else` with block bodies, indented.
@@ -758,5 +753,199 @@ mod tests {
             "got: {}",
             tree.to_pseudocode()
         );
+    }
+
+    fn mul_over_add(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
+        let va = var_named(b, "a", int);
+        let vb = var_named(b, "b", int);
+        let vc = var_named(b, "c", int);
+        let add = b.binary(int, BinaryOp::Add, vb, vc);
+        b.binary(int, BinaryOp::Mul, va, add)
+    }
+
+    fn sub_over_sub(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
+        let va = var_named(b, "a", int);
+        let vb = var_named(b, "b", int);
+        let vc = var_named(b, "c", int);
+        let inner = b.binary(int, BinaryOp::Sub, vb, vc);
+        b.binary(int, BinaryOp::Sub, va, inner)
+    }
+
+    fn add_over_assign(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
+        let va = var_named(b, "a", int);
+        let vb = var_named(b, "b", int);
+        let vc = var_named(b, "c", int);
+        let child = b.assign(int, AssignmentOp::Assign, vb, vc);
+        b.binary(int, BinaryOp::Add, va, child)
+    }
+
+    fn add_over_ternary(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
+        let va = var_named(b, "a", int);
+        let vb = var_named(b, "b", int);
+        let vc = var_named(b, "c", int);
+        let vd = var_named(b, "d", int);
+        let child = b.ternary(int, vb, vc, vd);
+        b.binary(int, BinaryOp::Add, va, child)
+    }
+
+    /// A right operand at or below its operator's precedence is parenthesized: a strictly lower
+    /// child because its own level trails, a same-level one because `Prec::tighter` raises its
+    /// minimum by one (left-associativity). Covers the `Binary`/`Assign`/`Ternary` `prec` arms,
+    /// since a wrong level drops or adds the parentheses.
+    #[rstest]
+    #[case(mul_over_add, "a * (b + c)")]
+    #[case(sub_over_sub, "a - (b - c)")]
+    #[case(add_over_assign, "a + (b = c)")]
+    #[case(add_over_ternary, "a + (b ? c : d)")]
+    fn child_parenthesized_by_precedence(
+        #[case] build: fn(&mut CtreeBuilder, TypeId) -> ExpressionId,
+        #[case] expect: &str,
+    ) {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let e = build(&mut b, int);
+        let out = render_expr(b, e);
+        assert!(out.contains(expect), "got: {out}");
+    }
+
+    fn neg_child(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
+        let va = var_named(b, "a", int);
+        b.unary(int, UnaryOp::Neg, va)
+    }
+
+    fn post_inc_child(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
+        let va = var_named(b, "a", int);
+        b.unary(int, UnaryOp::PostInc, va)
+    }
+
+    fn deref_child(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
+        let ptr = b.intern_type(TypeValue {
+            shape: TypeShape::Ptr(int),
+            size: Some(8),
+        });
+        let vp = var_named(b, "p", ptr);
+        b.deref(int, vp, 4)
+    }
+
+    /// At a postfix position (`child[0]`), a unary-precedence child is parenthesized while a
+    /// postfix-precedence post-increment is not. Pins the `Unary`/`Cast|Deref|Sizeof` `prec` arms
+    /// and the post-inc/dec case, since a wrong level flips the parentheses.
+    #[rstest]
+    #[case(neg_child, "(-a)[0]")]
+    #[case(deref_child, "(*p)[0]")]
+    #[case(post_inc_child, "a++[0]")]
+    fn postfix_position_parenthesizes_by_precedence(
+        #[case] build: fn(&mut CtreeBuilder, TypeId) -> ExpressionId,
+        #[case] expect: &str,
+    ) {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let child = build(&mut b, int);
+        let zero = b.num(int, 0);
+        let idx = b.index(int, child, zero);
+        let out = render_expr(b, idx);
+        assert!(out.contains(expect), "got: {out}");
+    }
+
+    /// Post-increment prints its operator suffixed, `a++`, not prefixed like an ordinary unary.
+    #[test]
+    fn post_increment_renders_suffixed() {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let va = var_named(&mut b, "a", int);
+        let pi = b.unary(int, UnaryOp::PostInc, va);
+        let out = render_expr(b, pi);
+        assert!(out.contains("a++;"), "got: {out}");
+        assert!(!out.contains("++a"), "prefix, not suffix: {out}");
+    }
+
+    /// An integer literal renders decimal below ten and hexadecimal from ten up.
+    #[rstest]
+    #[case(9, "9;")]
+    #[case(10, "0xa;")]
+    #[case(16, "0x10;")]
+    fn num_switches_to_hex_at_ten(#[case] value: u64, #[case] expect: &str) {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let n = b.num(int, value);
+        let out = render_expr(b, n);
+        assert!(out.contains(expect), "got: {out}");
+    }
+
+    /// A `switch` renders each `case N:` and the `default:` label.
+    #[test]
+    fn switch_renders_case_and_default_labels() {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let sel = var_named(&mut b, "a", int);
+        let matched = b.ret(None);
+        let fallthrough = b.ret(None);
+        let cases = vec![
+            Case {
+                values: vec![5],
+                body: matched,
+            },
+            Case {
+                values: vec![],
+                body: fallthrough,
+            },
+        ];
+        let switch = b
+            .statement(StatementKind::Switch {
+                expression: sel,
+                cases,
+            })
+            .call();
+        let block = b.block(vec![switch]);
+        let out = b.finish(block).to_pseudocode();
+        assert!(out.contains("case 5:"), "got: {out}");
+        assert!(out.contains("default:"), "got: {out}");
+    }
+
+    /// A named member resolves through its byte offset (byte times eight into a bit offset), so
+    /// an access at byte 4 finds the member declared at bit 32.
+    #[test]
+    fn member_resolves_by_byte_offset() {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let s_ty = b.intern_type(TypeValue {
+            shape: TypeShape::Struct {
+                name: Some("S".into()),
+                members: vec![TypeMember {
+                    name: "x".into(),
+                    bit_offset: 32,
+                    ty: int,
+                    bitfield_width: None,
+                    repr: None,
+                }],
+            },
+            size: Some(8),
+        });
+        let s = b.push_local(local("s", s_ty));
+        let v = b.var(s_ty, s);
+        let mr = b.member_ref(int, v, 4);
+        let out = render_expr(b, mr);
+        assert!(out.contains("s.x"), "got: {out}");
+    }
+
+    /// A cast prints its target type's exact spelling, including each scalar width. Guards
+    /// `print_type` against a stubbed body and against wrong bit-width arithmetic.
+    #[rstest]
+    #[case(TypeShape::Void, "(void)")]
+    #[case(TypeShape::Bool, "(bool)")]
+    #[case(TypeShape::Int { bytes: 4, signed: true }, "(__int32)")]
+    #[case(TypeShape::Int { bytes: 8, signed: true }, "(__int64)")]
+    #[case(TypeShape::Int { bytes: 4, signed: false }, "(unsigned __int32)")]
+    #[case(TypeShape::Float { bytes: 4 }, "(float)")]
+    #[case(TypeShape::Float { bytes: 8 }, "(double)")]
+    #[case(TypeShape::Float { bytes: 16 }, "(long double)")]
+    fn cast_renders_target_type_spelling(#[case] shape: TypeShape, #[case] expect: &str) {
+        let mut b = CtreeBuilder::new();
+        let int = int32(&mut b);
+        let ty = b.intern_type(TypeValue { shape, size: None });
+        let va = var_named(&mut b, "a", int);
+        let cast = b.cast(ty, va);
+        let out = render_expr(b, cast);
+        assert!(out.contains(expect), "got: {out}");
     }
 }

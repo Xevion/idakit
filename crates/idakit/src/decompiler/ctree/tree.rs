@@ -523,17 +523,31 @@ impl CtreeBuilder {
 
     /// Finalize the tree rooted at `root`, wiring every node's `parent` link by one
     /// pre-order pass from the root.
+    ///
+    /// # Panics
+    /// If a node was linked as its own (possibly indirect) child, which only a builder or
+    /// sink bug can produce; a well-formed tree never revisits a node.
     #[must_use]
     pub fn finish(mut self, root: StatementId) -> Ctree {
         // Reading a node's children borrows an arena while writing the children's
         // `parent` needs `&mut` to the same arena, so the two phases can't share one
         // borrow. `kids` decouples them; reused across the walk, it allocates once
         // (growing to the largest fan-out) rather than per node.
+        let total = self.expressions.len() + self.statements.len();
         let mut stack = vec![NodeRef::Statement(root)];
         let mut kids: Vec<NodeRef> = Vec::new();
         let mut visited = 0usize;
         while let Some(node) = stack.pop() {
             visited += 1;
+            // A well-formed tree visits each node once (child index < parent index by
+            // construction), so `visited` can never exceed `total`. A sink bug that hands
+            // back a wrong handle can make a node its own ancestor, which would otherwise
+            // spin this loop forever; fail loudly instead.
+            assert!(
+                visited <= total,
+                "ctree walk revisited more nodes ({visited}) than were allocated ({total}); \
+                 the tree is cyclic or over-linked"
+            );
             kids.clear();
             for_each_child(&self.expressions, &self.statements, node, |c| kids.push(c));
             for &child in &kids {
@@ -545,14 +559,9 @@ impl CtreeBuilder {
             }
         }
         // Every allocated node must be reachable from the root. A node left unattached
-        // is a builder bug. The walk can't loop, since a child's arena index is always
-        // smaller than its parent's (the handle must exist to construct the parent), so
-        // no node is reached twice and `visited` is an exact count.
-        debug_assert_eq!(
-            visited,
-            self.expressions.len() + self.statements.len(),
-            "ctree has nodes unreachable from the root"
-        );
+        // is a builder bug; the loop above already rules out revisiting a node, so this
+        // is an exact count.
+        debug_assert_eq!(visited, total, "ctree has nodes unreachable from the root");
         Ctree {
             expressions: self.expressions,
             statements: self.statements,
@@ -782,6 +791,23 @@ mod tests {
         );
         assert!(tree.items_at(a1).collect::<Vec<_>>() == vec![NodeRef::Statement(s1)]);
         assert!(tree.items_at(Address::new_const(0x2000)).next().is_none());
+    }
+
+    /// `fill_type` writes a placeholder's body, and `type_size` reads the filled size back
+    /// exactly, not just any non-`None` value.
+    #[test]
+    fn fill_type_writes_the_placeholder_type_size_reads() {
+        let mut b = CtreeBuilder::new();
+        let id = b.alloc_type_placeholder();
+        assert!(let None = b.type_size(id));
+        b.fill_type(id, int32());
+        assert!(b.type_size(id) == Some(4));
+
+        let v = b.var(id, LocalId(0));
+        let st = b.expression_statement(v);
+        let block = b.block(vec![st]);
+        let tree = b.finish(block);
+        assert!(tree.type_of(id).shape == int32().shape);
     }
 
     #[test]

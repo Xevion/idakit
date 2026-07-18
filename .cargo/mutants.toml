@@ -28,6 +28,7 @@ examine_globs = [
     "crates/idakit/src/types/repr.rs",
     "crates/idakit/src/types/resolved.rs",
     "crates/idakit/src/types/sink.rs",
+    "crates/idakit/src/decompiler/**/*.rs",
 ]
 
 # Mutants no test can kill: equivalent-by-construction, or a real infinite loop that only times
@@ -49,6 +50,8 @@ exclude_re = [
     "replace \\+= with \\*= in <impl Iterator for NamedTypes<'db>>::next",
     # constant handle builds a cyclic table that hangs the walk; the -> 0 sibling is caught
     "replace raw -> u32 with 1",
+    # POSTFIX vs PRIMARY is unobservable: the max requested min_prec is 15, so neither parenthesizes
+    "delete match arm ExpressionKind::Call\\{\\.\\.\\}.* in Printer<'_>::prec",
 ]
 
 # Matches what `just test` builds; a feature-gated function excluded here would get mutants no
@@ -83,6 +86,14 @@ additional_cargo_test_args = [
     "frame",
     "--test",
     "write",
+    "--test",
+    "roundtrip",
+    "--test",
+    "decompile_cache",
+    "--test",
+    "ctor",
+    "--test",
+    "ctree_nodes",
     # nextest's thread count multiplies by `--jobs` rather than dividing; caps live kernels
     # (~0.85 GiB each) to `jobs * 4`. Lower this before lowering `--jobs`.
     "--test-threads",

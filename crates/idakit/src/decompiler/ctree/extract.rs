@@ -1059,4 +1059,134 @@ mod tests {
         assert!(lv.is_arg);
         assert!(lv.location == LocalLocation::Stack(-4));
     }
+
+    /// Drive the [`idakit_sys::CtreeSink`] node callbacks that finalized decompiler output rarely
+    /// carries (member accesses on untyped pointers, string literals, `continue`/`goto`/asm/
+    /// `throw`/`try`), asserting each returned handle resolves to its own node. Two wired-in
+    /// leaders keep every target off handles 0 and 1, so a callback that returns a constant handle
+    /// mis-threads its node and trips the match.
+    #[test]
+    fn sink_node_callbacks_thread_their_handles() {
+        use sys::CtreeSink;
+
+        let mut cb = CallbackBuilder::new();
+        let it = int_ty(&mut cb);
+        let v0 = cb.var(0, 0, it);
+        let v1 = cb.var(0, 1, it);
+
+        let mref = CtreeSink::e_memref(&mut cb, 0, v0, 4, it);
+        let mptr = CtreeSink::e_memptr(&mut cb, 0, v1, 8, it);
+        let text = CtreeSink::e_str(&mut cb, 0, "lit".into(), it);
+        let thrown = cb.num(0, 7, it);
+
+        let s_mref = cb.expression_statement(0, mref);
+        let s_mptr = cb.expression_statement(0, mptr);
+        let s_text = cb.expression_statement(0, text);
+        let cont = CtreeSink::s_continue(&mut cb, 0);
+        let go = CtreeSink::s_goto(&mut cb, 0, 42);
+        let asm = CtreeSink::s_asm(&mut cb, 0, &[0x1000, 0x1004]);
+        let thr = CtreeSink::s_throw(&mut cb, 0, thrown);
+        let guard = cb.block(0, &[]);
+        let catch = cb.block(0, &[]);
+        let tri = CtreeSink::s_try(&mut cb, 0, guard, &[catch]);
+
+        let blk = cb.block(0, &[s_mref, s_mptr, s_text, cont, go, asm, thr, tri]);
+        let tree = cb.finish(blk).expect("well-formed");
+
+        assert!(matches!(
+            tree.expression(eid(mref)).kind,
+            ExpressionKind::MemberRef { byte_offset: 4, .. }
+        ));
+        assert!(matches!(
+            tree.expression(eid(mptr)).kind,
+            ExpressionKind::MemberPtr { byte_offset: 8, .. }
+        ));
+        assert!(
+            matches!(tree.expression(eid(text)).kind, ExpressionKind::Str(ref s) if s == "lit")
+        );
+        assert!(matches!(
+            tree.statement(sid(cont)).kind,
+            StatementKind::Continue
+        ));
+        assert!(matches!(
+            tree.statement(sid(go)).kind,
+            StatementKind::Goto { label: 42 }
+        ));
+        assert!(let StatementKind::Asm(addrs) = &tree.statement(sid(asm)).kind);
+        assert!(addrs.len() == 2);
+        assert!(matches!(
+            tree.statement(sid(thr)).kind,
+            StatementKind::Throw(Some(_))
+        ));
+        assert!(let StatementKind::Try { catches, .. } = &tree.statement(sid(tri)).kind);
+        assert!(catches.len() == 1);
+    }
+
+    /// Drive the [`idakit_sys::TypeWalkSink`] forwarders (the ones the ctree walk uses, distinct
+    /// from the [`TypeSink`] methods the other tests call) and assert each builds its shape.
+    /// `named_ref` dedups by name, so a constant return collapses the three distinct named types
+    /// onto one handle; `anon` must hand out a fresh handle each call; a no-op `fill_*` leaves an
+    /// unfilled placeholder that `finish` rejects.
+    #[test]
+    fn type_walk_forwarders_build_their_shapes() {
+        use sys::TypeWalkSink;
+
+        let mut cb = CallbackBuilder::new();
+        let int = int_ty(&mut cb);
+
+        let arr = TypeWalkSink::array(&mut cb, int, 3, 12, 1);
+        let func = TypeWalkSink::func(&mut cb, int, &[int, int], 0);
+        let opq = TypeWalkSink::opaque(&mut cb, "Handle".into());
+
+        let node = TypeWalkSink::named_ref(&mut cb, "Node".into());
+        let members = vec![MemberInfo {
+            name: "v".into(),
+            bit_offset: 0,
+            ty: int,
+            bitfield_width: 0,
+            repr_vtype: 0,
+            repr_signed: false,
+            repr_leading_zeros: false,
+        }];
+        TypeWalkSink::fill_struct(&mut cb, node, false, &members, 4, 1);
+
+        let color = TypeWalkSink::named_ref(&mut cb, "Color".into());
+        let consts = vec![EnumConstInfo {
+            name: "RED".into(),
+            value: 1,
+        }];
+        TypeWalkSink::fill_enum(&mut cb, color, int, &consts, 4, 1, false, 0, false, false);
+
+        let alias = TypeWalkSink::named_ref(&mut cb, "myint".into());
+        TypeWalkSink::fill_typedef(&mut cb, alias, int);
+
+        let a1 = TypeWalkSink::anon(&mut cb);
+        let a2 = TypeWalkSink::anon(&mut cb);
+        assert!(a1 != a2, "anon reused a handle: {a1} == {a2}");
+        TypeWalkSink::fill_struct(&mut cb, a1, false, &[], 0, 1);
+        TypeWalkSink::fill_struct(&mut cb, a2, true, &[], 0, 1);
+
+        // The three named types must stay distinct; a constant `named_ref` collapses them.
+        assert!(node != color && node != alias && color != alias);
+
+        let blk = cb.block(0, &[]);
+        let tree = cb.finish(blk).expect("every placeholder filled");
+
+        assert!(matches!(
+            tree.type_of(tid(arr)).shape,
+            TypeShape::Array { .. }
+        ));
+        assert!(matches!(
+            tree.type_of(tid(func)).shape,
+            TypeShape::Function { .. }
+        ));
+        assert!(let TypeShape::Opaque(name) = &tree.type_of(tid(opq)).shape);
+        assert!(name == "Handle");
+        assert!(let TypeShape::Struct { name, members } = &tree.type_of(tid(node)).shape);
+        assert!(name.as_deref() == Some("Node") && members.len() == 1);
+        assert!(let TypeShape::Enum { name, .. } = &tree.type_of(tid(color)).shape);
+        assert!(name.as_deref() == Some("Color"));
+        assert!(let TypeShape::Typedef { name, .. } = &tree.type_of(tid(alias)).shape);
+        assert!(name == "myint");
+    }
 }

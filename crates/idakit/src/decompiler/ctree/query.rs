@@ -263,15 +263,18 @@ mod tests {
 
     /// Untyped pointer arithmetic threads to the same offset a member access would, since
     /// the constant index is scaled by the pointee size, so `(_QWORD *)this + 2`,
-    /// `(_DWORD *)this + 7`, and `(char *)this + 16` resolve to bytes 16, 28, and 16.
+    /// `(_DWORD *)this + 7`, and `(char *)this + 16` resolve to bytes 16, 28, and 16. The
+    /// pointer and the constant can appear on either side of `+`; the last case swaps them.
     #[rstest]
-    #[case(8, 2, 16)]
-    #[case(4, 7, 28)]
-    #[case(1, 16, 16)]
+    #[case(8, 2, 16, false)]
+    #[case(4, 7, 28, false)]
+    #[case(1, 16, 16, false)]
+    #[case(8, 2, 16, true)]
     fn base_var_threads_scaled_pointer_arithmetic(
         #[case] elem_bytes: u8,
         #[case] index: u64,
         #[case] expect: i64,
+        #[case] swap: bool,
     ) {
         let mut b = CtreeBuilder::new();
         let elem = b.intern_type(TypeValue {
@@ -289,7 +292,11 @@ mod tests {
         let v = b.var(ptr, this);
         let cast = b.cast(ptr, v);
         let num = b.num(elem, index);
-        let add = b.binary(ptr, BinaryOp::Add, cast, num);
+        let add = if swap {
+            b.binary(ptr, BinaryOp::Add, num, cast)
+        } else {
+            b.binary(ptr, BinaryOp::Add, cast, num)
+        };
         // The install/arg shapes wrap the arithmetic in a `*(...)` or `(T)(...)`; resolving
         // through that wrapper is the whole point.
         let deref = b.deref(elem, add, u32::from(elem_bytes));
