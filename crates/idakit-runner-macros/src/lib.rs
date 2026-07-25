@@ -11,7 +11,9 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Error, ItemFn, parse_macro_input};
+use syn::parse::Parser;
+use syn::punctuated::Punctuated;
+use syn::{Error, Expr, ExprLit, ItemFn, Lit, Meta, Token, parse_macro_input};
 
 /// Registers the annotated test with the warm-worker harness.
 ///
@@ -21,12 +23,16 @@ use syn::{Error, ItemFn, parse_macro_input};
 /// default is the safe direction: a test wrongly marked `read_only` corrupts the ones that follow
 /// it, while a read-only test left unmarked only costs a reopen.
 ///
+/// `#[kernel_test(should_panic)]` inverts the verdict, and `should_panic = "substring"` also
+/// requires the panic message to contain that text, mirroring libtest's own attribute. Both compose
+/// with `read_only` in either order.
+///
 /// Because the annotated function takes no arguments, this composes with `rstest`'s
 /// `#[test_attr(kernel_test)]` seam, which applies it to each generated case.
 #[proc_macro_attribute]
 pub fn kernel_test(args: TokenStream, item: TokenStream) -> TokenStream {
-    let isolation = match isolation(args) {
-        Ok(isolation) => isolation,
+    let options = match Options::parse(args) {
+        Ok(options) => options,
         Err(err) => return err.to_compile_error().into(),
     };
     let func = parse_macro_input!(item as ItemFn);
@@ -41,7 +47,11 @@ pub fn kernel_test(args: TokenStream, item: TokenStream) -> TokenStream {
         .into();
     }
 
-    let isolation = syn::Ident::new(isolation, proc_macro2::Span::call_site());
+    let isolation = syn::Ident::new(options.isolation, proc_macro2::Span::call_site());
+    let should_panic = options.should_panic.map_or_else(
+        || quote!(::core::option::Option::None),
+        |expected| quote!(::core::option::Option::Some(#expected)),
+    );
     quote! {
         #func
 
@@ -50,6 +60,7 @@ pub fn kernel_test(args: TokenStream, item: TokenStream) -> TokenStream {
                 module: ::core::module_path!(),
                 name: ::core::stringify!(#name),
                 isolation: crate::common::registry::Isolation::#isolation,
+                should_panic: #should_panic,
                 run: #name,
             }
         }
@@ -57,23 +68,51 @@ pub fn kernel_test(args: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
-/// The `Isolation` variant named by the attribute's arguments.
-fn isolation(args: TokenStream) -> Result<&'static str, Error> {
-    if args.is_empty() {
-        return Ok("Writes");
-    }
-    let ident = syn::parse::<syn::Ident>(args).map_err(|e| {
-        Error::new(
-            e.span(),
-            "expected #[kernel_test] or #[kernel_test(read_only)]",
-        )
-    })?;
-    if ident == "read_only" {
-        Ok("ReadOnly")
-    } else {
-        Err(Error::new_spanned(
-            ident,
-            "unknown argument; the only one is `read_only`",
-        ))
+/// What the attribute's arguments declared.
+struct Options {
+    /// The `Isolation` variant to register.
+    isolation: &'static str,
+    /// The required panic message, empty for any panic, or `None` if the test must not panic.
+    should_panic: Option<String>,
+}
+
+impl Options {
+    fn parse(args: TokenStream) -> Result<Self, Error> {
+        let mut options = Self {
+            isolation: "Writes",
+            should_panic: None,
+        };
+        if args.is_empty() {
+            return Ok(options);
+        }
+
+        for meta in Punctuated::<Meta, Token![,]>::parse_terminated.parse(args)? {
+            match &meta {
+                Meta::Path(path) if path.is_ident("read_only") => options.isolation = "ReadOnly",
+                Meta::Path(path) if path.is_ident("should_panic") => {
+                    options.should_panic = Some(String::new());
+                }
+                Meta::NameValue(pair) if pair.path.is_ident("should_panic") => {
+                    let Expr::Lit(ExprLit {
+                        lit: Lit::Str(text),
+                        ..
+                    }) = &pair.value
+                    else {
+                        return Err(Error::new_spanned(
+                            &pair.value,
+                            "should_panic takes a string literal, as in should_panic = \"boom\"",
+                        ));
+                    };
+                    options.should_panic = Some(text.value());
+                }
+                _ => {
+                    return Err(Error::new_spanned(
+                        meta,
+                        "expected read_only, should_panic, or should_panic = \"substring\"",
+                    ));
+                }
+            }
+        }
+        Ok(options)
     }
 }

@@ -54,21 +54,13 @@ name = "ctree_dump"
 path = "examples/ctree_dump.rs"
 doc-scrape-examples = true
 
-# Runtime-generated corpus matrix (one case per db x check); needs a custom harness.
+# The whole kernel-touching suite: every `#[kernel_test]` and every corpus check against every
+# fixture, driven by one pool of warm kernels.
 #
 # `test = false` keeps it out of `cargo test`/nextest auto-discovery on purpose. It is its own
-# runner: run plainly it plans every db x check case and drives a pool of warm workers, so letting
-# nextest list it would instead spawn one cold process per case and pay kernel bring-up hundreds of
-# times. `just test` invokes it directly; `cargo test --test corpus_matrix` still works by name.
-[[test]]
-name = "corpus_matrix"
-path = "tests/corpus_matrix.rs"
-harness = false
-test = false
-
-# Every `#[kernel_test]`, driven by a pool of warm kernels. `test = false` for the same reason as
-# above: listing it under nextest would spawn one cold process per test and pay bring-up sixty
-# times, which is exactly what this binary exists to avoid. `just test` invokes it directly.
+# runner: nextest spawns one process per *listed* test, so letting it list this binary would pay
+# kernel bring-up hundreds of times over, which is exactly what the binary exists to avoid. It
+# still reports every case individually. `just test` invokes it directly.
 [[test]]
 name = "kernel"
 path = "tests/kernel.rs"

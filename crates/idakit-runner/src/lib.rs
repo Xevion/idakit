@@ -52,6 +52,10 @@
 //! Workers cannot outlive the runner, including when the runner is killed rather than exiting
 //! cleanly. The per-platform mechanism lives in the private `lifecycle` module: a job object on
 //! Windows, `PR_SET_PDEATHSIG` on Linux.
+//!
+//! A case that never reports is bounded by [`Runner::timeout`]: its worker is killed, that one case
+//! is failed, and a replacement takes over the rest of the queue. Without it a wedged case would
+//! park the runner on a blocking read forever, losing the whole run instead of one case.
 
 mod lifecycle;
 pub mod protocol;
@@ -60,4 +64,4 @@ mod worker;
 
 pub use crate::protocol::Status;
 pub use crate::runner::{Case, CaseResult, Runner};
-pub use crate::worker::{Outcome, serve};
+pub use crate::worker::{Outcome, expecting_panic, panic_message, serve};

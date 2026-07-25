@@ -359,7 +359,7 @@ using namespace facade;
 // This runs only on the normal CRT exit path. On Windows std::process::exit is ExitProcess, which
 // skips atexit, so the swallow never runs and the banner leaks; returning from main (or exit())
 // runs it. POSIX std::process::exit calls exit(), which runs atexit, so Unix is unaffected. Test
-// binaries must therefore return from main, not call std::process::exit (see corpus_matrix).
+// binaries must therefore return from main, not call std::process::exit (see the kernel harness).
 // Whole-archive linking (build.rs) keeps this object in every binary, even ones that call no
 // facade function. On Windows this relies on idalib and the test binary sharing the UCRT's fd
 // table.

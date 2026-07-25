@@ -43,6 +43,11 @@ fn run(name: &str, pid: u32, opens: u32) -> Outcome {
         }
         // Dies without reporting, so the runner has to notice and replace the worker.
         "crash" => std::process::exit(9),
+        // Never reports, standing in for a case wedged inside the kernel: only the runner's
+        // deadline can end it.
+        "hang" => loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        },
         other => Outcome::Failed(format!("unknown behaviour {other:?}")),
     }
 }

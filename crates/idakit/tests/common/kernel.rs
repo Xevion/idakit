@@ -1,32 +1,42 @@
-//! Driver and worker for the `#[kernel_test]` binary, the counterpart to [`harness`] for tests
-//! that all share one database rather than fanning out across the corpus.
+//! Driver and worker for the whole kernel-touching suite: every `#[kernel_test]` and every corpus
+//! invariant, run as individually reported cases across one pool of warm kernels.
 //!
-//! Every registered test used to be its own process, which meant a full kernel bring-up each time
-//! even though the tests are indistinguishable from the kernel's point of view. Here they are
-//! individually named, timed, and reported exactly as before, but executed inside a few long-lived
-//! workers. Bring-up is paid per worker, and the database is reopened only when a test's
-//! [`Isolation`] says the previous one may have dirtied it.
+//! Both halves used to be their own binary with its own worker pool, which meant paying kernel
+//! bring-up twice over for what is the same work: open a database, run things against it. They are
+//! one plan here, so a worker that has the canonical database open serves its registered tests and
+//! its corpus checks without reopening anything in between.
 //!
-//! Test bodies are untouched by this: they still call
-//! [`with_canonical_db`](super::with_canonical_db), which notices it is inside a worker and uses
-//! the kernel already running there.
+//! Identity is what the pooling must not cost. Each case is named, timed, filtered, and reported on
+//! its own, exactly as if it had a process to itself; an earlier version of the corpus half ran
+//! every check for a fixture inside a single trial, so 74 trials stood in for 814 real cases and a
+//! failure named only its fixture. [`idakit_runner`] is what decouples the two: this module plans N
+//! named cases, and the runner executes them inside far fewer processes.
+//!
+//! The plan must be a pure function of the corpus manifest and the registry, since the driver
+//! computes it in one process and the workers recompute it in another. [`plan`] is the only place
+//! that decides, so the two cannot disagree.
 
 use std::collections::HashMap;
 use std::process::ExitCode;
 
-use idakit::corpus;
+use idakit::corpus::{self, Fixture, WorkingCopy};
 use idakit::prelude::Ida;
-use idakit_runner::{Case, Outcome, Runner, serve};
+use idakit_runner::{Case, CaseResult, Outcome, Runner, Status, expecting_panic, serve};
 
 use super::TestDb;
-use super::harness::{WORKER_FLAG, first_duplicate, report};
+use super::checks::{CHECKS, Check};
 use super::registry::{Isolation, KernelTest, Warm};
 
-/// Runs every registered kernel test, as the driver or as a worker depending on how this process
-/// was started.
+/// Argument that turns this binary into a worker instead of the driver.
+pub const WORKER_FLAG: &str = "--idakit-worker";
+
+/// Case-name prefix for the corpus fan-out half, keeping it clear of the registry's module paths.
+const CORPUS: &str = "corpus";
+
+/// Runs the whole suite, as the driver or as a worker depending on how this process was started.
 ///
-/// Positional arguments filter by substring, so one test can still be run alone; `--list` prints
-/// the case names and runs nothing.
+/// Positional arguments filter by substring, so one case can still be run alone; `--list` prints the
+/// case names and runs nothing.
 #[must_use]
 pub fn run() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -42,30 +52,125 @@ pub fn run() -> ExitCode {
     drive(&filters, list)
 }
 
+/// A database the suite opens, and what it contributes to the plan.
+struct Site {
+    fixture: Fixture,
+    /// Whether the registered `#[kernel_test]`s run here. Their copy also goes to RAM rather than
+    /// beside the corpus, since this is the database every writer reopens.
+    canonical: bool,
+    /// Whether the corpus checks fan out over this database.
+    checks: bool,
+}
+
+/// One planned case: its name, where it runs, and what it does.
+struct Planned {
+    name: String,
+    /// Index into the site list, which is also the case's affinity group.
+    site: usize,
+    body: Body,
+    isolation: Isolation,
+    /// Set when the case is inapplicable here, so it reports without opening anything.
+    skip: Option<String>,
+}
+
+/// What a case actually does when it runs.
+enum Body {
+    /// A corpus invariant over the open database.
+    Check(Check),
+    /// A registered test, which reaches the database through the warm-kernel context.
+    Test(&'static KernelTest),
+}
+
+/// Every database the suite opens, the manifest's fixtures plus wherever the canonical one lives.
+fn sites() -> Vec<Site> {
+    let mut sites: Vec<Site> = corpus::fixtures()
+        .into_iter()
+        .map(|fixture| Site {
+            fixture,
+            canonical: false,
+            checks: true,
+        })
+        .collect();
+
+    let Some(path) = TestDb::source() else {
+        return sites;
+    };
+    if let Some(site) = sites.iter_mut().find(|s| s.fixture.path == path) {
+        site.canonical = true;
+    } else {
+        // An `IDAKIT_TEST_DB` override names a database the manifest does not list, so it takes the
+        // registered tests but stays out of the fan-out.
+        sites.push(Site {
+            fixture: Fixture {
+                name: "canonical".to_owned(),
+                path,
+                skip_checks: Vec::new(),
+                decompiler: true,
+            },
+            canonical: true,
+            checks: false,
+        });
+    }
+    sites
+}
+
+/// The whole case list: every check against every fixture, and every registered test against the
+/// canonical database.
+fn plan(sites: &[Site]) -> Vec<Planned> {
+    let mut planned = Vec::new();
+    for (index, site) in sites.iter().enumerate().filter(|(_, s)| s.checks) {
+        for &(check_name, check) in CHECKS {
+            planned.push(Planned {
+                name: format!("{CORPUS}::{}::{check_name}", site.fixture.name),
+                site: index,
+                body: Body::Check(check),
+                isolation: Isolation::ReadOnly,
+                skip: effective_skip(&site.fixture, check_name),
+            });
+        }
+    }
+    if let Some(index) = sites.iter().position(|s| s.canonical) {
+        for test in inventory::iter::<KernelTest> {
+            planned.push(Planned {
+                name: test.case_name(),
+                site: index,
+                body: Body::Test(test),
+                isolation: test.isolation,
+                skip: None,
+            });
+        }
+    }
+    planned
+}
+
 /// Plans the case list, runs it across a pool of workers, and reports every case.
 fn drive(filters: &[&str], list: bool) -> ExitCode {
     // A misconfigured corpus (a manifest that is present but broken) must fail loudly rather than
     // silently collapse to zero cases and a green run.
     if let Err(reason) = corpus::validate() {
-        println!("kernel_manifest_is_valid ... FAILED\n  {reason}");
+        println!("manifest_is_valid ... FAILED\n  {reason}");
         return ExitCode::FAILURE;
     }
 
-    let names: Vec<String> = tests().map(KernelTest::case_name).collect();
-    if let Some(dup) = first_duplicate(names.iter().map(String::as_str)) {
-        println!("kernel tests collide on name {dup:?}");
+    let sites = sites();
+    if let Some(dup) = first_duplicate(sites.iter().map(|s| s.fixture.name.as_str())) {
+        println!("fixtures collide on display name {dup:?}");
         return ExitCode::FAILURE;
     }
+    let planned = plan(&sites);
+    if let Some(dup) = first_duplicate(planned.iter().map(|p| p.name.as_str())) {
+        println!("cases collide on name {dup:?}");
+        return ExitCode::FAILURE;
+    }
+    if planned.is_empty() {
+        println!("kernel: no corpus configured, skipping");
+        return ExitCode::SUCCESS;
+    }
 
-    let cases: Vec<Case> = tests()
-        .map(|test| (test, test.case_name()))
-        .filter(|(_, name)| filters.is_empty() || filters.iter().any(|f| name.contains(f)))
-        .map(|(test, name)| match test.isolation {
-            // Every read-only test wants the same database, so grouping them lets one worker open
-            // it once and run all of them. A writer shares nothing and stays ungrouped.
-            Isolation::ReadOnly => Case::new(name).group("canonical"),
-            Isolation::Writes => Case::new(name),
-        })
+    let cases: Vec<Case> = planned
+        .iter()
+        .filter(|case| filters.is_empty() || filters.iter().any(|f| case.name.contains(f)))
+        .map(|case| Case::new(case.name.clone()).group(sites[case.site].fixture.name.clone()))
         .collect();
 
     if list {
@@ -76,10 +181,6 @@ fn drive(filters: &[&str], list: bool) -> ExitCode {
     }
     if cases.is_empty() {
         println!("kernel: no cases matched, skipping");
-        return ExitCode::SUCCESS;
-    }
-    if corpus::canonical().is_none() {
-        println!("kernel: no corpus configured, skipping");
         return ExitCode::SUCCESS;
     }
 
@@ -100,34 +201,43 @@ fn drive(filters: &[&str], list: bool) -> ExitCode {
     }
 }
 
-/// Brings the kernel up once, then serves cases, reopening the database only when the last one may
-/// have dirtied it.
+/// Brings the kernel up once, then serves cases, holding each database open across its whole group.
 fn work() -> ExitCode {
-    let tests: HashMap<String, &'static KernelTest> =
-        tests().map(|test| (test.case_name(), test)).collect();
+    let sites = sites();
+    let plan: HashMap<String, Planned> = plan(&sites)
+        .into_iter()
+        .map(|case| (case.name.clone(), case))
+        .collect();
 
     let outcome = Ida::run(move |ida| {
-        let mut copy: Option<TestDb> = None;
-        let mut clean = false;
+        let mut open: Option<Open> = None;
         serve(move |name| {
-            let Some(test) = tests.get(name) else {
-                return Outcome::Failed(format!("no such kernel test: {name}"));
+            let Some(case) = plan.get(name) else {
+                return Outcome::Failed(format!("no such case: {name}"));
             };
-            if !clean {
-                match reset(&ida, &mut copy) {
-                    Ok(()) => clean = true,
-                    Err(reason) => return Outcome::Failed(reason),
-                }
+            if let Some(reason) = &case.skip {
+                return Outcome::Skipped(reason.clone());
             }
-            // Marked before the body runs, so a test that panics part-way through its writes still
-            // forces the next one to get a fresh database.
-            if test.isolation == Isolation::Writes {
-                clean = false;
+            if let Err(reason) = ensure_open(&ida, &mut open, case.site, &sites[case.site]) {
+                return Outcome::Failed(reason);
+            }
+            // Marked before the body runs, so a case that panics part-way through its writes still
+            // forces the next one onto a freshly reopened database.
+            if case.isolation == Isolation::Writes {
+                open.as_mut().expect("ensure_open left one open").clean = false;
             }
 
-            let _warm = Warm::new(&ida);
-            (test.run)();
-            Outcome::Passed(None)
+            match &case.body {
+                Body::Check(check) => {
+                    let check = *check;
+                    ida.call(move |idb| check(&*idb))
+                        .map_or_else(|err| Outcome::Failed(err.to_string()), Outcome::from)
+                }
+                Body::Test(test) => {
+                    let _warm = Warm::new(&ida);
+                    invoke(test)
+                }
+            }
         })
     });
 
@@ -144,27 +254,168 @@ fn work() -> ExitCode {
     }
 }
 
-/// Resets the worker's database to a pristine state, taking its private copy on the first call.
+/// Runs one registered test and turns what it did into an outcome.
 ///
-/// The copy is made once and reused, not remade per reset: `close(false)` deletes the sidecar files
-/// every mutation lives in and leaves the `.i64` container untouched, so reopening the same file is
-/// already a clean slate. That is the difference between a reset costing an open and one costing a
-/// whole-file copy as well, and `reopen_is_pristine` is the guard that keeps it true.
-fn reset(ida: &Ida, copy: &mut Option<TestDb>) -> Result<(), String> {
-    if copy.is_some() {
-        // Never save: the canonical database on disk is read-only ground truth for every other run.
-        let _ = ida.call(|idb| idb.close(false));
-    }
-    let db = match copy {
-        Some(db) => db,
-        None => copy.insert(TestDb::acquire().ok_or("no canonical database")?),
+/// A test that does not declare `should_panic` reports through the runner's own panic handling, so
+/// a failure keeps its original location and message. One that does has to be caught here instead,
+/// since only this side knows a panic was the point.
+fn invoke(test: &KernelTest) -> Outcome {
+    let Some(expected) = test.should_panic else {
+        (test.run)();
+        return Outcome::Passed(None);
     };
-    let path = db.path().to_owned();
-    ida.call(move |idb| idb.open(&path).call().map_err(|e| e.to_string()))
-        .map_err(|e| e.to_string())??;
+    expecting_panic(expected, test.run)
+}
+
+/// The database a worker currently has open, and the disposable copy backing it.
+struct Open {
+    site: usize,
+    /// Must outlive the open database, since dropping it deletes the file.
+    copy: Scratch,
+    /// False once a case that writes has been handed out, meaning the next case needs a reopen.
+    clean: bool,
+}
+
+/// A disposable copy of a fixture, in whichever scratch area suits it.
+enum Scratch {
+    /// The canonical database, which is reopened constantly, so it goes to a RAM disk where one
+    /// exists.
+    Ram(TestDb),
+    /// A corpus fixture, copied beside the corpus: they are large enough that a RAM disk would
+    /// compete with the kernel's own working set under fan-out.
+    Corpus(WorkingCopy),
+}
+
+impl Scratch {
+    fn path(&self) -> &str {
+        match self {
+            Self::Ram(db) => db.path(),
+            Self::Corpus(copy) => copy.path(),
+        }
+    }
+}
+
+/// Leaves `site`'s database open and pristine, doing the least work that achieves it.
+///
+/// Three cases, cheapest first: already open and untouched, nothing happens; already open but
+/// dirtied by a writer, the same copy is reopened; a different database, a fresh copy is taken.
+/// Reopening rather than recopying is what makes a writer cheap, and it is sound because
+/// `close(false)` deletes the sidecar files every mutation lives in and leaves the `.i64` container
+/// untouched. `tests/reopen_is_pristine.rs` is the guard that keeps that true.
+fn ensure_open(
+    ida: &Ida,
+    open: &mut Option<Open>,
+    index: usize,
+    site: &Site,
+) -> Result<(), String> {
+    if open.as_ref().is_some_and(|current| current.site == index) {
+        let current = open.as_mut().expect("just checked");
+        if current.clean {
+            return Ok(());
+        }
+        let path = current.copy.path().to_owned();
+        close(ida);
+        open_at(ida, &path)?;
+        current.clean = true;
+        return Ok(());
+    }
+    if open.is_some() {
+        close(ida);
+        *open = None;
+    }
+
+    let copy = if site.canonical {
+        Scratch::Ram(TestDb::copy_of(&site.fixture.path))
+    } else {
+        Scratch::Corpus(corpus::working_copy(&site.fixture.path).map_err(|e| e.to_string())?)
+    };
+    open_at(ida, copy.path())?;
+    *open = Some(Open {
+        site: index,
+        copy,
+        clean: true,
+    });
     Ok(())
 }
 
-fn tests() -> impl Iterator<Item = &'static KernelTest> {
-    inventory::iter::<KernelTest>.into_iter()
+/// Closes the open database without saving, since every fixture on disk is read-only ground truth
+/// for every other run.
+fn close(ida: &Ida) {
+    let _ = ida.call(|idb| idb.close(false));
+}
+
+fn open_at(ida: &Ida, path: &str) -> Result<(), String> {
+    let path = path.to_owned();
+    ida.call(move |idb| idb.open(&path).call().map_err(|e| e.to_string()))
+        .map_err(|e| e.to_string())?
+}
+
+/// Whether `check` is inapplicable to `fixture`: declared in the manifest's `skip_checks`, or
+/// implied for the decompiler-dependent checks by `decompiler = false`.
+fn effective_skip(fixture: &Fixture, check: &str) -> Option<String> {
+    if fixture.skips(check) {
+        return Some("manifest".to_owned());
+    }
+    if !fixture.decompiler && matches!(check, "decompile" | "argloc") {
+        return Some("no decompiler".to_owned());
+    }
+    None
+}
+
+/// The first name shared by two entries, if any.
+fn first_duplicate<'a>(names: impl Iterator<Item = &'a str>) -> Option<String> {
+    let mut names: Vec<&str> = names.collect();
+    names.sort_unstable();
+    names
+        .windows(2)
+        .find(|w| w[0] == w[1])
+        .map(|w| w[0].to_owned())
+}
+
+/// Prints one line per case, then any failures in full, then a summary.
+fn report(results: &[CaseResult], total: usize) -> ExitCode {
+    let mut ordered: Vec<&CaseResult> = results.iter().collect();
+    ordered.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let mut passed = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = Vec::new();
+    for result in &ordered {
+        let (label, detail) = match result.status {
+            Status::Passed => {
+                passed += 1;
+                ("ok", result.message.as_str())
+            }
+            Status::Skipped => {
+                skipped += 1;
+                ("skipped", result.message.as_str())
+            }
+            Status::Failed => {
+                failed.push(*result);
+                ("FAILED", result.message.as_str())
+            }
+        };
+        if detail.is_empty() {
+            println!("{} ... {label} ({}ms)", result.name, result.millis);
+        } else {
+            println!("{} ... {label} ({}ms) {detail}", result.name, result.millis);
+        }
+    }
+
+    for result in &failed {
+        println!("\nfailure: {}\n{}", result.name, result.message);
+        for line in &result.output {
+            println!("{line}");
+        }
+    }
+
+    println!(
+        "\nsummary: {passed} passed, {} failed, {skipped} skipped, {total} total",
+        failed.len()
+    );
+    if failed.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }

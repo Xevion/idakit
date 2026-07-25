@@ -1,7 +1,7 @@
 # Caps what nextest still runs: the test binaries that bring a kernel up themselves. Each opens a
 # private DB copy, so RAM is the only limit (~0.85 GiB/slot); lower on a RAM-tight runner.
-# slow-timeout kills a wedged test. `corpus_matrix` and `kernel` are not listed here because nextest
-# never sees them: they are their own runners and schedule their own workers.
+# slow-timeout kills a wedged test. `kernel` is not listed here because nextest never sees it: it is
+# its own runner and schedules its own workers.
 
 [profile.default]
 fail-fast = false

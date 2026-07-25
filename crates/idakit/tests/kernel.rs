@@ -1,9 +1,11 @@
-//! Every test that wants the canonical database, run as one binary against a pool of warm kernels.
+//! The whole kernel-touching suite in one binary: every `#[kernel_test]` against the canonical
+//! database, and every [`common::checks`] invariant against every corpus fixture.
 //!
-//! `harness = false` because these are `#[kernel_test]`s, not libtest tests: they register
-//! themselves with [`common::registry`] and are driven by [`common::kernel`], which pays kernel
-//! bring-up once per worker instead of once per test while still naming, timing, and reporting each
-//! one on its own. This binary only pulls the test modules in, so that registration links.
+//! `harness = false` because these are not libtest tests. The registered ones submit themselves to
+//! [`common::registry`], the corpus half is a cross product computed from the manifest at runtime,
+//! and both are driven by [`common::kernel`], which pays kernel bring-up once per worker rather
+//! than once per case while still naming, timing, and reporting each one on its own. This binary
+//! only pulls the test modules in, so that registration links.
 //!
 //! Tests that deliberately exercise kernel bring-up itself, or that need a process with no kernel
 //! in it, stay outside as ordinary `#[test]` binaries.

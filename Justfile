@@ -15,14 +15,12 @@ build:
     cargo build --workspace
 
 # nextest runs the suite; the kernel-touching integration tests are serialized by
-# .config/nextest.toml and skip without their preconditions. The corpus matrix and the
-# `#[kernel_test]` binary are their own runner (`test = false`, so nextest skips them): each reports
-# every case individually while executing them across a pool of warm workers, which nextest cannot
-# do because it spawns one process per listed test. Doctests run separately, since nextest doesn't
-# cover them.
+# .config/nextest.toml and skip without their preconditions. The `kernel` binary is its own runner
+# (`test = false`, so nextest skips it): it reports every registered test and every corpus case
+# individually while executing them across one pool of warm workers, which nextest cannot do because
+# it spawns one process per listed test. Doctests run separately, since nextest doesn't cover them.
 test:
     cargo nextest run --workspace --all-features
-    cargo test -p idakit --all-features --test corpus_matrix
     cargo test -p idakit --all-features --test kernel
     cargo test --workspace --all-features --doc
 
@@ -98,9 +96,10 @@ pedantic:
 # reason: see crates/idakit-sys/tsan-suppressions.txt.
 #
 # Covers the facade's guarded<> boundary plus every binary that marshals a string or buffer
-# across it. `--test-threads=1` is mandatory: unlike nextest, plain `cargo test` shares one
+# across it, which since the harness merge means `traps` plus the whole `kernel` suite.
+# `--test-threads=1` is mandatory for `traps`: unlike nextest, plain `cargo test` shares one
 # process across a binary's tests, and the kernel singleton hard-errors on a second concurrent
-# claim.
+# claim. `kernel` schedules its own workers and ignores the flag.
 sanitize mode="address":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -113,8 +112,7 @@ sanitize mode="address":
       export RUSTFLAGS="-Zsanitizer=address -Cdebuginfo=1"
       export ASAN_OPTIONS=detect_leaks=0
     fi
-    tests=(-p idakit -p idakit-sys --test roundtrip --test netnode --test tinfo --test traps
-           --test write --test decode_sweep --test strings --test search --test data --test disasm)
+    tests=(-p idakit -p idakit-sys --test traps --test kernel)
     cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu "${tests[@]}" -- --test-threads=1
 
 clippy:
@@ -123,11 +121,24 @@ clippy:
 # Line coverage over the workspace, written to coverage/ (gitignored); needs cargo-llvm-cov.
 # Every step carries the cfg, else the `coverage(off)` exceptions go inert and count against the
 # total. Doctests are left out: `--doctests` is still incomplete. Advisory, not part of `check`.
+#
+# `llvm-cov nextest` alone would miss the `kernel` binary entirely, since nextest never lists a
+# `test = false` target: its ~900 cases would contribute nothing while the total still read as
+# whole-suite coverage. `show-env` exports the instrumentation into the shell instead, so both
+# runners write into one profile set. Warm workers are covered for free: LLVM_PROFILE_FILE carries
+# `%p`, so each worker process lands in its own raw file.
 coverage:
-    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov nextest --workspace --all-features --no-fail-fast --hide-progress-bar
-    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov report --html --output-dir coverage/html
-    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov report --lcov --output-path coverage/lcov.info
-    RUSTFLAGS="--cfg coverage_nightly" cargo +nightly llvm-cov report --json --output-path coverage/coverage.json
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export RUSTFLAGS="--cfg coverage_nightly"
+    source <(cargo +nightly llvm-cov show-env --export-prefix)
+    cargo +nightly llvm-cov clean --workspace
+    cargo +nightly nextest run --workspace --all-features --no-fail-fast --hide-progress-bar
+    cargo +nightly test -p idakit --all-features --test kernel
+    mkdir -p coverage
+    cargo +nightly llvm-cov report --html --output-dir coverage/html
+    cargo +nightly llvm-cov report --lcov --output-path coverage/lcov.info
+    cargo +nightly llvm-cov report --json --output-path coverage/coverage.json
 
 # `just coverage`, then open the HTML report.
 coverage-open: coverage
@@ -167,7 +178,6 @@ readme-check:
 # host-independent canonical fixture the corpus matrix uses.
 ci-test:
     cargo nextest run --workspace --all-features --no-fail-fast
-    cargo test -p idakit --all-features --test corpus_matrix
     cargo test -p idakit --all-features --test kernel
     cargo test --workspace --all-features --doc
 
@@ -176,8 +186,8 @@ ci-test:
 # single-core removes contention noise and the ratios are what matter. nextest runs every test in
 # its own process; samply follows the tree and `--reuse-threads` merges the per-process threads, so
 # the profile aggregates them into one flamegraph rather than 200 disjoint ones. The same run emits
-# JUnit timing, so it doubles as the "which test is slow" view. It does not cover `corpus_matrix` or
-# `kernel`, which nextest does not list; those report their own per-case timings already. Writes a
+# JUnit timing, so it doubles as the "which test is slow" view. It does not cover `kernel`, which
+# nextest does not list; that binary reports its own per-case timings already. Writes a
 # profile file; open it with `samply load <out>`. Needs perf_event_paranoid <= 1 (samply prints the
 # sudo one-liner) and the corpus. Single-core, so it takes several minutes; that is the point.
 profile out="target/profile.json.gz":

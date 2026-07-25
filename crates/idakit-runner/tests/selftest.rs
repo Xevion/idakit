@@ -6,6 +6,7 @@
 //! to support, not just the one where the kernel happens to be installed.
 
 use std::collections::{BTreeMap, HashSet};
+use std::time::Duration;
 
 use assert2::{assert, check};
 use idakit_runner::{Case, CaseResult, Runner, Status};
@@ -152,6 +153,29 @@ fn a_crashing_case_does_not_strand_the_rest() {
     let by = by_name(&results);
     check!(by["boom::crash"].status == Status::Failed);
     for i in 0..8 {
+        let name = format!("after{i}::pass");
+        check!(by[name.as_str()].status == Status::Passed, "{name} ran");
+    }
+}
+
+#[test]
+fn a_wedged_case_is_killed_and_the_rest_still_run() {
+    // Without a deadline the runner blocks on the wedged case forever, so the whole run is lost
+    // rather than the one case. The replacement path is the same one a crash takes.
+    let mut cases = vec![Case::new("wedged::hang")];
+    cases.extend((0..4).map(|i| Case::new(format!("after{i}::pass"))));
+
+    let results = Runner::new(WORKER, &["--worker"])
+        .workers(1)
+        .timeout(Duration::from_millis(500))
+        .run(cases)
+        .expect("the runner starts");
+
+    assert!(results.len() == 5);
+    let by = by_name(&results);
+    check!(by["wedged::hang"].status == Status::Failed);
+    check!(by["wedged::hang"].message.contains("timeout"));
+    for i in 0..4 {
         let name = format!("after{i}::pass");
         check!(by[name.as_str()].status == Status::Passed, "{name} ran");
     }

@@ -3,7 +3,6 @@
 #![allow(dead_code, unused_imports, unused_macros)]
 
 pub mod checks;
-pub mod harness;
 pub mod kernel;
 mod macros;
 pub mod registry;

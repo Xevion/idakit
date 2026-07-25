@@ -20,9 +20,18 @@ use std::io::{self, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 use crate::lifecycle::Nursery;
 use crate::protocol::{Event, Line, Request, Status, read_line};
+
+/// How long one case may run before its worker is killed.
+///
+/// Generous on purpose: this detects a wedged case, it is not a performance budget. A case is billed
+/// for whatever its group's setup costs, since the first case of a group pays to copy and open that
+/// database, so a tight bound here would fire on a large fixture rather than on a real hang.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// One case to run, named uniquely within the run.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +81,7 @@ pub struct Runner {
     program: PathBuf,
     worker_args: Vec<OsString>,
     workers: usize,
+    timeout: Duration,
 }
 
 impl Runner {
@@ -84,6 +94,7 @@ impl Runner {
             program: program.into(),
             worker_args: worker_args.iter().map(OsString::from).collect(),
             workers: default_workers(),
+            timeout: DEFAULT_TIMEOUT,
         }
     }
 
@@ -91,6 +102,16 @@ impl Runner {
     #[must_use]
     pub const fn workers(mut self, workers: usize) -> Self {
         self.workers = if workers == 0 { 1 } else { workers };
+        self
+    }
+
+    /// Sets how long a single case may run before its worker is killed.
+    ///
+    /// A case that overruns is reported failed on its own and a replacement worker takes over the
+    /// rest of the queue, so one hang costs that case rather than the run.
+    #[must_use]
+    pub const fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
         self
     }
 
@@ -148,7 +169,7 @@ impl Runner {
 
         while let Some(case) = next_case(scheduler, last_group.as_deref()) {
             last_group.clone_from(&case.group);
-            let result = worker.run_case(&case.name);
+            let result = worker.run_case(&case.name, self.timeout);
             let alive = result.is_ok();
             results
                 .lock()
@@ -186,7 +207,7 @@ impl Runner {
         Ok(Worker {
             child,
             stdin,
-            output: BufReader::new(reader),
+            lines: drain(BufReader::new(reader)),
         })
     }
 }
@@ -195,28 +216,53 @@ impl Runner {
 struct Worker {
     child: Child,
     stdin: std::process::ChildStdin,
-    output: BufReader<io::PipeReader>,
+    lines: Receiver<io::Result<Line>>,
 }
 
 impl Worker {
     /// Leases one case to this worker and collects its result.
     ///
     /// # Errors
-    /// If the worker died or its stream ended before reporting the case, in which case the caller
-    /// replaces it.
-    fn run_case(&mut self, name: &str) -> io::Result<CaseResult> {
+    /// If the worker died, its stream ended before reporting the case, or the case overran
+    /// `timeout`. In every one of those the caller replaces the worker, so the rest of the queue is
+    /// unaffected.
+    fn run_case(&mut self, name: &str, timeout: Duration) -> io::Result<CaseResult> {
         Request::Run(name.to_owned()).write_to(&mut self.stdin)?;
+        let deadline = Instant::now() + timeout;
 
         let mut output = Vec::new();
         loop {
-            match read_line(&mut self.output)? {
-                Some(Line::Output(text)) => output.push(text),
-                Some(Line::Control(Event::Start(_))) => {}
-                Some(Line::Control(Event::End {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let line = match self.lines.recv_timeout(left) {
+                Ok(line) => line?,
+                Err(RecvTimeoutError::Timeout) => {
+                    // Killing it is the point: a wedged case holds a whole kernel, and without this
+                    // the run would block here forever rather than losing one case.
+                    let _ = self.child.kill();
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!(
+                            "case exceeded the {}s timeout and its worker was killed:\n{}",
+                            timeout.as_secs(),
+                            output.join("\n")
+                        ),
+                    ));
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        format!("worker exited during {name}:\n{}", output.join("\n")),
+                    ));
+                }
+            };
+            match line {
+                Line::Output(text) => output.push(text),
+                Line::Control(Event::Start(_)) => {}
+                Line::Control(Event::End {
                     status,
                     millis,
                     message,
-                })) => {
+                }) => {
                     return Ok(CaseResult {
                         name: name.to_owned(),
                         status,
@@ -224,12 +270,6 @@ impl Worker {
                         message,
                         output,
                     });
-                }
-                None => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        format!("worker exited during {name}:\n{}", output.join("\n")),
-                    ));
                 }
             }
         }
@@ -241,6 +281,32 @@ impl Worker {
         drop(self.stdin);
         let _ = self.child.wait();
     }
+}
+
+/// Reads a worker's merged output on its own thread, so the runner can wait on it with a deadline.
+///
+/// Blocking reads are what a timeout has to escape from: a wedged case never writes its end frame,
+/// so a direct `read_line` would park forever. The thread ends on its own at end of input, which is
+/// what killing the worker produces.
+fn drain(mut output: BufReader<io::PipeReader>) -> Receiver<io::Result<Line>> {
+    let (lines, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        loop {
+            match read_line(&mut output) {
+                Ok(Some(line)) => {
+                    if lines.send(Ok(line)).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(err) => {
+                    let _ = lines.send(Err(err));
+                    break;
+                }
+            }
+        }
+    });
+    receiver
 }
 
 /// Hands out pending cases, keeping each worker on one group for as long as that group has work.

@@ -74,7 +74,7 @@ where
         Ok(Outcome::Passed(summary)) => (Status::Passed, summary.unwrap_or_default()),
         Ok(Outcome::Skipped(reason)) => (Status::Skipped, reason),
         Ok(Outcome::Failed(reason)) => (Status::Failed, reason),
-        Err(payload) => (Status::Failed, panic_message(&payload)),
+        Err(payload) => (Status::Failed, panic_message(&*payload)),
     };
 
     Event::End {
@@ -85,8 +85,34 @@ where
     .write_to(&mut out)
 }
 
+/// Runs `body` and inverts the verdict, for a case whose panic is the thing being asserted.
+///
+/// `expected` is a substring the panic message must contain, or empty to accept any panic. This
+/// mirrors libtest's `#[should_panic]`, and lives here rather than in a harness so the rule and
+/// [`panic_message`] cannot disagree about what a payload says.
+#[must_use]
+pub fn expecting_panic(expected: &str, body: impl FnOnce() + panic::UnwindSafe) -> Outcome {
+    match panic::catch_unwind(body) {
+        Ok(()) => Outcome::Failed("expected a panic, but the case returned".to_owned()),
+        Err(payload) => {
+            let message = panic_message(&*payload);
+            if expected.is_empty() || message.contains(expected) {
+                Outcome::Passed(None)
+            } else {
+                Outcome::Failed(format!(
+                    "panicked with {message:?}, which does not contain {expected:?}"
+                ))
+            }
+        }
+    }
+}
+
 /// The best available text for a caught panic payload.
-fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+///
+/// Public because a harness that implements `should_panic` has to inspect the message itself, and
+/// the two must agree on what a payload's text is.
+#[must_use]
+pub fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_owned()
     } else if let Some(s) = payload.downcast_ref::<String>() {
@@ -109,12 +135,30 @@ mod tests {
     }
 
     #[test]
+    fn an_expected_panic_passes_when_the_message_matches() {
+        assert!(expecting_panic("boom", || panic!("boom at 0x40")) == Outcome::Passed(None));
+        // An empty expectation accepts any panic, which is bare `should_panic`.
+        assert!(expecting_panic("", || panic!("anything")) == Outcome::Passed(None));
+    }
+
+    #[test]
+    fn an_expected_panic_fails_on_the_wrong_message_or_none_at_all() {
+        // The point of matching: a case that panics for an unrelated reason has not proven the
+        // thing it claims to.
+        let wrong = expecting_panic("bad address", || panic!("out of memory"));
+        assert!(matches!(wrong, Outcome::Failed(ref why) if why.contains("out of memory")));
+
+        let quiet = expecting_panic("bad address", || {});
+        assert!(matches!(quiet, Outcome::Failed(ref why) if why.contains("expected a panic")));
+    }
+
+    #[test]
     fn panic_payloads_yield_their_text() {
         let caught = panic::catch_unwind(|| panic!("boom")).expect_err("it panicked");
-        assert!(panic_message(&caught) == "boom");
+        assert!(panic_message(&*caught) == "boom");
 
         let caught =
             panic::catch_unwind(|| panic!("{}", String::from("owned"))).expect_err("it panicked");
-        assert!(panic_message(&caught) == "owned");
+        assert!(panic_message(&*caught) == "owned");
     }
 }

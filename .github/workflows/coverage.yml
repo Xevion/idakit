@@ -67,10 +67,18 @@ jobs:
       - name: Fetch test corpus
         uses: ./.github/actions/fetch-corpus
       # Doctests are left out (`--doctests` is still incomplete); they run under `just test`.
-      - name: Run tests with coverage
-        run: cargo llvm-cov nextest --workspace --all-features --profile ci --no-fail-fast --hide-progress-bar --failure-output final
-      - name: Generate coverage reports
+      #
+      # `llvm-cov nextest` alone would miss the `kernel` binary, which nextest never lists because
+      # it is `test = false` and drives its own warm workers. Exporting the instrumentation with
+      # `show-env` lets both runners write into one profile set, so its ~900 cases count. The junit
+      # report below still comes from the nextest half.
+      - name: Run tests with coverage and generate reports
         run: |
+          # shellcheck disable=SC1090  # the env is generated, so there is no file to follow
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo llvm-cov clean --workspace
+          cargo nextest run --workspace --all-features --profile ci --no-fail-fast --hide-progress-bar --failure-output final
+          cargo test -p idakit --all-features --test kernel
           mkdir -p coverage
           cargo llvm-cov report --html --output-dir coverage/html
           cargo llvm-cov report --lcov --output-path coverage/lcov.info

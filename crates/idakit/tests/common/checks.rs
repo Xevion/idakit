@@ -1,6 +1,6 @@
 //! Reusable, read-only invariant checks over an already-open [`Database`]. Each returns a one-line
 //! summary and panics (via `assert!`) on a violation, so it works as a `#[test]` body and as a
-//! `libtest-mimic` trial alike. The registry [`CHECKS`] is the corpus matrix's check axis.
+//! harness case alike. The registry [`CHECKS`] is the corpus fan-out's check axis.
 
 use idakit::prelude::*;
 

@@ -21,6 +21,8 @@ pub struct KernelTest {
     pub name: &'static str,
     /// Whether the test mutates the database.
     pub isolation: Isolation,
+    /// The panic message the test requires, empty for any panic, or `None` if it must not panic.
+    pub should_panic: Option<&'static str>,
     /// The test body, which panics to fail.
     pub run: fn(),
 }
