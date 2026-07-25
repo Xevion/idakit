@@ -4,8 +4,8 @@ members = [
     "crates/idakit-sys",
     "crates/idakit-sys-codegen",
     "crates/idakit",
-    "crates/idakit-test",
-    "crates/idakit-test-macros",
+    "crates/idakit-runner",
+    "crates/idakit-runner-macros",
 ]
 
 [workspace.package]

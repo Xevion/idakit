@@ -1,0 +1,299 @@
+//! Control-flow graph against a real database: a multi-block function builds a sound graph
+//! (every block is a non-empty range, internal edges reference valid blocks and mirror as
+//! predecessors, out-of-function exits point outside the graph), block lookup and per-block
+//! instruction walking agree with the block ranges, the build knobs behave, and a
+//! non-function address is rejected. Read-only; opens `save = false`.
+//!
+//! `BasicBlockKind`/flag composition is unit-tested (kernel-free) in `flowchart.rs`; this
+//! covers the parts that need a live kernel. Skips when no test database is present.
+
+use idakit::prelude::*;
+use idakit_runner_macros::kernel_test;
+
+#[kernel_test(read_only)]
+fn cfg() {
+    crate::common::with_canonical_db(run);
+}
+
+fn run(idb: &mut Database) {
+    let cfg = first_multiblock_cfg(idb).expect("a function with at least two basic blocks");
+    structure_is_sound(&cfg);
+    ranges_are_disjoint(&cfg);
+    block_kind_matches_its_edges(&cfg);
+    entry_and_lookup(&cfg);
+    instructions_walk_the_entry_block(idb, &cfg);
+    exits_leave_the_function(idb);
+    knobs_behave(idb, cfg.function());
+    build_is_deterministic(idb, cfg.function());
+    non_function_is_rejected(idb);
+    raw_predecessors_never_reach_nproper(cfg.function());
+
+    println!(
+        "cfg OK: {} blocks, edges sound and symmetric, ranges disjoint, kinds match their \
+         edges, exits + knobs + determinism + NoFunction verified",
+        cfg.len()
+    );
+}
+
+/// The first function (scanning a bounded prefix) whose CFG has two or more blocks, enough
+/// to exercise edges. Single-block leaf functions are common, so a scan is needed.
+fn first_multiblock_cfg(idb: &Database) -> Option<FlowChart> {
+    idb.functions().take(4000).find_map(|f| {
+        let cfg = f.flowchart().ok()?;
+        (cfg.len() >= 2).then_some(cfg)
+    })
+}
+
+/// Every block is a non-empty range; every internal edge endpoint is a valid handle; every
+/// exit points outside the graph; and, since internal successors are the only block-to-block
+/// edges, A -> B as a successor implies A is one of B's predecessors.
+fn structure_is_sound(cfg: &FlowChart) {
+    for (id, b) in cfg.blocks() {
+        assert!(b.end() > b.start(), "every block spans a non-empty range");
+        for &s in b.successors() {
+            assert!(s.index() < cfg.len(), "successor handle in range");
+            assert!(
+                cfg.block(s).predecessors().contains(&id),
+                "edge {:?} -> {:?} is not mirrored in predecessors",
+                id.index(),
+                s.index()
+            );
+        }
+        for &p in b.predecessors() {
+            assert!(p.index() < cfg.len(), "predecessor handle in range");
+        }
+        for e in b.exits() {
+            assert!(
+                cfg.block_at(e.target).is_none(),
+                "exit target {:#x} lies in no block of the graph",
+                e.target
+            );
+        }
+    }
+}
+
+/// Every block's `[start, end)` range is disjoint from every other's, once sorted by start: a
+/// function's basic blocks partition its code, they never overlap.
+fn ranges_are_disjoint(cfg: &FlowChart) {
+    let mut ranges: Vec<_> = cfg.blocks().map(|(_, b)| b.range()).collect();
+    ranges.sort_by_key(|r| r.start);
+    for w in ranges.windows(2) {
+        assert!(
+            w[0].end <= w[1].start,
+            "block ranges overlap: {:#x}..{:#x} and {:#x}..{:#x}",
+            w[0].start,
+            w[0].end,
+            w[1].start,
+            w[1].end
+        );
+    }
+}
+
+/// A block's kind constrains its outgoing edges, per the semantics [`BasicBlockKind`] already
+/// documents: `Normal` falls through or branches in-function, so it always has somewhere to go;
+/// `Return` ends the function outright, so it never has an in-function successor; `CondReturn`
+/// only sometimes returns, so its non-returning path still needs a continuation.
+fn block_kind_matches_its_edges(cfg: &FlowChart) {
+    for (_, b) in cfg.blocks() {
+        let has_continuation = !b.successors().is_empty() || !b.exits().is_empty();
+        match b.kind() {
+            BasicBlockKind::Normal => assert!(
+                has_continuation,
+                "a Normal block at {:#x} has no successor or exit",
+                b.start()
+            ),
+            BasicBlockKind::Return => assert!(
+                b.successors().is_empty(),
+                "a Return block at {:#x} has an in-function successor",
+                b.start()
+            ),
+            BasicBlockKind::CondReturn => assert!(
+                has_continuation,
+                "a CondReturn block at {:#x} has no non-returning continuation",
+                b.start()
+            ),
+            BasicBlockKind::IndirectJump | BasicBlockKind::NoReturn | BasicBlockKind::Error => {}
+        }
+    }
+}
+
+/// The entry is block 0, `block_at` resolves an address inside it back to it, and an address
+/// below every block resolves to nothing.
+fn entry_and_lookup(cfg: &FlowChart) {
+    let entry = cfg.entry();
+    assert!(entry.index() == 0, "the entry is block 0");
+
+    let start = cfg.block(entry).start();
+    assert!(
+        cfg.block_at(start) == Some(entry),
+        "block_at should map the entry's start to the entry block"
+    );
+
+    // Address 0 is below any real code segment here, so it lies in no block.
+    if start > Address::new_const(0) {
+        assert!(
+            cfg.block_at(Address::new_const(0)).is_none(),
+            "block_at should miss an address outside every block"
+        );
+    }
+}
+
+/// Walking the entry block's range decodes at least its first instruction, and every decoded
+/// instruction stays within the block.
+fn instructions_walk_the_entry_block(idb: &Database, cfg: &FlowChart) {
+    let entry = cfg.block(cfg.entry());
+    let insns: Vec<_> = idb.instructions_in(entry.range()).collect();
+
+    assert!(!insns.is_empty(), "the entry block decodes an instruction");
+    assert!(
+        insns[0].address == entry.start(),
+        "the first instruction sits at the block start"
+    );
+    for instruction in &insns {
+        assert!(
+            instruction.address >= entry.start() && instruction.address < entry.end(),
+            "instruction {:#x} escapes the block range",
+            instruction.address
+        );
+    }
+}
+
+/// The first function that transfers out of itself: every exit target resolves to an address in
+/// no block of the graph, so lifting external stubs to edges kept them addressable and
+/// out-of-graph. A real exit only reaches [`BasicBlock::exits`] through `successors`'
+/// internal/external stub split, so this covers that boundary too. External tail-jumps are
+/// pervasive in an optimized binary, so a fixture without one is a failure, not a skip.
+fn exits_leave_the_function(idb: &Database) {
+    let cfg = idb
+        .functions()
+        .find_map(|f| {
+            let cfg = f.flowchart().ok()?;
+            let has_exit = cfg.blocks().any(|(_, b)| !b.exits().is_empty());
+            has_exit.then_some(cfg)
+        })
+        .expect("a function with an external exit");
+    structure_is_sound(&cfg);
+
+    let exits: usize = cfg.blocks().map(|(_, b)| b.exits().len()).sum();
+    let mut noreturn_cross_checked = false;
+    for (_, b) in cfg.blocks() {
+        for e in b.exits() {
+            assert!(
+                cfg.block_at(e.target).is_none(),
+                "exit target {:#x} should lie outside every block",
+                e.target
+            );
+            // Where the target is a function entry, the edge's no-return classification must
+            // agree with that function's FUNC_NORET attribute, a different SDK path.
+            if let Some(callee) = idb.functions().find(|f| f.address() == e.target) {
+                assert!(
+                    e.noreturn == callee.is_noreturn(),
+                    "exit {:#x} noreturn={} disagrees with the callee's own is_noreturn()",
+                    e.target,
+                    e.noreturn
+                );
+                noreturn_cross_checked = true;
+            }
+        }
+    }
+    // Not every fixture's external exits land on a recognized function entry (some target
+    // unclassified stubs), so this is a skip, not a hard failure, when none did.
+    if !noreturn_cross_checked {
+        println!(
+            "cfg: verified {exits} external exit(s) leave the function; skipping noreturn \
+             cross-check, no exit target resolved to a mapped function"
+        );
+        return;
+    }
+    println!("cfg: verified {exits} external exit(s) leave the function, noreturn cross-checked");
+}
+
+/// `call_ends` only ever splits more blocks, `externals(false)` drops every out-of-function
+/// exit, and `predecessors(false)` leaves predecessor lists empty.
+fn knobs_behave(idb: &Database, function: Address) {
+    let base = idb.flowchart(function).expect("base cfg");
+
+    let split = idb
+        .function(function)
+        .flowchart_with()
+        .call_ends(true)
+        .call()
+        .expect("call-ends cfg");
+    assert!(
+        split.len() >= base.len(),
+        "call_ends splits more (or equal) blocks: {} < {}",
+        split.len(),
+        base.len()
+    );
+
+    let no_ext = idb
+        .function(function)
+        .flowchart_with()
+        .externals(false)
+        .call()
+        .expect("no-externals cfg");
+    assert!(
+        no_ext.blocks().all(|(_, b)| b.exits().is_empty()),
+        "externals(false) records no exits"
+    );
+
+    let no_preds = idb
+        .function(function)
+        .flowchart_with()
+        .predecessors(false)
+        .call()
+        .expect("no-preds cfg");
+    assert!(
+        no_preds.blocks().all(|(_, b)| b.predecessors().is_empty()),
+        "predecessors(false) leaves every predecessor list empty"
+    );
+}
+
+/// Building the same function's CFG twice, with no edit between, produces a structurally
+/// identical graph: same block count, ranges, kinds, and edges, not just an equal length.
+fn build_is_deterministic(idb: &Database, function: Address) {
+    let first = idb.flowchart(function).expect("first cfg build");
+    let second = idb.flowchart(function).expect("second cfg build");
+    assert!(
+        first == second,
+        "rebuilding the same function's CFG should be deterministic"
+    );
+}
+
+/// Building a CFG at an address in no function returns `NoFunction`.
+fn non_function_is_rejected(idb: &Database) {
+    // A non-executable segment's start is mapped but belongs to no function.
+    let Some(start) = idb
+        .segments()
+        .find(|s| !s.is_executable())
+        .and_then(|s| s.start())
+    else {
+        println!("cfg: no non-executable segment; skipping the NoFunction check");
+        return;
+    };
+    let r = idb.flowchart(start);
+    assert!(
+        matches!(r, Err(Error::NoFunction { .. })),
+        "a non-function address should be NoFunction, got {r:?}"
+    );
+}
+
+/// Pins the premise behind excluding `predecessors`'s `< -> <=` mutant as equivalent: every raw
+/// predecessor index `cfg_preds` returns for a proper block already sits below `nproper`, so
+/// idakit's `< nproper` filter never actually drops anything. Reads the cxx bridge directly,
+/// since idakit's own `predecessors()` accessor already applies the filter this pins.
+fn raw_predecessors_never_reach_nproper(function: Address) {
+    use idakit_sys as sys;
+
+    let fc = sys::cfg_build(function.get(), 0).expect("cxx cfg_build for the raw pred check");
+    let nproper = sys::cfg_nproper(&fc);
+    for n in 0..nproper {
+        let preds = sys::cfg_preds(&fc, n).expect("cfg_preds within nproper");
+        for p in preds {
+            assert!(
+                (p as usize) < nproper,
+                "cfg_preds({n}) returned {p}, at or past nproper ({nproper})"
+            );
+        }
+    }
+}

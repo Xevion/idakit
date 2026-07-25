@@ -4,7 +4,9 @@
 
 pub mod checks;
 pub mod harness;
+pub mod kernel;
 mod macros;
+pub mod registry;
 
 pub(crate) use macros::assert_type_write_err;
 
@@ -17,26 +19,23 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use idakit::prelude::{Database, Ida};
 
-/// Open the shared test database (see [`TestDb::source`]) on the kernel thread, run `body`
-/// against it, and close it (`save = false`). Every dedicated single-DB test is this shape, so
-/// the acquire, kernel bring-up, open, and panic-resume live here once. Silently returns (skips)
-/// when no test database is available, matching the corpus matrix's "no corpus, no cases"
-/// stance, and a caught assertion panic re-raises with its real message, so failures keep their
-/// location.
+/// Runs `body` on the kernel thread against the worker's open database.
+///
+/// This is the body of essentially every `#[kernel_test]`, so the marshalling and the panic-resume
+/// live here once: a caught assertion panic re-raises with its real message, keeping the failure's
+/// own location rather than this line. The worker owns the open and the `save = false` close, and
+/// resets between tests that declare they write, so nothing here touches the database's lifetime.
+///
+/// # Panics
+/// If called outside a worker. The database comes from the harness, so there is nothing to run
+/// against; a bare `#[test]` that wants a database of its own opens one itself, as the tests
+/// directly under `tests/` do.
 pub fn with_canonical_db(body: impl FnOnce(&mut Database) + Send + 'static) {
-    let Some(db) = TestDb::acquire() else {
-        return;
-    };
-    let path = db.path().to_owned();
-    Ida::run(move |ida| {
-        ida.call(move |idb| {
-            idb.open(&path).call().expect("open failed");
-            body(idb);
-            idb.close(false);
-        })
-        .unwrap_or_else(|e| e.resume());
+    registry::with_warm_kernel(|ida| {
+        ida.call(move |idb| body(idb))
+            .unwrap_or_else(|e| e.resume());
     })
-    .expect("kernel init failed");
+    .expect("with_canonical_db needs the kernel harness; is this a #[kernel_test]?");
 }
 
 /// A private, disposable copy of the test database, removed on drop.

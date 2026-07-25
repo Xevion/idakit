@@ -1,51 +1,39 @@
-//! Shared runtime harness for the kernel-touching [`libtest-mimic`](libtest_mimic) test
-//! binaries: [`Suite`] registers cases, [`run`] fans them out across fixtures into trials.
+//! Shared runtime harness for the kernel-touching test binaries: [`Suite`] registers cases and
+//! [`run`] fans them out across fixtures, one individually reported case per fixture and check.
 //!
-//! Every fixture's cases share one trial, so each fixture pays kernel bring-up and `open` once.
+//! Each case is named, timed, filtered, and reported on its own. That is the point: an earlier
+//! version of this harness ran every check for a fixture inside a single trial, which meant 74
+//! trials stood in for 814 real cases, so a failure named only its fixture, timings were per
+//! fixture, and no single check could be run alone.
 //!
-//! The trial set must be a pure function of the corpus manifest: nextest lists trials in one
-//! process and runs each in another, so anything that could pick a different set on the second
-//! pass would list a trial it can never find.
+//! Cost is decoupled from that identity by [`idakit_runner`]. A binary using this harness has two
+//! modes. Run normally it is the driver: it plans the case list and hands it to a pool of workers.
+//! Run with [`WORKER_FLAG`] it is a worker: it brings the kernel up once, then opens each fixture
+//! once and runs every case grouped onto that fixture before moving on. So bring-up is paid per
+//! worker and `open` per fixture, while the report still has one line per case.
 //!
-//! Every case prints `<name>: start` immediately before running and its result immediately after
-//! (`println!` is line-buffered even into nextest's pipe), so a crash mid-trial leaves exactly
-//! one unterminated `start` line naming the case that died.
+//! The case list must be a pure function of the corpus manifest, since the driver plans in one
+//! process and the workers resolve names in another.
 
 use std::process::ExitCode;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
-use idakit::prelude::{CallError, Database, Ida};
-use libtest_mimic::{Arguments, Failed, Trial};
+use idakit::corpus::{self, Fixture, WorkingCopy};
+use idakit::prelude::{Database, Ida};
+use idakit_runner::{Case, CaseResult, Outcome, Runner, Status, serve};
 
-use idakit::corpus::{self, Fixture};
-
-// Serializes trials that share a process (bare `cargo test`); uncontended under nextest, where
-// each listed trial is its own process.
-static KERNEL_GATE: Mutex<()> = Mutex::new(());
+/// Argument that turns a harness binary into a worker instead of the driver.
+pub const WORKER_FLAG: &str = "--idakit-worker";
 
 /// Which fixtures a [`Suite`] resolves against.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Fixtures {
     /// The one manifest-designated canonical fixture ([`idakit::corpus::canonical`]).
     ///
-    /// Its trial name elides to `"all"`, since naming the only fixture adds nothing.
+    /// Case names carry no fixture prefix, since naming the only fixture adds nothing.
     Canonical,
     /// Every openable corpus fixture ([`idakit::corpus::fixtures`]).
     All,
-}
-
-/// The result of running one case.
-pub enum Outcome {
-    /// The case ran to completion, with an optional one-line summary.
-    Passed(Option<String>),
-    /// The case did not run, for the given reason (an unmet precondition).
-    Skipped(String),
-}
-
-impl From<String> for Outcome {
-    fn from(summary: String) -> Self {
-        Self::Passed(Some(summary))
-    }
 }
 
 /// A named collection of kernel-test cases, run against a resolved fixture set.
@@ -59,7 +47,7 @@ pub struct Suite {
 }
 
 impl Suite {
-    /// Starts a new suite named `name`, used to prefix its diagnostic trials.
+    /// Starts a new suite named `name`, used to prefix its diagnostic cases.
     #[must_use]
     pub fn new(name: &'static str) -> Self {
         Self {
@@ -76,7 +64,7 @@ impl Suite {
         self
     }
 
-    /// Registers a read-only case sharing one open database with every other case in this suite.
+    /// Registers a read-only case, which shares its fixture's open database with its siblings.
     #[must_use]
     pub fn case<O: Into<Outcome> + 'static>(
         mut self,
@@ -97,71 +85,225 @@ struct CaseEntry {
     run: Arc<dyn Fn(&Database) -> Outcome + Send + Sync>,
 }
 
-/// Builds one trial per fixture from `suite`'s cases and runs them.
+/// Runs `suite`, as the driver or as a worker depending on how this process was started.
 ///
 /// # Panics
 /// If `suite` never called [`Suite::fixtures`].
+#[must_use]
 pub fn run(suite: Suite) -> ExitCode {
-    let args = Arguments::from_args();
-
     let Suite {
-        name: suite_name,
-        fixtures: fixtures_mode,
+        name,
+        fixtures,
         cases,
     } = suite;
-    let fixtures_mode =
-        fixtures_mode.expect("Suite::fixtures(...) must be called before harness::run");
+    let mode = fixtures.expect("Suite::fixtures(...) must be called before harness::run");
 
-    let mut trials = Vec::new();
+    if std::env::args().any(|arg| arg == WORKER_FLAG) {
+        work(cases, mode)
+    } else {
+        drive(name, &cases, mode)
+    }
+}
 
-    // A misconfigured corpus (manifest present but broken) must fail loudly rather than
-    // silently collapse to zero trials and a green run.
+/// Plans the case list, runs it across a pool of workers, and reports every case.
+fn drive(suite_name: &str, cases: &[CaseEntry], mode: Fixtures) -> ExitCode {
+    // A misconfigured corpus (a manifest that is present but broken) must fail loudly rather than
+    // silently collapse to zero cases and a green run.
     if let Err(reason) = corpus::validate() {
-        trials.push(Trial::test(
-            format!("{suite_name}_manifest_is_valid"),
-            move || Err(Failed::from(reason)),
-        ));
+        println!("{suite_name}_manifest_is_valid ... FAILED\n  {reason}");
+        return ExitCode::FAILURE;
     }
 
-    let fixtures: Vec<Arc<Fixture>> = resolve_fixtures(fixtures_mode)
-        .into_iter()
-        .map(Arc::new)
-        .collect();
-
-    // nextest runs trials by exact-match name, so a collision means one of the two silently
-    // never runs rather than failing loudly; catch it here.
-    if let Some(dup) = first_duplicate(fixtures.iter().map(|f| f.name.as_str()).collect()) {
-        let reason = format!("{suite_name} fixtures collide on display name {dup:?}");
-        trials.push(Trial::test(
-            format!("{suite_name}_fixture_names_are_unique"),
-            move || Err(Failed::from(reason)),
-        ));
+    let fixtures = resolve_fixtures(mode);
+    if let Some(dup) = first_duplicate(fixtures.iter().map(|f| f.name.as_str())) {
+        println!("{suite_name} fixtures collide on display name {dup:?}");
+        return ExitCode::FAILURE;
     }
-    if let Some(dup) = first_duplicate(cases.iter().map(|c| c.name.as_str()).collect()) {
-        let reason = format!("{suite_name} cases collide on name {dup:?}");
-        trials.push(Trial::test(
-            format!("{suite_name}_case_names_are_unique"),
-            move || Err(Failed::from(reason)),
-        ));
+    if let Some(dup) = first_duplicate(cases.iter().map(|c| c.name.as_str())) {
+        println!("{suite_name} cases collide on name {dup:?}");
+        return ExitCode::FAILURE;
     }
 
-    for fx in fixtures {
-        let name = trial_name(fixtures_mode, &fx);
-        let cases = cases.clone();
-        trials.push(Trial::test(name, move || run_cases(fx, cases)));
+    let planned = plan(cases, mode, &fixtures);
+    if planned.is_empty() {
+        println!("{suite_name}: no corpus configured, skipping");
+        return ExitCode::SUCCESS;
     }
 
-    // Hand the code back to `main` rather than calling `Conclusion::exit`: that exits via
-    // Windows `ExitProcess`, skipping the CRT `atexit` handlers, including the facade's idalib
-    // exit-banner swallow, whose banner then corrupts `nextest --list`.
-    libtest_mimic::run(&args, trials).exit_code()
+    let program = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(err) => {
+            println!("{suite_name}: cannot resolve this executable: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let total = planned.len();
+    match Runner::new(program, &[WORKER_FLAG]).run(planned) {
+        Ok(results) => report(&results, total),
+        Err(err) => {
+            println!("{suite_name}: could not start workers: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// One [`Case`] per fixture and check, grouped by fixture so a worker opens each database once.
+fn plan(entries: &[CaseEntry], mode: Fixtures, fixtures: &[Fixture]) -> Vec<Case> {
+    let mut cases = Vec::new();
+    for fixture in fixtures {
+        for entry in entries {
+            let name = match mode {
+                Fixtures::All => format!("{}::{}", fixture.name, entry.name),
+                Fixtures::Canonical => entry.name.clone(),
+            };
+            cases.push(Case::new(name).group(fixture.name.clone()));
+        }
+    }
+    cases
+}
+
+/// Prints one line per case, then any failures in full, then a summary.
+#[must_use]
+pub fn report(results: &[CaseResult], total: usize) -> ExitCode {
+    let mut ordered: Vec<&CaseResult> = results.iter().collect();
+    ordered.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let mut passed = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = Vec::new();
+    for result in &ordered {
+        let (label, detail) = match result.status {
+            Status::Passed => {
+                passed += 1;
+                ("ok", result.message.as_str())
+            }
+            Status::Skipped => {
+                skipped += 1;
+                ("skipped", result.message.as_str())
+            }
+            Status::Failed => {
+                failed.push(*result);
+                ("FAILED", result.message.as_str())
+            }
+        };
+        if detail.is_empty() {
+            println!("{} ... {label} ({}ms)", result.name, result.millis);
+        } else {
+            println!("{} ... {label} ({}ms) {detail}", result.name, result.millis);
+        }
+    }
+
+    for result in &failed {
+        println!("\nfailure: {}\n{}", result.name, result.message);
+        for line in &result.output {
+            println!("{line}");
+        }
+    }
+
+    println!(
+        "\nsummary: {passed} passed, {} failed, {skipped} skipped, {total} total",
+        failed.len()
+    );
+    if failed.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// Brings the kernel up once, then serves cases, holding each fixture open across its own group.
+fn work(cases: Vec<CaseEntry>, mode: Fixtures) -> ExitCode {
+    let fixtures = resolve_fixtures(mode);
+
+    let outcome = Ida::run(move |ida| {
+        let mut open: Option<OpenFixture> = None;
+        serve(|name| {
+            let (fixture_name, case_name) = split_name(mode, name);
+            let Some(fixture) = fixtures.iter().find(|f| f.name == fixture_name) else {
+                return Outcome::Failed(format!("no such fixture: {fixture_name}"));
+            };
+            let Some(entry) = cases.iter().find(|c| c.name == case_name) else {
+                return Outcome::Failed(format!("no such case: {case_name}"));
+            };
+            if let Some(reason) = effective_skip(fixture, &entry.name) {
+                return Outcome::Skipped(reason);
+            }
+            match ensure_open(&ida, &mut open, fixture) {
+                Ok(()) => invoke(&ida, entry),
+                Err(reason) => Outcome::Failed(reason),
+            }
+        })
+    });
+
+    match outcome {
+        Ok(Ok(())) => ExitCode::SUCCESS,
+        Ok(Err(err)) => {
+            eprintln!("worker stream ended: {err}");
+            ExitCode::FAILURE
+        }
+        Err(err) => {
+            eprintln!("kernel init failed: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// The fixture a worker currently has open, and the disposable copy backing it.
+///
+/// The [`WorkingCopy`] must outlive the open database, since dropping it deletes the file.
+struct OpenFixture {
+    name: String,
+    _working: WorkingCopy,
+}
+
+/// Opens `fixture` unless it is already the open one, closing whatever was open before.
+fn ensure_open(ida: &Ida, open: &mut Option<OpenFixture>, fixture: &Fixture) -> Result<(), String> {
+    if open.as_ref().is_some_and(|o| o.name == fixture.name) {
+        return Ok(());
+    }
+    if open.is_some() {
+        // Never save: a fixture on disk is read-only ground truth for every other run.
+        let _ = ida.call(|idb| idb.close(false));
+        *open = None;
+    }
+
+    let working = corpus::working_copy(&fixture.path).map_err(|e| e.to_string())?;
+    let path = working.path().to_owned();
+    ida.call(move |idb| idb.open(&path).call().map_err(|e| e.to_string()))
+        .map_err(|e| e.to_string())??;
+    *open = Some(OpenFixture {
+        name: fixture.name.clone(),
+        _working: working,
+    });
+    Ok(())
+}
+
+/// Runs one case on the kernel thread, turning a panic into a failed case rather than a dead
+/// worker.
+fn invoke(ida: &Ida, entry: &CaseEntry) -> Outcome {
+    let run = Arc::clone(&entry.run);
+    match ida.call(move |idb| run(&*idb)) {
+        Ok(outcome) => outcome,
+        Err(err) => Outcome::Failed(err.to_string()),
+    }
+}
+
+/// Splits a planned case name back into its fixture and case halves.
+fn split_name(mode: Fixtures, name: &str) -> (String, String) {
+    match mode {
+        Fixtures::All => name.split_once("::").map_or_else(
+            || (String::new(), name.to_owned()),
+            |(fixture, case)| (fixture.to_owned(), case.to_owned()),
+        ),
+        Fixtures::Canonical => ("canonical".to_owned(), name.to_owned()),
+    }
 }
 
 fn resolve_fixtures(mode: Fixtures) -> Vec<Fixture> {
     match mode {
         Fixtures::All => corpus::fixtures(),
-        // Wrapped so the canonical database is an ordinary one-element fixture list, sharing
-        // every code path with `Fixtures::All`.
+        // Wrapped so the canonical database is an ordinary one-element fixture list, sharing every
+        // code path with `Fixtures::All`.
         Fixtures::Canonical => corpus::canonical()
             .into_iter()
             .map(|path| Fixture {
@@ -174,15 +316,9 @@ fn resolve_fixtures(mode: Fixtures) -> Vec<Fixture> {
     }
 }
 
-fn trial_name(mode: Fixtures, fx: &Fixture) -> String {
-    match mode {
-        Fixtures::All => fx.name.clone(),
-        Fixtures::Canonical => "all".to_owned(),
-    }
-}
-
 /// The first name shared by two entries, if any.
-fn first_duplicate(mut names: Vec<&str>) -> Option<String> {
+pub fn first_duplicate<'a>(names: impl Iterator<Item = &'a str>) -> Option<String> {
+    let mut names: Vec<&str> = names.collect();
     names.sort_unstable();
     names
         .windows(2)
@@ -190,86 +326,14 @@ fn first_duplicate(mut names: Vec<&str>) -> Option<String> {
         .map(|w| w[0].to_owned())
 }
 
-/// Whether `case_name` is inapplicable to `fx`: declared in the manifest's `skip_checks`, or
+/// Whether `case_name` is inapplicable to `fixture`: declared in the manifest's `skip_checks`, or
 /// implied for the decompiler-dependent cases by `decompiler = false`.
-fn effective_skip(fx: &Fixture, case_name: &str) -> Option<String> {
-    if fx.skips(case_name) {
+fn effective_skip(fixture: &Fixture, case_name: &str) -> Option<String> {
+    if fixture.skips(case_name) {
         return Some("manifest".to_owned());
     }
-    if !fx.decompiler && matches!(case_name, "decompile" | "argloc") {
+    if !fixture.decompiler && matches!(case_name, "decompile" | "argloc") {
         return Some("no decompiler".to_owned());
     }
     None
-}
-
-fn invoke(ida: &Ida, case: &CaseEntry) -> Result<Outcome, CallError> {
-    let run = Arc::clone(&case.run);
-    ida.call(move |idb| run(&*idb))
-}
-
-/// Runs every case for one fixture inside a single trial, sharing one open database.
-fn run_cases(fx: Arc<Fixture>, cases: Vec<CaseEntry>) -> Result<(), Failed> {
-    let _gate = KERNEL_GATE.lock().unwrap_or_else(PoisonError::into_inner);
-
-    let working = corpus::working_copy(&fx.path).map_err(|e| Failed::from(e.to_string()))?;
-    let path = working.path().to_owned();
-
-    let outcome = Ida::run(move |ida| run_all_cases(&ida, &fx, &path, &cases));
-
-    match outcome {
-        Ok(Ok(failures)) if failures.is_empty() => Ok(()),
-        Ok(Ok(failures)) => Err(Failed::from(failures.join("\n"))),
-        Ok(Err(open_err)) => Err(Failed::from(open_err)),
-        Err(init_err) => Err(Failed::from(init_err.to_string())),
-    }
-}
-
-fn run_all_cases(
-    ida: &Ida,
-    fx: &Fixture,
-    path: &str,
-    cases: &[CaseEntry],
-) -> Result<Vec<String>, String> {
-    let path_owned = path.to_owned();
-    match ida.call(move |idb| idb.open(&path_owned).call().map_err(|e| e.to_string())) {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => return Err(e),
-        Err(e) => return Err(e.to_string()),
-    }
-
-    let mut failures = Vec::new();
-    for case in cases {
-        let skip = effective_skip(fx, &case.name);
-        dispatch(ida, case, skip, &mut failures);
-    }
-
-    let _ = ida.call(|idb| idb.close(false));
-    Ok(failures)
-}
-
-/// Prints `<name>: start`, then runs `case` unless `skip` names a reason, printing the result
-/// (or pushing a message onto `failures` for a panicked/disconnected call).
-fn dispatch(ida: &Ida, case: &CaseEntry, skip: Option<String>, failures: &mut Vec<String>) {
-    println!("{}: start", case.name);
-    if let Some(reason) = skip {
-        println!("{}: skipped ({reason})", case.name);
-        return;
-    }
-    // Set IDAKIT_PROFILE to emit a per-check wall time on stderr, so `just profile-checks` can
-    // attribute a fixture's runtime to individual checks without perturbing the normal output.
-    let started = std::time::Instant::now();
-    let result = invoke(ida, case);
-    if std::env::var_os("IDAKIT_PROFILE").is_some() {
-        eprintln!(
-            "PROFILE\t{}\t{:.3}",
-            case.name,
-            started.elapsed().as_secs_f64()
-        );
-    }
-    match result {
-        Ok(Outcome::Passed(Some(summary))) => println!("{}: {summary}", case.name),
-        Ok(Outcome::Passed(None)) => println!("{}: ok", case.name),
-        Ok(Outcome::Skipped(reason)) => println!("{}: skipped ({reason})", case.name),
-        Err(call_err) => failures.push(format!("{}: {call_err}", case.name)),
-    }
 }

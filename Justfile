@@ -15,46 +15,16 @@ build:
     cargo build --workspace
 
 # nextest runs the suite; the kernel-touching integration tests are serialized by
-# .config/nextest.toml and skip without their preconditions. Doctests run separately --
-# nextest doesn't cover them.
+# .config/nextest.toml and skip without their preconditions. The corpus matrix and the
+# `#[kernel_test]` binary are their own runner (`test = false`, so nextest skips them): each reports
+# every case individually while executing them across a pool of warm workers, which nextest cannot
+# do because it spawns one process per listed test. Doctests run separately, since nextest doesn't
+# cover them.
 test:
     cargo nextest run --workspace --all-features
+    cargo test -p idakit --all-features --test corpus_matrix
+    cargo test -p idakit --all-features --test kernel
     cargo test --workspace --all-features --doc
-
-# Proof for the warm-kernel harness (idakit-test): build the smoke binary, bring its daemon up once
-# (kernel init + open paid once), run every case through nextest's proxies, then tear the daemon
-# down and print its admit/reap/weight log. Skips cleanly (cases self-skip) when no corpus is
-# configured, since the daemon has nothing to open.
-test-harness:
-    #!/usr/bin/env bash
-    set -uo pipefail
-    sock="${TMPDIR:-/tmp}/idakit-test.$$.sock"
-    dlog="${TMPDIR:-/tmp}/idakit-test.$$.daemon.log"
-    cargo build --tests -p idakit-test || exit 1
-    bin=$(find target/debug/deps -maxdepth 1 -type f -executable -name 'smoke-*' \
-          -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
-    [ -n "$bin" ] || { echo "smoke test binary not found"; exit 1; }
-    "$bin" --daemon "" "$sock" >"$dlog" 2>&1 &
-    dpid=$!
-    for _ in $(seq 1 250); do
-        [ -S "$sock" ] && break
-        kill -0 "$dpid" 2>/dev/null || break
-        sleep 0.2
-    done
-    if [ -S "$sock" ]; then
-        IDAKIT_TEST_SOCK="$sock" cargo nextest run -p idakit-test --no-fail-fast
-        rc=$?
-    else
-        echo "daemon did not come up (no corpus?); running suite so cases self-skip"
-        cargo nextest run -p idakit-test --no-fail-fast
-        rc=$?
-    fi
-    kill "$dpid" 2>/dev/null
-    wait "$dpid" 2>/dev/null
-    echo "== daemon log =="
-    cat "$dlog"
-    rm -f "$sock" "$dlog"
-    exit $rc
 
 fmt: fmt-rust fmt-cpp
 
@@ -197,16 +167,19 @@ readme-check:
 # host-independent canonical fixture the corpus matrix uses.
 ci-test:
     cargo nextest run --workspace --all-features --no-fail-fast
+    cargo test -p idakit --all-features --test corpus_matrix
+    cargo test -p idakit --all-features --test kernel
     cargo test --workspace --all-features --doc
 
-# Advisory, not part of `check`. Records a CPU flamegraph of the whole suite under samply, pinned
-# to one core (taskset) so it never fights a foreground workload -- slower, but single-core removes
-# contention noise and the ratios are what matter. nextest runs every test in its own process;
-# samply follows the tree and `--reuse-threads` merges the per-process threads, so the profile
-# aggregates the suite into one flamegraph rather than 200 disjoint ones. The same run emits JUnit
-# timing, so it doubles as the "which test is slow" view. Writes a profile file; open it with
-# `samply load <out>`. Needs perf_event_paranoid <= 1 (samply prints the sudo one-liner) and the
-# corpus. Single-core, so it takes several minutes; that is the point.
+# Advisory, not part of `check`. Records a CPU flamegraph of the nextest half of the suite under
+# samply, pinned to one core (taskset) so it never fights a foreground workload: slower, but
+# single-core removes contention noise and the ratios are what matter. nextest runs every test in
+# its own process; samply follows the tree and `--reuse-threads` merges the per-process threads, so
+# the profile aggregates them into one flamegraph rather than 200 disjoint ones. The same run emits
+# JUnit timing, so it doubles as the "which test is slow" view. It does not cover `corpus_matrix` or
+# `kernel`, which nextest does not list; those report their own per-case timings already. Writes a
+# profile file; open it with `samply load <out>`. Needs perf_event_paranoid <= 1 (samply prints the
+# sudo one-liner) and the corpus. Single-core, so it takes several minutes; that is the point.
 profile out="target/profile.json.gz":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -215,17 +188,6 @@ profile out="target/profile.json.gz":
       cargo nextest run --workspace --all-features --profile ci --test-threads=1
     python3 tools/profile_junit.py target/nextest/ci/junit.xml
     printf '\nCPU flamegraph: samply load %s\n' {{ out }} >&2
-
-# Advisory. Attributes one corpus fixture's runtime to individual checks by way of the
-# IDAKIT_PROFILE per-check stopwatch, run single-core so the times are uncontended. `fixture` is a
-# trial name (a corpus display name, e.g. `aarch64-sqlite3-dwarf`); empty profiles them all.
-profile-checks fixture="":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cargo test -q --no-run --test corpus_matrix
-    bin="$(ls -t target/debug/deps/corpus_matrix-* | grep -vE '\.d$' | head -1)"
-    IDAKIT_PROFILE=1 taskset -c 0 "$bin" {{ fixture }} --test-threads=1 2>&1 \
-      | grep '^PROFILE' | sort -t"$(printf '\t')" -k3 -rn
 
 # Advisory. Records a single-core CPU flamegraph of one test binary (or one exact test) under
 # samply. `test` is a test-binary name (e.g. `decompile_cache`), `filter` an exact test name; drop

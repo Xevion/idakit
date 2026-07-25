@@ -55,10 +55,25 @@ path = "examples/ctree_dump.rs"
 doc-scrape-examples = true
 
 # Runtime-generated corpus matrix (one case per db x check); needs a custom harness.
+#
+# `test = false` keeps it out of `cargo test`/nextest auto-discovery on purpose. It is its own
+# runner: run plainly it plans every db x check case and drives a pool of warm workers, so letting
+# nextest list it would instead spawn one cold process per case and pay kernel bring-up hundreds of
+# times. `just test` invokes it directly; `cargo test --test corpus_matrix` still works by name.
 [[test]]
 name = "corpus_matrix"
 path = "tests/corpus_matrix.rs"
 harness = false
+test = false
+
+# Every `#[kernel_test]`, driven by a pool of warm kernels. `test = false` for the same reason as
+# above: listing it under nextest would spawn one cold process per test and pay bring-up sixty
+# times, which is exactly what this binary exists to avoid. `just test` invokes it directly.
+[[test]]
+name = "kernel"
+path = "tests/kernel.rs"
+harness = false
+test = false
 
 # The integration tests under tests/ are ordinary `#[test]` binaries (auto-discovered). Each
 # brings the kernel up on the thread `Ida::run` spawns and skips without its precondition (a
@@ -70,6 +85,9 @@ harness = false
 
 [dev-dependencies]
 assert2 = "0.4.0"
+idakit-runner = { path = "../idakit-runner" }
+idakit-runner-macros = { path = "../idakit-runner-macros" }
+inventory = "0.3.24"
 libc = "0.2.186"
 libtest-mimic = "0.8.2"
 proptest = "1.11.0"
