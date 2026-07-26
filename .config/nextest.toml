@@ -22,11 +22,3 @@ fail-fast = false
 path = "junit.xml"
 store-failure-output = true
 store-success-output = false
-
-# For `just mutants`, which asks a different question than `just test` does. A run there wants to
-# know only whether *some* test rejects the mutant, and roughly three quarters of them do, so
-# finishing the suite past the first failure buys nothing and costs a kernel per remaining test.
-# The default stays false, because a developer reading a real failure wants every failure at once.
-# Inherits the default profile, so the caps and timeouts above still apply.
-[profile.mutants]
-fail-fast = true

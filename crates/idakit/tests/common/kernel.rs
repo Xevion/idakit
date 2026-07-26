@@ -33,6 +33,61 @@ pub const WORKER_FLAG: &str = "--idakit-worker";
 /// Case-name prefix for the corpus fan-out half, keeping it clear of the registry's module paths.
 const CORPUS: &str = "corpus";
 
+/// Which halves of the suite to plan, and how many workers to plan them across.
+///
+/// Both come from the environment rather than arguments because the callers that need them cannot
+/// pass any. `cargo mutants` drives the suite through `cargo test` hundreds of times over, so it has
+/// no channel for a positional filter, and it wants the registered tests without the corpus fan-out,
+/// which dominates wall time while saying nothing about the code under test.
+const SCOPE: &str = "IDAKIT_TEST_SCOPE";
+const WORKERS: &str = "IDAKIT_TEST_WORKERS";
+
+/// Which halves of the suite to plan.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scope {
+    /// Everything, which is what `just test` runs.
+    All,
+    /// Only the `#[kernel_test]`s, skipping the corpus fan-out.
+    Registered,
+    /// Only the corpus fan-out.
+    Corpus,
+}
+
+impl Scope {
+    /// Reads [`SCOPE`], defaulting to everything.
+    ///
+    /// An unrecognised value is an error rather than a fallback: silently widening or narrowing the
+    /// suite on a typo is exactly the failure this switch could otherwise cause, and a run that
+    /// checks less than it claims reports green either way.
+    fn from_env() -> Result<Self, String> {
+        match std::env::var(SCOPE) {
+            Err(_) => Ok(Self::All),
+            Ok(value) => match value.as_str() {
+                "all" | "" => Ok(Self::All),
+                "registered" => Ok(Self::Registered),
+                "corpus" => Ok(Self::Corpus),
+                other => Err(format!(
+                    "{SCOPE}={other:?} is not one of all, registered, corpus"
+                )),
+            },
+        }
+    }
+}
+
+/// Reads [`WORKERS`], defaulting to the runner's own choice.
+///
+/// A cap is what keeps concurrent kernels (~0.85 GiB each) inside a machine's memory when something
+/// outside this process is already running several suites at once, as a sharded mutants run does.
+fn worker_cap() -> Result<Option<usize>, String> {
+    match std::env::var(WORKERS) {
+        Err(_) => Ok(None),
+        Ok(value) => value
+            .parse()
+            .map(Some)
+            .map_err(|_| format!("{WORKERS}={value:?} is not a worker count")),
+    }
+}
+
 /// Runs the whole suite, as the driver or as a worker depending on how this process was started.
 ///
 /// Positional arguments filter by substring, so one case can still be run alone; `--list` prints the
@@ -114,22 +169,26 @@ fn sites() -> Vec<Site> {
     sites
 }
 
-/// The whole case list: every check against every fixture, and every registered test against the
-/// canonical database.
-fn plan(sites: &[Site]) -> Vec<Planned> {
+/// The case list `scope` asks for: every check against every fixture, and every registered test
+/// against the canonical database.
+fn plan(sites: &[Site], scope: Scope) -> Vec<Planned> {
     let mut planned = Vec::new();
-    for (index, site) in sites.iter().enumerate().filter(|(_, s)| s.checks) {
-        for &(check_name, check) in CHECKS {
-            planned.push(Planned {
-                name: format!("{CORPUS}::{}::{check_name}", site.fixture.name),
-                site: index,
-                body: Body::Check(check),
-                isolation: Isolation::ReadOnly,
-                skip: effective_skip(&site.fixture, check_name),
-            });
+    if scope != Scope::Registered {
+        for (index, site) in sites.iter().enumerate().filter(|(_, s)| s.checks) {
+            for &(check_name, check) in CHECKS {
+                planned.push(Planned {
+                    name: format!("{CORPUS}::{}::{check_name}", site.fixture.name),
+                    site: index,
+                    body: Body::Check(check),
+                    isolation: Isolation::ReadOnly,
+                    skip: effective_skip(&site.fixture, check_name),
+                });
+            }
         }
     }
-    if let Some(index) = sites.iter().position(|s| s.canonical) {
+    if scope != Scope::Corpus
+        && let Some(index) = sites.iter().position(|s| s.canonical)
+    {
         for test in inventory::iter::<KernelTest> {
             planned.push(Planned {
                 name: test.case_name(),
@@ -152,12 +211,20 @@ fn drive(filters: &[&str], list: bool) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    let (scope, cap) = match (Scope::from_env(), worker_cap()) {
+        (Ok(scope), Ok(cap)) => (scope, cap),
+        (Err(reason), _) | (_, Err(reason)) => {
+            println!("kernel: {reason}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let sites = sites();
     if let Some(dup) = first_duplicate(sites.iter().map(|s| s.fixture.name.as_str())) {
         println!("fixtures collide on display name {dup:?}");
         return ExitCode::FAILURE;
     }
-    let planned = plan(&sites);
+    let planned = plan(&sites, scope);
     if let Some(dup) = first_duplicate(planned.iter().map(|p| p.name.as_str())) {
         println!("cases collide on name {dup:?}");
         return ExitCode::FAILURE;
@@ -192,7 +259,11 @@ fn drive(filters: &[&str], list: bool) -> ExitCode {
         }
     };
     let total = cases.len();
-    match Runner::new(program, &[WORKER_FLAG]).run(cases) {
+    let mut runner = Runner::new(program, &[WORKER_FLAG]);
+    if let Some(cap) = cap {
+        runner = runner.workers(cap);
+    }
+    match runner.run(cases) {
         Ok(results) => report(&results, total),
         Err(err) => {
             println!("kernel: could not start workers: {err}");
@@ -203,8 +274,14 @@ fn drive(filters: &[&str], list: bool) -> ExitCode {
 
 /// Brings the kernel up once, then serves cases, holding each database open across its whole group.
 fn work() -> ExitCode {
+    // The driver already rejected a bad value and would not have spawned anything, so agreeing with
+    // it here is all that is left to do.
+    let Ok(scope) = Scope::from_env() else {
+        eprintln!("worker: bad {SCOPE}");
+        return ExitCode::FAILURE;
+    };
     let sites = sites();
-    let plan: HashMap<String, Planned> = plan(&sites)
+    let plan: HashMap<String, Planned> = plan(&sites, scope)
         .into_iter()
         .map(|case| (case.name.clone(), case))
         .collect();

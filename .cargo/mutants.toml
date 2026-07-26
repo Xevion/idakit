@@ -58,49 +58,28 @@ exclude_re = [
 # compiled test could ever kill.
 all_features = true
 
-test_tool = "nextest"
+# `cargo`, not `nextest`, and that is forced rather than preferred: the `kernel` binary is
+# `test = false`, and nextest lists nothing for it even when named with `--test kernel`, so under
+# nextest every kernel-bound mutant would report MISSED against a run that never executed a kernel
+# test. Plain `cargo test` selects the target by name. The usual hazard of `cargo test` (one process
+# per binary, colliding on the `init_library` singleton) does not apply to the binaries named below:
+# `kernel` brings the kernel up once per worker and serves many cases in it by design, and `ctor`
+# and `ctree_nodes` hold one test each.
+test_tool = "cargo"
 
 # Unit tests plus the kernel binaries covering the globs above; pure vs. kernel-bound is a
 # property of functions, not files, so both halves are needed. Add a binary here when adding its
-# glob, or its mutants go unchecked. The corpus matrix is deliberately excluded: it dominates the
-# suite's wall time by fanning out across every fixture, unrelated to code-under-test coverage.
+# glob, or its mutants go unchecked. The corpus fan-out is deliberately excluded, through
+# IDAKIT_TEST_SCOPE in `just mutants`: it dominates wall time by running every check against every
+# fixture, which says nothing about the code under test.
 additional_cargo_test_args = [
     "--lib",
     "--test",
-    "strings",
-    "--test",
-    "dbinfo",
-    "--test",
-    "search",
-    "--test",
-    "netnode",
-    "--test",
-    "disasm",
-    "--test",
-    "cfg",
-    "--test",
-    "tinfo",
-    "--test",
-    "function_name",
-    "--test",
-    "frame",
-    "--test",
-    "write",
-    "--test",
-    "roundtrip",
-    "--test",
-    "decompile_cache",
+    "kernel",
     "--test",
     "ctor",
     "--test",
     "ctree_nodes",
-    # nextest's thread count multiplies by `--jobs` rather than dividing; caps live kernels
-    # (~0.85 GiB each) to `jobs * 4`. Lower this before lowering `--jobs`.
-    "--test-threads",
-    "4",
-    # Stops each mutant at the first rejecting test; see .config/nextest.toml.
-    "-P",
-    "mutants",
 ]
 
 # Each job builds in its own scratch copy of the tree; gitignore-filtering it keeps that copy to

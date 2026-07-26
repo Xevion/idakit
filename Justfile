@@ -2,6 +2,12 @@
 # never reaches, so IDAKIT_CORPUS_MANIFEST has to arrive through the environment instead.
 set dotenv-load := true
 
+# What every mutants recipe hands the kernel harness. `registered` drops the corpus fan-out, which
+# would otherwise run every check against every fixture once per mutant. The worker cap is the job
+# that `--test-threads 4` used to do under nextest: concurrency nests, so without it each of
+# `--jobs` mutants runs a full core-count pool of live kernels at ~0.85 GiB apiece.
+mutants_env := "IDAKIT_TEST_SCOPE=registered IDAKIT_TEST_WORKERS=4"
+
 facade_cpp := "crates/idakit-sys/facade/*.cpp"
 facade_sources := "crates/idakit-sys/facade/*.cpp crates/idakit-sys/facade/*.h"
 
@@ -223,37 +229,38 @@ require-corpus:
       exit 1
     fi
 
-# Mutation-tests the modules scoped in .cargo/mutants.toml against the unit tests and dedicated
-# kernel binaries. `jobs` stays well under the core count: concurrency nests, since every job
-# runs its own build plus test pool, each test holding a live ~0.85 GiB kernel.
+# Mutation-tests the modules scoped in .cargo/mutants.toml against the unit tests and the kernel
+# harness. `jobs` stays well under the core count: concurrency nests, since every job runs its own
+# build plus a pool of workers, each holding a live ~0.85 GiB kernel (capped by `mutants_env`).
 mutants jobs="3": require-corpus
-    cargo mutants -p idakit --jobs {{ jobs }}
+    {{ mutants_env }} cargo mutants -p idakit --jobs {{ jobs }}
 
 # Like `mutants`, but skips what a previous run already caught or found unviable (accumulated in
 # mutants.out/previously_caught.txt). A heuristic: confirm with a full `just mutants` before
 # trusting a clean result, since it assumes new tests never reduce coverage elsewhere.
 mutants-iterate jobs="3": require-corpus
-    cargo mutants -p idakit --jobs {{ jobs }} --iterate
+    {{ mutants_env }} cargo mutants -p idakit --jobs {{ jobs }} --iterate
 
 # Only the mutants touching lines changed since `base`, including uncommitted edits. `base`
 # takes any revision git resolves, including relative ones (`HEAD~5`), with no hash-typing
 # required. Diffs against the working tree, not `HEAD`, so staged and unstaged changes count too.
 mutants-diff base="master": require-corpus
     git diff {{ base }} > /tmp/idakit-mutants.diff
-    cargo mutants -p idakit --in-diff /tmp/idakit-mutants.diff
+    {{ mutants_env }} cargo mutants -p idakit --in-diff /tmp/idakit-mutants.diff
 
 # One shard of N for CI fan-out, e.g. `just mutants-shard 0/8`.
 mutants-shard shard: require-corpus
-    cargo mutants -p idakit --shard {{ shard }}
+    {{ mutants_env }} cargo mutants -p idakit --shard {{ shard }}
 
 # Only one file's mutants, e.g. `just mutants-file crates/idakit/src/name.rs`, for checking a
 # specific fix without paying for the whole tree. Goes through `require-corpus` like the rest:
-# a bare `cargo mutants` misses this Justfile's dotenv-load, leaving the kernel tests without a
-# corpus to skip against, so every mutant reports MISSED against a run that checked nothing.
+# a bare `cargo mutants` misses this Justfile's dotenv-load and `mutants_env`, leaving the kernel
+# tests without a corpus to skip against (so every mutant reports MISSED against a run that checked
+# nothing) and running the whole corpus fan-out per mutant if it did find one.
 #
 # Filters with `--re`, not `--file`: mutants.toml's `examine_globs` silently overrides `--file`,
 # so the obvious spelling runs the entire tree while reporting that it scoped to one file. `--re`
 # matches the `--list` line, which is `<path>:<line>:<col>: <mutant>`, so anchoring on the path
 # scopes it. Dots in `file` stay unescaped -- they match themselves in any real path.
 mutants-file file jobs="3": require-corpus
-    cargo mutants -p idakit --jobs {{ jobs }} --re '{{ file }}:'
+    {{ mutants_env }} cargo mutants -p idakit --jobs {{ jobs }} --re '{{ file }}:'
