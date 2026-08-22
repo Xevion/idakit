@@ -64,6 +64,13 @@
       "matchManagers": ["dockerfile", "custom.regex"],
       "groupName": "rust toolchain / docker image",
       "addLabels": ["docker"]
+    },
+    {
+      "description": "cxx generates the two sides of the bridge from one version number; moving one alone fails to link. Listed last so it wins over the grouping rules above",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["cxx", "cxx-build", "cxx-gen"],
+      "groupName": "cxx",
+      "addLabels": ["rust"]
     }
   ],
   "customManagers": [

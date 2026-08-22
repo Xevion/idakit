@@ -14,9 +14,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+# No `concurrency:` group on purpose: even with cancel-in-progress off, a group holds one pending
+# run per ref and cancels the rest, so a pushed stack loses every commit's verdict but the last.
 
 jobs:
   coverage:
@@ -42,12 +41,10 @@ jobs:
       - name: Install toolchain
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       # `coverage(off)` is unstable, so the exceptions need nightly; the override displaces
-      # rust-toolchain.toml's pinned stable for this job only.
+      # rust-toolchain.toml's pinned stable for this job only. Via rustup, not a pinned action: the
+      # upstream `nightly` branch is force-pushed, so a SHA pinned to it goes unreachable.
       - name: Install nightly
-        uses: dtolnay/rust-toolchain@4fd1da8b0805d2d2e936788875a7d65dbd677dc2 # nightly
-        with:
-          toolchain: nightly
-          components: llvm-tools-preview
+        run: rustup toolchain install nightly --component llvm-tools-preview --profile minimal
       - name: Override toolchain to nightly
         run: rustup override set nightly
       - name: Install cargo-llvm-cov
