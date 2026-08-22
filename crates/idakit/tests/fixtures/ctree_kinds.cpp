@@ -5,6 +5,7 @@
 // anonymous types, so the walk drives each sink callback. Compiled -O0 so control flow and
 // member accesses survive as distinct ctree nodes rather than being folded away.
 
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -88,8 +89,8 @@ done:
     return total;
 }
 
-// a dense switch with distinct case bodies, kept as a jump table (so the walk drives the
-// switch value-pool slicing) rather than being rewritten into if-chains
+// a dense switch kept as a jump table, so the walk drives the switch value-pool slicing. The width
+// is load-bearing: at six cases gcc and clang both lower it to compare-chains on AArch64.
 __attribute__((noinline)) int classify(int x) {
     int r;
     switch (x) {
@@ -110,6 +111,36 @@ __attribute__((noinline)) int classify(int x) {
         break;
     case 5:
         r = 155;
+        break;
+    case 6:
+        r = 166;
+        break;
+    case 7:
+        r = 177;
+        break;
+    case 8:
+        r = 188;
+        break;
+    case 9:
+        r = 199;
+        break;
+    case 10:
+        r = 210;
+        break;
+    case 11:
+        r = 221;
+        break;
+    case 12:
+        r = 232;
+        break;
+    case 13:
+        r = 243;
+        break;
+    case 14:
+        r = 254;
+        break;
+    case 15:
+        r = 265;
         break;
     default:
         r = -1;
@@ -150,11 +181,12 @@ __attribute__((noinline)) int use_types(struct Point *p, int *arr, enum Color c,
     return p->y + viax + e + (int) c + (int) n + r;
 }
 
-// pointer to an incomplete (opaque) type, plus an anonymous-union member access
-__attribute__((noinline)) long use_opaque(struct Opaque *o, struct HasAnon *h) {
+// pointer to an incomplete (opaque) type, plus an anonymous-union member access.
+// intptr_t, not long: long is 32-bit under LLP64, so the cast would not compile on Windows.
+__attribute__((noinline)) intptr_t use_opaque(struct Opaque *o, struct HasAnon *h) {
     h->tag = 7;
     h->i = 9;
-    return (long) o + h->tag + h->i;
+    return (intptr_t) o + h->tag + h->i;
 }
 
 // inline assembly -> an asm statement
@@ -190,7 +222,7 @@ int main(int argc, char **argv) {
     int ut = use_types(&pt, arr, GREEN, (size_alias) argc, 0);
     struct HasAnon ha;
     memset(&ha, 0, sizeof ha);
-    long uo = use_opaque((struct Opaque *) argv, &ha);
+    intptr_t uo = use_opaque((struct Opaque *) argv, &ha);
     int wa = with_asm(argc);
     int gd = guarded(argc - 2);
     Widget w;
@@ -199,6 +231,6 @@ int main(int argc, char **argv) {
     w.pos.y = argc + 1;
     int tk = w.tick();
     int wk = walk(argv[0], argv[0] + argc);
-    printf("%d %d %f %d %ld %d %d %d %d\n", cf, cl, ex, ut, uo, wa, gd, tk, wk);
+    printf("%d %d %f %d %lld %d %d %d %d\n", cf, cl, ex, ut, (long long) uo, wa, gd, tk, wk);
     return cf + cl + ut + wa + gd + tk + wk + (int) ex + (int) uo;
 }

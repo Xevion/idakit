@@ -103,21 +103,112 @@ fn all_reachable(tree: &Ctree) -> bool {
     seen.len() == total
 }
 
-/// The largest distinct case-value count across any `switch` in `tree`.
-fn max_switch_distinct_values(tree: &Ctree) -> usize {
-    tree.statements()
-        .filter_map(|(_, s)| match &s.kind {
-            StatementKind::Switch { cases, .. } => Some(
-                cases
-                    .iter()
-                    .flat_map(|c| &c.values)
-                    .collect::<BTreeSet<_>>()
-                    .len(),
-            ),
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0)
+/// The distinct case-value count of every `switch` in `tree`.
+fn switch_distinct_values(tree: &Ctree) -> impl Iterator<Item = usize> + '_ {
+    tree.statements().filter_map(|(_, s)| match &s.kind {
+        StatementKind::Switch { cases, .. } => Some(
+            cases
+                .iter()
+                .flat_map(|c| &c.values)
+                .collect::<BTreeSet<_>>()
+                .len(),
+        ),
+        _ => None,
+    })
+}
+
+/// Every node kind, local flag, and switch case-value the fixture's decompilation reaches.
+fn assert_extraction_covers(trees: &[Ctree]) {
+    let mut exprs = BTreeSet::new();
+    let mut stmts = BTreeSet::new();
+    let mut shapes = BTreeSet::new();
+    let mut any_expr_address = false;
+    let mut any_named_obj = false;
+    let mut any_non_arg_local = false;
+    let mut any_plain_arg_local = false;
+    let mut any_commented_local = false;
+    let mut switch_values: Vec<usize> = Vec::new();
+
+    for tree in trees {
+        for (_, e) in tree.expressions() {
+            exprs.insert(expr_name(&e.kind));
+            if e.address.is_some() {
+                any_expr_address = true;
+            }
+            if let ExpressionKind::Obj { name: Some(n), .. } = &e.kind
+                && !n.is_empty()
+            {
+                any_named_obj = true;
+            }
+        }
+        for (_, s) in tree.statements() {
+            stmts.insert(stmt_name(&s.kind));
+        }
+        for (_, t) in tree.types() {
+            shapes.insert(shape_name(&t.shape));
+        }
+        for l in tree.locals() {
+            if !l.is_arg {
+                any_non_arg_local = true;
+            }
+            // A plain argument: not the result var, not address-taken. Every flag mutant
+            // (OR-always-true, invert, XOR) turns such a local's `is_byref`/`is_result`
+            // true, so its existence pins the whole `flags &` decode.
+            if l.is_arg && !l.is_byref && !l.is_result {
+                any_plain_arg_local = true;
+            }
+            if l.comment.is_some() {
+                any_commented_local = true;
+            }
+        }
+        switch_values.extend(switch_distinct_values(tree));
+    }
+
+    // Every expression kind the decompiler emits from this fixture.
+    for k in [
+        "Binary", "Assign", "Unary", "Call", "Index", "Cast", "Deref", "Num", "Fnum", "Obj", "Var",
+        "Helper",
+    ] {
+        assert!(exprs.contains(k), "missing expression kind {k}: {exprs:?}");
+    }
+    // Every statement kind it emits.
+    for k in [
+        "Block",
+        "Expression",
+        "If",
+        "For",
+        "While",
+        "Do",
+        "Switch",
+        "Break",
+        "Return",
+        "Empty",
+    ] {
+        assert!(stmts.contains(k), "missing statement kind {k}: {stmts:?}");
+    }
+    // Every aggregate/derived type shape the type walk builds.
+    for k in [
+        "Ptr", "Array", "Struct", "Enum", "Typedef", "Function", "Opaque",
+    ] {
+        assert!(shapes.contains(k), "missing type shape {k}: {shapes:?}");
+    }
+
+    assert!(any_expr_address, "no expression carried a source address");
+    assert!(any_named_obj, "no global reference kept its symbol name");
+    assert!(any_non_arg_local, "every local was flagged an argument");
+    assert!(
+        any_plain_arg_local,
+        "no plain (value, non-result) argument survived"
+    );
+    assert!(!any_commented_local, "a local gained a spurious comment");
+
+    // The dense `switch` keeps every distinct case value through the slicing walk. The arm is
+    // 16 wide, so a low count means the host compiler emitted compare-chains instead.
+    let best = switch_values.iter().copied().max().unwrap_or(0);
+    assert!(
+        best >= 5,
+        "switch case-value pool was mis-sliced: {best} distinct values, counts {switch_values:?}"
+    );
 }
 
 #[test]
@@ -131,8 +222,13 @@ fn ctree_nodes() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/ctree_kinds.cpp"
     );
-    let bin: PathBuf =
-        std::env::temp_dir().join(format!("idakit_ctree_kinds_{}", std::process::id()));
+    // g++ appends `.exe` itself on Windows, so an extensionless `-o` leaves nothing to open.
+    let name = format!(
+        "idakit_ctree_kinds_{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    );
+    let bin: PathBuf = std::env::temp_dir().join(&name);
 
     let status = Command::new("g++")
         .args(["-O0", "-g0", "-w", "-fno-inline", "-o"])
@@ -206,94 +302,7 @@ fn ctree_nodes() {
                 "Debug never rendered the DecompiledFunction struct"
             );
 
-            let mut exprs = BTreeSet::new();
-            let mut stmts = BTreeSet::new();
-            let mut shapes = BTreeSet::new();
-            let mut any_expr_address = false;
-            let mut any_named_obj = false;
-            let mut any_non_arg_local = false;
-            let mut any_plain_arg_local = false;
-            let mut any_commented_local = false;
-            let mut best_switch_values = 0;
-
-            for tree in &trees {
-                for (_, e) in tree.expressions() {
-                    exprs.insert(expr_name(&e.kind));
-                    if e.address.is_some() {
-                        any_expr_address = true;
-                    }
-                    if let ExpressionKind::Obj { name: Some(n), .. } = &e.kind
-                        && !n.is_empty()
-                    {
-                        any_named_obj = true;
-                    }
-                }
-                for (_, s) in tree.statements() {
-                    stmts.insert(stmt_name(&s.kind));
-                }
-                for (_, t) in tree.types() {
-                    shapes.insert(shape_name(&t.shape));
-                }
-                for l in tree.locals() {
-                    if !l.is_arg {
-                        any_non_arg_local = true;
-                    }
-                    // A plain argument: not the result var, not address-taken. Every flag mutant
-                    // (OR-always-true, invert, XOR) turns such a local's `is_byref`/`is_result`
-                    // true, so its existence pins the whole `flags &` decode.
-                    if l.is_arg && !l.is_byref && !l.is_result {
-                        any_plain_arg_local = true;
-                    }
-                    if l.comment.is_some() {
-                        any_commented_local = true;
-                    }
-                }
-                best_switch_values = best_switch_values.max(max_switch_distinct_values(tree));
-            }
-
-            // Every expression kind the decompiler emits from this fixture.
-            for k in [
-                "Binary", "Assign", "Unary", "Call", "Index", "Cast", "Deref", "Num", "Fnum",
-                "Obj", "Var", "Helper",
-            ] {
-                assert!(exprs.contains(k), "missing expression kind {k}: {exprs:?}");
-            }
-            // Every statement kind it emits.
-            for k in [
-                "Block",
-                "Expression",
-                "If",
-                "For",
-                "While",
-                "Do",
-                "Switch",
-                "Break",
-                "Return",
-                "Empty",
-            ] {
-                assert!(stmts.contains(k), "missing statement kind {k}: {stmts:?}");
-            }
-            // Every aggregate/derived type shape the type walk builds.
-            for k in [
-                "Ptr", "Array", "Struct", "Enum", "Typedef", "Function", "Opaque",
-            ] {
-                assert!(shapes.contains(k), "missing type shape {k}: {shapes:?}");
-            }
-
-            assert!(any_expr_address, "no expression carried a source address");
-            assert!(any_named_obj, "no global reference kept its symbol name");
-            assert!(any_non_arg_local, "every local was flagged an argument");
-            assert!(
-                any_plain_arg_local,
-                "no plain (value, non-result) argument survived"
-            );
-            assert!(!any_commented_local, "a local gained a spurious comment");
-
-            // The dense `switch` keeps every distinct case value through the slicing walk.
-            assert!(
-                best_switch_values >= 5,
-                "switch case-value pool was mis-sliced: {best_switch_values} distinct values"
-            );
+            assert_extraction_covers(&trees);
 
             idb.close(false);
         })
@@ -301,6 +310,7 @@ fn ctree_nodes() {
     })
     .expect("kernel init failed");
 
+    // IDA appends `.i64` to the whole name, so `with_extension` would miss it next to a `.exe`.
     let _ = std::fs::remove_file(&bin);
-    let _ = std::fs::remove_file(bin.with_extension("i64"));
+    let _ = std::fs::remove_file(bin.with_file_name(format!("{name}.i64")));
 }

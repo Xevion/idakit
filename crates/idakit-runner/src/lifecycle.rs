@@ -73,7 +73,12 @@ impl Nursery {
     }
 
     /// Configures `command` so the child it spawns is bound to this runner's lifetime.
-    #[allow(unused_variables, clippy::unused_self)]
+    #[allow(
+        unused_variables,
+        clippy::unused_self,
+        clippy::needless_pass_by_ref_mut,
+        reason = "the `&mut` is load-bearing on Linux; other platforms have nothing to do here"
+    )]
     pub fn configure(&self, command: &mut Command) {
         #[cfg(target_os = "linux")]
         {
