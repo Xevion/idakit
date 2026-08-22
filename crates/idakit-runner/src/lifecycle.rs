@@ -126,6 +126,11 @@ impl Nursery {
     }
 }
 
+// SAFETY: workers share the nursery only as `&self` to call `adopt`, and a job handle is usable
+// from any thread. `Drop` closes it once, on the owner, after every borrow has ended.
+#[cfg(windows)]
+unsafe impl Sync for Nursery {}
+
 #[cfg(windows)]
 impl Drop for Nursery {
     fn drop(&mut self) {

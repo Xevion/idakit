@@ -28,6 +28,16 @@ jobs:
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - name: Check formatting
         run: just fmt-check
+      - name: Lint workflows
+        run: just actionlint
+      # The pin audits resolve `uses:` SHAs against GitHub and silently skip without a token.
+      - name: Audit workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor .
+      # Needs no IDA runtime, so it runs here rather than inside the matrix it guards.
+      - name: Cross-target lint
+        run: just cross
       # Broken intra-doc links / bad code blocks, under DOCS_RS so no IDA runtime is needed.
       - name: Lint docs
         run: just doc hermetic

@@ -15,7 +15,7 @@ default:
     @just --list
 
 # One-stop gate mirroring CI: a clean run here means CI will very likely pass.
-check: fmt-check actionlint zizmor clippy tidy (doc "hermetic") readme-check test
+check: fmt-check actionlint zizmor clippy cross tidy (doc "hermetic") readme-check test
 
 build:
     cargo build --workspace
@@ -123,6 +123,18 @@ sanitize mode="address":
 
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# Lints the matrix's other targets from a Linux box, catching `#[cfg]`-gated breakage a host build
+# cannot see. Scoped to the crates with no native IDA dependency, which is where nearly all the
+# platform-specific code lives; the rest needs a per-target C++ toolchain for `cxx`'s build script.
+cross:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for target in x86_64-pc-windows-msvc aarch64-apple-darwin; do
+      rustup target add "$target"
+      DOCS_RS=1 cargo clippy -p idakit-runner -p idakit-runner-macros \
+        --all-targets --all-features --target "$target" -- -D warnings
+    done
 
 # Line coverage over the workspace, written to coverage/ (gitignored); needs cargo-llvm-cov.
 # Every step carries the cfg, else the `coverage(off)` exceptions go inert and count against the
