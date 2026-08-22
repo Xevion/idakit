@@ -230,8 +230,15 @@ fn ctree_nodes() {
     );
     let bin: PathBuf = std::env::temp_dir().join(&name);
 
-    let status = Command::new("g++")
-        .args(["-O0", "-g0", "-w", "-fno-inline", "-o"])
+    let mut cmd = Command::new("g++");
+    cmd.args(["-O0", "-g0", "-w", "-fno-inline"]);
+    // Apple clang's AArch64 backend lowers even this dense a switch to compare-chains, so pin
+    // the fixture to x86_64 there to match every other platform's decompiler behavior.
+    if cfg!(target_os = "macos") {
+        cmd.args(["-arch", "x86_64"]);
+    }
+    let status = cmd
+        .arg("-o")
         .arg(&bin)
         .arg(src)
         .status()
