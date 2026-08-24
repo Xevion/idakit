@@ -297,6 +297,8 @@ use crate::kernel::KernelClaim;
 pub struct Database {
     /// Interior mutability lets `decompile(&self)` init Hex-Rays lazily.
     hexrays_ready: Cell<bool>,
+    /// Whether a database is currently open.
+    is_open: Cell<bool>,
     /// `Some` for an in-place `Database`; `None` for the actor's, whose claim `run` holds.
     _claim: Option<KernelClaim>,
     /// Suppresses the auto `Send`/`Sync` impls. `Send` is re-granted below by a guarded
@@ -369,6 +371,8 @@ impl Database {
                 reason: reason.unwrap_or_else(|| format!("open failed (status {rc})")),
             });
         }
+        // Set before auto_wait: a trap there still leaves the database open.
+        self.is_open.set(true);
         // run_auto only enables the analysis queue; block until it drains so callers
         // observe a fully analyzed database. Analysis runs kernel code, so it can trap too.
         if run_auto && self.auto_wait() == sys::EXIT_TRAPPED {
@@ -383,6 +387,7 @@ impl Database {
     pub(crate) fn new() -> Self {
         Self {
             hexrays_ready: Cell::new(false),
+            is_open: Cell::new(false),
             _claim: None,
             _not_sync: PhantomData,
         }
@@ -392,6 +397,7 @@ impl Database {
     pub(crate) fn owned(claim: KernelClaim) -> Self {
         Self {
             hexrays_ready: Cell::new(false),
+            is_open: Cell::new(false),
             _claim: Some(claim),
             _not_sync: PhantomData,
         }
@@ -400,12 +406,17 @@ impl Database {
     /// Close the current database, optionally saving analysis back to the `.i64`.
     #[doc(alias("close_database"))]
     pub fn close(&mut self, save: bool) {
+        // Closing with no database open aborts on 9.4.
+        if !self.is_open.get() {
+            return;
+        }
         // Both are per-database, so the next open must not inherit them: a stale `hexrays_ready`
         // skips `hexrays_init` for a database that never had it, and the cfunc cache is keyed by
         // address, which means nothing across two different programs.
         self.clear_decompilation_cache();
         self.close_database(save);
         self.hexrays_ready.set(false);
+        self.is_open.set(false);
     }
 
     /// Opens `path`, runs `f` against the open database, and closes it (without saving) on
