@@ -400,7 +400,12 @@ impl Database {
     /// Close the current database, optionally saving analysis back to the `.i64`.
     #[doc(alias("close_database"))]
     pub fn close(&mut self, save: bool) {
+        // Both are per-database, so the next open must not inherit them: a stale `hexrays_ready`
+        // skips `hexrays_init` for a database that never had it, and the cfunc cache is keyed by
+        // address, which means nothing across two different programs.
+        self.clear_decompilation_cache();
         self.close_database(save);
+        self.hexrays_ready.set(false);
     }
 
     /// Opens `path`, runs `f` against the open database, and closes it (without saving) on
