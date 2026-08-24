@@ -22,11 +22,14 @@
 		{
 			"type": "linked-versions",
 			"groupName": "idakit",
-			"components": ["idakit", "idakit-sys"]
+			"components": ["idakit", "idakit-sys", "idakit-sys-codegen"]
 		},
 		{ "type": "cargo-workspace", "merge": false }
 	],
 	"packages": {
+		"crates/idakit-sys-codegen": {
+			"release-type": "rust"
+		},
 		"crates/idakit-sys": {
 			"release-type": "rust"
 		},
