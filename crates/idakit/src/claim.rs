@@ -126,7 +126,9 @@ fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
             }
         }
     }
-    Err("is_main_thread has no adrp+ldr g_main load in its prologue".to_owned())
+    Err(format!(
+        "no adrp+ldr g_main load in is_main_thread prologue {insns:08x?}"
+    ))
 }
 
 /// The address an `adrp Xd, page` at `adrp_pc` plus a dependent `ldr Xt, [Xd, off]` computes.
