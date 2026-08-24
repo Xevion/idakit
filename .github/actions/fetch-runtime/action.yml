@@ -6,7 +6,7 @@ inputs:
     description: Dependency bundle version.
     required: true
   platform:
-    description: Platform slug (linux-x64, linux-arm64, windows-x64, macos-arm64, macos-x64).
+    description: Platform slug (linux-x64, linux-arm64, windows-x64, windows-arm64, macos-arm64, macos-x64).
     required: true
   sdk-tag:
     description: If set, also sparse-checkout the SDK headers at this tag and export IDA_SDK_DIR.
