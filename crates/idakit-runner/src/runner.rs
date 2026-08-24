@@ -15,6 +15,7 @@
 //! worker, so it parallelizes exactly as it does today.
 
 use std::collections::HashMap;
+use std::env;
 use std::ffi::OsString;
 use std::io::{self, BufReader};
 use std::path::PathBuf;
@@ -26,12 +27,18 @@ use std::time::{Duration, Instant};
 use crate::lifecycle::Nursery;
 use crate::protocol::{Event, Line, Request, Status, read_line};
 
-/// How long one case may run before its worker is killed.
+/// How long one case may run before its worker is killed, uninstrumented.
 ///
 /// Generous on purpose: this detects a wedged case, it is not a performance budget. A case is billed
 /// for whatever its group's setup costs, since the first case of a group pays to copy and open that
 /// database, so a tight bound here would fire on a large fixture rather than on a real hang.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// The same bound under a sanitizer, which runs the same work several times slower.
+///
+/// The heaviest corpus decompile takes ~21s uninstrumented and overran 180s under ASan, so an
+/// absolute bound cannot serve both lanes: what is ~8x headroom normally is under 1x here.
+const SANITIZER_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// One case to run, named uniquely within the run.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,7 +101,7 @@ impl Runner {
             program: program.into(),
             worker_args: worker_args.iter().map(OsString::from).collect(),
             workers: default_workers(),
-            timeout: DEFAULT_TIMEOUT,
+            timeout: default_timeout(),
         }
     }
 
@@ -422,6 +429,17 @@ fn crashed(name: &str, reason: &str) -> CaseResult {
 /// One worker per core, which is where throughput stops improving for kernel work.
 fn default_workers() -> usize {
     std::thread::available_parallelism().map_or(4, std::num::NonZero::get)
+}
+
+/// [`SANITIZER_TIMEOUT`] when the build script saw `IDAKIT_SANITIZE`, else [`DEFAULT_TIMEOUT`].
+///
+/// The recipe that instruments the facade exports that variable, and the test process inherits it.
+fn default_timeout() -> Duration {
+    if env::var_os("IDAKIT_SANITIZE").is_some() {
+        SANITIZER_TIMEOUT
+    } else {
+        DEFAULT_TIMEOUT
+    }
 }
 
 #[cfg(test)]
