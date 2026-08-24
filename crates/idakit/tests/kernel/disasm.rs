@@ -4,8 +4,8 @@
 //! open database with its read-only neighbours and skips when no corpus is configured. It decodes a
 //! slice of each function's instruction stream, asserts structural invariants, cross-checks
 //! direct-branch targets against IDA's own reference graph (two independent sources that must
-//! agree), and walks the byte accessors. Mostly read-only: one check round-trips a comment write
-//! that is never persisted (`idb.close(false)`).
+//! agree), and walks the byte accessors. The one check that writes lives in its own
+//! [`disasm_comment_round_trip`] case, whose comment is never persisted (`idb.close(false)`).
 
 use std::fmt::Write as _;
 
@@ -61,9 +61,18 @@ fn run(idb: &mut Database) {
     check_is_code_and_is_data(idb);
     check_next_and_prev_head(idb);
     check_read_into_matches_bytes(idb);
-    // Last: the only check that writes, so nothing after it reads a mutated database.
-    check_comment_round_trips(idb);
     println!("ok");
+}
+
+/// Split from [`disasm`] because it writes: sequencing it last kept it from disturbing its own
+/// neighbours, but the isolation attribute is what the harness reads, and a shared database it
+/// dirties outlives the case.
+#[kernel_test]
+fn disasm_comment_round_trip() {
+    crate::common::with_canonical_db(|idb| {
+        check_comment_round_trips(idb);
+        println!("ok");
+    });
 }
 
 /// A bounded straight-line decode over every function's instruction stream: structural

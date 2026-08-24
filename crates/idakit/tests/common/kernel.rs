@@ -24,7 +24,7 @@ use idakit::prelude::Ida;
 use idakit_runner::{Case, CaseResult, Outcome, Runner, Status, expecting_panic, serve};
 
 use super::TestDb;
-use super::checks::{CHECKS, Check};
+use super::checks::{CHECKS, Check, Shares};
 use super::registry::{Isolation, KernelTest, Warm};
 
 /// Argument that turns this binary into a worker instead of the driver.
@@ -175,12 +175,15 @@ fn plan(sites: &[Site], scope: Scope) -> Vec<Planned> {
     let mut planned = Vec::new();
     if scope != Scope::Registered {
         for (index, site) in sites.iter().enumerate().filter(|(_, s)| s.checks) {
-            for &(check_name, check) in CHECKS {
+            for &(check_name, check, shares) in CHECKS {
                 planned.push(Planned {
                     name: format!("{CORPUS}::{}::{check_name}", site.fixture.name),
                     site: index,
                     body: Body::Check(check),
-                    isolation: Isolation::ReadOnly,
+                    isolation: match shares {
+                        Shares::Yes => Isolation::ReadOnly,
+                        Shares::No => Isolation::Writes,
+                    },
                     skip: effective_skip(&site.fixture, check_name),
                 });
             }

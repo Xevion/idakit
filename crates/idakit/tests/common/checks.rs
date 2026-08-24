@@ -7,19 +7,32 @@ use idakit::prelude::*;
 /// One named invariant over an open database.
 pub type Check = fn(&Database) -> String;
 
+/// Whether a check may share its fixture's open database with its neighbours.
+///
+/// Declared per check rather than assumed: decompilation writes (noreturn propagation deletes
+/// code and its cross-references, and stack-pointer analysis rewrites frames), so a check that
+/// decompiles must not be handed to a later reader.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Shares {
+    /// Pure read; shares the database already open on the worker.
+    Yes,
+    /// Dirties the database; gets one reopened for it.
+    No,
+}
+
 /// The check axis of the corpus matrix. Add a row here and every corpus database runs it.
-pub const CHECKS: &[(&str, Check)] = &[
-    ("structure", structure),
-    ("symbols", symbols),
-    ("strings", strings),
-    ("disasm", disasm),
-    ("decode", decode),
-    ("cfg", cfg),
-    ("decompile", decompile),
-    ("types", types),
-    ("argloc", argloc),
-    ("segment_attrs", segment_attrs),
-    ("func_attrs", func_attrs),
+pub const CHECKS: &[(&str, Check, Shares)] = &[
+    ("structure", structure, Shares::Yes),
+    ("symbols", symbols, Shares::Yes),
+    ("strings", strings, Shares::Yes),
+    ("disasm", disasm, Shares::Yes),
+    ("decode", decode, Shares::Yes),
+    ("cfg", cfg, Shares::Yes),
+    ("decompile", decompile, Shares::No),
+    ("types", types, Shares::Yes),
+    ("argloc", argloc, Shares::No),
+    ("segment_attrs", segment_attrs, Shares::Yes),
+    ("func_attrs", func_attrs, Shares::Yes),
 ];
 
 // A regression that empties the check axis would otherwise still pass every corpus trial
@@ -104,15 +117,27 @@ pub fn strings(idb: &Database) -> String {
 
 /// A bounded straight-line decode holds structural invariants, and at least one direct branch
 /// target is mirrored in IDA's reference graph.
+///
+/// The per-function cap is deliberately far below the budget: a depth-first walk of 256 spends the
+/// whole budget on ~16 functions, and in a stripped shared object the lowest addresses are PLT
+/// thunks whose jumps are all indirect, so the sample can hold no direct branch at all.
 pub fn disasm(idb: &Database) -> String {
     const BUDGET: usize = 4000;
+    const PER_FUNCTION: usize = 32;
     let mut total = 0usize;
     let mut with_ops = 0usize;
-    let mut checked_target = false;
+    let mut direct = 0usize;
+    let mut matched = 0usize;
+    let mut unmatched: Option<(Address, Address)> = None;
 
     'outer: for function in idb.functions() {
         let mut address = function.address();
-        for _ in 0..256 {
+        for _ in 0..PER_FUNCTION {
+            // A cross-reference only exists at a real code head, so decoding off the tail of a
+            // function into data and then faulting the missing xref would prove nothing.
+            if !idb.is_code(address) {
+                break;
+            }
             let Ok(instruction) = idb.decode(address) else {
                 break;
             };
@@ -135,12 +160,12 @@ pub fn disasm(idb: &Database) -> String {
             if !instruction.ops.is_empty() {
                 with_ops += 1;
             }
-            if !checked_target
-                && !instruction.flow.is_indirect
+            if !instruction.flow.is_indirect
                 && (instruction.flow.is_call || instruction.flow.is_jump)
                 && let Some(target) = instruction.flow.target
             {
-                checked_target = idb.xrefs_from(address).any(|x| {
+                direct += 1;
+                if idb.xrefs_from(address).any(|x| {
                     x.to == target
                         && matches!(
                             x.kind,
@@ -151,7 +176,11 @@ pub fn disasm(idb: &Database) -> String {
                                     | CodeXref::JumpFar
                             )
                         )
-                });
+                }) {
+                    matched += 1;
+                } else if unmatched.is_none() {
+                    unmatched = Some((address, target));
+                }
             }
             total += 1;
             address = address + u64::from(instruction.len);
@@ -162,11 +191,30 @@ pub fn disasm(idb: &Database) -> String {
     }
     assert!(total > 0, "decoded no instructions");
     assert!(with_ops > 0, "no instruction had operands");
+    // Split from the match assert below: "the sample held no direct branch" and "it held some and
+    // none agreed with the graph" are different defects, and one message cannot name both.
     assert!(
-        checked_target,
-        "no direct branch target matched the reference graph"
+        direct > 0,
+        "{total} instructions decoded, none a direct call or jump"
     );
-    format!("{total} insns, {with_ops} with operands")
+    assert!(matched > 0, "{}", unmatched_report(idb, direct, unmatched));
+    format!("{total} insns, {with_ops} with operands, {matched}/{direct} branches matched")
+}
+
+/// Why no direct branch matched, naming the first that did not and the edges actually present.
+fn unmatched_report(idb: &Database, direct: usize, first: Option<(Address, Address)>) -> String {
+    let Some((address, target)) = first else {
+        return format!("{direct} direct branches, none matched the reference graph");
+    };
+    let kinds: Vec<String> = idb
+        .xrefs_from(address)
+        .map(|x| format!("{:?}->{:#x}", x.kind, x.to))
+        .collect();
+    format!(
+        "{direct} direct branches, none matched the reference graph; \
+         first at {address:#x} targets {target:#x}, xrefs there: [{}]",
+        kinds.join(", ")
+    )
 }
 
 /// The first multi-block function builds a graph whose edges are in range and mirror as
