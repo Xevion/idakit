@@ -77,6 +77,10 @@ jobs:
       AWS_REGION: auto
       S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      # clang-tidy publishes no win_arm64 wheel and its sdist won't build; the tidy and fmt
+      # steps skip Windows anyway. Job-level, not step-level: mise resolves tools lazily, so
+      # a later step re-attempts the install. `runner` is unavailable here, hence matrix.
+      MISE_DISABLE_TOOLS: ${{ startsWith(matrix.platform, 'windows') && 'pipx:clang-tidy,pipx:clang-format' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
