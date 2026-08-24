@@ -123,8 +123,24 @@ jobs:
           CTCACHE_DIR: ${{ runner.temp }}/ctcache
           CTCACHE_SAVE_OUTPUT: "1"
         run: just tidy
+      # IDALOG is the runtime's own message log, and it survives a fatal exit -- the only channel
+      # that says *why* bring-up died, since the facade's exit trap does not cover init and stdout
+      # capture is a no-op on Windows. Explicit bash (pwsh mangles `$?`) and no `-q`, so cargo's
+      # own diagnostics and the real exit code both survive.
       - name: Accept IDA EULA
-        run: cargo run -q -p idakit --example accept_eula
+        shell: bash
+        env:
+          IDALOG: ida-init.log
+          IDALOG_TIMESTAMPS: "1"
+        run: |
+          set +e
+          cargo run -p idakit --example accept_eula
+          rc=$?
+          set -e
+          echo "accept_eula exit=$rc"
+          echo "--- IDALOG ---"
+          cat ida-init.log || echo "(no IDALOG produced)"
+          exit $rc
       # Fixtures are host-independent, so every platform fetches the same corpus tier; the
       # exported manifest drives both the corpus matrix and the dedicated tests below.
       - name: Fetch test corpus
