@@ -35,11 +35,11 @@ jobs:
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install toolchain
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
       # `coverage(off)` is unstable, so the exceptions need nightly; the override displaces
       # rust-toolchain.toml's pinned stable for this job only. Via rustup, not a pinned action: the
       # upstream `nightly` branch is force-pushed, so a SHA pinned to it goes unreachable.
@@ -48,7 +48,7 @@ jobs:
       - name: Override toolchain to nightly
         run: rustup override set nightly
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@ed67fa35ac944f3a9b33f12c4dd43b6f31a47e20 # v2.83.3
+        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
         with:
           tool: cargo-llvm-cov@0.8.7
       - name: Fetch IDA runtime
@@ -58,7 +58,7 @@ jobs:
           platform: linux-x64
           sdk-tag: v9.3.1-release
       - name: Cache cargo
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Accept IDA EULA
         run: cargo run -q -p idakit --example accept_eula
       - name: Fetch test corpus
@@ -80,13 +80,13 @@ jobs:
           cargo llvm-cov report --html --output-dir coverage/html
           cargo llvm-cov report --lcov --output-path coverage/lcov.info
       - name: Upload HTML coverage report
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-html
           path: coverage/html
           retention-days: 7
       - name: Upload LCOV report
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-lcov
           path: coverage/lcov.info
