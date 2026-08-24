@@ -17,6 +17,8 @@
 // it) and instantiates rust::Vec<range_t>; gen_range.h only forward-declares ChunkInfo.
 #include "gen_bridge.h"
 
+#include <allow_deprecated.hpp>
+
 namespace gen {
 
 // The entry (main) chunk of the function at addr; throws if there's no function there or it has

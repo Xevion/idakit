@@ -18,6 +18,8 @@
 // construct it below); gen_cfg.h only forward-declares it.
 #include "gen_bridge.h"
 
+#include <allow_deprecated.hpp>
+
 namespace gen {
 
 // Builds the control-flow graph of the function at addr, owned by the returned handle; throws if

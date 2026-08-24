@@ -20,6 +20,8 @@
 
 #include "cfunc_shims.h"
 
+#include <allow_deprecated.hpp>
+
 namespace {
 
 // The decompiler is a plugin; init it once (idempotent) before any decompile_func call.

@@ -16,6 +16,8 @@
 // instantiates rust::Vec<XrefRec>; gen_reference.h only forward-declares XrefRec.
 #include "gen_bridge.h"
 
+#include <allow_deprecated.hpp>
+
 namespace gen {
 
 // Every cross-reference edge to (is_to) or from addr, collected into an owned Vec; empty if there
