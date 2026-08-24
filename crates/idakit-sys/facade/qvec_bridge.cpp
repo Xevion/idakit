@@ -17,6 +17,8 @@
 
 #include "qvec_bridge.h"
 
+#include <allow_deprecated.hpp>
+
 // The recipe's "explicit instantiation to force the symbols" step (template class
 // qvector<range_t>;) does NOT compile here: it instantiates *every* member, and
 // qvector<T>::resize_noinit carries CASSERT(is_trivially_constructible<T>), which range_t

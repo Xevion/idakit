@@ -28,6 +28,8 @@
 #include "gen_facade_consts.h" // gen::NONE
 #include "gen_visitors.h"
 
+#include <allow_deprecated.hpp>
+
 namespace bridge {
 
 namespace {

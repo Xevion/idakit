@@ -13,6 +13,8 @@
 
 #include "gen_seg.h"
 
+#include <allow_deprecated.hpp>
+
 namespace gen {
 
 // The segment's comment (repeatable or regular) at index n; throws when n is out of range or that

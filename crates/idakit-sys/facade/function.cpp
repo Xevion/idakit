@@ -13,6 +13,8 @@
 
 #include "gen_function.h"
 
+#include <allow_deprecated.hpp>
+
 namespace gen {
 
 // Start address of the nth function in the functions list, or BADADDR when n is out of range.

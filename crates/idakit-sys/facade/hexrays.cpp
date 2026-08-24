@@ -23,6 +23,8 @@
 // below); gen_hexrays.h only forward-declares them.
 #include "gen_bridge.h"
 
+#include <allow_deprecated.hpp>
+
 using namespace facade;
 
 namespace gen {
