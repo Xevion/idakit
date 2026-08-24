@@ -103,37 +103,74 @@ unsafe fn follow_jmp_thunk(entry: *const u8) -> *const u8 {
 /// aarch64: decodes `is_main_thread`'s `&g_main` materialization, an `adrp Xd, page` +
 /// `ldr Xt, [Xd, off]` pair.
 ///
-/// A stack-save prologue precedes it, so this scans a short window for the first such pair:
-/// `g_main = (adrp_pc & !0xfff) + (page << 12) + off`.
+/// A stack-save prologue precedes it, so this scans a short window for the first such pair.
+/// On Windows the function's address is first an import thunk; [`follow_import_thunk`]
+/// resolves it to the body.
 #[cfg(target_arch = "aarch64")]
 fn decode_g_main(entry: *const u8) -> Result<*const u8, String> {
     const WINDOW: usize = 8;
+
+    // SAFETY: `entry` is a mapped code pointer; a thunk and its slot are mapped (see fn doc).
+    let entry = unsafe { follow_import_thunk(entry) };
+
     // SAFETY: `entry` is a mapped executable function; its first WINDOW 4-byte
     // instructions lie within the body.
     let insns: [u32; WINDOW] = unsafe { ptr::read(entry.cast()) };
 
     for (i, &adrp) in insns.iter().enumerate() {
-        // ADRP: bit31=1, bits28..24=10000 (mask 0x9f00_0000 -> 0x9000_0000).
-        if adrp & 0x9f00_0000 != 0x9000_0000 {
-            continue;
-        }
-        let rd = adrp & 0x1f;
-        let imm = i64::from((((adrp >> 5) & 0x7_ffff) << 2) | ((adrp >> 29) & 0x3));
-        let page = (imm ^ 0x10_0000) - 0x10_0000; // sign-extend the 21-bit page count
         let adrp_pc = entry.wrapping_add(i * 4) as u64;
-        let base = ((adrp_pc & !0xfff) as i64 + (page << 12)) as u64;
-
-        // First following `ldr Xt, [Xd, off]` (64-bit unsigned offset, mask
-        // 0xffc0_0000 -> 0xf940_0000) that dereferences Xd carries the offset.
+        // The first following `ldr` that dereferences this adrp's destination carries the offset.
         for &ldr in &insns[i + 1..] {
-            if ldr & 0xffc0_0000 != 0xf940_0000 || (ldr >> 5) & 0x1f != rd {
-                continue;
+            if let Some(target) = adrp_ldr_target(adrp_pc, adrp, ldr) {
+                return Ok(target as *const u8);
             }
-            let off = u64::from((ldr >> 10) & 0xfff) * 8; // imm12, scaled by access size
-            return Ok(base.wrapping_add(off) as *const u8);
         }
     }
     Err("is_main_thread has no adrp+ldr g_main load in its prologue".to_owned())
+}
+
+/// The address an `adrp Xd, page` at `adrp_pc` plus a dependent `ldr Xt, [Xd, off]` computes.
+///
+/// `None` unless `adrp` is an ADRP (mask `0x9f00_0000` -> `0x9000_0000`) and `ldr` is a 64-bit
+/// unsigned-offset load (mask `0xffc0_0000` -> `0xf940_0000`) based on its destination.
+#[cfg(target_arch = "aarch64")]
+fn adrp_ldr_target(adrp_pc: u64, adrp: u32, ldr: u32) -> Option<u64> {
+    if adrp & 0x9f00_0000 != 0x9000_0000 {
+        return None;
+    }
+    if ldr & 0xffc0_0000 != 0xf940_0000 || (ldr >> 5) & 0x1f != adrp & 0x1f {
+        return None;
+    }
+    let imm = i64::from((((adrp >> 5) & 0x7_ffff) << 2) | ((adrp >> 29) & 0x3));
+    let page = (imm ^ 0x10_0000) - 0x10_0000; // sign-extend the 21-bit page count
+    let base = ((adrp_pc & !0xfff) as i64 + (page << 12)) as u64;
+    Some(base.wrapping_add(u64::from((ldr >> 10) & 0xfff) * 8)) // imm12, scaled by access size
+}
+
+/// Follows an ARM64 import thunk (`adrp Xd, page`; `ldr Xd, [Xd, off]`; `br Xd`) to its target.
+///
+/// On Windows the address of an imported function is such a thunk rather than the body; the real
+/// address lives in the slot the `ldr` reads. Elsewhere the address is already the body, whose
+/// prologue does not tail-jump, so `entry` is returned unchanged. Requiring the `br` through the
+/// adrp's own register keeps an ordinary prologue, or an ELF PLT entry (which stages through x16
+/// then x17), from matching.
+///
+/// # Safety
+/// `entry` must be a mapped code pointer. When it is a thunk, its three instructions and the slot
+/// it references (both in the same image) must be mapped, which holds for a real thunk.
+#[cfg(target_arch = "aarch64")]
+unsafe fn follow_import_thunk(entry: *const u8) -> *const u8 {
+    // SAFETY: caller guarantees `entry` is a mapped code pointer, so its first 12 bytes read.
+    let [adrp, ldr, br]: [u32; 3] = unsafe { ptr::read(entry.cast()) };
+    let rd = adrp & 0x1f;
+    if ldr & 0x1f != rd || br != (0xd61f_0000 | (rd << 5)) {
+        return entry;
+    }
+    match adrp_ldr_target(entry as u64, adrp, ldr) {
+        // SAFETY: a real thunk's slot is a mapped, loader-bound pointer in the same image.
+        Some(slot) => unsafe { *(slot as *const *const u8) },
+        None => entry,
+    }
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
