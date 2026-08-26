@@ -1,6 +1,6 @@
 //! Function-level scalar accessors against a real database: `total_size`, `comment`,
-//! `does_return`, and `bitness`. Read-only; opens `save = false`. Skips when no test database is
-//! present.
+//! `does_return`, `bitness`, and the [`FunctionEntry`] read. Read-only; opens `save = false`.
+//! Skips when no test database is present.
 
 use assert2::assert;
 use idakit::prelude::*;
@@ -55,4 +55,74 @@ fn run(idb: &mut Database) {
     assert!(checked > 0, "expected at least one function");
 
     println!("function scalar accessors OK: {checked} funcs checked, {commented} commented");
+}
+
+#[kernel_test(read_only)]
+fn entry_info_agrees_with_the_per_field_accessors() {
+    crate::common::with_canonical_db(run_entry);
+}
+
+// The entry read and the one-field-at-a-time accessors are independent paths to the same kernel
+// facts, so they must agree. The string gating is checked in both directions: an unrequested field
+// stays None even where the function does have that text, which is the half a fixed GFI_ALL would
+// silently pass.
+fn run_entry(idb: &mut Database) {
+    let mut checked = 0usize;
+    let mut named = 0usize;
+    let mut framed = 0usize;
+    for f in idb.functions() {
+        let address = f.address().get();
+        let bare = f.entry().unwrap_or_else(|e| panic!("{address:#x}: {e}"));
+
+        assert!(bare.address == f.address(), "{address:#x}: entry address");
+        assert!(bare.end == f.end().unwrap(), "{address:#x}: entry end");
+        assert!(
+            bare.flags.contains(FuncFlags::NORET) == f.is_noreturn(),
+            "{address:#x}: NORET disagrees with is_noreturn()"
+        );
+        assert!(
+            bare.flags.contains(FuncFlags::THUNK) == f.is_thunk(),
+            "{address:#x}: THUNK disagrees with is_thunk()"
+        );
+        assert!(
+            bare.name.is_none() && bare.comment.is_none() && bare.repeatable_comment.is_none(),
+            "{address:#x}: unrequested strings should be absent, got {bare:?}"
+        );
+
+        let full = f
+            .entry_with()
+            .name(true)
+            .comments(true)
+            .call()
+            .unwrap_or_else(|e| panic!("{address:#x}: {e}"));
+        assert!(
+            full.name.as_deref() == Some(f.name().as_str()),
+            "{address:#x}: entry name disagrees with name()"
+        );
+        assert!(
+            full.comment == f.comment(false),
+            "{address:#x}: entry comment disagrees with comment(false)"
+        );
+        assert!(
+            full.repeatable_comment == f.comment(true),
+            "{address:#x}: entry repeatable comment disagrees with comment(true)"
+        );
+        named += usize::from(full.name.is_some());
+
+        // The frame's parts are components of the total the stack surface reports.
+        if let Ok(Some(frame)) = f.frame() {
+            assert!(
+                bare.locals_size + u64::from(bare.saved_regs_size) <= frame.size(),
+                "{address:#x}: locals {} + saved regs {} exceed frame size {}",
+                bare.locals_size,
+                bare.saved_regs_size,
+                frame.size()
+            );
+            framed += 1;
+        }
+        checked += 1;
+    }
+    assert!(checked > 0, "expected at least one function");
+
+    println!("entry info OK: {checked} funcs, {named} named, {framed} with a frame");
 }

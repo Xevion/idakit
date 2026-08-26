@@ -31,6 +31,7 @@ use crate::xref::Xrefs;
 
 mod signature;
 
+pub use idakit_sys::FuncFlags;
 pub use signature::CallingConvention;
 use signature::sig_result;
 
@@ -292,24 +293,21 @@ impl<'db> Function<'db> {
     #[must_use]
     #[doc(alias("FUNC_LIB"))]
     pub fn is_lib(&self) -> bool {
-        sys::FuncFlags::from_bits_retain(self.db.func_flags(self.address))
-            .contains(sys::FuncFlags::LIB)
+        FuncFlags::from_bits_retain(self.db.func_flags(self.address)).contains(FuncFlags::LIB)
     }
 
     /// Whether this is a thunk, a trampoline that jumps straight to another function.
     #[must_use]
     #[doc(alias("FUNC_THUNK"))]
     pub fn is_thunk(&self) -> bool {
-        sys::FuncFlags::from_bits_retain(self.db.func_flags(self.address))
-            .contains(sys::FuncFlags::THUNK)
+        FuncFlags::from_bits_retain(self.db.func_flags(self.address)).contains(FuncFlags::THUNK)
     }
 
     /// Whether this function does not return, e.g. `exit`, `abort`.
     #[must_use]
     #[doc(alias("FUNC_NORET"))]
     pub fn is_noreturn(&self) -> bool {
-        sys::FuncFlags::from_bits_retain(self.db.func_flags(self.address))
-            .contains(sys::FuncFlags::NORET)
+        FuncFlags::from_bits_retain(self.db.func_flags(self.address)).contains(FuncFlags::NORET)
     }
 
     /// Iterates cross-references targeting this function's entry.
@@ -364,6 +362,17 @@ impl<'db> Function<'db> {
         self.db.frame(self.address)
     }
 
+    /// Reads this function's entry-chunk facts, without the optional strings.
+    ///
+    /// See [`entry_with`](Self::entry_with) to ask for the name and comments too.
+    ///
+    /// # Errors
+    /// [`Error::NoFunction`] if the entry address no longer resolves to a function.
+    #[doc(alias("get_func_entry_info"))]
+    pub fn entry(&self) -> Result<FunctionEntry> {
+        self.entry_with().call()
+    }
+
     /// Snapshots this view's scalar facts into an owned [`FunctionSnapshot`] that can leave the
     /// kernel thread.
     #[must_use]
@@ -411,6 +420,33 @@ impl<'db> Function<'db> {
             self.address,
             flowchart_flags(call_ends, externals, predecessors),
         )
+    }
+
+    /// Reads this function's entry-chunk facts into an owned [`FunctionEntry`].
+    ///
+    /// One call for every scalar, where the per-field accessors each cost their own. `name` and
+    /// `comments` opt into the strings, which the kernel builds on demand; leaving them off is the
+    /// cheap read a sweep wants.
+    ///
+    /// # Errors
+    /// [`Error::NoFunction`] if `address` does not resolve to a function.
+    #[builder]
+    #[doc(alias("get_func_entry_info"))]
+    pub fn entry_with(
+        &self,
+        #[builder(default = false)] name: bool,
+        #[builder(default = false)] comments: bool,
+    ) -> Result<FunctionEntry> {
+        let mut fields = sys::EntryInfoFields::empty();
+        fields.set(sys::EntryInfoFields::NAME, name);
+        fields.set(sys::EntryInfoFields::COMMENTS, comments);
+        self.db
+            .func_entry_info(self.address, fields)
+            .as_ref()
+            .and_then(FunctionEntry::from_raw)
+            .ok_or_else(|| Error::NoFunction {
+                address: self.address.get(),
+            })
     }
 }
 
@@ -646,6 +682,81 @@ pub struct FunctionSnapshot {
     pub name: FunctionName,
     /// One-line C prototype, if the kernel had type info.
     pub prototype: Option<String>,
+}
+
+/// An owned, `Send` snapshot of one function's entry chunk, from [`Function::entry`].
+///
+/// Carries the frame layout in its parts, which no other accessor exposes: [`StackFrame`] reports
+/// only the total. The three string fields are `None` unless
+/// [`entry_with`](Function::entry_with) asked for them, and equally `None` when asked for and
+/// absent, since a caller knows what it requested.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[doc(alias("func_entry_info_t"))]
+pub struct FunctionEntry {
+    /// Entry address.
+    pub address: Address,
+    /// Entry-chunk end address, exclusive.
+    pub end: Address,
+    /// The function's flag bits.
+    #[serde(with = "func_flags_bits")]
+    pub flags: FuncFlags,
+    /// Netnode id of the frame structure, `None` when the function has no frame.
+    pub frame_id: Option<u64>,
+    /// Size in bytes of the frame's local-variable part.
+    pub locals_size: u64,
+    /// Size in bytes of the frame's saved-registers part.
+    pub saved_regs_size: u32,
+    /// Bytes purged from the stack on return.
+    pub purged_bytes: u64,
+    /// Frame pointer delta, usually 0.
+    pub frame_pointer_delta: u64,
+    /// User-assigned function color, `None` when the default.
+    pub color: Option<u32>,
+    /// The function's name.
+    pub name: Option<String>,
+    /// The regular comment.
+    pub comment: Option<String>,
+    /// The repeatable comment.
+    pub repeatable_comment: Option<String>,
+}
+
+/// Carries [`FuncFlags`] through serde as its raw bit pattern, `bitflags` deriving neither trait.
+mod func_flags_bits {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use super::FuncFlags;
+
+    // serde's `with` contract fixes the by-reference receiver, Copy or not.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub(super) fn serialize<S: Serializer>(f: &FuncFlags, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(f.bits())
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<FuncFlags, D::Error> {
+        u64::deserialize(d).map(FuncFlags::from_bits_retain)
+    }
+}
+
+impl FunctionEntry {
+    /// Lifts the facade record, folding each sentinel into `None` and each empty string away.
+    /// `None` when either bound is `BADADDR`, which the facade's success check rules out.
+    fn from_raw(raw: &sys::FunctionEntryInfo) -> Option<Self> {
+        let text = |s: &String| (!s.is_empty()).then(|| s.clone());
+        Some(Self {
+            address: Address::try_new(raw.start)?,
+            end: Address::try_new(raw.end)?,
+            flags: FuncFlags::from_bits_retain(raw.flags),
+            frame_id: (raw.frame_id != u64::MAX).then_some(raw.frame_id),
+            locals_size: raw.locals_size,
+            saved_regs_size: raw.saved_regs_size,
+            purged_bytes: raw.purged_bytes,
+            frame_pointer_delta: raw.frame_pointer_delta,
+            color: (raw.color != u32::MAX).then_some(raw.color),
+            name: text(&raw.name),
+            comment: text(&raw.cmt),
+            repeatable_comment: text(&raw.cmt_rpt),
+        })
+    }
 }
 
 /// A function's name together with how IDA assigned it, from [`Function::name`].

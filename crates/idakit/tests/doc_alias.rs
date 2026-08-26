@@ -40,9 +40,11 @@ const COMPLETENESS_ALLOW: &[&str] = &[
     "accept_eula",
 ];
 
-/// Alias strings that are intentionally not SDK identifiers. Empty by policy: an alias that names
-/// no SDK symbol is a defect, not an exception. Kept as the documented escape hatch.
-const VALIDITY_ALLOW: &[&str] = &[];
+/// Aliases naming a symbol newer than the oldest supported SDK, so they cannot resolve here.
+///
+/// A waiver, not a disable: consulted only when the identifier is absent, so the same alias is
+/// still verified against an SDK that has it. An alias naming no SDK symbol at all stays a defect.
+const VALIDITY_ALLOW: &[&str] = &["func_entry_info_t", "get_func_entry_info"];
 
 /// The crate's `src/` tree, read once as `(path, text)` pairs, sorted for stable diagnostics.
 fn sources() -> Vec<(PathBuf, String)> {

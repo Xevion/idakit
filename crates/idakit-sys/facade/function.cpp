@@ -12,6 +12,9 @@
 #include <stdexcept>
 
 #include "gen_function.h"
+// The generated bridge header defines FunctionEntryInfo (needed in full to construct it below);
+// gen_function.h only forward-declares it.
+#include "gen_bridge.h"
 
 #include "compat.h"
 
@@ -76,6 +79,28 @@ rust::String func_cmt(uint64_t addr, bool repeatable) {
 int32_t func_bitness(uint64_t addr) {
   ea_t ea = static_cast<ea_t>(addr);
   return get_func_start(ea) != BADADDR ? static_cast<int32_t>(get_func_bits_ea(ea)) : 0;
+}
+
+// The entry chunk's scalars in one call, plus each string the GFI_* mask selects; throws when addr
+// is not a function. An unselected string comes back empty rather than costing a build.
+FunctionEntryInfo func_entry_info(uint64_t addr, int32_t fields) {
+  func_entry_info_t entry;
+  if (!get_func_entry_info(&entry, static_cast<ea_t>(addr), fields))
+    throw std::runtime_error("no function at address");
+  FunctionEntryInfo out;
+  out.start = static_cast<uint64_t>(entry.start_ea);
+  out.end = static_cast<uint64_t>(entry.end_ea);
+  out.flags = entry.get_flags();
+  out.frame_id = static_cast<uint64_t>(entry.get_frame_id());
+  out.locals_size = static_cast<uint64_t>(entry.get_frsize());
+  out.saved_regs_size = static_cast<uint32_t>(entry.get_frregs());
+  out.purged_bytes = static_cast<uint64_t>(entry.get_argsize());
+  out.frame_pointer_delta = static_cast<uint64_t>(entry.get_fpd());
+  out.color = static_cast<uint32_t>(entry.get_color());
+  out.name = rust::String::lossy(entry.get_name());
+  out.cmt = rust::String::lossy(entry.get_cmt());
+  out.cmt_rpt = rust::String::lossy(entry.get_cmt_rpt());
+  return out;
 }
 
 } // namespace gen
