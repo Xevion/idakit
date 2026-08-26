@@ -23,7 +23,7 @@
 // below); gen_hexrays.h only forward-declares them.
 #include "gen_bridge.h"
 
-#include <allow_deprecated.hpp>
+#include "compat_hexrays.h"
 
 using namespace facade;
 
@@ -115,13 +115,13 @@ std::unique_ptr<::cfuncptr_t> decompile(uint64_t addr) {
   std::string reason;
   // guarded<> traps a decompiler fatal exit() into g_trapped (returns nullptr) instead of crashing.
   ::cfuncptr_t *result = guarded<::cfuncptr_t *>(nullptr, false, [&]() -> ::cfuncptr_t * {
-    func_t *func = get_func(static_cast<ea_t>(addr));
-    if (func == nullptr) {
+    ea_t ea = static_cast<ea_t>(addr);
+    if (get_func_start(ea) == BADADDR) {
       reason = "no function at address";
       return nullptr;
     }
     hexrays_failure_t hf;
-    ::cfuncptr_t cfunc = decompile_func(func, &hf, 0);
+    ::cfuncptr_t cfunc = decompile_function(ea, &hf, 0);
     if (cfunc == nullptr) {
       reason = hf.desc().c_str();
       return nullptr;

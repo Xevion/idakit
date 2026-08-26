@@ -59,12 +59,20 @@ pub fn body_tus(out_dir: &Path) -> Vec<PathBuf> {
         out_dir.join("gen_bridge.cc"),
         out_dir.join("gen_visitors.cc"),
     ];
-    for d in domains() {
-        if d.has_templated_body() {
-            tus.push(out_dir.join(d.bodies_file()));
-        }
-    }
+    tus.extend(domain_body_tus(out_dir));
     tus
+}
+
+/// Just the templated domain bodies, without the `cxx-gen` glue.
+///
+/// These come from this crate's own templates, so build.rs lints them; the glue it cannot fix.
+#[must_use]
+pub fn domain_body_tus(out_dir: &Path) -> Vec<PathBuf> {
+    domains()
+        .iter()
+        .filter(|d| d.has_templated_body())
+        .map(|d| out_dir.join(d.bodies_file()))
+        .collect()
 }
 
 /// The hand-written `Custom`-body TUs build.rs must compile alongside the generated ones.

@@ -15,7 +15,7 @@ use super::super::model::{Arg, ArgTy, BodyKind, Domain, FnSpec, RetKind, RetShap
 /// A rendered netnode body: reconstruct `n` from the `node` id, then run `stmts` (each line already
 /// indented and newline-terminated). Every generated body opens the same way.
 fn nn_body(stmts: &str) -> String {
-    format!("  netnode n((nodeidx_t)node);\n{stmts}")
+    format!("  netnode n(static_cast<nodeidx_t>(node));\n{stmts}")
 }
 
 /// A one-line netnode body returning `expr`, the common shape for the scalar array accessors.
@@ -30,7 +30,8 @@ const EMPTY_VALUE_GUARD: &str = "  if (value.empty())\n    return false;\n";
 
 /// Rejects a value over `MAXSPECSIZE`, which the SDK setters accept and then truncate silently
 /// while still reporting success, so the caller would see `Ok` for a write that dropped bytes.
-const OVERSIZE_VALUE_GUARD: &str = "  if (value.size() > (size_t)MAXSPECSIZE)\n    return false;\n";
+const OVERSIZE_VALUE_GUARD: &str =
+    "  if (value.size() > static_cast<size_t>(MAXSPECSIZE))\n    return false;\n";
 
 /// A netnode read body copying at most `MAXSPECSIZE` bytes into a stack buffer via `call`, an
 /// `ssize_t`-returning expression over `buf`/`sizeof(buf)`.
@@ -39,7 +40,7 @@ const OVERSIZE_VALUE_GUARD: &str = "  if (value.size() > (size_t)MAXSPECSIZE)\n 
 /// clamped to the buffer before copying out.
 fn nn_clamped_bytes(call: &str, unset_msg: &str) -> String {
     format!(
-        "  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = {call};\n  if (r < 0)\n    throw std::runtime_error(\"{unset_msg}\");\n  size_t len = (size_t)r < sizeof(buf) ? (size_t)r : sizeof(buf);\n  return to_rust_bytes(buf, len);\n"
+        "  uint8_t buf[MAXSPECSIZE];\n  ssize_t r = {call};\n  if (r < 0)\n    throw std::runtime_error(\"{unset_msg}\");\n  size_t len = static_cast<size_t>(r) < sizeof(buf) ? static_cast<size_t>(r) : sizeof(buf);\n  return to_rust_bytes(buf, len);\n"
     )
 }
 
@@ -54,14 +55,14 @@ fn nn_key_return(expr: &str) -> String {
     nn_key_body(&format!("  return {expr};\n"))
 }
 
-/// One keying axis over the array families: how its index argument is named, typed, cast, and
+/// One keying axis over the array families: how its index argument is named, typed, and
 /// described in docs. The SDK member name gains `suffix` (`""`, `"_ea"`, `"_idx8"`).
 #[derive(Clone, Copy)]
 struct Key {
     suffix: &'static str,
     idx_name: &'static str,
     idx_ty: ArgTy,
-    idx_cast: &'static str,
+    idx_cxx: &'static str,
     at: &'static str,
     bit8: &'static str,
 }
@@ -70,7 +71,7 @@ const DEF: Key = Key {
     suffix: "",
     idx_name: "idx",
     idx_ty: ArgTy::U64,
-    idx_cast: "(nodeidx_t)",
+    idx_cxx: "nodeidx_t",
     at: "at `idx`",
     bit8: "",
 };
@@ -78,7 +79,7 @@ const EA: Key = Key {
     suffix: "_ea",
     idx_name: "ea",
     idx_ty: ArgTy::U64,
-    idx_cast: "(ea_t)",
+    idx_cxx: "ea_t",
     at: "keyed by address `ea`",
     bit8: "",
 };
@@ -86,7 +87,7 @@ const IDX8: Key = Key {
     suffix: "_idx8",
     idx_name: "idx",
     idx_ty: ArgTy::U32,
-    idx_cast: "(uchar)",
+    idx_cxx: "uchar",
     at: "at 8-bit index `idx`",
     bit8: "8-bit ",
 };
@@ -96,7 +97,7 @@ const IDX8: Key = Key {
 fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
     let suf = k.suffix;
     let bit8 = k.bit8;
-    let cast = k.idx_cast;
+    let cast = k.idx_cxx;
     v.push(FnSpec::rendered(
         format!("netnode_{fam}first{suf}"),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
@@ -104,7 +105,9 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
         format!(
             "Lowest populated {bit8}{fam} index under `tag`, or `BADNODE` when the array is empty."
         ),
-        nn_return(&format!("(uint64_t)n.{fam}first{suf}((uchar)tag)")),
+        nn_return(&format!(
+            "static_cast<uint64_t>(n.{fam}first{suf}(static_cast<uchar>(tag)))"
+        )),
     ));
     v.push(FnSpec::rendered(
         format!("netnode_{fam}next{suf}"),
@@ -118,7 +121,7 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
             "Next populated {bit8}{fam} index after `cur` under `tag`, or `BADNODE` when none."
         ),
         nn_return(&format!(
-            "(uint64_t)n.{fam}next{suf}({cast}cur, (uchar)tag)"
+            "static_cast<uint64_t>(n.{fam}next{suf}(static_cast<{cast}>(cur), static_cast<uchar>(tag)))"
         )),
     ));
     v.push(FnSpec::rendered(
@@ -128,7 +131,9 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
         format!(
             "Highest populated {bit8}{fam} index under `tag`, or `BADNODE` when the array is empty."
         ),
-        nn_return(&format!("(uint64_t)n.{fam}last{suf}((uchar)tag)")),
+        nn_return(&format!(
+            "static_cast<uint64_t>(n.{fam}last{suf}(static_cast<uchar>(tag)))"
+        )),
     ));
     v.push(FnSpec::rendered(
         format!("netnode_{fam}prev{suf}"),
@@ -142,7 +147,7 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
             "Previous populated {bit8}{fam} index before `cur` under `tag`, or `BADNODE` when none."
         ),
         nn_return(&format!(
-            "(uint64_t)n.{fam}prev{suf}({cast}cur, (uchar)tag)"
+            "static_cast<uint64_t>(n.{fam}prev{suf}(static_cast<{cast}>(cur), static_cast<uchar>(tag)))"
         )),
     ));
 }
@@ -161,7 +166,7 @@ fn shift(fam: &str) -> FnSpec {
         ret!(Usize),
         format!("Shift the {fam} array under `tag`; the number of elements moved."),
         nn_return(&format!(
-            "n.{fam}shift((nodeidx_t)from, (nodeidx_t)to, (nodeidx_t)size, (uchar)tag)"
+            "n.{fam}shift(static_cast<nodeidx_t>(from), static_cast<nodeidx_t>(to), static_cast<nodeidx_t>(size), static_cast<uchar>(tag))"
         )),
     )
 }
@@ -173,14 +178,14 @@ fn del_all(fam: &str) -> FnSpec {
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
         ret!(Bool),
         format!("Delete the entire {fam} array under `tag`."),
-        nn_return(&format!("n.{fam}del_all((uchar)tag)")),
+        nn_return(&format!("n.{fam}del_all(static_cast<uchar>(tag))")),
     )
 }
 
 /// Alt values: a sparse `u64` array (tag `atag`); unset reads as `0`.
 fn alt(v: &mut Vec<FnSpec>) {
     for k in [DEF, EA, IDX8] {
-        let (suf, cast, idx, at) = (k.suffix, k.idx_cast, k.idx_name, k.at);
+        let (suf, cast, idx, at) = (k.suffix, k.idx_cxx, k.idx_name, k.at);
         v.push(FnSpec::rendered(
             format!("netnode_altval{suf}"),
             vec![
@@ -190,7 +195,7 @@ fn alt(v: &mut Vec<FnSpec>) {
             ],
             ret!(U64),
             format!("Alt value {at} under `tag`, or `0` when unset."),
-            nn_return(&format!("(uint64_t)n.altval{suf}({cast}{idx}, (uchar)tag)")),
+            nn_return(&format!("static_cast<uint64_t>(n.altval{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(tag)))")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_altset{suf}"),
@@ -203,7 +208,7 @@ fn alt(v: &mut Vec<FnSpec>) {
             ret!(Bool),
             format!("Set the alt value {at} under `tag` to `value`."),
             nn_return(&format!(
-                "n.altset{suf}({cast}{idx}, (nodeidx_t)value, (uchar)tag)"
+                "n.altset{suf}(static_cast<{cast}>({idx}), static_cast<nodeidx_t>(value), static_cast<uchar>(tag))"
             )),
         ));
         v.push(FnSpec::rendered(
@@ -215,7 +220,9 @@ fn alt(v: &mut Vec<FnSpec>) {
             ],
             ret!(Bool),
             format!("Delete the alt value {at} under `tag`."),
-            nn_return(&format!("n.altdel{suf}({cast}{idx}, (uchar)tag)")),
+            nn_return(&format!(
+                "n.altdel{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(tag))"
+            )),
         ));
     }
     iteration(v, "alt", DEF);
@@ -227,7 +234,7 @@ fn alt(v: &mut Vec<FnSpec>) {
 /// Sup values: arbitrary byte objects (tag `stag`), readable as bytes or as a string.
 fn sup(v: &mut Vec<FnSpec>) {
     for k in [DEF, EA, IDX8] {
-        let (suf, cast, idx, at) = (k.suffix, k.idx_cast, k.idx_name, k.at);
+        let (suf, cast, idx, at) = (k.suffix, k.idx_cxx, k.idx_name, k.at);
         v.push(FnSpec::rendered(
             format!("netnode_supval{suf}"),
             vec![
@@ -238,7 +245,7 @@ fn sup(v: &mut Vec<FnSpec>) {
             ret!(ResultVecU8),
             format!("Sup value {at} under `tag` as raw bytes; `Err` when unset."),
             nn_body(&nn_clamped_bytes(
-                &format!("n.supval{suf}({cast}{idx}, buf, sizeof(buf), (uchar)tag)"),
+                &format!("n.supval{suf}(static_cast<{cast}>({idx}), buf, sizeof(buf), static_cast<uchar>(tag))"),
                 "sup value is unset",
             )),
         ));
@@ -247,7 +254,7 @@ fn sup(v: &mut Vec<FnSpec>) {
             vec![Arg::new("node", ArgTy::U64), Arg::new(idx, k.idx_ty), Arg::new("tag", ArgTy::U32)],
             ret!(ResultString),
             format!("Sup value {at} under `tag` as a string; `Err` when unset."),
-            nn_body(&format!("  qstring out;\n  if (n.supstr{suf}(&out, {cast}{idx}, (uchar)tag) < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_string(out);\n")),
+            nn_body(&format!("  qstring out;\n  if (n.supstr{suf}(&out, static_cast<{cast}>({idx}), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_string(out);\n")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_supset{suf}"),
@@ -262,7 +269,7 @@ fn sup(v: &mut Vec<FnSpec>) {
                 "Set the sup value {at} under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty or over the cap, either of which the SDK cannot store."
             ),
             nn_body(&format!(
-                "{EMPTY_VALUE_GUARD}{OVERSIZE_VALUE_GUARD}  return n.supset{suf}({cast}{idx}, value.data(), value.size(), (uchar)tag);\n"
+                "{EMPTY_VALUE_GUARD}{OVERSIZE_VALUE_GUARD}  return n.supset{suf}(static_cast<{cast}>({idx}), value.data(), value.size(), static_cast<uchar>(tag));\n"
             )),
         ));
         v.push(FnSpec::rendered(
@@ -274,7 +281,9 @@ fn sup(v: &mut Vec<FnSpec>) {
             ],
             ret!(Bool),
             format!("Delete the sup value {at} under `tag`."),
-            nn_return(&format!("n.supdel{suf}({cast}{idx}, (uchar)tag)")),
+            nn_return(&format!(
+                "n.supdel{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(tag))"
+            )),
         ));
     }
     iteration(v, "sup", DEF);
@@ -288,7 +297,7 @@ fn sup(v: &mut Vec<FnSpec>) {
         ],
         ret!(U64),
         "Lowest populated sup index `>= cur` under `tag`, or `BADNODE` when none.".into(),
-        nn_return("(uint64_t)n.lower_bound((nodeidx_t)cur, (uchar)tag)"),
+        nn_return("static_cast<uint64_t>(n.lower_bound(static_cast<nodeidx_t>(cur), static_cast<uchar>(tag)))"),
     ));
     v.push(FnSpec::rendered(
         "netnode_lower_bound_idx8".into(),
@@ -300,7 +309,7 @@ fn sup(v: &mut Vec<FnSpec>) {
         ret!(U64),
         "Lowest populated 8-bit sup index at or after `idx` under `tag`, or `BADNODE` when none."
             .into(),
-        nn_return("(uint64_t)n.lower_bound_idx8((uchar)idx, (uchar)tag)"),
+        nn_return("static_cast<uint64_t>(n.lower_bound_idx8(static_cast<uchar>(idx), static_cast<uchar>(tag)))"),
     ));
     v.push(shift("sup"));
     v.push(FnSpec::rendered(
@@ -313,7 +322,7 @@ fn sup(v: &mut Vec<FnSpec>) {
         ],
         ret!(I32),
         "Delete sup elements in `[idx1, idx2)` under `tag`; the number deleted.".into(),
-        nn_return("(int32_t)n.supdel_range((nodeidx_t)idx1, (nodeidx_t)idx2, (uchar)tag)"),
+        nn_return("static_cast<int32_t>(n.supdel_range(static_cast<nodeidx_t>(idx1), static_cast<nodeidx_t>(idx2), static_cast<uchar>(tag)))"),
     ));
     v.push(del_all("sup"));
 }
@@ -333,7 +342,7 @@ fn hash(v: &mut Vec<FnSpec>) {
         ret!(ResultVecU8),
         "Hash value for `key` under `tag` as raw bytes; `Err` when the key is unset.".into(),
         nn_key_body(&nn_clamped_bytes(
-            "n.hashval(k.c_str(), buf, sizeof(buf), (uchar)tag)",
+            "n.hashval(k.c_str(), buf, sizeof(buf), static_cast<uchar>(tag))",
             "hash key is unset",
         )),
     ));
@@ -342,14 +351,14 @@ fn hash(v: &mut Vec<FnSpec>) {
         key(),
         ret!(ResultString),
         "Hash value for `key` under `tag` as a string; `Err` when the key is unset.".into(),
-        nn_key_body("  qstring out;\n  if (n.hashstr(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_string(out);\n"),
+        nn_key_body("  qstring out;\n  if (n.hashstr(&out, k.c_str(), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashval_long".into(),
         key(),
         ret!(U64),
         "Hash value for `key` under `tag` decoded as an integer, or `0` when unset.".into(),
-        nn_key_return("(uint64_t)n.hashval_long(k.c_str(), (uchar)tag)"),
+        nn_key_return("static_cast<uint64_t>(n.hashval_long(k.c_str(), static_cast<uchar>(tag)))"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashset".into(),
@@ -362,7 +371,7 @@ fn hash(v: &mut Vec<FnSpec>) {
         ret!(Bool),
         "Set the hash value for `key` under `tag` (max `MAXSPECSIZE` bytes); `false` when `value` is empty or over the cap, either of which the SDK cannot store.".into(),
         nn_key_body(&format!(
-            "{EMPTY_VALUE_GUARD}{OVERSIZE_VALUE_GUARD}  return n.hashset(k.c_str(), value.data(), value.size(), (uchar)tag);\n"
+            "{EMPTY_VALUE_GUARD}{OVERSIZE_VALUE_GUARD}  return n.hashset(k.c_str(), value.data(), value.size(), static_cast<uchar>(tag));\n"
         )),
     ));
     v.push(FnSpec::rendered(
@@ -375,42 +384,44 @@ fn hash(v: &mut Vec<FnSpec>) {
         ],
         ret!(Bool),
         "Set the hash value for `key` under `tag` to the integer `value`.".into(),
-        nn_key_return("n.hashset(k.c_str(), (nodeidx_t)value, (uchar)tag)"),
+        nn_key_return(
+            "n.hashset(k.c_str(), static_cast<nodeidx_t>(value), static_cast<uchar>(tag))",
+        ),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashdel".into(),
         key(),
         ret!(Bool),
         "Delete the hash value for `key` under `tag`.".into(),
-        nn_key_return("n.hashdel(k.c_str(), (uchar)tag)"),
+        nn_key_return("n.hashdel(k.c_str(), static_cast<uchar>(tag))"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashfirst".into(),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
         ret!(ResultString),
         "Lexically first hash key under `tag`; `Err` when the hash is empty.".into(),
-        nn_body("  qstring out;\n  if (n.hashfirst(&out, (uchar)tag) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
+        nn_body("  qstring out;\n  if (n.hashfirst(&out, static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashnext".into(),
         key(),
         ret!(ResultString),
         "Hash key after `key` under `tag`; `Err` when `key` is the last.".into(),
-        nn_key_body("  qstring out;\n  if (n.hashnext(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"no next hash key\");\n  return to_rust_string(out);\n"),
+        nn_key_body("  qstring out;\n  if (n.hashnext(&out, k.c_str(), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"no next hash key\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashlast".into(),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
         ret!(ResultString),
         "Lexically last hash key under `tag`; `Err` when the hash is empty.".into(),
-        nn_body("  qstring out;\n  if (n.hashlast(&out, (uchar)tag) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
+        nn_body("  qstring out;\n  if (n.hashlast(&out, static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashprev".into(),
         key(),
         ret!(ResultString),
         "Hash key before `key` under `tag`; `Err` when `key` is the first.".into(),
-        nn_key_body("  qstring out;\n  if (n.hashprev(&out, k.c_str(), (uchar)tag) < 0)\n    throw std::runtime_error(\"no previous hash key\");\n  return to_rust_string(out);\n"),
+        nn_key_body("  qstring out;\n  if (n.hashprev(&out, k.c_str(), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"no previous hash key\");\n  return to_rust_string(out);\n"),
     ));
     v.push(del_all("hash"));
 }
@@ -418,7 +429,7 @@ fn hash(v: &mut Vec<FnSpec>) {
 /// Char values: 8-bit, sharing sup storage; unset reads as `0`.
 fn char_vals(v: &mut Vec<FnSpec>) {
     for k in [DEF, EA, IDX8] {
-        let (suf, cast, idx, at) = (k.suffix, k.idx_cast, k.idx_name, k.at);
+        let (suf, cast, idx, at) = (k.suffix, k.idx_cxx, k.idx_name, k.at);
         v.push(FnSpec::rendered(
             format!("netnode_charval{suf}"),
             vec![
@@ -429,7 +440,7 @@ fn char_vals(v: &mut Vec<FnSpec>) {
             ret!(U32),
             format!("Char value {at} under `tag` (0..255), or `0` when unset."),
             nn_return(&format!(
-                "(uint32_t)n.charval{suf}({cast}{idx}, (uchar)tag)"
+                "static_cast<uint32_t>(n.charval{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(tag)))"
             )),
         ));
         v.push(FnSpec::rendered(
@@ -443,7 +454,7 @@ fn char_vals(v: &mut Vec<FnSpec>) {
             ret!(Bool),
             format!("Set the char value {at} under `tag` (low 8 bits of `value`)."),
             nn_return(&format!(
-                "n.charset{suf}({cast}{idx}, (uchar)value, (uchar)tag)"
+                "n.charset{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(value), static_cast<uchar>(tag))"
             )),
         ));
         v.push(FnSpec::rendered(
@@ -455,7 +466,9 @@ fn char_vals(v: &mut Vec<FnSpec>) {
             ],
             ret!(Bool),
             format!("Delete the char value {at} under `tag`."),
-            nn_return(&format!("n.chardel{suf}({cast}{idx}, (uchar)tag)")),
+            nn_return(&format!(
+                "n.chardel{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(tag))"
+            )),
         ));
     }
     v.push(shift("char"));
@@ -466,9 +479,9 @@ fn blob(v: &mut Vec<FnSpec>) {
     for k in [DEF, EA] {
         let suf = k.suffix;
         let (name, cast, desc) = if suf.is_empty() {
-            ("start", "(nodeidx_t)", "index `start`")
+            ("start", "nodeidx_t", "index `start`")
         } else {
-            ("ea", "(ea_t)", "address `ea`")
+            ("ea", "ea_t", "address `ea`")
         };
         v.push(FnSpec::rendered(
             format!("netnode_blobsize{suf}"),
@@ -479,14 +492,16 @@ fn blob(v: &mut Vec<FnSpec>) {
             ],
             ret!(Usize),
             format!("Byte length of the blob based at {desc} under `tag`, or `0` when absent."),
-            nn_return(&format!("n.blobsize{suf}({cast}{name}, (uchar)tag)")),
+            nn_return(&format!(
+                "n.blobsize{suf}(static_cast<{cast}>({name}), static_cast<uchar>(tag))"
+            )),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_getblob{suf}"),
             vec![Arg::new("node", ArgTy::U64), Arg::new(name, ArgTy::U64), Arg::new("tag", ArgTy::U32)],
             ret!(ResultVecU8),
             format!("The blob based at {desc} under `tag` as owned bytes; `Err` when absent."),
-            nn_body(&format!("  bytevec_t blob;\n  ssize_t r = n.getblob{suf}(&blob, {cast}{name}, (uchar)tag);\n  if (r < 0)\n    throw std::runtime_error(\"blob does not exist\");\n  return to_rust_bytes(blob.begin(), blob.size());\n")),
+            nn_body(&format!("  bytevec_t blob;\n  ssize_t r = n.getblob{suf}(&blob, static_cast<{cast}>({name}), static_cast<uchar>(tag));\n  if (r < 0)\n    throw std::runtime_error(\"blob does not exist\");\n  return to_rust_bytes(blob.begin(), blob.size());\n")),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_setblob{suf}"),
@@ -499,7 +514,7 @@ fn blob(v: &mut Vec<FnSpec>) {
             ret!(Bool),
             format!("Store `value` as the blob based at {desc} under `tag`."),
             nn_return(&format!(
-                "n.setblob{suf}(value.data(), value.size(), {cast}{name}, (uchar)tag)"
+                "n.setblob{suf}(value.data(), value.size(), static_cast<{cast}>({name}), static_cast<uchar>(tag))"
             )),
         ));
     }
@@ -512,7 +527,7 @@ fn blob(v: &mut Vec<FnSpec>) {
         ],
         ret!(I32),
         "Delete the blob based at index `start` under `tag`; the number of slots freed.".into(),
-        nn_return("(int32_t)n.delblob((nodeidx_t)start, (uchar)tag)"),
+        nn_return("static_cast<int32_t>(n.delblob(static_cast<nodeidx_t>(start), static_cast<uchar>(tag)))"),
     ));
     v.push(shift("blob"));
 }

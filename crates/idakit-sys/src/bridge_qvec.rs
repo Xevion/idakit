@@ -90,10 +90,10 @@ mod ffi {
         #[cxx_name = "range_t"]
         type RangeT = crate::bridge_gen::RangeT;
 
-        /// The SDK's `qflow_chart_t`, shared from the generated [`bridge_gen`](crate::bridge_gen);
+        /// The SDK's `qflow_chart_ea_t`, shared from the generated [`bridge_gen`](crate::bridge_gen);
         /// the source of the borrowed [`IntVec`].
         #[namespace = ""]
-        #[cxx_name = "qflow_chart_t"]
+        #[cxx_name = "qflow_chart_ea_t"]
         type FlowChart = crate::bridge_gen::FlowChart;
 
         /// `qvector<int>`, bound by [`super::IntVec`]'s macro-generated `ExternType` impl.

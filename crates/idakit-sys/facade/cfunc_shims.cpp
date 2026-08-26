@@ -12,15 +12,14 @@
 
 #include <ida.hpp>
 
-#include <funcs.hpp> // get_func
+#include <funcs.hpp>
 #include <hexrays.hpp>
 #include <loader.hpp> // load_plugin
 
 #include <new>
 
 #include "cfunc_shims.h"
-
-#include <allow_deprecated.hpp>
+#include "compat_hexrays.h"
 
 namespace {
 
@@ -37,11 +36,11 @@ bool ensure_hexrays() {
 ::cfuncptr_t *decompile_heap(std::uint64_t addr) {
   if (!ensure_hexrays())
     return nullptr;
-  func_t *pfn = get_func(static_cast<ea_t>(addr));
-  if (pfn == nullptr)
+  ea_t ea = static_cast<ea_t>(addr);
+  if (get_func_start(ea) == BADADDR)
     return nullptr;
   hexrays_failure_t hf;
-  ::cfuncptr_t cfunc = decompile_func(pfn, &hf, 0);
+  ::cfuncptr_t cfunc = decompile_function(ea, &hf, 0);
   if (cfunc == nullptr)
     return nullptr;
   // Copy-construct onto the heap (refcnt++); the local cfunc's dtor then decrements, leaving the

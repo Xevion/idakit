@@ -8,7 +8,10 @@ set dotenv-load := true
 # `--jobs` mutants runs a full core-count pool of live kernels at ~0.85 GiB apiece.
 mutants_env := "IDAKIT_TEST_SCOPE=registered IDAKIT_TEST_WORKERS=4"
 
-facade_cpp := "crates/idakit-sys/facade/*.cpp"
+# The TUs clang-tidy and the pedantic sweep lint, from compile_commands.json rather than a glob so
+# the generated `gen_<domain>_bodies.cc` are covered too.
+lint_tus := "jq -r '.[].file' crates/idakit-sys/compile_commands.json"
+# Formatting stays on the hand-written sources; generated output is never formatted in place.
 facade_sources := "crates/idakit-sys/facade/*.cpp crates/idakit-sys/facade/*.h"
 
 default:
@@ -66,7 +69,10 @@ tidy:
       tidy_cmd=(clang-tidy-cache "$(command -v clang-tidy)")
     fi
     nproc_val="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-    printf '%s\n' {{ facade_cpp }} | xargs -P "$nproc_val" -I{} "${tidy_cmd[@]}" -p crates/idakit-sys "${extra_args[@]}" {}
+    # --config-file, not discovery: clang-tidy walks up from the source file, and a generated body
+    # under target/ never passes through crates/idakit-sys/, so it would pass with no checks run.
+    {{ lint_tus }} | xargs -P "$nproc_val" -I{} "${tidy_cmd[@]}" \
+      --config-file=crates/idakit-sys/.clang-tidy -p crates/idakit-sys "${extra_args[@]}" {}
 
 # Advisory, not part of `check`: Clang's `-Weverything` minus pure-noise categories -- C++98
 # compat (the facade is C++17), buffer-hardening (it does deliberate raw-pointer work over the
@@ -88,7 +94,7 @@ pedantic:
     clangxx="clang++"
     command -v "clang++-$clang_major" >/dev/null 2>&1 && clangxx="clang++-$clang_major"
     nproc_val="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-    printf '%s\n' {{ facade_cpp }} | xargs -P "$nproc_val" -I{} \
+    {{ lint_tus }} | xargs -P "$nproc_val" -I{} \
       "$clangxx" -std=c++17 -Icrates/idakit-sys/facade "${extra_args[@]}" -D__EA64__ -D__LINUX__ \
       -Weverything -Wno-c++98-compat -Wno-c++98-compat-local-type-template-args \
       -Wno-unsafe-buffer-usage -Wno-unsafe-buffer-usage-in-libc-call -Wno-padded \
