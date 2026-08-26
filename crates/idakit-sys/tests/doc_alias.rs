@@ -10,8 +10,17 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Alias strings intentionally not SDK identifiers. Empty by policy; the documented escape hatch.
-const VALIDITY_ALLOW: &[&str] = &[];
+/// Aliases naming a symbol newer than the oldest supported SDK, so they cannot resolve here.
+///
+/// A waiver, not a disable: consulted only when the identifier is absent, so the same alias is
+/// still verified against an SDK that has it. An alias naming no SDK symbol at all stays a defect.
+const VALIDITY_ALLOW: &[&str] = &[
+    "GFI_NAME",
+    "GFI_CMT",
+    "GFI_CMT_RPT",
+    "GFI_COMMENTS",
+    "GFI_ALL",
+];
 
 fn sources() -> Vec<(PathBuf, String)> {
     let mut files = Vec::new();
