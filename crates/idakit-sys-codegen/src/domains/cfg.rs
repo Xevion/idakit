@@ -1,23 +1,25 @@
 use super::super::model::*;
 
-/// The control-flow-graph domain: the SDK's `qflow_chart_t` bound as an `Opaque` `ExternType`
+/// The control-flow-graph domain: the SDK's `qflow_chart_ea_t` bound as an `Opaque` `ExternType`
 /// (`FlowChart`) owned by [`UniquePtr`](cxx::UniquePtr), so its C++ deleter handles cleanup without
 /// a manual free function or a hand-written `Drop` impl. `size` is a `self:`-member call bound straight to
-/// `qflow_chart_t::size()` (no facade body); every other accessor is a free function over a
+/// `qflow_chart_ea_t::size()` (no facade body); every other accessor is a free function over a
 /// `&FlowChart`, hand-written in `facade/cfg.cpp`. Block bounds return by value as a `BlockInfo`
 /// shared struct, and the successor/predecessor edge lists copy into owned `Vec<u32>`.
 pub const CFG: Domain = Domain {
     name: "cfg",
-    sdk_includes: &["<funcs.hpp>", "<gdl.hpp>", "<stdexcept>"],
+    // compat.h supplies qflow_chart_ea_t under 9.3, where the SDK has only the func_t-keyed chart.
+    sdk_includes: &["<funcs.hpp>", "<gdl.hpp>", "<stdexcept>", "\"compat.h\""],
     externs: &[ExternTy {
         rust_name: "FlowChart",
-        cxx_name: "qflow_chart_t",
+        cxx_name: "qflow_chart_ea_t",
         kind: ExternKind::Opaque,
-        doc: "The SDK's `qflow_chart_t`, an opaque control-flow graph handled only behind \
+        doc: "The SDK's `qflow_chart_ea_t`, an opaque control-flow graph handled only behind \
               indirection (`&FlowChart` or `UniquePtr<FlowChart>`).",
-        safety: "The type id names the real SDK class qflow_chart_t; Opaque is correct because \
-                 qflow_chart_t has a virtual destructor (nontrivial), so it may only cross the \
-                 bridge behind a reference or UniquePtr, never by value.",
+        safety: "The type id names qflow_chart_ea_t: the SDK class on 9.4, compat.h's subclass of \
+                 the func_t-keyed chart on 9.3. Opaque is correct either way because the class has \
+                 a virtual destructor (nontrivial), so it may only cross the bridge behind a \
+                 reference or UniquePtr, never by value.",
     }],
     structs: &[SharedStruct {
         name: "BlockInfo",
@@ -34,7 +36,7 @@ pub const CFG: Domain = Domain {
         "Build the flow chart for the function containing `ea`; `Err` when no function is there. \
          Runs analysis, so it can also fail from a thrown SDK exception."
             cfg_build(ea: U64, flags: I32) -> ResultUniquePtr("FlowChart");
-        "Number of basic blocks, bound to `qflow_chart_t::size()` directly (the `self:` receiver). \
+        "Number of basic blocks, bound to `qflow_chart_ea_t::size()` directly (the `self:` receiver). \
          The return is `i32` to match the member's exact `int` signature."
             size(self: FlowChart) -> I32;
         "Total number of basic blocks (external blocks included)."

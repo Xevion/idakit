@@ -289,15 +289,17 @@ pub enum BodyKind {
     /// A fully-rendered body (the lines between the braces), supplied by a matrix emitter that owns
     /// both the function's signature and its body. Emitted into the domain's `gen_<name>_bodies.cc`.
     Rendered(&'static str),
-    /// `getnseg(n)`, then read scalar `s->ACCESSOR`, returning `SENTINEL` when null.
+    /// Fill a `segment_info_t` for segment `n`, then read scalar `si.ACCESSOR`, returning
+    /// `SENTINEL` when there is no such segment.
     SegScalar {
         accessor: &'static str,
         null_sentinel: &'static str,
     },
-    /// `getnseg(n)`, then fill a `qstring` via `GETTER(&out, s)`; throw when null, and (when
-    /// `require_positive`) throw when the getter returns `<= 0`.
+    /// Resolve segment `n` to its start `ea`, then fill a `qstring` by emitting `CALL` verbatim
+    /// (an ea-based getter over `&out` and `ea`); throw when `n` is out of range, and (when
+    /// `require_positive`) when the call returns `<= 0`.
     SegString {
-        getter: &'static str,
+        call: &'static str,
         require_positive: bool,
     },
     /// Declaration only; the body is hand-written in one of the domain's `custom_tus`.

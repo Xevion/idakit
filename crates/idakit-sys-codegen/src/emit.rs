@@ -547,34 +547,37 @@ impl FnSpec {
     pub(crate) fn body_source(&self) -> Option<String> {
         let sig = self.cxx_signature();
         let body = match &self.body {
-            BodyKind::ScalarCall { call } => format!("  return ({}){};\n", self.ret.cxx(), call),
+            BodyKind::ScalarCall { call } => {
+                format!("  return static_cast<{}>({});\n", self.ret.cxx(), call)
+            }
             BodyKind::SegScalar {
                 accessor,
                 null_sentinel,
             } => {
                 let cast = self.ret.cxx();
                 format!(
-                    "  segment_t *s = getnseg(n);\n  \
-                     return s != nullptr ? ({cast})s->{accessor} : ({cast}){null_sentinel};\n"
+                    "  segment_info_t si;\n  \
+                     return get_segment_info_by_num(&si, n) ? static_cast<{cast}>(si.{accessor}) \
+                     : static_cast<{cast}>({null_sentinel});\n"
                 )
             }
             BodyKind::SegString {
-                getter,
+                call,
                 require_positive,
             } => {
                 let mut b = String::from(
-                    "  segment_t *s = getnseg(n);\n  \
-                     if (s == nullptr)\n    throw std::out_of_range(\"no segment at index\");\n  \
+                    "  ea_t ea = get_segment_ea_by_num(n);\n  \
+                     if (ea == BADADDR)\n    throw std::out_of_range(\"no segment at index\");\n  \
                      qstring out;\n",
                 );
                 if *require_positive {
                     let _ = writeln!(
                         b,
-                        "  if ({getter}(&out, s) <= 0)\n    \
+                        "  if ({call} <= 0)\n    \
                          throw std::runtime_error(\"segment has no class\");"
                     );
                 } else {
-                    let _ = writeln!(b, "  {getter}(&out, s);");
+                    let _ = writeln!(b, "  {call};");
                 }
                 b.push_str("  return to_rust_string(out);\n");
                 b

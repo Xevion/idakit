@@ -18,9 +18,10 @@
 
 #include <ida.hpp>
 
-#include <gdl.hpp>   // qflow_chart_t (the intvec_t source)
+#include <gdl.hpp>   // qflow_chart_ea_t (the intvec_t source)
 #include <range.hpp> // range_t, rangevec_t
 
+#include "compat.h" // qflow_chart_ea_t under 9.3
 #include "rust/cxx.h"
 #include "trycatch.h"
 
@@ -29,7 +30,7 @@ namespace bridge {
 // qvector<int> == intvec_t. Source: a flow-chart block's successor edge list
 // (qbasic_block_t::succ). Borrows the list out of the live flow; the returned reference is valid
 // only while that flow is borrowed. Throws if n is out of range.
-const intvec_t &cfg_succ_vec(const ::qflow_chart_t &flow, size_t n);
+const intvec_t &cfg_succ_vec(const ::qflow_chart_ea_t &flow, size_t n);
 // Element count.
 size_t intvec_len(const intvec_t &v);
 // Copy every element into an owned rust::Vec.
