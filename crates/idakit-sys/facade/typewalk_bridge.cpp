@@ -28,6 +28,8 @@
 #include "gen_facade_consts.h" // gen::NONE
 #include "gen_visitors.h"
 
+#include "compat.h"
+
 namespace bridge {
 
 namespace {
@@ -319,16 +321,16 @@ uint32_t func_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
 // Walk the function at addr's stack frame member by member into a FrameWalk, resolving each
 // real variable's type through a fresh walker (reserved slots and untyped members skip it).
 FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
-  func_t *pfn = get_func(static_cast<ea_t>(addr));
-  if (pfn == nullptr)
+  ea_t func_ea = get_func_start(static_cast<ea_t>(addr));
+  if (func_ea == BADADDR)
     throw std::runtime_error("no function at ea");
   tinfo_t tif;
   udt_type_data_t udt;
-  if (!get_func_frame(&tif, pfn) || !tif.get_udt_details(&udt))
+  if (!get_func_frame_ea(&tif, func_ea) || !tif.get_udt_details(&udt))
     throw std::runtime_error("function has no frame");
 
   FrameWalk out;
-  out.size = static_cast<uint64_t>(get_frame_size(pfn));
+  out.size = static_cast<uint64_t>(get_frame_size_ea(func_ea));
   visit_walker_t walker;
   walker.vis = &visitor;
   for (const udm_t &m : udt) {
@@ -340,8 +342,8 @@ FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
     uint32_t ty = (flags == 0 && !m.type.empty()) ? walker.ty(m.type) : gen::NONE;
     FrameVar fv;
     fv.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
-    // udm offset/size are in bits; soff_to_fpoff wants the byte struct offset.
-    fv.offset = static_cast<int64_t>(soff_to_fpoff(pfn, static_cast<uval_t>(m.offset / 8)));
+    // udm offset/size are in bits; soff_to_fpoff_ea wants the byte struct offset.
+    fv.offset = static_cast<int64_t>(soff_to_fpoff_ea(func_ea, static_cast<uval_t>(m.offset / 8)));
     fv.size = m.size / 8;
     fv.flags = flags;
     fv.ty = ty;

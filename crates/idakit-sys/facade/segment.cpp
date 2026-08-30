@@ -13,16 +13,18 @@
 
 #include "gen_seg.h"
 
+#include "compat.h"
+
 namespace gen {
 
 // The segment's comment (repeatable or regular) at index n; throws when n is out of range or that
 // channel carries no comment.
 rust::String gen_seg_cmt(int32_t n, bool repeatable) {
-  segment_t *s = getnseg(n);
-  if (s == nullptr)
+  ea_t ea = get_segment_ea_by_num(n);
+  if (ea == BADADDR)
     throw std::out_of_range("no segment at index");
   qstring out;
-  if (get_segment_cmt(&out, s, repeatable) <= 0)
+  if (get_segment_cmt_by_ea(&out, ea, repeatable) <= 0)
     throw std::runtime_error("no segment comment");
   return to_rust_string(out);
 }

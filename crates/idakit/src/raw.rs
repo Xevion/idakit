@@ -240,6 +240,9 @@ impl Database {
             = sys::func_cmt(address.get(), repeatable).ok();
         fn func_does_return(&self, address: Address) -> bool = sys::func_does_return(address.get());
         fn func_bitness(&self, address: Address) -> i32 = sys::func_bitness(address.get());
+        fn func_entry_info(&self, address: Address, fields: sys::EntryInfoFields)
+            -> Option<sys::FunctionEntryInfo>
+            = sys::func_entry_info(address.get(), fields.bits()).ok();
         fn type_ordinal_limit(&self) -> u32 = sys::type_ordinal_limit();
         fn type_name_at(&self, ordinal: u32) -> String = sys::type_name_at(ordinal).unwrap_or_default();
     }

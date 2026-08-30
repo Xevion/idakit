@@ -16,6 +16,8 @@
 // instantiates rust::Vec<XrefRec>; gen_reference.h only forward-declares XrefRec.
 #include "gen_bridge.h"
 
+#include "compat.h"
+
 namespace gen {
 
 // Every cross-reference edge to (is_to) or from addr, collected into an owned Vec; empty if there
@@ -39,11 +41,11 @@ rust::Vec<XrefRec> xrefs_build(uint64_t addr, bool is_to, bool flow) {
 }
 
 // Whether addr has a reference from outside the function containing it; false when addr is not
-// inside any function (has_external_refs itself requires a function).
+// inside any function (has_external_refs_ea itself requires a function).
 bool has_external_refs(uint64_t addr) {
   ea_t ea = static_cast<ea_t>(addr);
-  func_t *pfn = get_func(ea);
-  return pfn != nullptr && ::has_external_refs(pfn, ea);
+  ea_t func_ea = get_func_start(ea);
+  return func_ea != BADADDR && ::has_external_refs_ea(func_ea, ea);
 }
 
 // Whether addr has an incoming jump or ordinary-flow code cross-reference.

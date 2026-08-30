@@ -297,6 +297,9 @@ fn emit_rerun_directives() {
     println!("cargo:rerun-if-changed=facade/abi.h");
     println!("cargo:rerun-if-changed=facade/internal.h");
     println!("cargo:rerun-if-changed=facade/type_walker.h");
+    println!("cargo:rerun-if-changed=facade/trycatch.h");
+    println!("cargo:rerun-if-changed=facade/compat.h");
+    println!("cargo:rerun-if-changed=facade/compat_hexrays.h");
     println!("cargo:rerun-if-env-changed=IDADIR");
     println!("cargo:rerun-if-env-changed=IDAKIT_EMIT_COMPILE_COMMANDS");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");
@@ -306,9 +309,11 @@ fn emit_rerun_directives() {
 }
 
 /// Emit `compile_commands.json` for clang-tidy/clangd (opt-in via `just tidy`): one entry per
-/// hand-written facade translation unit, so `just tidy` covers every one of them, not just
-/// `FACADE_SOURCES`. Excludes the generated `OUT_DIR` body TUs (`gen_bridge.cc`,
-/// `gen_visitors.cc`, `gen_<domain>_bodies.cc`), which are codegen output, not hand-written.
+/// hand-written facade translation unit plus each generated `gen_<domain>_bodies.cc`.
+///
+/// The generated bodies are in scope because their SDK calls come from this workspace's own body
+/// templates. The `cxx-gen` glue (`gen_bridge.cc`, `gen_visitors.cc`) stays out, being upstream
+/// output no rule here can fix.
 fn emit_compile_commands(sdk_include: &str, out_dir: &str) {
     let dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset");
     // OUT_DIR carries the generated gen_*.h; a facade .cpp now includes gen_facade_consts.h.
@@ -328,13 +333,18 @@ fn emit_compile_commands(sdk_include: &str, out_dir: &str) {
         "facade/testonly_probe_ext.cpp",
     ]);
 
+    // Facade sources are manifest-relative, generated bodies already absolute.
+    let mut abs_sources: Vec<String> = sources.iter().map(|src| format!("{dir}/{src}")).collect();
+    for tu in codegen::domain_body_tus(Path::new(out_dir)) {
+        abs_sources.push(tu.to_str().expect("OUT_DIR is not UTF-8").to_string());
+    }
+
     let mut json = String::from("[\n");
-    for (i, src) in sources.iter().enumerate() {
+    for (i, abs_src) in abs_sources.iter().enumerate() {
         if i > 0 {
             json.push_str(",\n");
         }
         let plat = format!("-D{PLATFORM_DEFINE}");
-        let abs_src = format!("{dir}/{src}");
         let _ = write!(
             json,
             "  {{\"directory\": {dir:?}, \"file\": {abs_src:?}, \"arguments\": \

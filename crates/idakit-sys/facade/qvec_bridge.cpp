@@ -9,7 +9,7 @@
 
 #include <ida.hpp>
 
-#include <funcs.hpp> // get_func, func_tail_iterator_t
+#include <funcs.hpp> // function_tail_iterator_t
 #include <gdl.hpp>
 #include <range.hpp>
 
@@ -32,7 +32,7 @@ namespace bridge {
 
 // Bounds-check n against flow's block count before indexing, since qvector's own operator[] is
 // unchecked.
-const intvec_t &cfg_succ_vec(const ::qflow_chart_t &flow, size_t n) {
+const intvec_t &cfg_succ_vec(const ::qflow_chart_ea_t &flow, size_t n) {
   if (n >= flow.blocks.size())
     throw std::out_of_range("block index out of range");
   return flow.blocks[n].succ;
@@ -59,16 +59,18 @@ rust::Slice<const std::int32_t> intvec_slice(const intvec_t &v) {
                                          v.size());
 }
 
-// func_tail_iterator_t enumerates a (possibly fragmented) function's chunks: the main body first,
-// then each tail chunk; every chunk's address range is appended in that order.
+// function_tail_iterator_t enumerates a (possibly fragmented) function's chunks: the main body
+// first, then each tail chunk; every chunk's address range is appended in that order.
 std::unique_ptr<rangevec_t> rangevec_build_chunks(std::uint64_t addr) {
-  func_t *pfn = get_func(static_cast<ea_t>(addr));
-  if (pfn == nullptr)
+  function_tail_iterator_t fti;
+  if (!fti.set(static_cast<ea_t>(addr)))
     throw std::out_of_range("no function at address");
   auto out = std::make_unique<rangevec_t>();
-  func_tail_iterator_t fti(pfn);
-  for (bool ok = fti.main(); ok; ok = fti.next())
-    out->push_back(fti.chunk());
+  ::range_t chunk;
+  for (bool ok = fti.main(); ok; ok = fti.next()) {
+    fti.chunk(&chunk);
+    out->push_back(chunk);
+  }
   return out;
 }
 

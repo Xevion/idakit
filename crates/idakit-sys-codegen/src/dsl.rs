@@ -136,9 +136,9 @@ macro_rules! methods {
 /// |------------------------|-----------------------|-----------------------------------------------|
 /// | *(none)*               | `Custom`              | hand-written in one of the domain's `custom_tus` |
 /// | `= scalar(call)`       | `ScalarCall`          | `return (ret)CALL;`                            |
-/// | `= seg_scalar(a, s)`   | `SegScalar`           | `getnseg(n)`, read scalar field, `s` when null |
-/// | `= seg_string(g)`      | `SegString`           | `getnseg(n)`, fill a `qstring` via `g`         |
-/// | `= seg_string_pos(g)`  | `SegString`           | as above, and throw when `g` returns `<= 0`    |
+/// | `= seg_scalar(a, s)`   | `SegScalar`           | fill a `segment_info_t` for `n`, read `a`, `s` when absent |
+/// | `= seg_string(c)`      | `SegString`           | resolve `n` to an `ea`, fill a `qstring` by emitting `c` |
+/// | `= seg_string_pos(c)`  | `SegString`           | as above, and throw when `c` returns `<= 0`    |
 macro_rules! fns {
     // All rows consumed: emit the accumulated slice.
     (@munch [ $($acc:expr,)* ]) => { &[ $($acc),* ] };
@@ -189,11 +189,11 @@ macro_rules! fns {
     (@body seg_scalar($accessor:literal, $sentinel:literal)) => {
         BodyKind::SegScalar { accessor: $accessor, null_sentinel: $sentinel }
     };
-    (@body seg_string($getter:literal)) => {
-        BodyKind::SegString { getter: $getter, require_positive: false }
+    (@body seg_string($call:literal)) => {
+        BodyKind::SegString { call: $call, require_positive: false }
     };
-    (@body seg_string_pos($getter:literal)) => {
-        BodyKind::SegString { getter: $getter, require_positive: true }
+    (@body seg_string_pos($call:literal)) => {
+        BodyKind::SegString { call: $call, require_positive: true }
     };
 
     // Entry: seed the muncher. Placed last so the `@munch`/`@ret`/`@body` arms match first.

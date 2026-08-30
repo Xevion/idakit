@@ -61,6 +61,12 @@ jobs:
           - { runner: macos-15-intel, platform: macos-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: macos-14, platform: macos-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: windows-2022, platform: windows-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: ubuntu-latest, platform: linux-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
+          - { runner: ubuntu-24.04-arm, platform: linux-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
+          - { runner: macos-15-intel, platform: macos-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
+          - { runner: macos-14, platform: macos-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
+          - { runner: windows-2022, platform: windows-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
+          - { runner: windows-11-arm, platform: windows-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           # - { runner: ubuntu-latest, platform: linux-x64, version: 9.2.250908, sdk-tag: v9.2.0-release }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -71,6 +77,10 @@ jobs:
       AWS_REGION: auto
       S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      # clang-tidy publishes no win_arm64 wheel and its sdist won't build; the tidy and fmt
+      # steps skip Windows anyway. Job-level, not step-level: mise resolves tools lazily, so
+      # a later step re-attempts the install. `runner` is unavailable here, hence matrix.
+      MISE_DISABLE_TOOLS: ${{ startsWith(matrix.platform, 'windows') && 'pipx:clang-tidy,pipx:clang-format' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,8 +123,24 @@ jobs:
           CTCACHE_DIR: ${{ runner.temp }}/ctcache
           CTCACHE_SAVE_OUTPUT: "1"
         run: just tidy
+      # IDALOG is the runtime's own message log, and it survives a fatal exit -- the only channel
+      # that says *why* bring-up died, since the facade's exit trap does not cover init and stdout
+      # capture is a no-op on Windows. Explicit bash (pwsh mangles `$?`) and no `-q`, so cargo's
+      # own diagnostics and the real exit code both survive.
       - name: Accept IDA EULA
-        run: cargo run -q -p idakit --example accept_eula
+        shell: bash
+        env:
+          IDALOG: ida-init.log
+          IDALOG_TIMESTAMPS: "1"
+        run: |
+          set +e
+          cargo run -p idakit --example accept_eula
+          rc=$?
+          set -e
+          echo "accept_eula exit=$rc"
+          echo "--- IDALOG ---"
+          cat ida-init.log || echo "(no IDALOG produced)"
+          exit $rc
       # Fixtures are host-independent, so every platform fetches the same corpus tier; the
       # exported manifest drives both the corpus matrix and the dedicated tests below.
       - name: Fetch test corpus

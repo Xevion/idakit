@@ -1,6 +1,35 @@
-//! The typed [`FuncFlags`] layer over `funcs.hpp`'s `func_t::flags` bits.
+//! The typed [`FuncFlags`] layer over `funcs.hpp`'s `func_t::flags` bits, and the
+//! [`EntryInfoFields`] selector over its `GFI_*` bits.
 
 use bitflags::bitflags;
+
+bitflags! {
+    /// Which optional string fields an entry-info read should populate (`GFI_*` in `funcs.hpp`).
+    ///
+    /// The scalars come back either way; these gate only the strings, which the kernel builds on
+    /// demand. Requesting none is the cheap read.
+    ///
+    /// Accepts any bit pattern (`from_bits_retain`), so it stays sound as an FFI argument type.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    #[doc(alias("GFI_NAME", "GFI_CMT", "GFI_CMT_RPT", "GFI_COMMENTS", "GFI_ALL"))]
+    pub struct EntryInfoFields: i32 {
+        /// Populate the function name (`GFI_NAME`).
+        #[doc(alias("GFI_NAME"))]
+        const NAME = 0x0001;
+        /// Populate the regular comment (`GFI_CMT`).
+        #[doc(alias("GFI_CMT"))]
+        const CMT = 0x0002;
+        /// Populate the repeatable comment (`GFI_CMT_RPT`).
+        #[doc(alias("GFI_CMT_RPT"))]
+        const CMT_RPT = 0x0004;
+        /// Populate both comments (`GFI_COMMENTS`).
+        #[doc(alias("GFI_COMMENTS"))]
+        const COMMENTS = Self::CMT.bits() | Self::CMT_RPT.bits();
+        /// Populate every optional string (`GFI_ALL`).
+        #[doc(alias("GFI_ALL"))]
+        const ALL = Self::NAME.bits() | Self::COMMENTS.bits();
+    }
+}
 
 bitflags! {
     /// Function flag bits from `funcs.hpp` (`func_t::flags`).
@@ -88,6 +117,16 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::name(EntryInfoFields::NAME, 0x0001)]
+    #[case::cmt(EntryInfoFields::CMT, 0x0002)]
+    #[case::cmt_rpt(EntryInfoFields::CMT_RPT, 0x0004)]
+    #[case::comments(EntryInfoFields::COMMENTS, 0x0006)]
+    #[case::all(EntryInfoFields::ALL, 0x0007)]
+    fn entry_info_fields_pin_the_raw_sdk_values(#[case] flag: EntryInfoFields, #[case] raw: i32) {
+        assert!(flag.bits() == raw);
+    }
 
     #[rstest]
     #[case::noret(FuncFlags::NORET, 0x0000_0001)]

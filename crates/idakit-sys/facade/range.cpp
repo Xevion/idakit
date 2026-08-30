@@ -7,7 +7,7 @@
 #include <ida.hpp>
 #include <pro.h>
 
-#include <funcs.hpp> // get_func, func_tail_iterator_t
+#include <funcs.hpp> // function_tail_iterator_t
 #include <range.hpp>
 
 #include <stdexcept>
@@ -17,18 +17,21 @@
 // it) and instantiates rust::Vec<range_t>; gen_range.h only forward-declares ChunkInfo.
 #include "gen_bridge.h"
 
+#include "compat.h"
+
 namespace gen {
 
 // The entry (main) chunk of the function at addr; throws if there's no function there or it has
 // no entry chunk.
 ::range_t range_entry_chunk(uint64_t addr) {
-  func_t *func = get_func(static_cast<ea_t>(addr));
-  if (func == nullptr)
+  function_tail_iterator_t fti;
+  if (!fti.set(static_cast<ea_t>(addr)))
     throw std::out_of_range("no function at address");
-  func_tail_iterator_t fti(func);
   if (!fti.main())
     throw std::out_of_range("function has no entry chunk");
-  return fti.chunk(); // const range_t& -> by-value copy across the bridge
+  ::range_t chunk;
+  fti.chunk(&chunk);
+  return chunk;
 }
 
 // The byte length of range (end_ea - start_ea).
@@ -37,16 +40,15 @@ uint64_t range_size(::range_t range) { return static_cast<uint64_t>(range.size()
 // The n-th chunk (entry chunk first, then tails) of the function at addr, paired with its index
 // in ChunkInfo; throws if there's no function at addr or n is out of range.
 ChunkInfo range_chunk_info(uint64_t addr, size_t n) {
-  func_t *func = get_func(static_cast<ea_t>(addr));
-  if (func == nullptr)
+  function_tail_iterator_t fti;
+  if (!fti.set(static_cast<ea_t>(addr)))
     throw std::out_of_range("no function at address");
-  func_tail_iterator_t fti(func);
   size_t i = 0;
   for (bool ok = fti.main(); ok; ok = fti.next(), i++) {
     if (i == n) {
       ChunkInfo info;
       info.index = n;
-      info.range = fti.chunk();
+      fti.chunk(&info.range);
       return info;
     }
   }
@@ -56,13 +58,15 @@ ChunkInfo range_chunk_info(uint64_t addr, size_t n) {
 // Every chunk of the function at addr (entry chunk first, then tails), collected into an owned
 // Vec; throws if there's no function at addr.
 rust::Vec<::range_t> range_all_chunks(uint64_t addr) {
-  func_t *func = get_func(static_cast<ea_t>(addr));
-  if (func == nullptr)
+  function_tail_iterator_t fti;
+  if (!fti.set(static_cast<ea_t>(addr)))
     throw std::out_of_range("no function at address");
   rust::Vec<::range_t> out;
-  func_tail_iterator_t fti(func);
-  for (bool ok = fti.main(); ok; ok = fti.next())
-    out.push_back(fti.chunk());
+  ::range_t chunk;
+  for (bool ok = fti.main(); ok; ok = fti.next()) {
+    fti.chunk(&chunk);
+    out.push_back(chunk);
+  }
   return out;
 }
 

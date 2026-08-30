@@ -204,6 +204,8 @@ impl IdaConfig {
                     // pump too so no stray panic can unwind and kill the kernel.
                     let _ = catch_unwind(AssertUnwindSafe(|| job(&mut idb)));
                 }
+                // A database left open at exit deadlocks 9.4's atexit flush.
+                idb.close(false);
             })
             .expect("spawn kernel thread");
 
