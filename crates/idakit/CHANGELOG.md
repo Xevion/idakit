@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.1](https://github.com/Xevion/idakit/compare/idakit-v0.2.0...idakit-v0.2.1) (2026-08-30)
+
+
+### Bug Fixes
+
+* **kernel:** Clear decompiler state on close ([6b63f5a](https://github.com/Xevion/idakit/commit/6b63f5acd0f4bc75373640857a401896dbb9d06e))
+* **test:** Declare check isolation instead of assuming read-only ([b979bf0](https://github.com/Xevion/idakit/commit/b979bf03c565f626ebfe344c3ee5cd484d18ff6f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * idakit-sys bumped from 0.2.0 to 0.2.1
+
 ## [0.2.0](https://github.com/Xevion/idakit/compare/idakit-v0.1.1...idakit-v0.2.0) (2026-08-24)
 
 

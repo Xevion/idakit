@@ -1,6 +1,6 @@
 [package]
 name = "idakit-sys"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -27,7 +27,7 @@ cc = "1"
 # baked into every bridge symbol, so a float that moves one side alone fails to link.
 cxx-build = "=1.0.197"
 dirs = "6.0.0"
-idakit-sys-codegen = { path = "../idakit-sys-codegen", version = "0.2.0" }
+idakit-sys-codegen = { path = "../idakit-sys-codegen", version = "0.2.1" }
 libloading = "0.9.0"
 
 [[example]]
