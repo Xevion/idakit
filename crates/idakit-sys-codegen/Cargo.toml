@@ -15,4 +15,4 @@ workspace = true
 [dependencies]
 proc-macro2 = "1.0.106"
 quote = "1.0.46"
-cxx-gen = "=0.7.197"
+cxx-gen = "=0.7.199"
