@@ -27,6 +27,8 @@ runs:
         VERSION: ${{ inputs.version }}
         PLATFORM: ${{ inputs.platform }}
         SDK_TAG: ${{ inputs.sdk-tag }}
+        AWS_RETRY_MODE: standard
+        AWS_MAX_ATTEMPTS: "10"
       # Every GITHUB_ENV value below is built from RUNNER_TEMP, never from an input.
       run: | # zizmor: ignore[github-env]
         set -euo pipefail
@@ -34,8 +36,20 @@ runs:
         [ "${RUNNER_OS:-}" = Windows ] && tmp="$(cygpath -u "$RUNNER_TEMP")"
         dest="$tmp/runtime"
         mkdir -p "$dest"
-        aws s3 cp "s3://$S3_BUCKET/lean/$VERSION/$PLATFORM.tar.zst" \
-          "$tmp/runtime.tar.zst" --endpoint-url "$S3_ENDPOINT" --only-show-errors
+
+        # A response body that dies mid-stream (IncompleteRead) exhausts the CLI's own per-part
+        # retries and surfaces as a failed copy, so restart the whole transfer with a backoff.
+        s3_get() {
+          local attempt=1
+          until aws s3 cp "$1" "$2" --endpoint-url "$S3_ENDPOINT" --only-show-errors; do
+            [ "$attempt" -lt 4 ] || { echo "giving up on $1 after $attempt attempts" >&2; return 1; }
+            sleep $((attempt * 10))
+            attempt=$((attempt + 1))
+            echo "retrying $1 (attempt $attempt)" >&2
+          done
+        }
+
+        s3_get "s3://$S3_BUCKET/lean/$VERSION/$PLATFORM.tar.zst" "$tmp/runtime.tar.zst"
         tar --zstd -xf "$tmp/runtime.tar.zst" -C "$dest"
         rm -f "$tmp/runtime.tar.zst"
         case "${RUNNER_OS:-Linux}" in

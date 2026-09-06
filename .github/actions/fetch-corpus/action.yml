@@ -10,6 +10,9 @@ runs:
     # corpus test matrix and the dedicated tests' canonical database.
     - name: Fetch corpus
       shell: bash
+      env:
+        AWS_RETRY_MODE: standard
+        AWS_MAX_ATTEMPTS: "10"
       # The exported GITHUB_ENV path is built from RUNNER_TEMP, never from an input.
       run: | # zizmor: ignore[github-env]
         set -euo pipefail
@@ -19,8 +22,20 @@ runs:
         mkdir -p "$dest"
         export dest
 
-        aws s3 cp "s3://$S3_BUCKET/corpus/manifest.toml" "$dest/manifest.toml" \
-          --endpoint-url "$S3_ENDPOINT" --only-show-errors
+        # A response body that dies mid-stream (IncompleteRead) exhausts the CLI's own per-part
+        # retries and surfaces as a failed copy, so restart the whole transfer with a backoff.
+        s3_get() {
+          local attempt=1
+          until aws s3 cp "$1" "$2" --endpoint-url "$S3_ENDPOINT" --only-show-errors; do
+            [ "$attempt" -lt 4 ] || { echo "giving up on $1 after $attempt attempts" >&2; return 1; }
+            sleep $((attempt * 10))
+            attempt=$((attempt + 1))
+            echo "retrying $1 (attempt $attempt)" >&2
+          done
+        }
+        export -f s3_get
+
+        s3_get "s3://$S3_BUCKET/corpus/manifest.toml" "$dest/manifest.toml"
 
         # macOS ships `shasum`, not coreutils `sha256sum`; pick whichever exists.
         sha_of() {
@@ -40,8 +55,9 @@ runs:
           local rel="$1" sha="$2" out got
           out="$dest/$rel"
           mkdir -p "$(dirname "$out")"
-          aws s3 cp "s3://$S3_BUCKET/corpus/blobs/$sha" "$out" \
-            --endpoint-url "$S3_ENDPOINT" --only-show-errors
+          # No `set -e` in this xargs subshell, so a dead download would otherwise reach the
+          # digest check and be reported as a mismatch instead of a fetch failure.
+          s3_get "s3://$S3_BUCKET/corpus/blobs/$sha" "$out" || exit 1
           got="$(sha_of "$out")"
           [ "$got" = "$sha" ] || { echo "sha256 mismatch for $rel: $got != $sha" >&2; exit 1; }
         }
