@@ -105,8 +105,8 @@
 //!
 //! # Requirements
 //!
-//! - IDA Pro 9.3. A local install is needed to build, since idakit links its libraries, and a
-//!   valid license to run, since IDA checks it when the kernel initializes.
+//! - IDA Pro 9.3 or 9.4. A local install is needed to build, since idakit links its libraries, and
+//!   a valid license to run, since IDA checks it when the kernel initializes.
 //! - A 64-bit host running Linux, macOS, or Windows.
 //! - Rust 1.88 or newer.
 //! - A C++17 compiler for the build: g++ or Clang on Linux and macOS, MSVC on Windows.
