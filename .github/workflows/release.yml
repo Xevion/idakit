@@ -44,7 +44,7 @@ jobs:
         with:
           cache: false
       - name: Fetch IDA runtime
-        uses: ./.github/actions/fetch-runtime
+        uses: $/.github/actions/fetch-runtime
         with:
           version: 9.3.260421sp2
           platform: linux-x64

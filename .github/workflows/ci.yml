@@ -89,7 +89,7 @@ jobs:
       - name: Install toolchain
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
       - name: Fetch IDA runtime
-        uses: ./.github/actions/fetch-runtime
+        uses: $/.github/actions/fetch-runtime
         with:
           version: ${{ matrix.version }}
           platform: ${{ matrix.platform }}
@@ -144,7 +144,7 @@ jobs:
       # Fixtures are host-independent, so every platform fetches the same corpus tier; the
       # exported manifest drives both the corpus matrix and the dedicated tests below.
       - name: Fetch test corpus
-        uses: ./.github/actions/fetch-corpus
+        uses: $/.github/actions/fetch-corpus
       - name: Run tests
         run: just ci-test
 
@@ -178,7 +178,7 @@ jobs:
       - name: Install nightly
         run: rustup toolchain install nightly --component rust-src --profile minimal
       - name: Fetch IDA runtime
-        uses: ./.github/actions/fetch-runtime
+        uses: $/.github/actions/fetch-runtime
         with:
           version: 9.3.260421sp2
           platform: linux-x64
@@ -188,7 +188,7 @@ jobs:
       - name: Accept IDA EULA
         run: cargo run -q -p idakit --example accept_eula
       - name: Fetch test corpus
-        uses: ./.github/actions/fetch-corpus
+        uses: $/.github/actions/fetch-corpus
       - name: Run sanitizer
         run: just sanitize ${{ matrix.mode }}
 
@@ -215,7 +215,7 @@ jobs:
       - name: Install toolchain
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
       - name: Fetch IDA runtime
-        uses: ./.github/actions/fetch-runtime
+        uses: $/.github/actions/fetch-runtime
         with:
           version: 9.3.260421sp2
           platform: linux-x64

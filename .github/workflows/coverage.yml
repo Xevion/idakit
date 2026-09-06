@@ -52,7 +52,7 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.8.7
       - name: Fetch IDA runtime
-        uses: ./.github/actions/fetch-runtime
+        uses: $/.github/actions/fetch-runtime
         with:
           version: 9.3.260421sp2
           platform: linux-x64
@@ -62,7 +62,7 @@ jobs:
       - name: Accept IDA EULA
         run: cargo run -q -p idakit --example accept_eula
       - name: Fetch test corpus
-        uses: ./.github/actions/fetch-corpus
+        uses: $/.github/actions/fetch-corpus
       # Doctests are left out (`--doctests` is still incomplete); they run under `just test`.
       #
       # `llvm-cov nextest` alone would miss the `kernel` binary, which nextest never lists because
