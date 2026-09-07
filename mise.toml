@@ -6,7 +6,7 @@ just = "1.55.1"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.138"
 "aqua:rhysd/actionlint" = "1.7.12"
 "aqua:zizmorcore/zizmor" = "1.27.0"
-"cargo:cargo-rdme" = "2.1.0"
+"cargo:cargo-rdme" = "2.2.2"
 
 [settings.pipx]
 uvx = true
