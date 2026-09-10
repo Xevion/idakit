@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.1](https://github.com/Xevion/idakit/compare/idakit-v0.2.0...idakit-v0.2.1) (2026-09-10)
+
+
+### Features
+
+* **function:** Add entry-chunk read with frame layout and strings ([29c3f04](https://github.com/Xevion/idakit/commit/29c3f045d0c3d3cd7983bfcc2b8a0d0e775eccd1))
+
+
+### Bug Fixes
+
+* **claim:** Follow a forwarding add when decoding g_main on aarch64 ([1025a37](https://github.com/Xevion/idakit/commit/1025a37f8430629f3d6debd29e0df2a71cac266e))
+* **claim:** Follow the ARM64 import thunk when locating g_main ([78c6477](https://github.com/Xevion/idakit/commit/78c64771cd3264a0e5a384e445d2809719a7b1ee))
+* **claim:** Name the instructions when the aarch64 g_main decode fails ([23090a5](https://github.com/Xevion/idakit/commit/23090a5d606bea042d8f26b7a640906472c53aaf))
+* **kernel:** Clear decompiler state on close ([6b63f5a](https://github.com/Xevion/idakit/commit/6b63f5acd0f4bc75373640857a401896dbb9d06e))
+* **kernel:** Close the database when the job pump ends ([4a6b43a](https://github.com/Xevion/idakit/commit/4a6b43add5c96a4f3e4b7da56fab8477f268cc0b))
+* **test:** Declare check isolation instead of assuming read-only ([b979bf0](https://github.com/Xevion/idakit/commit/b979bf03c565f626ebfe344c3ee5cd484d18ff6f))
+
+
+### Documentation
+
+* Name 9.4 alongside 9.3 in the requirements ([347c5db](https://github.com/Xevion/idakit/commit/347c5db645938746f1071a206b768eb2a32125ea))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * idakit-sys bumped from 0.2.0 to 0.2.1
+
 ## [0.2.0](https://github.com/Xevion/idakit/compare/idakit-v0.1.1...idakit-v0.2.0) (2026-08-24)
 
 
