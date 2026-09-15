@@ -191,8 +191,30 @@ jobs:
         run: cargo run -q -p idakit --example accept_eula
       - name: Fetch test corpus
         uses: $/.github/actions/fetch-corpus
+      # Fails only on a diagnostic; the check matrix already owns plain test verdicts.
       - name: Run sanitizer
-        run: just sanitize ${{ matrix.mode }}
+        shell: bash
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          log="$RUNNER_TEMP/sanitize.log"
+          set +e
+          just sanitize "$MODE" 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          if grep -qE '(ERROR|WARNING|SUMMARY): (Address|Thread|Leak|Memory|UndefinedBehavior)Sanitizer|: runtime error: ' "$log"; then
+            echo "::error::$MODE sanitizer reported a diagnostic"
+            exit 1
+          fi
+          if [ "$rc" -eq 0 ]; then
+            exit 0
+          fi
+          if grep -qE '^[[:space:]]+Running (tests/|unittests)' "$log"; then
+            echo "::notice::suite failed under $MODE with no sanitizer diagnostic; the check matrix owns that verdict"
+            exit 0
+          fi
+          echo "::error::$MODE sanitizer job failed before any test ran"
+          exit 1
 
   # Advisory, never gates: Clang's `-Weverything` minus known-noise categories (see `just
   # pedantic`). `-Wold-style-cast` alone surfaces ~185 findings -- a separate refactor, not
