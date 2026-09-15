@@ -125,8 +125,10 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
   dst.scale = static_cast<uint8_t>(1 << x86_scale(op));
   // o_phrase is [reg(+reg)] with no displacement; o_mem/o_displ keep it in op.addr.
   dst.disp = op.type == o_phrase ? 0 : static_cast<int64_t>(op.addr);
-  // o_mem resolves to a static address (incl. RIP-relative IDA already folded).
-  dst.addr = op.type == o_mem ? static_cast<uint64_t>(op.addr) : static_cast<uint64_t>(BADADDR);
+  // o_mem resolves to a static address (incl. RIP-relative IDA already folded). op.addr is an
+  // offset within the segment, so it needs mapping; the two coincide only where the base is 0.
+  dst.addr = op.type == o_mem ? static_cast<uint64_t>(map_data_ea(insn, op))
+                              : static_cast<uint64_t>(BADADDR);
   // EVEX embedded broadcast: with EVEX.b and a memory operand, one element is read and fanned out
   // to N lanes. The factor N is vector width / element width, but neither is cleanly available:
   // op.dtype is the whole vector, and element width depends on the instruction (2 bytes for fp16,
@@ -348,9 +350,10 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
     return 0;
   case o_near:
     dst.kind = OP_NEAR;
-    dst.addr = static_cast<uint64_t>(op.addr);
+    dst.addr = static_cast<uint64_t>(map_code_ea(insn, op));
     return 0;
   case o_far:
+    // Unmapped on purpose: the selector travels beside the offset, so the pair stays intact.
     dst.kind = OP_FAR;
     dst.value = static_cast<uint64_t>(op.addr);
     dst.sel = static_cast<uint16_t>(op.segsel);
@@ -412,8 +415,10 @@ InstructionData decode_insn(uint64_t addr) {
       return out;
     }
     dst.access = (has_cf_use(feature, i) ? 1 : 0) | (has_cf_chg(feature, i) ? 2 : 0);
+    // op.addr is an offset within the segment, so the linear target is to_ea(cs, addr); reading it
+    // raw is only right where the base is 0. A far branch carries its own selector instead of cs.
     if ((op.type == o_near || op.type == o_far) && tgt == BADADDR)
-      tgt = op.addr;
+      tgt = op.type == o_far ? to_ea(op.segsel, op.addr) : map_code_ea(insn, op);
     ops.push_back(std::move(dst));
   }
   out.nops = static_cast<uint8_t>(ops.size());
