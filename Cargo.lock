@@ -514,7 +514,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "idakit"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "assert2",
  "bon",
@@ -560,7 +560,7 @@ dependencies = [
 
 [[package]]
 name = "idakit-sys"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "assert2",
  "bitflags",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "idakit-sys-codegen"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "cxx-gen",
  "proc-macro2",
