@@ -177,12 +177,14 @@ jobs:
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
       - name: Install nightly
         run: rustup toolchain install nightly --component rust-src --profile minimal
+      # 9.4, not 9.3: the only defect these are currently aimed at is 9.4-only, and one runtime is
+      # enough since the sanitizers instrument the facade rather than the version under it.
       - name: Fetch IDA runtime
         uses: $/.github/actions/fetch-runtime
         with:
-          version: 9.3.260421sp2
+          version: 9.4.260714
           platform: linux-x64
-          sdk-tag: v9.3.1-release
+          sdk-tag: v9.4.0-release
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Accept IDA EULA
