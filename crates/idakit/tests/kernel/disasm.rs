@@ -76,13 +76,18 @@ fn disasm_comment_round_trip() {
 }
 
 /// A bounded straight-line decode over every function's instruction stream: structural
-/// invariants hold per instruction, and at least one direct branch target is cross-checked
+/// invariants hold per instruction, and every direct branch target is cross-checked
 /// against IDA's own reference graph.
 fn check_straight_line_decode_invariants(idb: &Database) {
     const BUDGET: usize = 4000;
+    /// How many disagreeing branches the failure message names before it stops collecting.
+    const MISMATCH_SAMPLE: usize = 5;
     let mut total = 0usize;
     let mut with_ops = 0usize;
-    let mut checked_target = false;
+    let mut direct = 0usize;
+    let mut checked_target = 0usize;
+    let mut unresolved = 0usize;
+    let mut mismatches: Vec<String> = Vec::new();
 
     'outer: for function in idb.functions() {
         let mut address = function.address();
@@ -126,18 +131,16 @@ fn check_straight_line_decode_invariants(idb: &Database) {
                 with_ops += 1;
             }
 
-            // Cross-check: a direct (non-indirect) branch/call with a static target must
-            // have that target recorded as a code reference from this address. Positive check --
-            // proving the mechanism works on at least one real branch is enough, and it
-            // tolerates the rare target IDA didn't record as a cref.
-            if !checked_target
-                && !instruction.flow.is_indirect
+            // Every direct branch, not just the first: one agreeing sample cannot tell a healthy
+            // decode from one where almost every target is wrong.
+            if !instruction.flow.is_indirect
                 && (instruction.flow.is_call || instruction.flow.is_jump)
                 && let Some(target) = instruction.flow.target
             {
-                let matched = idb.xrefs_from(address).find(|x| {
-                    x.to == target
-                        && matches!(
+                let branch_xrefs: Vec<_> = idb
+                    .xrefs_from(address)
+                    .filter(|x| {
+                        matches!(
                             x.kind,
                             XrefKind::Code(
                                 CodeXref::CallNear
@@ -146,8 +149,14 @@ fn check_straight_line_decode_invariants(idb: &Database) {
                                     | CodeXref::JumpFar
                             )
                         )
-                });
-                if let Some(reference) = matched {
+                    })
+                    .collect();
+                // A branch IDA never resolved carries no cref at all (a `call $+5` PC idiom, a jump
+                // into unmapped memory), so it is unverifiable rather than wrong.
+                if branch_xrefs.is_empty() {
+                    unresolved += 1;
+                } else if let Some(reference) = branch_xrefs.iter().find(|x| x.to == target) {
+                    direct += 1;
                     // A branch IDA itself decoded is analysis-made, never user-marked. Asserting it
                     // also proves the `xrefblk_t::user` byte flows through the facade rather than
                     // arriving uninitialized (which would surface as a spurious `User`).
@@ -156,17 +165,23 @@ fn check_straight_line_decode_invariants(idb: &Database) {
                         "direct branch xref at {address:#x} should be analysis-made, got {:?}",
                         reference.origin
                     );
-                    checked_target = true;
-                    println!(
-                        "cross-checked direct {} at {:#x} -> {:#x} against reference graph",
-                        if instruction.flow.is_call {
-                            "call"
-                        } else {
-                            "jump"
-                        },
-                        address.get(),
-                        target.get()
-                    );
+                    checked_target += 1;
+                } else {
+                    direct += 1;
+                    if mismatches.len() < MISMATCH_SAMPLE {
+                        let kinds: Vec<String> = branch_xrefs
+                            .iter()
+                            .map(|x| format!("{:?}->{:#x}", x.kind, x.to))
+                            .collect();
+                        mismatches.push(format!(
+                            "{:#x} {} (len {}) targets {:#x}, xrefs there: [{}]",
+                            address.get(),
+                            instruction.mnemonic,
+                            instruction.len,
+                            target.get(),
+                            kinds.join(", ")
+                        ));
+                    }
                 }
             }
 
@@ -184,11 +199,21 @@ fn check_straight_line_decode_invariants(idb: &Database) {
         "no instruction had operands -- operand decode is likely broken"
     );
     assert!(
-        checked_target,
-        "no direct branch target matched the reference graph -- flow.target is likely wrong"
+        direct > 0,
+        "{total} instructions decoded, none a direct branch"
+    );
+    assert!(
+        checked_target == direct,
+        "{checked_target}/{direct} direct branch targets matched the reference graph, \
+         so flow.target is wrong; first {} that did not:\n  {}",
+        mismatches.len(),
+        mismatches.join("\n  ")
     );
 
-    println!("decoded {total} instructions ({with_ops} with operands); invariants held");
+    println!(
+        "decoded {total} instructions ({with_ops} with operands, \
+         {checked_target}/{direct} branches cross-checked, {unresolved} unresolved); invariants held"
+    );
 }
 
 /// Code-gated iteration: `Function::instructions()` must yield only real instructions, unlike

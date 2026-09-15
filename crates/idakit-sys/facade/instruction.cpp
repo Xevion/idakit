@@ -384,6 +384,8 @@ InstructionData decode_insn(uint64_t addr) {
     return out;
   }
 
+  // The kernel's own ea: echoing the argument back would hide a decode that landed elsewhere.
+  out.address = static_cast<uint64_t>(insn.ea);
   out.len = static_cast<uint8_t>(insn.size);
   out.isa = inf_is_64bit() ? 1 : 0;
   out.itype = insn.itype;

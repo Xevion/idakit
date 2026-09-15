@@ -2,6 +2,8 @@
 //! summary and panics (via `assert!`) on a violation, so it works as a `#[test]` body and as a
 //! harness case alike. The registry [`CHECKS`] is the corpus fan-out's check axis.
 
+use std::fmt::Write as _;
+
 use idakit::prelude::*;
 
 /// One named invariant over an open database.
@@ -115,8 +117,8 @@ pub fn strings(idb: &Database) -> String {
     format!("{total} scanned, {decoded} decoded")
 }
 
-/// A bounded straight-line decode holds structural invariants, and at least one direct branch
-/// target is mirrored in IDA's reference graph.
+/// A bounded straight-line decode holds structural invariants, and every direct branch target IDA
+/// resolved is mirrored in its reference graph.
 ///
 /// The per-function cap is deliberately far below the budget: a depth-first walk of 256 spends the
 /// whole budget on ~16 functions, and in a stripped shared object the lowest addresses are PLT
@@ -128,7 +130,8 @@ pub fn disasm(idb: &Database) -> String {
     let mut with_ops = 0usize;
     let mut direct = 0usize;
     let mut matched = 0usize;
-    let mut unmatched: Option<(Address, Address)> = None;
+    let mut unresolved = 0usize;
+    let mut unmatched: Vec<Unmatched> = Vec::new();
 
     'outer: for function in idb.functions() {
         let mut address = function.address();
@@ -164,22 +167,23 @@ pub fn disasm(idb: &Database) -> String {
                 && (instruction.flow.is_call || instruction.flow.is_jump)
                 && let Some(target) = instruction.flow.target
             {
-                direct += 1;
-                if idb.xrefs_from(address).any(|x| {
-                    x.to == target
-                        && matches!(
-                            x.kind,
-                            XrefKind::Code(
-                                CodeXref::CallNear
-                                    | CodeXref::CallFar
-                                    | CodeXref::JumpNear
-                                    | CodeXref::JumpFar
-                            )
-                        )
-                }) {
+                // A branch IDA never resolved carries no cref at all (a `call $+5` PC idiom, a jump
+                // into unmapped memory), so it is unverifiable rather than wrong.
+                if branch_targets(idb, address).next().is_none() {
+                    unresolved += 1;
+                } else if branch_targets(idb, address).any(|to| to == target) {
+                    direct += 1;
                     matched += 1;
-                } else if unmatched.is_none() {
-                    unmatched = Some((address, target));
+                } else {
+                    direct += 1;
+                    if unmatched.len() < UNMATCHED_SAMPLE {
+                        unmatched.push(Unmatched {
+                            address,
+                            target,
+                            mnemonic: instruction.mnemonic.to_string(),
+                            len: instruction.len,
+                        });
+                    }
                 }
             }
             total += 1;
@@ -197,24 +201,73 @@ pub fn disasm(idb: &Database) -> String {
         direct > 0,
         "{total} instructions decoded, none a direct call or jump"
     );
-    assert!(matched > 0, "{}", unmatched_report(idb, direct, unmatched));
-    format!("{total} insns, {with_ops} with operands, {matched}/{direct} branches matched")
+    assert!(
+        matched == direct,
+        "{}",
+        unmatched_report(idb, direct, matched, &unmatched)
+    );
+    format!(
+        "{total} insns, {with_ops} with operands, {matched}/{direct} branches matched \
+         ({unresolved} unresolved)"
+    )
 }
 
-/// Why no direct branch matched, naming the first that did not and the edges actually present.
-fn unmatched_report(idb: &Database, direct: usize, first: Option<(Address, Address)>) -> String {
-    let Some((address, target)) = first else {
-        return format!("{direct} direct branches, none matched the reference graph");
-    };
-    let kinds: Vec<String> = idb
-        .xrefs_from(address)
-        .map(|x| format!("{:?}->{:#x}", x.kind, x.to))
-        .collect();
-    format!(
-        "{direct} direct branches, none matched the reference graph; \
-         first at {address:#x} targets {target:#x}, xrefs there: [{}]",
-        kinds.join(", ")
-    )
+/// The addresses IDA's reference graph records as branch targets of the instruction at `address`.
+fn branch_targets(idb: &Database, address: Address) -> impl Iterator<Item = Address> + '_ {
+    idb.xrefs_from(address)
+        .filter(|x| {
+            matches!(
+                x.kind,
+                XrefKind::Code(
+                    CodeXref::CallNear | CodeXref::CallFar | CodeXref::JumpNear | CodeXref::JumpFar
+                )
+            )
+        })
+        .map(|x| x.to)
+}
+
+/// How many disagreeing branches [`unmatched_report`] names before it stops collecting.
+const UNMATCHED_SAMPLE: usize = 5;
+
+/// A direct branch whose decoded target the reference graph does not carry.
+struct Unmatched {
+    address: Address,
+    target: Address,
+    mnemonic: String,
+    len: u8,
+}
+
+/// Why the disagreeing branches disagreed, naming several sites rather than one.
+///
+/// Whether every target is off by the same delta or each is wrong independently points at
+/// different defects, and one sample cannot tell them apart.
+fn unmatched_report(
+    idb: &Database,
+    direct: usize,
+    matched: usize,
+    unmatched: &[Unmatched],
+) -> String {
+    let mut report = format!(
+        "{matched}/{direct} direct branches matched the reference graph; \
+         first {} that did not:",
+        unmatched.len()
+    );
+    for u in unmatched {
+        let kinds: Vec<String> = idb
+            .xrefs_from(u.address)
+            .map(|x| format!("{:?}->{:#x}", x.kind, x.to))
+            .collect();
+        let _ = write!(
+            report,
+            "\n  {:#x} {} (len {}) targets {:#x}, xrefs there: [{}]",
+            u.address.get(),
+            u.mnemonic,
+            u.len,
+            u.target.get(),
+            kinds.join(", ")
+        );
+    }
+    report
 }
 
 /// The first multi-block function builds a graph whose edges are in range and mirror as
