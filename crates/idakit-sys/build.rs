@@ -244,12 +244,18 @@ fn main() {
     // tests via IDA_SDK_INCLUDE, dependents via DEP_IDA_SDK_INCLUDE re-emitted by idakit).
     println!("cargo:rustc-env=IDA_SDK_INCLUDE={sdk_include_str}");
     println!("cargo:sdk_include={sdk_include_str}");
-    emit_rerun_directives();
+    emit_rerun_directives(sdk_include_str, &idadir.join(RUNTIME_LIB));
 }
 
 /// The exhaustive `rerun-if-changed`/`rerun-if-env-changed` block: every facade/bridge source
-/// and env var this build depends on.
-fn emit_rerun_directives() {
+/// and env var this build depends on, plus the SDK headers and runtime it compiles against.
+///
+/// The headers and runtime are watched by content, not just by the env vars naming them: both
+/// `IDADIR` and `IDA_SDK_DIR` routinely hold the same path across different IDA versions, so a
+/// checkout updated in place changes no directive value and would otherwise reuse a stale facade.
+fn emit_rerun_directives(sdk_include: &str, runtime: &Path) {
+    println!("cargo:rerun-if-changed={sdk_include}");
+    println!("cargo:rerun-if-changed={}", runtime.display());
     for src in FACADE_SOURCES {
         println!("cargo:rerun-if-changed={src}");
     }
