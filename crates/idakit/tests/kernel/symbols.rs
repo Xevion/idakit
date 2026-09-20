@@ -26,7 +26,7 @@ fn run(idb: &mut Database) {
             "export #{} resolves to neither an address nor a forwarder",
             export.index()
         );
-        // Cross-invariant: a local export's address is real -- it lies inside some segment, not
+        // Cross-invariant: a local export's address is real: it lies inside some segment, not
         // off in unmapped space.
         if let Some(ea) = export.address() {
             assert!(
@@ -56,7 +56,7 @@ fn run(idb: &mut Database) {
             "import at {:#x} has neither a name nor an ordinal",
             import.address()
         );
-        // Cross-invariant: an import's slot address (the IAT entry / thunk) is a real address --
+        // Cross-invariant: an import's slot address (the IAT entry / thunk) is a real address:
         // it lies inside some segment, not off in unmapped space.
         assert!(
             idb.segment_at(import.address()).is_some(),

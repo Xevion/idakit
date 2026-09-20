@@ -69,7 +69,7 @@ impl ConstDef {
         self.rust_item_tokens_impl(false)
     }
 
-    /// Like [`Self::rust_item_tokens`], but adds `#[doc(hidden)]` -- for a sentinel that exists
+    /// Like [`Self::rust_item_tokens`], but adds `#[doc(hidden)]`: for a sentinel that exists
     /// only for test-only fault injection and must stay off the public API, matching the
     /// hand-written const it replaced.
     fn rust_item_tokens_hidden(&self) -> TokenStream {

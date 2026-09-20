@@ -4,10 +4,10 @@
 //! (call-return sources -> local def/use fixpoint -> dangerous-call sinks) and times the
 //! work in four separate phases:
 //!
-//!   decompile   -- Hex-Rays, kernel thread, serial and unavoidable
-//!   extract     -- `cfunc.ctree()`, the facade DFS + Rust rebuild, kernel thread
-//!   resolve     -- turning `Obj(address)` callees into names, kernel thread (needs `&Database`)
-//!   analyze     -- the pure taint pass over the Send image (no kernel access)
+//!   decompile:  Hex-Rays, kernel thread, serial and unavoidable
+//!   extract:    `cfunc.ctree()`, the facade DFS + Rust rebuild, kernel thread
+//!   resolve:    turning `Obj(address)` callees into names, kernel thread (needs `&Database`)
+//!   analyze:    the pure taint pass over the Send image (no kernel access)
 //!
 //! The split answers the live question: how much of the work is the serial kernel
 //! floor (decompile + extract + resolve) versus the part that could ever be fanned

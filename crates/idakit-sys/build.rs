@@ -123,7 +123,7 @@ fn main() {
     // Mirror the caller's `-Zsanitizer=<name>` onto the facade TUs so bugs inside facade/*.cpp
     // are caught too, not just at the FFI boundary. Comma-separated like rustc's flag. `undefined`
     // uses trap mode: rustc links no UBSan runtime, so the usual `__ubsan_handle_*` calls would
-    // dangle at link -- trap mode emits an inline trap instead, needing no runtime.
+    // dangle at link: trap mode emits an inline trap instead, needing no runtime.
     if let Ok(sanitizers) = env::var("IDAKIT_SANITIZE") {
         let is_clang = build.get_compiler().is_like_clang();
         for name in sanitizers.split(',') {

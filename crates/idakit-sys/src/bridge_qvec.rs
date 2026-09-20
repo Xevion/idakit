@@ -32,8 +32,8 @@
 //! This is a recipe demonstration, not yet consumed by the `idakit` library.
 
 // cxx::bridge's own attribute allowlist rejects #[expect]/#[allow] on individual fn items
-// (`unsupported attribute`), so the three zero-copy fns' required explicit `<'a>` -- cxx has no
-// lifetime elision -- is silenced here at module scope instead.
+// (`unsupported attribute`), so the three zero-copy fns' required explicit `<'a>` (cxx has no
+// lifetime elision) is silenced here at module scope instead.
 #![expect(
     unused_lifetimes,
     reason = "cxx::bridge requires the lifetime spelled out; elided, it no longer compiles"

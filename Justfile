@@ -57,7 +57,7 @@ tidy:
     #!/usr/bin/env bash
     set -euo pipefail
     IDAKIT_EMIT_COMPILE_COMMANDS=1 cargo build -q -p idakit-sys
-    # clang-tidy replays compile_commands.json, which records only the flags cc passes -- not
+    # clang-tidy replays compile_commands.json, which records only the flags cc passes, not
     # the clang driver's implicit macOS -isysroot. Without it clang-tidy can't find the SDK's
     # system headers (stdlib.h), and the broken parse then misfires other checks, so supply it.
     extra_args=()
@@ -74,7 +74,7 @@ tidy:
     {{ lint_tus }} | xargs -P "$nproc_val" -I{} "${tidy_cmd[@]}" \
       --config-file=crates/idakit-sys/.clang-tidy -p crates/idakit-sys "${extra_args[@]}" {}
 
-# Advisory, not part of `check`: Clang's `-Weverything` minus pure-noise categories -- C++98
+# Advisory, not part of `check`: Clang's `-Weverything` minus pure-noise categories: C++98
 # compat (the facade is C++17), buffer-hardening (it does deliberate raw-pointer work over the
 # SDK's C-style API and the ELF GOT-rewrite trap), and padding notices. What's left (old-style
 # casts, switch-enum, sign-conversion, ...) is real signal to triage by hand.
@@ -103,7 +103,7 @@ pedantic:
 # ASan+UBSan (facade too) or ThreadSanitizer against the real kernel across the FFI boundary;
 # nightly-only (needs -Z build-std). `mode` is "address" or "thread"; UBSan rides only on the
 # C++ side (rustc has no `-Zsanitizer=undefined`, and its runtime is ASan xor TSan). Leak
-# detection is off -- IDA's kernel is a process-lifetime singleton, so LSan's exit findings all
+# detection is off: IDA's kernel is a process-lifetime singleton, so LSan's exit findings all
 # sit in libida.so, not real leaks. Thread mode carries a suppressions file for the same
 # reason: see crates/idakit-sys/tsan-suppressions.txt.
 #
@@ -171,7 +171,7 @@ coverage-open: coverage
 # Build API docs, warnings-as-errors (broken links, bad code blocks, bare URLs, invalid HTML
 # tags in example doc comments all fail). Default scrapes example call-sites onto each item
 # (nightly + real runtime); `hermetic` skips scraping and builds under DOCS_RS, so no IDA
-# runtime -- CI and `check` use it. Both pass --examples so example `//!` doc comments are
+# runtime: CI and `check` use it. Both pass --examples so example `//!` doc comments are
 # linted too, not just the library crates.
 doc mode="scrape":
     RUSTDOCFLAGS="-D warnings" {{ if mode == "hermetic" { "DOCS_RS=1 cargo doc --workspace --all-features --no-deps --examples" } else { "cargo +nightly doc --workspace --all-features --no-deps --examples -Z rustdoc-scrape-examples" } }}
@@ -279,6 +279,6 @@ mutants-shard shard: require-corpus
 # Filters with `--re`, not `--file`: mutants.toml's `examine_globs` silently overrides `--file`,
 # so the obvious spelling runs the entire tree while reporting that it scoped to one file. `--re`
 # matches the `--list` line, which is `<path>:<line>:<col>: <mutant>`, so anchoring on the path
-# scopes it. Dots in `file` stay unescaped -- they match themselves in any real path.
+# scopes it. Dots in `file` stay unescaped: they match themselves in any real path.
 mutants-file file jobs="3": require-corpus
     {{ mutants_env }} cargo mutants -p idakit --jobs {{ jobs }} --re '{{ file }}:'
