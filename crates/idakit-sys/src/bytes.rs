@@ -29,18 +29,22 @@ bitflags! {
     }
 }
 
-/// Class mask over an address's flags word (`MS_CLS` in `bytes.hpp`); the masked value equals
-/// [`FF_CODE`] for an instruction or [`FF_DATA`] for data.
+/// Class mask over an address's flags word (`MS_CLS` in `bytes.hpp`).
 ///
+/// The masked value is one of four: [`FF_CODE`] for an instruction head, [`FF_DATA`] for a data
+/// head, [`FF_TAIL`] for a non-head byte of a multi-byte item, or [`FF_UNK`] for an undefined byte.
 /// `get_flags` returns IDA's full `flags_t`, a much wider bitfield idakit does not otherwise
-/// model; `MS_CLS`/`FF_CODE`/`FF_DATA` stay plain masked-equality constants rather than a
-/// bitflags type, since they classify one two-valued field within that word, not an OR-able flag
-/// set of their own.
+/// model; these stay plain masked-equality constants rather than a bitflags type, since they
+/// classify one 2-bit field within that word, not an OR-able flag set of their own.
 pub const MS_CLS: u64 = 0x0000_0600;
 /// [`MS_CLS`]-masked flag value marking an address as the head of an instruction.
 pub const FF_CODE: u64 = 0x0000_0600;
 /// [`MS_CLS`]-masked flag value marking an address as the head of a data item.
 pub const FF_DATA: u64 = 0x0000_0400;
+/// [`MS_CLS`]-masked flag value marking an address as a non-head byte of a multi-byte item.
+pub const FF_TAIL: u64 = 0x0000_0200;
+/// [`MS_CLS`]-masked flag value marking an address as an undefined byte.
+pub const FF_UNK: u64 = 0x0000_0000;
 
 // comment write (plain libida `set_cmt`).
 unsafe extern "C" {
@@ -67,15 +71,19 @@ mod tests {
     #[case::ms_cls(MS_CLS, 0x0000_0600)]
     #[case::ff_code(FF_CODE, 0x0000_0600)]
     #[case::ff_data(FF_DATA, 0x0000_0400)]
+    #[case::ff_tail(FF_TAIL, 0x0000_0200)]
+    #[case::ff_unk(FF_UNK, 0x0000_0000)]
     fn classification_consts_pin_the_raw_sdk_values(#[case] value: u64, #[case] raw: u64) {
         assert!(value == raw);
     }
 
     #[test]
-    fn ff_code_and_ff_data_are_distinct_under_the_class_mask() {
-        assert!(FF_CODE & MS_CLS == FF_CODE);
-        assert!(FF_DATA & MS_CLS == FF_DATA);
-        assert!(FF_CODE != FF_DATA);
+    fn class_values_are_distinct_and_fit_under_the_class_mask() {
+        let classes = [FF_CODE, FF_DATA, FF_TAIL, FF_UNK];
+        for (i, a) in classes.iter().enumerate() {
+            assert!(a & MS_CLS == *a);
+            assert!(!classes[i + 1..].contains(a));
+        }
     }
 
     proptest! {

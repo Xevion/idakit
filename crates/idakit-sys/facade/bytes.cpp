@@ -88,6 +88,25 @@ rust::String get_strlit(uint64_t addr, int32_t strtype) {
   return to_rust_string(out);
 }
 
+// Alignment source: the MS_CLS value each of this SDK's class predicates accepts, in idakit
+// ByteClass's discriminant order. The SDK #undefs FF_CODE and friends outside its own source, so
+// the predicates are the only header oracle; probing the four 2-bit candidates recovers each value.
+// Header constants only, no kernel needed.
+rust::Vec<uint32_t> byte_class_ids() {
+  auto value_of = [](bool (*is_class)(flags64_t)) {
+    for (flags64_t candidate : {0x000, 0x200, 0x400, 0x600})
+      if (is_class(candidate))
+        return static_cast<uint32_t>(candidate);
+    return UINT32_MAX;
+  };
+  rust::Vec<uint32_t> out;
+  for (auto is_class :
+       {+[](flags64_t f) { return is_unknown(f); }, +[](flags64_t f) { return is_tail(f); },
+        +[](flags64_t f) { return is_data(f); }, +[](flags64_t f) { return is_code(f); }})
+    out.push_back(value_of(is_class));
+  return out;
+}
+
 // The flags word for addr: byte/data/code kind, name presence, and the other per-byte bits.
 uint64_t get_flags(uint64_t addr) {
   return static_cast<uint64_t>(::get_flags(static_cast<ea_t>(addr)));

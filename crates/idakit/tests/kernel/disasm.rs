@@ -576,6 +576,23 @@ fn check_is_code_and_is_data(idb: &Database) {
         !idb.is_code(data_addr),
         "known string address should not classify as code"
     );
+
+    assert!(idb.byte_class(code_addr) == ByteClass::Code);
+    assert!(idb.byte_class(data_addr) == ByteClass::Data);
+
+    // A tail byte is part of an item but not its head, and is neither code nor undefined; the
+    // two-bool predicates cannot tell it from an undefined byte.
+    let tail_addr = idb
+        .functions()
+        .map(|f| f.address())
+        .find_map(|entry| {
+            let tail = entry + 1;
+            (idb.item_end(entry) > tail).then_some(tail)
+        })
+        .expect("a multi-byte instruction at a function entry");
+    assert!(idb.byte_class(tail_addr) == ByteClass::Tail);
+    assert!(idb.is_tail(tail_addr) && !idb.is_unknown(tail_addr));
+    assert!(!idb.is_code(tail_addr) && !idb.is_data(tail_addr));
 }
 
 /// `next_head`/`prev_head` land on the real neighboring head, not `None`: from a function entry

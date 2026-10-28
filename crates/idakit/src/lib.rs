@@ -204,6 +204,7 @@ pub use crate::types::Type;
 pub use crate::address::Address;
 pub use crate::arena::{Arena, Idx};
 pub use crate::bitness::Bitness;
+pub use crate::bytes::ByteClass;
 pub use crate::export::{Export, Exports};
 pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExit, FlowChart};
 pub use crate::import::{Import, Imports};
@@ -229,6 +230,7 @@ pub mod prelude {
     pub use crate::Database;
     pub use crate::address::Address;
     pub use crate::bitness::Bitness;
+    pub use crate::bytes::ByteClass;
     pub use crate::decompiler::ctree::{AssignmentOp, BinaryOp, Ctree, UnaryOp};
     pub use crate::decompiler::{CtreeCounts, DecompiledFunction};
     pub use crate::error::{CallError, Error, InitError, KernelErrno, PatternRejection, Result};

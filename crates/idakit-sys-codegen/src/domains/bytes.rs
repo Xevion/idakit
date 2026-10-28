@@ -49,6 +49,9 @@ pub const BYTES: Domain = Domain {
             max_ea() -> U64 = scalar("inf_get_max_ea()");
         "Flag word of the item at `ea` (`get_flags`)."
             get_flags(ea: U64) -> U64;
+        "This SDK's `FF_UNK`/`FF_TAIL`/`FF_DATA`/`FF_CODE` values in idakit `ByteClass`'s \
+         discriminant order, an alignment source for a mirror test."
+            byte_class_ids() -> VecU32;
         "Start address of the item covering `ea` (`ea` itself when it is an item head)."
             get_item_head(ea: U64) -> U64;
         "Address just past the item covering `ea` (`get_item_end`)."
