@@ -5,7 +5,7 @@
 //! behind a process-wide claim (`KernelClaim`) so only one [`Database`] is ever live.
 
 use std::ffi::c_int;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
@@ -222,16 +222,20 @@ impl IdaConfig {
             }
         }
 
-        let result = app(Ida { tx });
-        // `app` has returned, so its handle and any clones it joined are dropped and
-        // the pump has exited; join to reap the kernel thread. The pump guards every
-        // job, so a panic here is an unexpected kernel-setup failure; surface it
-        // rather than let it vanish, but don't poison the app's own result.
+        // Caught so a panicking `app` still reaches the join: unwinding past it would detach
+        // the kernel thread mid-close and race it against process-exit teardown.
+        let outcome = catch_unwind(AssertUnwindSafe(|| app(Ida { tx })));
+        // `app` is done, so its handle is dropped and the pump has exited; join to reap the
+        // kernel thread. The pump guards every job, so a panic here is an unexpected
+        // kernel-setup failure; surface it, but don't poison the app's own result.
         if let Err(payload) = kernel.join() {
             let reason = panic_payload_str(&*payload).unwrap_or("<non-string panic payload>");
             tracing::error!("idakit: kernel thread panicked after init: {reason}");
         }
-        Ok(result)
+        match outcome {
+            Ok(result) => Ok(result),
+            Err(payload) => resume_unwind(payload),
+        }
     }
 
     /// Brings the kernel up on the current thread and returns the [`Database`]; see [`Ida::here`].
