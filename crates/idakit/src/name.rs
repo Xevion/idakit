@@ -4,7 +4,7 @@
 //! [`Database::address_of`], [`Database::demangle`], [`Database::is_public_name`],
 //! [`Database::is_weak_name`], and the [`Names`] iterator.
 
-pub use idakit_sys::NameFlags;
+pub use idakit_sys::{NameFlags, RenameFlags};
 use serde::{Deserialize, Serialize};
 
 use crate::Database;

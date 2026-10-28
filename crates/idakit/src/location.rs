@@ -11,7 +11,7 @@
 //! on it too and a read-modify-write needs no re-borrow.
 
 use idakit_sys as sys;
-use idakit_sys::TypeApplyCode;
+use idakit_sys::{RenameFlags, TypeApplyCode};
 
 use crate::Database;
 use crate::address::Address;
@@ -360,12 +360,25 @@ impl LocationMut<'_> {
 
     /// Rename the item at this address.
     ///
+    /// Equivalent to [`rename_with`](Self::rename_with) under an empty [`RenameFlags`].
+    ///
     /// # Errors
     /// [`Error::WriteRejected`] if the kernel rejects the rename (e.g. a name already in use), or
     /// [`Error::InteriorNul`] if `name` contains a NUL byte.
-    #[doc(alias("set_name"))]
     pub fn rename(&mut self, name: impl AsRef<str>) -> Result<()> {
-        let ok = with_cstr(name.as_ref(), "name", |p| self.db.set_name(self.address, p))?;
+        self.rename_with(name, RenameFlags::empty())
+    }
+
+    /// Rename the item at this address under an explicit [`RenameFlags`] request.
+    ///
+    /// # Errors
+    /// [`Error::WriteRejected`] if the kernel rejects the rename, or [`Error::InteriorNul`] if
+    /// `name` contains a NUL byte.
+    #[doc(alias("set_name"))]
+    pub fn rename_with(&mut self, name: impl AsRef<str>, flags: RenameFlags) -> Result<()> {
+        let ok = with_cstr(name.as_ref(), "name", |p| {
+            self.db.set_name(self.address, p, flags)
+        })?;
         let out = if ok {
             Ok(())
         } else {

@@ -130,9 +130,14 @@ impl Database {
         unsafe { sys::get_bytes_into(address.get(), buf, size) }
     }
 
-    pub(crate) fn set_name(&mut self, address: Address, name: *const c_char) -> bool {
+    pub(crate) fn set_name(
+        &mut self,
+        address: Address,
+        name: *const c_char,
+        flags: sys::RenameFlags,
+    ) -> bool {
         crate::claim::ensure_kernel_thread();
-        unsafe { sys::set_name(address.get(), name, 0) }
+        unsafe { sys::set_name(address.get(), name, flags.bits()) }
     }
 
     pub(crate) fn set_cmt(

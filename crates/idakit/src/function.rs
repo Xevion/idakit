@@ -12,7 +12,7 @@
 
 use std::ffi::c_int;
 
-use idakit_sys as sys;
+use idakit_sys::{self as sys, RenameFlags};
 use serde::{Deserialize, Serialize};
 
 use crate::Database;
@@ -514,9 +514,18 @@ impl FunctionEdit<'_> {
     /// # Errors
     /// [`Error::WriteRejected`] if the kernel rejects the rename, or [`Error::InteriorNul`] if
     /// `name` contains a NUL byte.
-    #[doc(alias("set_name"))]
     pub fn rename(&mut self, name: impl AsRef<str>) -> Result<()> {
         self.inner.rename(name)
+    }
+
+    /// Rename the function under an explicit [`RenameFlags`] request.
+    ///
+    /// # Errors
+    /// [`Error::WriteRejected`] if the kernel rejects the rename, or [`Error::InteriorNul`] if
+    /// `name` contains a NUL byte.
+    #[doc(alias("set_name"))]
+    pub fn rename_with(&mut self, name: impl AsRef<str>, flags: RenameFlags) -> Result<()> {
+        self.inner.rename_with(name, flags)
     }
 
     /// Apply a function prototype (or any type) to this function's entry.

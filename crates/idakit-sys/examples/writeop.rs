@@ -8,9 +8,6 @@ use std::ptr;
 
 use idakit_sys::*;
 
-const SN_NOWARN: i32 = 0x100;
-const SN_FORCE: i32 = 0x800;
-
 fn main() {
     let db = env::args()
         .nth(1)
@@ -36,7 +33,11 @@ fn main() {
     // SAFETY: set_name/set_cmt/close_database are the raw C ABI on the open database.
     unsafe {
         let nm = CString::new(new_name).unwrap();
-        let ok = set_name(address, nm.as_ptr(), SN_NOWARN | SN_FORCE);
+        let ok = set_name(
+            address,
+            nm.as_ptr(),
+            (RenameFlags::NO_WARN | RenameFlags::FORCE).bits(),
+        );
         let cmt = CString::new("renamed by idakit write-op test").unwrap();
         let ok_cmt = set_cmt(address, cmt.as_ptr(), false);
         println!("set_name -> {ok}   set_cmt -> {ok_cmt}");

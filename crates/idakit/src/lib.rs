@@ -209,7 +209,7 @@ pub use crate::flowchart::{BasicBlock, BasicBlockId, BasicBlockKind, ExternalExi
 pub use crate::import::{Import, Imports};
 pub use crate::location::{Location, LocationMut};
 pub use crate::meta::DatabaseInfo;
-pub use crate::name::{Name, NameFlags, Names};
+pub use crate::name::{Name, NameFlags, Names, RenameFlags};
 pub use crate::netnode::{
     Altvals, HashEntries, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut, Netnodes, NodeId,
     Persist, Supvals, Tag, TaggedNetnode, TaggedNetnodeMut,
@@ -246,7 +246,7 @@ pub mod prelude {
     pub use crate::kernel::{Ida, IdaConfig, IdaConfigBuilder};
     pub use crate::location::{Location, LocationMut};
     pub use crate::meta::DatabaseInfo;
-    pub use crate::name::{Name, NameFlags, Names};
+    pub use crate::name::{Name, NameFlags, Names, RenameFlags};
     pub use crate::netnode::{
         Altvals, HashEntries, Netnode, NetnodeBytes, NetnodeBytesError, NetnodeMut, Netnodes,
         NodeId, Persist, Supvals, Tag, TaggedNetnode, TaggedNetnodeMut,

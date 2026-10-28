@@ -61,3 +61,26 @@ fn patch_rejects_unmapped() {
         assert!(let Err(Error::WriteRejected { op: "patch", .. }) = r);
     });
 }
+
+/// A plain rename onto a taken name is rejected, while `FORCE` takes a suffixed variant instead.
+#[kernel_test]
+fn rename_force_resolves_a_taken_name() {
+    crate::common::with_canonical_db(|idb| {
+        let mut entries = idb.functions().map(|f| f.address());
+        let first = entries.next().expect("a function");
+        let second = entries.next().expect("a second function");
+        drop(entries);
+
+        let taken = "idakit_rename_force_probe";
+        idb.at_mut(first).rename(taken).expect("first rename");
+
+        let plain = idb.at_mut(second).rename_with(taken, RenameFlags::NO_WARN);
+        assert!(let Err(Error::WriteRejected { op: "rename", .. }) = plain);
+
+        idb.at_mut(second)
+            .rename_with(taken, RenameFlags::NO_WARN | RenameFlags::FORCE)
+            .expect("forced rename");
+        let name = idb.function(second).name();
+        assert!(name.as_str() != taken && name.as_str().starts_with(taken));
+    });
+}
