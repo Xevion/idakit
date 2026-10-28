@@ -31,7 +31,7 @@ build:
 test:
     cargo nextest run --workspace --all-features
     cargo test -p idakit --all-features --test kernel
-    cargo test --workspace --all-features --doc
+    cargo test --workspace --all-features --doc -- --test-threads=1
 
 fmt: fmt-rust fmt-cpp
 
@@ -203,7 +203,7 @@ readme-check:
 ci-test:
     cargo nextest run --workspace --all-features --no-fail-fast
     cargo test -p idakit --all-features --test kernel
-    cargo test --workspace --all-features --doc
+    cargo test --workspace --all-features --doc -- --test-threads=1
 
 # Advisory, not part of `check`. Records a CPU flamegraph of the nextest half of the suite under
 # samply, pinned to one core (taskset) so it never fights a foreground workload: slower, but
