@@ -37,6 +37,40 @@ pub fn with_canonical_db(body: impl FnOnce(&mut Database) + Send + 'static) {
     .expect("with_canonical_db needs the kernel harness; is this a #[kernel_test]?");
 }
 
+/// One line of host facts for a test whose input is built by the host toolchain.
+///
+/// A fixture compiled on the runner decompiles into whatever that compiler emitted, so a failure
+/// is unreadable without knowing the OS, architecture and compiler it came from.
+pub fn host_banner(compiler: &str) -> String {
+    let version = std::process::Command::new(compiler)
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.lines().next().map(str::to_owned))
+        .unwrap_or_else(|| format!("{compiler} unavailable"));
+    format!(
+        "host: {}-{} | {version}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+}
+
+/// Saves `bytes` as `name` under `$IDAKIT_TEST_ARTIFACTS`, for CI to upload when a test fails.
+///
+/// A no-op when the variable is unset, which is every local run. A write error is reported and
+/// swallowed: losing a diagnostic must never replace the failure it describes.
+pub fn save_artifact(name: &str, bytes: impl AsRef<[u8]>) {
+    let Some(dir) = std::env::var_os("IDAKIT_TEST_ARTIFACTS").map(PathBuf::from) else {
+        return;
+    };
+    let written =
+        std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join(name), bytes));
+    if let Err(e) = written {
+        eprintln!("could not save test artifact {name}: {e}");
+    }
+}
+
 /// A private, disposable copy of the test database, removed on drop.
 ///
 /// IDA takes an exclusive lock on a `.i64` while it is open, so every kernel test opens its
