@@ -205,6 +205,35 @@ ci-test:
     cargo test -p idakit --all-features --test kernel
     cargo test --workspace --all-features --doc -- --test-threads=1
 
+# Runs the CI test commands inside a stock distro image, so a failure that only shows on a CI
+# runner's userland (compiler, libc) can be reproduced and iterated on locally. The host's IDA
+# runtime, toolchain, and corpus are mounted in; the build gets its own target dir and cargo home,
+# so neither the real tree's artifacts nor this machine's cargo config (linker, wrappers) leak in, and the container runs as you so nothing ends up root-owned.
+# The harness stages database copies in /dev/shm, which a container caps at 64 MB by default.
+# Pass another image to bisect (`just repro-ci ubuntu:24.04`).
+repro-ci image="ubuntu:26.04":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag="idakit-repro-$(echo '{{ image }}' | tr ':/' '--')"
+    docker build -q -t "$tag" - <<EOF
+    FROM {{ image }}
+    RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        build-essential pkg-config git ca-certificates curl clang libclang-dev
+    EOF
+    ida="${IDADIR:-$HOME/ida-pro-9.3}"
+    corpus="$(dirname "${IDAKIT_CORPUS_MANIFEST:?set IDAKIT_CORPUS_MANIFEST in .env}")"
+    target="$HOME/.cache/idakit-repro/$tag"
+    mkdir -p "$target"
+    docker run --rm --user "$(id -u):$(id -g)" --shm-size=4g \
+        -e HOME -e IDADIR="$ida" -e IDAKIT_CORPUS_MANIFEST -e CARGO_TARGET_DIR=/target -e CARGO_HOME=/target/cargo-home -e IDA_SDK_DIR="$PWD/vendor/ida-sdk" \
+        -e PATH="$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin" \
+        -v "$PWD:$PWD" -w "$PWD" -v "$target:/target" \
+        -v "$HOME/.cargo/bin:$HOME/.cargo/bin:ro" -v "$HOME/.rustup:$HOME/.rustup" -v "$HOME/.idapro:$HOME/.idapro" \
+        -v "$ida:$ida" -v "$corpus:$corpus" \
+        "$tag" bash -c 'cargo nextest run --workspace --all-features --no-fail-fast \
+            && cargo test -p idakit --all-features --test kernel \
+            && cargo test --workspace --all-features --doc -- --test-threads=1'
+
 # Advisory, not part of `check`. Records a CPU flamegraph of the nextest half of the suite under
 # samply, pinned to one core (taskset) so it never fights a foreground workload: slower, but
 # single-core removes contention noise and the ratios are what matter. nextest runs every test in

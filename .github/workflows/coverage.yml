@@ -22,7 +22,7 @@ jobs:
     name: coverage
     # secrets can't gate a job-level `if`; use a var instead (forks without it skip).
     if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       CARGO_TERM_COLOR: always
@@ -70,6 +70,8 @@ jobs:
       # `show-env` lets both runners write into one profile set, so its ~900 cases count. The junit
       # report below still comes from the nextest half.
       - name: Run tests with coverage and generate reports
+        env:
+          IDAKIT_TEST_ARTIFACTS: ${{ github.workspace }}/test-artifacts
         run: |
           # shellcheck disable=SC1090  # the env is generated, so there is no file to follow
           source <(cargo llvm-cov show-env --export-prefix)
@@ -79,6 +81,14 @@ jobs:
           mkdir -p coverage
           cargo llvm-cov report --html --output-dir coverage/html
           cargo llvm-cov report --lcov --output-path coverage/lcov.info
+      - name: Upload test artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-artifacts
+          path: test-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

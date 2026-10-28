@@ -49,25 +49,29 @@ jobs:
         run: just readme-check
 
   check:
-    name: check (${{ matrix.platform }} @ ${{ matrix.version }})
+    name: check (${{ matrix.platform }} @ ${{ matrix.version }}${{ matrix.canary && format(' on {0}', matrix.runner) || '' }})
+    continue-on-error: ${{ matrix.canary == true }}
     # secrets can't gate a job-level `if`; use a var instead (forks without it skip).
     if: ${{ vars.S3_RUNTIME_CONFIGURED == 'true' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-latest, platform: linux-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: ubuntu-24.04, platform: linux-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: ubuntu-24.04-arm, platform: linux-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: macos-15-intel, platform: macos-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: macos-14, platform: macos-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: windows-2022, platform: windows-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
-          - { runner: ubuntu-latest, platform: linux-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
+          - { runner: ubuntu-24.04, platform: linux-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: ubuntu-24.04-arm, platform: linux-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: macos-15-intel, platform: macos-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: macos-14, platform: macos-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: windows-2022, platform: windows-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: windows-11-arm, platform: windows-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
-          # - { runner: ubuntu-latest, platform: linux-x64, version: 9.2.250908, sdk-tag: v9.2.0-release }
+          # The floating label runs ahead of the pinned image, so the next Ubuntu's breakage shows up
+          # here instead of surprising every job when the pin moves. Reports without gating the run.
+          - { runner: ubuntu-latest, platform: linux-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release, canary: true }
+          # - { runner: ubuntu-24.04, platform: linux-x64, version: 9.2.250908, sdk-tag: v9.2.0-release }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
@@ -145,8 +149,19 @@ jobs:
       # exported manifest drives both the corpus matrix and the dedicated tests below.
       - name: Fetch test corpus
         uses: $/.github/actions/fetch-corpus
+      # Tests that build their own input write what a failure needs to this directory.
       - name: Run tests
+        env:
+          IDAKIT_TEST_ARTIFACTS: ${{ github.workspace }}/test-artifacts
         run: just ci-test
+      - name: Upload test artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-artifacts-${{ matrix.platform }}-${{ matrix.version }}${{ matrix.canary && '-canary' || '' }}
+          path: test-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
 
   # ASan+UBSan and ThreadSanitizer against the real kernel across the FFI boundary, over every
   # test binary that marshals strings or buffers. Needs the nightly toolchain (`-Z build-std`
@@ -159,7 +174,7 @@ jobs:
       fail-fast: false
       matrix:
         mode: [address, thread]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       RUST_BACKTRACE: "1"
