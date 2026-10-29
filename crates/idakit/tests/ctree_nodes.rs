@@ -198,6 +198,8 @@ fn extraction_problems(observed: &[Observed]) -> Vec<String> {
     let mut exprs = BTreeSet::new();
     let mut stmts = BTreeSet::new();
     let mut shapes = BTreeSet::new();
+    // Oracle kinds the pseudocode actually showed; one that never fires checks nothing.
+    let mut fired = BTreeSet::new();
     let mut any_expr_address = false;
     let mut any_named_obj = false;
     let mut any_non_arg_local = false;
@@ -240,17 +242,23 @@ fn extraction_problems(observed: &[Observed]) -> Vec<String> {
         }
 
         for (kind, shown) in EXPR_ORACLES {
-            if shown(text) && !local_exprs.contains(kind) {
-                problems.push(format!(
-                    "{name}: pseudocode shows {kind}, extraction has none"
-                ));
+            if shown(text) {
+                fired.insert(*kind);
+                if !local_exprs.contains(kind) {
+                    problems.push(format!(
+                        "{name}: pseudocode shows {kind}, extraction has none"
+                    ));
+                }
             }
         }
         for (kind, shown) in STMT_ORACLES {
-            if shown(text) && !local_stmts.contains(kind) {
-                problems.push(format!(
-                    "{name}: pseudocode shows {kind}, extraction has none"
-                ));
+            if shown(text) {
+                fired.insert(*kind);
+                if !local_stmts.contains(kind) {
+                    problems.push(format!(
+                        "{name}: pseudocode shows {kind}, extraction has none"
+                    ));
+                }
             }
         }
 
@@ -312,6 +320,13 @@ fn extraction_problems(observed: &[Observed]) -> Vec<String> {
     eprintln!("observed expression kinds: {exprs:?}");
     eprintln!("observed statement kinds: {stmts:?}");
     eprintln!("observed type shapes: {shapes:?}");
+    let unfired: Vec<_> = EXPR_ORACLES
+        .iter()
+        .chain(STMT_ORACLES)
+        .map(|(kind, _)| *kind)
+        .filter(|kind| !fired.contains(kind))
+        .collect();
+    eprintln!("oracles fired: {fired:?}, silent: {unfired:?}");
     problems
 }
 
@@ -456,6 +471,10 @@ fn ctree_nodes() {
                 "Debug never rendered the DecompiledFunction struct"
             );
 
+            eprintln!(
+                "decompiled: {:?}, skipped: {skipped:?}",
+                observed.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+            );
             let mut problems = extraction_problems(&observed);
             // The fixture's entry point is where its float literal, calls and locals live; losing
             // it is the failure to explain, not a missing-kind symptom downstream of it.
