@@ -190,6 +190,17 @@ fn switch_distinct_values(tree: &Ctree) -> impl Iterator<Item = usize> + '_ {
     })
 }
 
+/// Oracle kinds no function's pseudocode showed; such an oracle checked nothing this run, so the
+/// fixture stopped exercising that kind on this toolchain.
+fn silent_oracles(observed: &[Observed]) -> Vec<&'static str> {
+    EXPR_ORACLES
+        .iter()
+        .chain(STMT_ORACLES)
+        .filter(|(_, shown)| !observed.iter().any(|o| shown(&o.text)))
+        .map(|(kind, _)| *kind)
+        .collect()
+}
+
 /// Every divergence between the extraction and what Hex-Rays printed for the same functions.
 ///
 /// Collects instead of stopping at the first miss, so one failing run reports the whole picture.
@@ -198,8 +209,6 @@ fn extraction_problems(observed: &[Observed]) -> Vec<String> {
     let mut exprs = BTreeSet::new();
     let mut stmts = BTreeSet::new();
     let mut shapes = BTreeSet::new();
-    // Oracle kinds the pseudocode actually showed; one that never fires checks nothing.
-    let mut fired = BTreeSet::new();
     let mut any_expr_address = false;
     let mut any_named_obj = false;
     let mut any_non_arg_local = false;
@@ -242,23 +251,17 @@ fn extraction_problems(observed: &[Observed]) -> Vec<String> {
         }
 
         for (kind, shown) in EXPR_ORACLES {
-            if shown(text) {
-                fired.insert(*kind);
-                if !local_exprs.contains(kind) {
-                    problems.push(format!(
-                        "{name}: pseudocode shows {kind}, extraction has none"
-                    ));
-                }
+            if shown(text) && !local_exprs.contains(kind) {
+                problems.push(format!(
+                    "{name}: pseudocode shows {kind}, extraction has none"
+                ));
             }
         }
         for (kind, shown) in STMT_ORACLES {
-            if shown(text) {
-                fired.insert(*kind);
-                if !local_stmts.contains(kind) {
-                    problems.push(format!(
-                        "{name}: pseudocode shows {kind}, extraction has none"
-                    ));
-                }
+            if shown(text) && !local_stmts.contains(kind) {
+                problems.push(format!(
+                    "{name}: pseudocode shows {kind}, extraction has none"
+                ));
             }
         }
 
@@ -320,13 +323,7 @@ fn extraction_problems(observed: &[Observed]) -> Vec<String> {
     eprintln!("observed expression kinds: {exprs:?}");
     eprintln!("observed statement kinds: {stmts:?}");
     eprintln!("observed type shapes: {shapes:?}");
-    let unfired: Vec<_> = EXPR_ORACLES
-        .iter()
-        .chain(STMT_ORACLES)
-        .map(|(kind, _)| *kind)
-        .filter(|kind| !fired.contains(kind))
-        .collect();
-    eprintln!("oracles fired: {fired:?}, silent: {unfired:?}");
+    eprintln!("silent oracles: {:?}", silent_oracles(observed));
     problems
 }
 
@@ -487,7 +484,16 @@ fn ctree_nodes() {
                     "the fixture's `main` was not decompiled and extracted".into(),
                 );
             }
-            if !problems.is_empty() {
+            let silent = silent_oracles(&observed);
+            if !silent.is_empty()
+                && let Some(main) = observed
+                    .iter()
+                    .find(|o| o.name.trim_start_matches('_') == "main")
+            {
+                // `main` holds the fixture's float literal; its text says what replaced it.
+                eprintln!("silent {silent:?}, main pseudocode:\n{}", main.text);
+            }
+            if !problems.is_empty() || !silent.is_empty() {
                 let pseudocode = observed
                     .iter()
                     .map(|o| format!("// {}\n{}", o.name, o.text))

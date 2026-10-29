@@ -149,15 +149,16 @@ jobs:
       # exported manifest drives both the corpus matrix and the dedicated tests below.
       - name: Fetch test corpus
         uses: $/.github/actions/fetch-corpus
-      # Tests that build their own input write what a failure needs to this directory, and print
-      # what they observed on a pass too (shown at the end, only for tests that print anything).
+      # Tests that build their own input write what a failure or a drifted fixture needs to this
+      # directory, and print what they observed on a pass too (shown at the end, only for tests
+      # that print anything).
       - name: Run tests
         env:
           IDAKIT_TEST_ARTIFACTS: ${{ github.workspace }}/test-artifacts
           NEXTEST_SUCCESS_OUTPUT: final
         run: just ci-test
       - name: Upload test artifacts
-        if: ${{ failure() }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-artifacts-${{ matrix.platform }}-${{ matrix.version }}${{ matrix.canary && '-canary' || '' }}
