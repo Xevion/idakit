@@ -375,6 +375,9 @@ fn ctree_nodes() {
     // the fixture to x86_64 there to match every other platform's decompiler behavior.
     if cfg!(target_os = "macos") {
         cmd.args(["-arch", "x86_64"]);
+    } else if cfg!(target_arch = "x86_64") {
+        // Some hosts default to x86-64-v3, whose VEX encodings the decompiler leaves as inline asm.
+        cmd.arg("-march=x86-64");
     }
     let status = cmd
         .arg("-o")
