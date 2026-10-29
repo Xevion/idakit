@@ -24,27 +24,29 @@ fn group_digits(digits: &str) -> String {
     out
 }
 
-impl ConstTy {
+impl Scalar {
     pub(crate) fn rust(self) -> TokenStream {
         match self {
+            Self::Bool => quote!(bool),
+            Self::I32 => quote!(i32),
+            Self::I64 => quote!(i64),
             Self::U8 => quote!(u8),
             Self::U16 => quote!(u16),
             Self::U32 => quote!(u32),
             Self::U64 => quote!(u64),
             Self::Usize => quote!(usize),
-            Self::I32 => quote!(i32),
-            Self::I64 => quote!(i64),
         }
     }
     pub(crate) fn cxx(self) -> &'static str {
         match self {
+            Self::Bool => "bool",
+            Self::I32 => "int32_t",
+            Self::I64 => "int64_t",
             Self::U8 => "uint8_t",
             Self::U16 => "uint16_t",
             Self::U32 => "uint32_t",
             Self::U64 => "uint64_t",
             Self::Usize => "size_t",
-            Self::I32 => "int32_t",
-            Self::I64 => "int64_t",
         }
     }
 }
@@ -55,6 +57,11 @@ impl ConstDef {
     /// ahead of the always-non-negative magnitude). The `: ty` annotation on the emitted item
     /// pins the width, so an unsuffixed literal suffices.
     fn rust_value_tokens(&self) -> TokenStream {
+        assert!(
+            !matches!(self.ty, Scalar::Bool),
+            "const `{}` is declared bool, but consts carry integers",
+            self.name
+        );
         let grouped = group_digits(&self.value.unsigned_abs().to_string());
         let magnitude: TokenStream = grouped.parse().expect("grouped digit literal parses");
         if self.value < 0 {
@@ -94,7 +101,7 @@ impl ConstDef {
     /// of `i128`'s `Display`, valid C++ as a unary minus applied to the magnitude literal.
     fn cxx_literal(&self) -> String {
         match self.ty {
-            ConstTy::U64 => format!("{}ULL", self.value),
+            Scalar::U64 => format!("{}ULL", self.value),
             _ => self.value.to_string(),
         }
     }
@@ -115,14 +122,7 @@ impl ConstDef {
 impl FieldTy {
     pub(crate) fn rust(&self) -> TokenStream {
         match self {
-            Self::U8 => quote!(u8),
-            Self::U16 => quote!(u16),
-            Self::U32 => quote!(u32),
-            Self::U64 => quote!(u64),
-            Self::I32 => quote!(i32),
-            Self::I64 => quote!(i64),
-            Self::Usize => quote!(usize),
-            Self::Bool => quote!(bool),
+            Self::Scalar(s) => s.rust(),
             Self::Str => quote!(String),
             Self::Extern(name) | Self::Struct(name) => {
                 let id = format_ident!("{name}");
@@ -139,11 +139,11 @@ impl FieldTy {
 impl ArgTy {
     pub(crate) fn rust(&self) -> TokenStream {
         match self {
-            Self::I32 => quote!(i32),
-            Self::U32 => quote!(u32),
-            Self::U64 => quote!(u64),
-            Self::Usize => quote!(usize),
-            Self::Bool => quote!(bool),
+            Self::Scalar(s) => s.rust(),
+            Self::Slice(s) => {
+                let t = s.rust();
+                quote!(&[#t])
+            }
             Self::Str => quote!(&str),
             Self::String => quote!(String),
             Self::Bytes => quote!(&[u8]),
@@ -156,9 +156,6 @@ impl ArgTy {
                 quote!(&#id)
             }
             Self::F64 => quote!(f64),
-            Self::I64 => quote!(i64),
-            Self::SliceU32 => quote!(&[u32]),
-            Self::SliceU64 => quote!(&[u64]),
             Self::SliceStruct(name) => {
                 let id = format_ident!("{name}");
                 quote!(&[#id])
@@ -171,20 +168,14 @@ impl ArgTy {
     }
     pub(crate) fn cxx(&self, arg_name: &str) -> String {
         let ty = match self {
-            Self::I32 => "int32_t".into(),
-            Self::U32 => "uint32_t".into(),
-            Self::U64 => "uint64_t".into(),
-            Self::Usize => "size_t".into(),
-            Self::Bool => "bool".into(),
+            Self::Scalar(s) => s.cxx().into(),
+            Self::Slice(s) => format!("rust::Slice<const {}>", s.cxx()),
             Self::Str => "rust::Str".into(),
             Self::String => "rust::String".into(),
             Self::Bytes => "rust::Slice<const uint8_t>".into(),
             Self::Extern(name) => format!("::{}", ExternTy::cxx_name_of(name)),
             Self::ExternRef(name) => format!("const ::{}&", ExternTy::cxx_name_of(name)),
             Self::F64 => "double".into(),
-            Self::I64 => "int64_t".into(),
-            Self::SliceU32 => "rust::Slice<const uint32_t>".into(),
-            Self::SliceU64 => "rust::Slice<const uint64_t>".into(),
             Self::SliceStruct(name) => format!("rust::Slice<const {name}>"),
             Self::VisitorMut(name) => format!("{name} &"),
         };
@@ -212,13 +203,7 @@ impl RetShape {
         }
         match self {
             Self::Unit => quote!(()),
-            Self::Bool => quote!(bool),
-            Self::I32 => quote!(i32),
-            Self::U8 => quote!(u8),
-            Self::U16 => quote!(u16),
-            Self::U32 => quote!(u32),
-            Self::U64 => quote!(u64),
-            Self::Usize => quote!(usize),
+            Self::Scalar(s) => s.rust(),
             Self::String => quote!(String),
             Self::Extern(n) | Self::Shared(n) => named(n),
             Self::UniquePtr(n) => {
@@ -229,9 +214,10 @@ impl RetShape {
                 let t = named(n);
                 quote!(Vec<#t>)
             }
-            Self::VecU32 => quote!(Vec<u32>),
-            Self::VecI32 => quote!(Vec<i32>),
-            Self::VecU8 => quote!(Vec<u8>),
+            Self::VecScalar(s) => {
+                let t = s.rust();
+                quote!(Vec<#t>)
+            }
         }
     }
 
@@ -240,21 +226,13 @@ impl RetShape {
     fn cxx(&self) -> String {
         match self {
             Self::Unit => "void".into(),
-            Self::Bool => "bool".into(),
-            Self::I32 => "int32_t".into(),
-            Self::U8 => "uint8_t".into(),
-            Self::U16 => "uint16_t".into(),
-            Self::U32 => "uint32_t".into(),
-            Self::U64 => "uint64_t".into(),
-            Self::Usize => "size_t".into(),
+            Self::Scalar(s) => s.cxx().into(),
             Self::String => "rust::String".into(),
             Self::Extern(n) => format!("::{}", ExternTy::cxx_name_of(n)),
             Self::Shared(n) => (*n).into(),
             Self::UniquePtr(n) => format!("std::unique_ptr<::{}>", ExternTy::cxx_name_of(n)),
             Self::Vec(n) => format!("rust::Vec<{}>", ExternTy::vec_elem_cxx(n)),
-            Self::VecU32 => "rust::Vec<uint32_t>".into(),
-            Self::VecI32 => "rust::Vec<int32_t>".into(),
-            Self::VecU8 => "rust::Vec<uint8_t>".into(),
+            Self::VecScalar(s) => format!("rust::Vec<{}>", s.cxx()),
         }
     }
 }

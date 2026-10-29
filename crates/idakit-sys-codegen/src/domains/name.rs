@@ -13,19 +13,19 @@ pub const NAME: Domain = Domain {
     custom_tus: &["facade/name.cpp"],
     fns: fns! {
         "Name at address `ea`; `Err` when the address has none."
-            get_ea_name(ea: U64) -> ResultString;
+            get_ea_name(ea: U64) -> Result(String);
         "Name at address `ea` under `gtn_flags` (`GN_*` bits); `Err` when the address has none."
-            get_ea_name_flags(ea: U64, flags: I32) -> ResultString;
+            get_ea_name_flags(ea: U64, flags: I32) -> Result(String);
         "Address the symbol `name` resolves to, or `BADADDR` when it is unknown."
             get_name_ea(name: Str) -> U64;
         "Fully demangled form of `name`; `Err` when `name` is not mangled."
-            demangle_name(name: Str) -> ResultString;
+            demangle_name(name: Str) -> Result(String);
         "Number of entries in the sorted name list (`get_nlist_size`)."
             nlist_size() -> Usize;
         "Address of name-list entry `idx`."
             nlist_ea(idx: Usize) -> U64;
         "Name of name-list entry `idx`; `Err` when `idx` is out of range."
-            nlist_name(idx: Usize) -> ResultString;
+            nlist_name(idx: Usize) -> Result(String);
         "Whether a flags word marks a user-given (explicit) name."
             has_user_name(flags: U64) -> Bool;
         "Whether a flags word marks an IDA-generated (auto) name."

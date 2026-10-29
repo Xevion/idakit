@@ -10,7 +10,7 @@
 
 use std::sync::OnceLock;
 
-use super::super::model::{Arg, ArgTy, BodyKind, Domain, FnSpec, RetKind, RetShape};
+use super::super::model::{Arg, ArgTy, BodyKind, Domain, FnSpec, RetKind, RetShape, Scalar};
 
 /// A rendered netnode body: reconstruct `n` from the `node` id, then run `stmts` (each line already
 /// indented and newline-terminated). Every generated body opens the same way.
@@ -242,7 +242,7 @@ fn sup(v: &mut Vec<FnSpec>) {
                 Arg::new(idx, k.idx_ty),
                 Arg::new("tag", ArgTy::U32),
             ],
-            ret!(ResultVecU8),
+            ret!(Result(Vec(U8))),
             format!("Sup value {at} under `tag` as raw bytes; `Err` when unset."),
             nn_body(&nn_clamped_bytes(
                 &format!("n.supval{suf}(static_cast<{cast}>({idx}), buf, sizeof(buf), static_cast<uchar>(tag))"),
@@ -252,7 +252,7 @@ fn sup(v: &mut Vec<FnSpec>) {
         v.push(FnSpec::rendered(
             format!("netnode_supstr{suf}"),
             vec![Arg::new("node", ArgTy::U64), Arg::new(idx, k.idx_ty), Arg::new("tag", ArgTy::U32)],
-            ret!(ResultString),
+            ret!(Result(String)),
             format!("Sup value {at} under `tag` as a string; `Err` when unset."),
             nn_body(&format!("  qstring out;\n  if (n.supstr{suf}(&out, static_cast<{cast}>({idx}), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"sup value is unset\");\n  return to_rust_string(out);\n")),
         ));
@@ -339,7 +339,7 @@ fn hash(v: &mut Vec<FnSpec>) {
     v.push(FnSpec::rendered(
         "netnode_hashval".into(),
         key(),
-        ret!(ResultVecU8),
+        ret!(Result(Vec(U8))),
         "Hash value for `key` under `tag` as raw bytes; `Err` when the key is unset.".into(),
         nn_key_body(&nn_clamped_bytes(
             "n.hashval(k.c_str(), buf, sizeof(buf), static_cast<uchar>(tag))",
@@ -349,7 +349,7 @@ fn hash(v: &mut Vec<FnSpec>) {
     v.push(FnSpec::rendered(
         "netnode_hashstr".into(),
         key(),
-        ret!(ResultString),
+        ret!(Result(String)),
         "Hash value for `key` under `tag` as a string; `Err` when the key is unset.".into(),
         nn_key_body("  qstring out;\n  if (n.hashstr(&out, k.c_str(), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"hash key is unset\");\n  return to_rust_string(out);\n"),
     ));
@@ -398,28 +398,28 @@ fn hash(v: &mut Vec<FnSpec>) {
     v.push(FnSpec::rendered(
         "netnode_hashfirst".into(),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
-        ret!(ResultString),
+        ret!(Result(String)),
         "Lexically first hash key under `tag`; `Err` when the hash is empty.".into(),
         nn_body("  qstring out;\n  if (n.hashfirst(&out, static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashnext".into(),
         key(),
-        ret!(ResultString),
+        ret!(Result(String)),
         "Hash key after `key` under `tag`; `Err` when `key` is the last.".into(),
         nn_key_body("  qstring out;\n  if (n.hashnext(&out, k.c_str(), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"no next hash key\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashlast".into(),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
-        ret!(ResultString),
+        ret!(Result(String)),
         "Lexically last hash key under `tag`; `Err` when the hash is empty.".into(),
         nn_body("  qstring out;\n  if (n.hashlast(&out, static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"hash is empty\");\n  return to_rust_string(out);\n"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashprev".into(),
         key(),
-        ret!(ResultString),
+        ret!(Result(String)),
         "Hash key before `key` under `tag`; `Err` when `key` is the first.".into(),
         nn_key_body("  qstring out;\n  if (n.hashprev(&out, k.c_str(), static_cast<uchar>(tag)) < 0)\n    throw std::runtime_error(\"no previous hash key\");\n  return to_rust_string(out);\n"),
     ));
@@ -499,7 +499,7 @@ fn blob(v: &mut Vec<FnSpec>) {
         v.push(FnSpec::rendered(
             format!("netnode_getblob{suf}"),
             vec![Arg::new("node", ArgTy::U64), Arg::new(name, ArgTy::U64), Arg::new("tag", ArgTy::U32)],
-            ret!(ResultVecU8),
+            ret!(Result(Vec(U8))),
             format!("The blob based at {desc} under `tag` as owned bytes; `Err` when absent."),
             nn_body(&format!("  bytevec_t blob;\n  ssize_t r = n.getblob{suf}(&blob, static_cast<{cast}>({name}), static_cast<uchar>(tag));\n  if (r < 0)\n    throw std::runtime_error(\"blob does not exist\");\n  return to_rust_bytes(blob.begin(), blob.size());\n")),
         ));
@@ -557,7 +557,7 @@ const CUSTOM_FNS: &[FnSpec] = fns! {
     "Delete `node` and every array attached to it."
         netnode_kill(node: U64);
     "Name of `node`; `Err` when it is unnamed."
-        netnode_get_name(node: U64) -> ResultString;
+        netnode_get_name(node: U64) -> Result(String);
     "Rename `node` to `name` (empty clears the name); `false` when `name` is taken."
         netnode_rename(node: U64, name: Str) -> Bool;
     "Lowest-id existing netnode, or `BADNODE` when the database has none."
@@ -573,9 +573,9 @@ const CUSTOM_FNS: &[FnSpec] = fns! {
         netnode_copyto(node: U64, count: U64, target: U64, move_: Bool) -> Usize;
     // Node value (vtag).
     "The node value of `node` as raw bytes; `Err` when no value is set."
-        netnode_value(node: U64) -> ResultVecU8;
+        netnode_value(node: U64) -> Result(Vec(U8));
     "The node value of `node` as a string; `Err` when no value is set."
-        netnode_value_str(node: U64) -> ResultString;
+        netnode_value_str(node: U64) -> Result(String);
     "Set the node value of `node` (max `MAXSPECSIZE` bytes)."
         netnode_set_value(node: U64, value: Bytes) -> Bool;
     "Delete the node value of `node`."

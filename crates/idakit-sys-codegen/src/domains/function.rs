@@ -43,15 +43,15 @@ pub const FUNCTION: Domain = Domain {
         "Number of chunks (entry plus tails) of the function at `ea`, or `0`."
             func_chunk_qty(ea: U64) -> I32;
         "Name of the function at `ea`; `Err` when it has none."
-            func_name(ea: U64) -> ResultString;
+            func_name(ea: U64) -> Result(String);
         "Comment of the function at `ea` (repeatable if `repeatable`); `Err` when there is none."
-            func_cmt(ea: U64, repeatable: Bool) -> ResultString;
+            func_cmt(ea: U64, repeatable: Bool) -> Result(String);
         "Whether the function at `callee` is known to return (`func_does_return`)."
             func_does_return(callee: U64) -> Bool = scalar("::func_does_return(static_cast<ea_t>(callee))");
         "Addressing width in bits of the function at `ea`: 16, 32, or 64, or 0 when not a function."
             func_bitness(ea: U64) -> I32;
         "Entry-chunk scalars of the function at `ea`, plus each string `fields` selects (a \
          `GFI_*` mask); `Err` when `ea` is not a function."
-            func_entry_info(ea: U64, fields: I32) -> ResultShared("FunctionEntryInfo");
+            func_entry_info(ea: U64, fields: I32) -> Result(Shared("FunctionEntryInfo"));
     },
 };

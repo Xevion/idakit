@@ -13,11 +13,11 @@ pub const TY: Domain = Domain {
     custom_tus: &["facade/local_types.cpp"],
     fns: fns! {
         "The prototype of the function at `ea` (one line, `PRTYPE_1LINE`); `Err` when it has no type."
-            func_type(ea: U64) -> ResultString;
+            func_type(ea: U64) -> Result(String);
         "Exclusive upper bound on local-type ordinals: valid ordinals run `1..limit`."
             type_ordinal_limit() -> U32 = scalar("get_ordinal_limit(get_idati())");
         "Name of the local type at `ordinal` (empty for an anonymous type); `Err` when the ordinal \
          holds no type."
-            type_name_at(ordinal: U32) -> ResultString;
+            type_name_at(ordinal: U32) -> Result(String);
     },
 };

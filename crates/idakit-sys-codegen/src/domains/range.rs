@@ -32,13 +32,13 @@ pub const RANGE: Domain = Domain {
     fns: fns! {
         "Entry chunk (index `0`) of the function containing `ea`, returned by value; `Err` when no \
          function is there."
-            range_entry_chunk(ea: U64) -> ResultExtern("RangeT");
+            range_entry_chunk(ea: U64) -> Result(Extern("RangeT"));
         "Size (`end - start`) of a `range_t` passed by value."
             range_size(r: Extern("RangeT")) -> U64;
         "Chunk `n` of the function at `ea` as a `ChunkInfo`; `Err` when `n` is out of range."
-            range_chunk_info(ea: U64, n: Usize) -> ResultShared("ChunkInfo");
+            range_chunk_info(ea: U64, n: Usize) -> Result(Shared("ChunkInfo"));
         "Every chunk (entry plus tails) of the function at `ea` as one owned `Vec`; `Err` when no \
          function is there."
-            range_all_chunks(ea: U64) -> ResultVec("RangeT");
+            range_all_chunks(ea: U64) -> Result(Vec("RangeT"));
     },
 };

@@ -36,9 +36,9 @@ pub const REFERENCE: Domain = Domain {
             has_jump_or_flow_xref(ea: U64) -> Bool;
         "This SDK's `cref_t` (`fl_*`) values in idakit `CodeXref`'s discriminant order, an \
          alignment source pinning the Rust mirror to this SDK build in a test."
-            cref_type_ids() -> VecU8;
+            cref_type_ids() -> Vec(U8);
         "This SDK's `dref_t` (`dr_*`) values in idakit `DataXref`'s discriminant order, an \
          alignment source for a mirror test."
-            dref_type_ids() -> VecU8;
+            dref_type_ids() -> Vec(U8);
     },
 };

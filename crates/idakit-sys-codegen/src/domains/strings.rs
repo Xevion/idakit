@@ -27,12 +27,12 @@ pub const STRINGS: Domain = Domain {
         "Number of entries in the current string list (`get_strlist_qty`)."
             strlist_qty() -> Usize;
         "The `n`-th string-list entry as a `StrlistItem`; `Err` when `n` is out of range."
-            strlist_item(n: Usize) -> ResultShared("StrlistItem");
+            strlist_item(n: Usize) -> Result(Shared("StrlistItem"));
         "Decode the string literal at `ea` (given octet length and `STRTYPE`) semantically \
          (`STRCONV_REPLCHAR`: undecodable units become U+FFFD); `Err` when it cannot be read."
-            strlit_contents(ea: U64, len: Usize, strtype: I32) -> ResultString;
+            strlit_contents(ea: U64, len: Usize, strtype: I32) -> Result(String);
         "Decode the string literal at `ea` to its C-escaped display form (`STRCONV_ESCAPE`, as the \
          decompiler renders it); `Err` when it cannot be read."
-            strlit_escaped(ea: U64, len: Usize, strtype: I32) -> ResultString;
+            strlit_escaped(ea: U64, len: Usize, strtype: I32) -> Result(String);
     },
 };

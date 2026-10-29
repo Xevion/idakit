@@ -180,7 +180,7 @@ mod tests {
             ByteClass::VARIANTS.len()
         );
         for (&id, &variant) in ids.iter().zip(ByteClass::VARIANTS) {
-            assert!(u64::from(id) == u64::from(variant), "{variant:?}");
+            assert!(id == u64::from(variant), "{variant:?}");
         }
     }
 

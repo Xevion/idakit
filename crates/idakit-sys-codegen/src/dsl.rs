@@ -21,88 +21,44 @@ macro_rules! fields {
     };
 }
 
-/// One [`RetKind`] from a bare [`RetShape`] variant name (`ret!(U32)`) or its `Result` twin
-/// (`ret!(ResultU32)`), the return-position primitive [`fns!`]/[`methods!`] compose. Keeps the
-/// flat `-> U32` / `-> ResultU32` authoring spelling while building the shape-plus-fallibility
-/// pair underneath.
-macro_rules! ret {
+/// One [`RetShape`] from its authoring spelling: a scalar name (`U32`), `Unit`, `String`, a named
+/// shape (`Shared("Name")`), or a `Vec` of a scalar (`Vec(U8)`) or of a named type (`Vec("Name")`).
+macro_rules! shape {
     (Unit) => {
-        RetKind::Value(RetShape::Unit)
-    };
-    (Bool) => {
-        RetKind::Value(RetShape::Bool)
-    };
-    (I32) => {
-        RetKind::Value(RetShape::I32)
-    };
-    (U32) => {
-        RetKind::Value(RetShape::U32)
-    };
-    (U64) => {
-        RetKind::Value(RetShape::U64)
-    };
-    (Usize) => {
-        RetKind::Value(RetShape::Usize)
+        RetShape::Unit
     };
     (String) => {
-        RetKind::Value(RetShape::String)
+        RetShape::String
     };
     (Extern($n:literal)) => {
-        RetKind::Value(RetShape::Extern($n))
+        RetShape::Extern($n)
     };
     (Shared($n:literal)) => {
-        RetKind::Value(RetShape::Shared($n))
+        RetShape::Shared($n)
     };
     (UniquePtr($n:literal)) => {
-        RetKind::Value(RetShape::UniquePtr($n))
+        RetShape::UniquePtr($n)
     };
     (Vec($n:literal)) => {
-        RetKind::Value(RetShape::Vec($n))
+        RetShape::Vec($n)
     };
-    (VecU32) => {
-        RetKind::Value(RetShape::VecU32)
+    (Vec($s:ident)) => {
+        RetShape::VecScalar(Scalar::$s)
     };
-    (VecI32) => {
-        RetKind::Value(RetShape::VecI32)
+    ($s:ident) => {
+        RetShape::Scalar(Scalar::$s)
     };
-    (VecU8) => {
-        RetKind::Value(RetShape::VecU8)
+}
+
+/// One [`RetKind`] from a [`shape!`] spelling, or `Result(<shape>)` for a call that may throw
+/// (`ret!(U32)`, `ret!(Result(Vec(U8)))`), the return-position primitive [`fns!`]/[`methods!`]
+/// compose.
+macro_rules! ret {
+    (Result($($shape:tt)+)) => {
+        RetKind::Fallible(shape!($($shape)+))
     };
-    (ResultUsize) => {
-        RetKind::Fallible(RetShape::Usize)
-    };
-    (ResultU8) => {
-        RetKind::Fallible(RetShape::U8)
-    };
-    (ResultU16) => {
-        RetKind::Fallible(RetShape::U16)
-    };
-    (ResultU32) => {
-        RetKind::Fallible(RetShape::U32)
-    };
-    (ResultU64) => {
-        RetKind::Fallible(RetShape::U64)
-    };
-    (ResultString) => {
-        RetKind::Fallible(RetShape::String)
-    };
-    (ResultExtern($n:literal)) => {
-        RetKind::Fallible(RetShape::Extern($n))
-    };
-    (ResultShared($n:literal)) => {
-        RetKind::Fallible(RetShape::Shared($n))
-    };
-    (ResultUniquePtr($n:literal)) => {
-        RetKind::Fallible(RetShape::UniquePtr($n))
-    };
-    (ResultVec($n:literal)) => {
-        RetKind::Fallible(RetShape::Vec($n))
-    };
-    (ResultVecU32) => {
-        RetKind::Fallible(RetShape::VecU32)
-    };
-    (ResultVecU8) => {
-        RetKind::Fallible(RetShape::VecU8)
+    ($($shape:tt)+) => {
+        RetKind::Value(shape!($($shape)+))
     };
 }
 
@@ -112,18 +68,18 @@ macro_rules! ret {
 macro_rules! methods {
     ( $(
         $doc:literal $name:ident ( $( $an:ident : $av:ident $(($aarg:literal))? ),* $(,)? )
-        $( -> $rk:ident $(($rarg:literal))? )? ;
+        $( -> $rk:ident $(( $($rarg:tt)+ ))? )? ;
     )* ) => {
         &[ $( VisitorMethod {
             name: stringify!($name),
             doc: $doc,
             args: args!( $( $an : $av $(($aarg))? ),* ),
-            ret: methods!(@ret $( $rk $(($rarg))? )?),
+            ret: methods!(@ret $( $rk $(( $($rarg)+ ))? )?),
         } ),* ]
     };
-    (@ret) => { RetKind::Value(RetShape::U32) };
+    (@ret) => { RetKind::Value(RetShape::Scalar(Scalar::U32)) };
     (@ret $rk:ident) => { ret!($rk) };
-    (@ret $rk:ident($rarg:literal)) => { ret!($rk($rarg)) };
+    (@ret $rk:ident( $($rarg:tt)+ )) => { ret!($rk( $($rarg)+ )) };
 }
 
 /// `&[FnSpec]` from `"doc" name(args) [-> Ret] [= body];` rows, the domain twin of [`methods!`].
@@ -147,7 +103,7 @@ macro_rules! fns {
     (@munch [ $($acc:expr,)* ]
         $doc:literal
         $name:ident ( self : $recv:ident $(, $an:ident : $av:ident $(($aarg:literal))? )* $(,)? )
-        $( -> $rk:ident $(($rarg:literal))? )?
+        $( -> $rk:ident $(( $($rarg:tt)+ ))? )?
         $( = $bk:ident ( $($bargs:literal),* ) )? ;
         $($rest:tt)*
     ) => {
@@ -155,7 +111,7 @@ macro_rules! fns {
             name: stringify!($name),
             receiver: Some(stringify!($recv)),
             args: args!( $( $an : $av $(($aarg))? ),* ),
-            ret: fns!(@ret $( $rk $(($rarg))? )?),
+            ret: fns!(@ret $( $rk $(( $($rarg)+ ))? )?),
             body: fns!(@body $( $bk ( $($bargs),* ) )?),
             doc: $doc,
             sdk_alias: None,
@@ -166,7 +122,7 @@ macro_rules! fns {
     (@munch [ $($acc:expr,)* ]
         $doc:literal
         $name:ident ( $( $an:ident : $av:ident $(($aarg:literal))? ),* $(,)? )
-        $( -> $rk:ident $(($rarg:literal))? )?
+        $( -> $rk:ident $(( $($rarg:tt)+ ))? )?
         $( = $bk:ident ( $($bargs:literal),* ) )? ;
         $($rest:tt)*
     ) => {
@@ -174,7 +130,7 @@ macro_rules! fns {
             name: stringify!($name),
             receiver: None,
             args: args!( $( $an : $av $(($aarg))? ),* ),
-            ret: fns!(@ret $( $rk $(($rarg))? )?),
+            ret: fns!(@ret $( $rk $(( $($rarg)+ ))? )?),
             body: fns!(@body $( $bk ( $($bargs),* ) )?),
             doc: $doc,
             sdk_alias: None,
@@ -183,7 +139,7 @@ macro_rules! fns {
 
     (@ret) => { RetKind::Value(RetShape::Unit) };
     (@ret $rk:ident) => { ret!($rk) };
-    (@ret $rk:ident($rarg:literal)) => { ret!($rk($rarg)) };
+    (@ret $rk:ident( $($rarg:tt)+ )) => { ret!($rk( $($rarg)+ )) };
     (@body) => { BodyKind::Custom };
     (@body scalar($call:literal)) => { BodyKind::ScalarCall { call: $call } };
     (@body seg_scalar($accessor:literal, $sentinel:literal)) => {

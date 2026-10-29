@@ -18,8 +18,8 @@ pub const EXPORT: Domain = Domain {
         "Ordinal of export `idx`."
             export_ordinal(idx: Usize) -> U64;
         "Name of export `idx`; `Err` when it has none."
-            export_name(idx: Usize) -> ResultString;
+            export_name(idx: Usize) -> Result(String);
         "Forwarder target of export `idx`; `Err` when it has none (most exports do not)."
-            export_forwarder(idx: Usize) -> ResultString;
+            export_forwarder(idx: Usize) -> Result(String);
     },
 };

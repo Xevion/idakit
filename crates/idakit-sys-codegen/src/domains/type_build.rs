@@ -51,145 +51,145 @@ pub const TYPE_BUILD: Domain = Domain {
     consts: &[
         ConstDef {
             name: "TYPE_OK",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 0,
             doc: "Result of a successful type apply.",
         },
         ConstDef {
             name: "TYPE_ERR_INPUT",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 1,
             doc: "A bad input to a type apply: an unparseable declaration, a named type that does \
                   not exist, or a malformed recipe.",
         },
         ConstDef {
             name: "TYPE_ERR_APPLY",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 2,
             doc: "`apply_tinfo` rejected the parsed/resolved/built type at the address.",
         },
         ConstDef {
             name: "SIG_OK",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 0,
             doc: "A prototype-surgery edit succeeded.",
         },
         ConstDef {
             name: "SIG_NO_PROTOTYPE",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 1,
             doc: "The address carries no function type to edit.",
         },
         ConstDef {
             name: "SIG_ARG_RANGE",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 2,
             doc: "A parameter index was past the last parameter.",
         },
         ConstDef {
             name: "SIG_BUILD",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 3,
             doc: "A replacement-type recipe did not build.",
         },
         ConstDef {
             name: "SIG_APPLY",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 4,
             doc: "`create_func` or `apply_tinfo` rejected the rebuilt signature.",
         },
         ConstDef {
             name: "TEDIT_NO_TYPE",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 1,
             doc: "Member-edit pre-failure: no such named type in the local til.",
         },
         ConstDef {
             name: "TEDIT_NO_MEMBER",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 2,
             doc: "Member-edit pre-failure: the member (by name or bit offset) did not resolve.",
         },
         ConstDef {
             name: "TEDIT_BUILD",
-            ty: ConstTy::I32,
+            ty: Scalar::I32,
             value: 3,
             doc: "Member-edit pre-failure: a member-type recipe did not build.",
         },
         ConstDef {
             name: "MEMBER_APPEND",
-            ty: ConstTy::U64,
+            ty: Scalar::U64,
             value: u64::MAX as i128,
             doc: "`member_bit` value that appends a new member at the end rather than a fixed \
                   offset.",
         },
         ConstDef {
             name: "RECIPE_VOID",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0,
             doc: "Recipe opcode: push the `void` type.",
         },
         ConstDef {
             name: "RECIPE_BOOL",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 1,
             doc: "Recipe opcode: push the boolean type.",
         },
         ConstDef {
             name: "RECIPE_INT",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 2,
             doc: "Recipe opcode: push an integer, followed by a `u8` width in bytes and a `u8` \
                   signedness flag.",
         },
         ConstDef {
             name: "RECIPE_FLOAT",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 3,
             doc: "Recipe opcode: push a float, followed by a `u8` width in bytes.",
         },
         ConstDef {
             name: "RECIPE_NAMED",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 4,
             doc: "Recipe opcode: push a named-type reference, followed by a `u32` length and that \
                   many name bytes.",
         },
         ConstDef {
             name: "RECIPE_DECL",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 5,
             doc: "Recipe opcode: push a parsed declaration, followed by a `u32` length and that \
                   many decl bytes.",
         },
         ConstDef {
             name: "RECIPE_PTR",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 6,
             doc: "Recipe opcode: pop one type, push a pointer to it.",
         },
         ConstDef {
             name: "RECIPE_ARRAY",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 7,
             doc: "Recipe opcode: pop one type, push an array of it, followed by a `u64` element \
                   count.",
         },
         ConstDef {
             name: "RECIPE_CONST",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 8,
             doc: "Recipe opcode: pop one type, push its `const`-qualified form.",
         },
         ConstDef {
             name: "RECIPE_VOLATILE",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 9,
             doc: "Recipe opcode: pop one type, push its `volatile`-qualified form.",
         },
         ConstDef {
             name: "RECIPE_FUNCTION",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 10,
             doc: "Recipe opcode: build a function type (`u32` param count, `u8` varargs, `u16` cc, \
                   then that many `u32`-length-prefixed param names; pops the params then the \
@@ -197,7 +197,7 @@ pub const TYPE_BUILD: Domain = Domain {
         },
         ConstDef {
             name: "RECIPE_BITFIELD",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 11,
             doc: "Recipe opcode: build a bitfield member type (`u8` container width in bytes, `u8` \
                   field width in bits, `u8` signedness); struct-member-only, rejected in a union.",
@@ -334,7 +334,7 @@ pub const TYPE_BUILD: Domain = Domain {
             tinfo_named(name: Str) -> UniquePtr("TInfo");
         "The type `decl` parses to against the local til, as a fresh handle; `Err` (with the \
          captured parse diagnostic) on a parse failure."
-            tinfo_decl(decl: Str) -> ResultUniquePtr("TInfo");
+            tinfo_decl(decl: Str) -> Result(UniquePtr("TInfo"));
         "A pointer to `inner` as a fresh handle. `inner` is copied, not consumed; a null handle if \
          the pointer type cannot be built."
             tinfo_ptr(inner: ExternRef("TInfo")) -> UniquePtr("TInfo");
@@ -352,13 +352,13 @@ pub const TYPE_BUILD: Domain = Domain {
          alignment source pinning the Rust mirror to this SDK build in a test. Emitted in the \
          raw pre-shifted high-nibble space the SDK stores them in (`CM_CC_CDECL` is `0x30`); \
          covers only the modelled plain conventions."
-            cm_cc_ids() -> VecU8;
+            cm_cc_ids() -> Vec(U8);
         "This SDK's `FRB_*` value-type nibbles in idakit `NumberFormat`'s discriminant order, an \
          alignment source for a mirror test. Covers only the modelled non-info-carrying subset."
-            frb_vtype_ids() -> VecU32;
+            frb_vtype_ids() -> Vec(U32);
         "This SDK's `tinfo_code_t` (`TERR_*`) values in idakit `TypeEditCode`'s discriminant \
          order, an alignment source for a mirror test. Signed: every code but `TERR_OK` is \
          negative. The `TERR_COUNT` sentinel is not a code and is absent."
-            tinfo_code_ids() -> VecI32;
+            tinfo_code_ids() -> Vec(I32);
     },
 };

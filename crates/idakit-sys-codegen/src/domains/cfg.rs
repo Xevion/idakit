@@ -35,7 +35,7 @@ pub const CFG: Domain = Domain {
     fns: fns! {
         "Build the flow chart for the function containing `ea`; `Err` when no function is there. \
          Runs analysis, so it can also fail from a thrown SDK exception."
-            cfg_build(ea: U64, flags: I32) -> ResultUniquePtr("FlowChart");
+            cfg_build(ea: U64, flags: I32) -> Result(UniquePtr("FlowChart"));
         "Number of basic blocks, bound to `qflow_chart_ea_t::size()` directly (the `self:` receiver). \
          The return is `i32` to match the member's exact `int` signature."
             size(self: FlowChart) -> I32;
@@ -44,24 +44,24 @@ pub const CFG: Domain = Domain {
         "Number of blocks belonging to the function's own range."
             cfg_nproper(fc: ExternRef("FlowChart")) -> Usize;
         "Bounds and kind of block `n`; `Err` when `n` is out of range."
-            cfg_block(fc: ExternRef("FlowChart"), n: Usize) -> ResultShared("BlockInfo");
+            cfg_block(fc: ExternRef("FlowChart"), n: Usize) -> Result(Shared("BlockInfo"));
         "Number of successors of block `n` (`0` when `n` is out of range)."
             cfg_nsucc(fc: ExternRef("FlowChart"), n: Usize) -> Usize;
         "The `i`-th successor block index of block `n`; `Err` when `n`/`i` is out of range."
-            cfg_succ(fc: ExternRef("FlowChart"), n: Usize, i: Usize) -> ResultUsize;
+            cfg_succ(fc: ExternRef("FlowChart"), n: Usize, i: Usize) -> Result(Usize);
         "Number of predecessors of block `n` (`0` when `n` is out of range)."
             cfg_npred(fc: ExternRef("FlowChart"), n: Usize) -> Usize;
         "The `i`-th predecessor block index of block `n`; `Err` when `n`/`i` is out of range."
-            cfg_pred(fc: ExternRef("FlowChart"), n: Usize, i: Usize) -> ResultUsize;
+            cfg_pred(fc: ExternRef("FlowChart"), n: Usize, i: Usize) -> Result(Usize);
         "The whole successor edge list of block `n` as one owned `Vec<u32>`; `Err` when `n` is out \
          of range."
-            cfg_succs(fc: ExternRef("FlowChart"), n: Usize) -> ResultVecU32;
+            cfg_succs(fc: ExternRef("FlowChart"), n: Usize) -> Result(Vec(U32));
         "The whole predecessor edge list of block `n` as one owned `Vec<u32>`; `Err` when `n` is \
          out of range."
-            cfg_preds(fc: ExternRef("FlowChart"), n: Usize) -> ResultVecU32;
+            cfg_preds(fc: ExternRef("FlowChart"), n: Usize) -> Result(Vec(U32));
         "This SDK's `fc_block_type_t` (`fcb_*`) values in idakit `BasicBlockKind`'s discriminant \
          order, an alignment source pinning the Rust mirror to this SDK build in a test. Covers \
          only the modelled in-function kinds; `fcb_enoret`/`fcb_extern` are deliberately absent."
-            block_kind_ids() -> VecU8;
+            block_kind_ids() -> Vec(U8);
     },
 };

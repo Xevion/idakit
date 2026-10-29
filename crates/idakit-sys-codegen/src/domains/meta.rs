@@ -16,12 +16,12 @@ pub const META: Domain = Domain {
         "Preferred load address of the input (`get_imagebase`)."
             image_base() -> U64;
         "Processor module id, e.g. `metapc`; `Err` when none is set."
-            proc_name() -> ResultString;
+            proc_name() -> Result(String);
         "Human-readable input file format text; `Err` when unavailable."
-            file_type_name() -> ResultString;
+            file_type_name() -> Result(String);
         "Full path of the analyzed input; `Err` when unknown."
-            input_path() -> ResultString;
+            input_path() -> Result(String);
         "Base filename of the input; `Err` when unknown."
-            root_filename() -> ResultString;
+            root_filename() -> Result(String);
     },
 };

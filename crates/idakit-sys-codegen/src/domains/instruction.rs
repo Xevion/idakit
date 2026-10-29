@@ -73,115 +73,115 @@ pub const INSTRUCTION: Domain = Domain {
     consts: &[
         ConstDef {
             name: "MAX_OPS",
-            ty: ConstTy::Usize,
+            ty: Scalar::Usize,
             value: 8,
             doc: "Maximum operands the instruction bridge fills, matching `UA_MAXOP`.",
         },
         ConstDef {
             name: "OP_REG",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0,
             doc: "Semantic operand kind: register.",
         },
         ConstDef {
             name: "OP_MEM",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 1,
             doc: "Semantic operand kind: memory.",
         },
         ConstDef {
             name: "OP_IMM",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 2,
             doc: "Semantic operand kind: immediate.",
         },
         ConstDef {
             name: "OP_NEAR",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 3,
             doc: "Semantic operand kind: near branch/call target.",
         },
         ConstDef {
             name: "OP_FAR",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 4,
             doc: "Semantic operand kind: far branch/call target.",
         },
         ConstDef {
             name: "REG_NONE",
-            ty: ConstTy::U16,
+            ty: Scalar::U16,
             value: 0xFFFF,
             doc: "Sentinel for an absent base/index register in a decoded operand.",
         },
         ConstDef {
             name: "FLOW_CALL",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0x01,
             doc: "`InstructionData::flow` bit: the instruction is a call.",
         },
         ConstDef {
             name: "FLOW_RET",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0x02,
             doc: "`InstructionData::flow` bit: the instruction returns.",
         },
         ConstDef {
             name: "FLOW_JUMP",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0x04,
             doc: "`InstructionData::flow` bit: the instruction jumps.",
         },
         ConstDef {
             name: "FLOW_INDIRECT",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0x08,
             doc: "`InstructionData::flow` bit: the transfer target is indirect, not statically known.",
         },
         ConstDef {
             name: "FLOW_STOPS",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0x10,
             doc: "`InstructionData::flow` bit: sequential flow stops after this instruction.",
         },
         ConstDef {
             name: "FPC_NONE",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0,
             doc: "`InstructionData::fp_control`: no EVEX register-form FP control.",
         },
         ConstDef {
             name: "FPC_ROUNDING",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 1,
             doc: "`InstructionData::fp_control`: EVEX static rounding (`{r?-sae}`), mode in `round_mode`.",
         },
         ConstDef {
             name: "FPC_SAE",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 2,
             doc: "`InstructionData::fp_control`: EVEX suppress-all-exceptions only (`{sae}`), no rounding.",
         },
         ConstDef {
             name: "ROUND_NEAREST",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 0,
             doc: "`InstructionData::round_mode`: round to nearest (even).",
         },
         ConstDef {
             name: "ROUND_DOWN",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 1,
             doc: "`InstructionData::round_mode`: round toward negative infinity.",
         },
         ConstDef {
             name: "ROUND_UP",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 2,
             doc: "`InstructionData::round_mode`: round toward positive infinity.",
         },
         ConstDef {
             name: "ROUND_ZERO",
-            ty: ConstTy::U8,
+            ty: Scalar::U8,
             value: 3,
             doc: "`InstructionData::round_mode`: round toward zero (truncate).",
         },
@@ -195,9 +195,9 @@ pub const INSTRUCTION: Domain = Domain {
             decode_insn(ea: U64) -> Shared("InstructionData");
         "The facade's `RegisterClass` codes in idakit's discriminant order, an alignment source \
          pinning the Rust mirror to this SDK build in a test."
-            reg_class_ids() -> VecU8;
+            reg_class_ids() -> Vec(U8);
         "This SDK's `op_dtype_t` (`dt_*`) values in idakit `DataType`'s discriminant order, an \
          alignment source for a mirror test."
-            op_dtype_ids() -> VecU8;
+            op_dtype_ids() -> Vec(U8);
     },
 };

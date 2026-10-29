@@ -79,25 +79,29 @@ pub struct ConstDef {
     /// Bare name, no `IDAKIT_` prefix, e.g. `"FLOW_CALL"`.
     pub name: &'static str,
     /// The const's integer width and signedness.
-    pub ty: ConstTy,
+    pub ty: Scalar,
     /// The value, wide enough to hold `u64::MAX` or a negative `i32`.
     pub value: i128,
     /// One-line summary for the generated Rust `pub const`'s doc comment.
     pub doc: &'static str,
 }
 
-/// The integer width/signedness a [`ConstDef`] may declare.
+/// A primitive the bridge carries by value, as a field, argument, constant, or `Vec` element.
+///
+/// The one place the scalar vocabulary lives: [`ConstDef`], [`FieldTy`], [`ArgTy`], and
+/// [`RetShape`] each compose it. A [`ConstDef`] must use an integer variant.
 // The allow covers taxonomy slots no current spec constructs.
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
-pub enum ConstTy {
+pub enum Scalar {
+    Bool,
+    I32,
+    I64,
     U8,
     U16,
     U32,
     U64,
     Usize,
-    I32,
-    I64,
 }
 
 /// One field of a [`SharedStruct`] or a `Trivial` [`ExternTy`] mirror.
@@ -114,14 +118,8 @@ pub struct Field {
 // The allow covers taxonomy slots no current spec constructs.
 #[allow(dead_code)]
 pub enum FieldTy {
-    U8,
-    U16,
-    U32,
-    U64,
-    I32,
-    I64,
-    Usize,
-    Bool,
+    /// A primitive. Authored by its bare scalar name (`U32`) through the associated consts below.
+    Scalar(Scalar),
     /// An owned string (`String` in Rust, `rust::String` in C++).
     Str,
     /// A by-value `Trivial` `ExternType`, named by its Rust name (e.g. `"RangeT"`).
@@ -130,6 +128,19 @@ pub enum FieldTy {
     Struct(&'static str),
     /// An owned `Vec` of a shared struct, by name (e.g. `"OperandData"`).
     VecStruct(&'static str),
+}
+
+/// Bare scalar spellings for [`fields!`], so a row reads `id: U32` rather than `id: Scalar(U32)`.
+#[allow(non_upper_case_globals)]
+impl FieldTy {
+    pub const Bool: Self = Self::Scalar(Scalar::Bool);
+    pub const I32: Self = Self::Scalar(Scalar::I32);
+    pub const I64: Self = Self::Scalar(Scalar::I64);
+    pub const U8: Self = Self::Scalar(Scalar::U8);
+    pub const U16: Self = Self::Scalar(Scalar::U16);
+    pub const U32: Self = Self::Scalar(Scalar::U32);
+    pub const U64: Self = Self::Scalar(Scalar::U64);
+    pub const Usize: Self = Self::Scalar(Scalar::Usize);
 }
 
 /// One facade function: its shared name, optional `self:` receiver, arguments, return shape, and
@@ -191,11 +202,12 @@ impl Arg {
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum ArgTy {
-    I32,
-    U32,
-    U64,
-    Usize,
-    Bool,
+    /// A primitive by value. Authored by its bare scalar name (`U32`) through the associated
+    /// consts below.
+    Scalar(Scalar),
+    /// A borrowed slice of a primitive (`&[T]` / `rust::Slice<const T>`). Authored as `SliceU32` /
+    /// `SliceU64` through the associated consts below.
+    Slice(Scalar),
     /// A borrowed string (`&str` / `rust::Str`).
     Str,
     /// An owned lenient-decoded string (`String` / `rust::String`), built facade-side (any
@@ -210,12 +222,6 @@ pub enum ArgTy {
     ExternRef(&'static str),
     /// A borrowed `f64` (`f64` / `double`).
     F64,
-    /// A borrowed `i64` (`i64` / `int64_t`).
-    I64,
-    /// A borrowed `u32` slice (`&[u32]` / `rust::Slice<const uint32_t>`).
-    SliceU32,
-    /// A borrowed `u64` slice (`&[u64]` / `rust::Slice<const uint64_t>`).
-    SliceU64,
     /// A borrowed slice of a shared struct, by name (`&[Name]` / `rust::Slice<const Name>`).
     SliceStruct(&'static str),
     /// A borrowed mutable reference to an `extern "Rust"` opaque visitor, by name (`&mut Name` /
@@ -223,17 +229,26 @@ pub enum ArgTy {
     VisitorMut(&'static str),
 }
 
+/// Bare scalar spellings for [`args!`], so a row reads `n: U64` rather than `n: Scalar(U64)`.
+#[allow(non_upper_case_globals)]
+impl ArgTy {
+    pub const Bool: Self = Self::Scalar(Scalar::Bool);
+    pub const I32: Self = Self::Scalar(Scalar::I32);
+    pub const I64: Self = Self::Scalar(Scalar::I64);
+    pub const U32: Self = Self::Scalar(Scalar::U32);
+    pub const U64: Self = Self::Scalar(Scalar::U64);
+    pub const Usize: Self = Self::Scalar(Scalar::Usize);
+    pub const SliceU32: Self = Self::Slice(Scalar::U32);
+    pub const SliceU64: Self = Self::Slice(Scalar::U64);
+}
+
 /// The value shape a return carries, independent of whether the call may throw (see [`RetKind`]).
+/// Authored through [`ret!`]: `U32`, `Vec(U32)`, `Vec("Name")`, `Result(Vec(U8))`.
 #[derive(Clone)]
 pub enum RetShape {
     Unit,
-    Bool,
-    I32,
-    U8,
-    U16,
-    U32,
-    U64,
-    Usize,
+    /// A primitive by value.
+    Scalar(Scalar),
     String,
     /// A by-value `Trivial` `ExternType`, by Rust name.
     Extern(&'static str),
@@ -243,12 +258,9 @@ pub enum RetShape {
     UniquePtr(&'static str),
     /// An owned `Vec` of a `Trivial` `ExternType` or a shared struct, by name.
     Vec(&'static str),
-    /// An owned `Vec` of a scalar (`u32`).
-    VecU32,
-    /// An owned `Vec<i32>`, for an SDK set whose values are signed (`tinfo_code_t`'s `TERR_*`).
-    VecI32,
-    /// An owned `Vec<u8>` (a raw byte-range snapshot, or an alignment-id list).
-    VecU8,
+    /// An owned `Vec` of a primitive: a raw byte-range snapshot, or an SDK id list in the width
+    /// and signedness of the enum it mirrors.
+    VecScalar(Scalar),
 }
 
 /// A function's return: a [`RetShape`] plus whether the call may throw a C++ exception, surfaced

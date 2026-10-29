@@ -27,9 +27,9 @@ pub const SEGMENT: Domain = Domain {
         "Address bits (16/32/64) of segment `n`, or `0` when out of range."
             gen_seg_bitness(n: I32) -> I32 = seg_scalar("abits()", "0");
         "Visible name of segment `n`; `Err` when `n` is out of range."
-            gen_seg_name(n: I32) -> ResultString = seg_string("get_segment_name(&out, ea, GN_VISIBLE)");
+            gen_seg_name(n: I32) -> Result(String) = seg_string("get_segment_name(&out, ea, GN_VISIBLE)");
         "Class of segment `n`; `Err` when `n` is out of range or has no class."
-            gen_seg_class(n: I32) -> ResultString = seg_string_pos("get_segment_class(&out, ea)");
+            gen_seg_class(n: I32) -> Result(String) = seg_string_pos("get_segment_class(&out, ea)");
         "Selector (`sel_t`) of segment `n`, or `BADSEL` when `n` is out of range."
             gen_seg_sel(n: I32) -> U64 = seg_scalar("get_sel()", "BADSEL");
         "Segment type code (`SEG_*`) of segment `n`, or `SEG_NORM` when `n` is out of range."
@@ -46,15 +46,15 @@ pub const SEGMENT: Domain = Domain {
             gen_seg_at(ea: U64) -> I32 = scalar("get_segm_num(static_cast<ea_t>(ea))");
         "Comment of segment `n` (`repeatable` selects the repeatable channel); `Err` when `n` is \
          out of range."
-            gen_seg_cmt(n: I32, repeatable: Bool) -> ResultString;
+            gen_seg_cmt(n: I32, repeatable: Bool) -> Result(String);
         "This SDK's `SEG_*` values in idakit `SegmentType`'s discriminant order, an alignment \
          source pinning the Rust mirror to this SDK build in a test."
-            seg_type_ids() -> VecU8;
+            seg_type_ids() -> Vec(U8);
         "This SDK's `sa*` values in idakit `SegmentAlignment`'s discriminant order, an alignment \
          source for a mirror test."
-            seg_align_ids() -> VecU8;
+            seg_align_ids() -> Vec(U8);
         "This SDK's `sc*` values in idakit `SegmentCombination`'s discriminant order, an alignment \
          source for a mirror test."
-            seg_comb_ids() -> VecU8;
+            seg_comb_ids() -> Vec(U8);
     },
 };

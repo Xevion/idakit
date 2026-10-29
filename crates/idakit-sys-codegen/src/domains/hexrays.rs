@@ -62,16 +62,16 @@ pub const HEXRAYS: Domain = Domain {
          the facade trap, so a fatal `exit()` surfaces as a trapped `Err` the caller distinguishes \
          via its own trap query. The `UniquePtr`'s cxx deleter runs `~cfuncptr_t` (`release()`) on \
          drop."
-            decompile(ea: U64) -> ResultUniquePtr("CFunc");
+            decompile(ea: U64) -> Result(UniquePtr("CFunc"));
         "The rendered pseudocode of `cf`, tags stripped; `Err` if the SDK cannot produce it."
-            cfunc_pseudocode(cf: ExternRef("CFunc")) -> ResultString;
+            cfunc_pseudocode(cf: ExternRef("CFunc")) -> Result(String);
         "Statement, expression, and call-site counts of `cf`'s ctree."
             cfunc_counts(cf: ExternRef("CFunc")) -> Shared("CtreeCounts");
         "Re-print `cf`'s pseudocode from its current ctree (`refresh_func_ctext`), then return it; \
          `Err` if the SDK cannot produce it. Cheap compared to a re-decompile, since it walks the \
          already-decompiled ctree, but reflects only what the ctree already encodes (a rename \
          resolves fresh; a structural or type change needs a fresh [`decompile`])."
-            cfunc_refresh_text(cf: ExternRef("CFunc")) -> ResultString;
+            cfunc_refresh_text(cf: ExternRef("CFunc")) -> Result(String);
         "The extraction-fidelity diagnostic for `cf`: total expressions the SDK visitor sees vs how \
          many the extraction walker should materialize."
             cfunc_expr_gap(cf: ExternRef("CFunc")) -> Shared("ExprGap");
@@ -86,15 +86,15 @@ pub const HEXRAYS: Domain = Domain {
             has_cached_cfunc(ea: U64) -> Bool;
         "This SDK's `ctype_t` (`cot_*`) values in idakit `BinaryOp`'s discriminant order, an \
          alignment source pinning the Rust mirror to this SDK build in a test."
-            binop_ctype_ids() -> VecU32;
+            binop_ctype_ids() -> Vec(U32);
         "This SDK's `ctype_t` (`cot_asg*`) values in idakit `AssignmentOp`'s discriminant order, \
          an alignment source for a mirror test."
-            assignop_ctype_ids() -> VecU32;
+            assignop_ctype_ids() -> Vec(U32);
         "This SDK's `ctype_t` values in idakit `UnaryOp`'s discriminant order, an alignment \
          source for a mirror test."
-            unop_ctype_ids() -> VecU32;
+            unop_ctype_ids() -> Vec(U32);
         "This SDK's `ctype_t` values for the structural tags idakit's ctree extraction dispatches \
          on, in its `StructuralTag` discriminant order, an alignment source for a mirror test."
-            structural_tag_ctype_ids() -> VecU32;
+            structural_tag_ctype_ids() -> Vec(U32);
     },
 };

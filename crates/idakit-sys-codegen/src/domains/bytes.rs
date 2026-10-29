@@ -31,18 +31,18 @@ pub const BYTES: Domain = Domain {
     custom_tus: &["facade/bytes.cpp"],
     fns: fns! {
         "The `size` bytes at `ea` as an owned `Vec<u8>`; `Err` when the range is not fully mapped."
-            get_bytes(ea: U64, size: Usize) -> ResultVecU8;
+            get_bytes(ea: U64, size: Usize) -> Result(Vec(U8));
         "The byte at `ea`; `Err` when it is uninitialized."
-            get_u8(ea: U64) -> ResultU8;
+            get_u8(ea: U64) -> Result(U8);
         "The little-endian word at `ea`; `Err` when any covered byte is uninitialized."
-            get_u16(ea: U64) -> ResultU16;
+            get_u16(ea: U64) -> Result(U16);
         "The little-endian dword at `ea`; `Err` when any covered byte is uninitialized."
-            get_u32(ea: U64) -> ResultU32;
+            get_u32(ea: U64) -> Result(U32);
         "The little-endian qword at `ea`; `Err` when any covered byte is uninitialized."
-            get_u64(ea: U64) -> ResultU64;
+            get_u64(ea: U64) -> Result(U64);
         "The auto-detected string literal at `ea` (given its `STRTYPE`) decoded to UTF-8; `Err` \
          when there is none or it cannot be decoded."
-            get_strlit(ea: U64, strtype: I32) -> ResultString;
+            get_strlit(ea: U64, strtype: I32) -> Result(String);
         "Lowest mapped address in the database (`inf_get_min_ea`)."
             min_ea() -> U64 = scalar("inf_get_min_ea()");
         "One past the highest mapped address in the database (`inf_get_max_ea`)."
@@ -51,7 +51,7 @@ pub const BYTES: Domain = Domain {
             get_flags(ea: U64) -> U64;
         "This SDK's `FF_UNK`/`FF_TAIL`/`FF_DATA`/`FF_CODE` values in idakit `ByteClass`'s \
          discriminant order, an alignment source for a mirror test."
-            byte_class_ids() -> VecU32;
+            byte_class_ids() -> Vec(U64);
         "Start address of the item covering `ea` (`ea` itself when it is an item head)."
             get_item_head(ea: U64) -> U64;
         "Address just past the item covering `ea` (`get_item_end`)."
@@ -61,10 +61,10 @@ pub const BYTES: Domain = Domain {
         "Previous item head before `ea`, searching down to `minea`, or `BADADDR` when none."
             get_prev_head(ea: U64, minea: U64) -> U64;
         "The regular (or repeatable, when `rptble`) comment at `ea`; `Err` when there is none."
-            get_cmt(ea: U64, rptble: Bool) -> ResultString;
+            get_cmt(ea: U64, rptble: Bool) -> Result(String);
         "Compile `pattern` via IDA's own parser (byte width taken from `ea`); `Err` carries the \
          parser's rejection message."
-            binpat_compile(ea: U64, pattern: Str, radix: I32) -> ResultUniquePtr("CompiledBinpat");
+            binpat_compile(ea: U64, pattern: Str, radix: I32) -> Result(UniquePtr("CompiledBinpat"));
         "Compile a pattern from raw `bytes` and a per-byte bit `mask`; an empty `mask` means every \
          byte is concrete."
             binpat_from_bytes(bytes: Bytes, mask: Bytes) -> UniquePtr("CompiledBinpat");
