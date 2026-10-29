@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.2.1](https://github.com/Xevion/idakit/compare/idakit-sys-v0.2.0...idakit-sys-v0.2.1) (2026-10-29)
+
+
+### Features
+
+* **function:** Add entry-chunk read with frame layout and strings ([29c3f04](https://github.com/Xevion/idakit/commit/29c3f045d0c3d3cd7983bfcc2b8a0d0e775eccd1))
+* **idakit:** Add ByteClass to tell tail bytes from undefined ones ([712777c](https://github.com/Xevion/idakit/commit/712777cd7ce31a06ae7dfe267aa50ecc81714ae7))
+* **idakit:** Add RenameFlags and rename_with for set_name flags ([ec7f22f](https://github.com/Xevion/idakit/commit/ec7f22f55a12283af0a99325f5ece83290433bad))
+
+
+### Bug Fixes
+
+* **deps:** Update cxx ([11435c2](https://github.com/Xevion/idakit/commit/11435c2fc3349c059819376926538b32e673e3ee))
+* **sys:** Map operand addresses through the segment, not raw ([2a5f5bd](https://github.com/Xevion/idakit/commit/2a5f5bdff53a50f05324f201b3a3801a7cf7c565))
+
+
+### Code Refactoring
+
+* **codegen:** Share one Scalar vocabulary and compose return shapes ([7e77fa5](https://github.com/Xevion/idakit/commit/7e77fa5a2e34ff973335b4f0a795d660fdfb7cb8))
+
+
+### Build System
+
+* **facade:** Back-port 9.4's ea-based API instead of suppressing deprecations ([d5bbefc](https://github.com/Xevion/idakit/commit/d5bbefcfc9135f468fc3a335a612e22751cb8f65))
+* **facade:** Opt out of 9.4 deprecation warnings ([dcd067f](https://github.com/Xevion/idakit/commit/dcd067f18bb62fcc2b5b39096e67c3a30dc1ce86))
+* **sys:** Rebuild when the SDK headers or runtime change ([fa7cb76](https://github.com/Xevion/idakit/commit/fa7cb768141fd0a32d5b9f2b249fefc1c561ea3e))
+
+
+### Miscellaneous
+
+* **deps:** Bump assert2 to 0.4.1 ([1416b27](https://github.com/Xevion/idakit/commit/1416b278689128fb610ee695fb750452999db632))
+* Prose cleanup ([3b71db7](https://github.com/Xevion/idakit/commit/3b71db7ebd3815198841090a24e3ea0b900e3496))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * build-dependencies
+    * idakit-sys-codegen bumped from 0.2.0 to 0.2.1
+
 ## [0.2.0](https://github.com/Xevion/idakit/compare/idakit-sys-v0.1.1...idakit-sys-v0.2.0) (2026-08-24)
 
 
