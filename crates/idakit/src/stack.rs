@@ -21,7 +21,10 @@ use crate::Database;
 use crate::address::Address;
 use crate::decompiler::ctree::ExtractError;
 use crate::error::{Error, Result};
-use crate::types::{SinkAdapter, TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue, tid};
+use crate::types::{
+    Comment, MemberAttributes, SinkAdapter, TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue,
+    tid,
+};
 
 /// A [`StackSlot`] is either a real stack variable, carrying its name and type, or one of the
 /// two slots IDA reserves in every frame.
@@ -46,14 +49,14 @@ pub enum StackSlotKind {
 }
 
 impl StackSlotKind {
-    /// Builds from the facade's `(flags, name, ty)` parts.
+    /// Builds from the facade's `(attributes, name, ty)` parts.
     ///
-    /// A reserved slot (either flag set) drops the synthetic name/type; return-address wins a
-    /// (never-real) tie so the mapping stays total and deterministic.
-    fn from_parts(flags: sys::FrameVarFlags, name: String, ty: Option<TypeId>) -> Self {
-        if flags.contains(sys::FrameVarFlags::RETADDR) {
+    /// Only the two frame bits decide the kind; a reserved slot (either set) drops the synthetic
+    /// name/type, and return-address wins a (never-real) tie so the mapping stays total.
+    fn from_parts(attributes: MemberAttributes, name: String, ty: Option<TypeId>) -> Self {
+        if attributes.contains(MemberAttributes::RETURN_ADDRESS) {
             Self::ReturnAddress
-        } else if flags.contains(sys::FrameVarFlags::SAVREGS) {
+        } else if attributes.contains(MemberAttributes::SAVED_REGISTERS) {
             Self::SavedRegisters
         } else {
             Self::Variable { name, ty }
@@ -69,6 +72,9 @@ pub struct StackSlot {
     offset: i64,
     size: u64,
     kind: StackSlotKind,
+    comment: Option<Comment>,
+    #[serde(with = "crate::types::attributes::member_bits")]
+    attributes: MemberAttributes,
 }
 
 impl StackSlot {
@@ -118,6 +124,25 @@ impl StackSlot {
             StackSlotKind::Variable { ty, .. } => *ty,
             _ => None,
         }
+    }
+
+    /// The slot's comment and its kind, or `None` when it has none.
+    #[inline]
+    #[must_use]
+    pub const fn comment(&self) -> Option<&Comment> {
+        self.comment.as_ref()
+    }
+
+    /// The slot's raw member attributes, which [`kind`](Self::kind) is read from.
+    ///
+    /// Carries what the kind does not, notably
+    /// [`FROM_TYPE_SYSTEM`](MemberAttributes::FROM_TYPE_SYSTEM) for a variable whose type came
+    /// from a type library rather than analysis.
+    #[inline]
+    #[must_use]
+    #[doc(alias("tafld_bits", "is_by_til"))]
+    pub const fn attributes(&self) -> MemberAttributes {
+        self.attributes
     }
 
     /// Whether this is one of IDA's reserved slots (return address or saved registers) rather than
@@ -250,15 +275,23 @@ impl Database {
         let slots = walk
             .vars
             .into_iter()
-            .map(|v| StackSlot {
-                offset: v.offset,
-                size: v.size,
-                // A reserved/untyped slot reports NONE; only a real variable carries a type.
-                kind: StackSlotKind::from_parts(
-                    sys::FrameVarFlags::from_bits_retain(v.flags),
-                    v.name,
-                    (v.ty != sys::NONE).then(|| tid(v.ty)),
-                ),
+            .map(|v| {
+                let attributes = MemberAttributes::from_bits_retain(v.attributes);
+                StackSlot {
+                    offset: v.offset,
+                    size: v.size,
+                    comment: v
+                        .has_comment
+                        .then(|| Comment::from_member(&v.comment, attributes))
+                        .flatten(),
+                    // A reserved/untyped slot reports NONE; only a real variable carries a type.
+                    kind: StackSlotKind::from_parts(
+                        attributes,
+                        v.name,
+                        (v.ty != sys::NONE).then(|| tid(v.ty)),
+                    ),
+                    attributes,
+                }
             })
             .collect();
         Ok(Some(StackFrame {
@@ -283,29 +316,29 @@ mod tests {
     // A frame must cross the kernel thread; a later non-Send field would fail this.
     const _: () = assert_send::<StackFrame>();
 
-    /// A clear flag word yields a `Variable` carrying the name/type; either reserved flag yields
+    /// A word with neither frame bit yields a `Variable` carrying the name/type; either reserved flag yields
     /// the matching special kind and drops the name/type, with return-address winning a tie.
     #[test]
     fn kind_from_parts() {
         let ty = Some(tid(0));
         assert!(
-            StackSlotKind::from_parts(sys::FrameVarFlags::empty(), "var_18".to_owned(), ty)
+            StackSlotKind::from_parts(MemberAttributes::empty(), "var_18".to_owned(), ty)
                 == StackSlotKind::Variable {
                     name: "var_18".to_owned(),
                     ty,
                 }
         );
         assert!(
-            StackSlotKind::from_parts(sys::FrameVarFlags::RETADDR, "r".to_owned(), ty)
+            StackSlotKind::from_parts(MemberAttributes::RETURN_ADDRESS, "r".to_owned(), ty)
                 == StackSlotKind::ReturnAddress
         );
         assert!(
-            StackSlotKind::from_parts(sys::FrameVarFlags::SAVREGS, "s".to_owned(), None)
+            StackSlotKind::from_parts(MemberAttributes::SAVED_REGISTERS, "s".to_owned(), None)
                 == StackSlotKind::SavedRegisters
         );
         assert!(
             StackSlotKind::from_parts(
-                sys::FrameVarFlags::RETADDR | sys::FrameVarFlags::SAVREGS,
+                MemberAttributes::RETURN_ADDRESS | MemberAttributes::SAVED_REGISTERS,
                 String::new(),
                 None
             ) == StackSlotKind::ReturnAddress
@@ -319,6 +352,8 @@ mod tests {
     fn accessors_follow_the_kind() {
         let ty = Some(tid(3));
         let var = StackSlot {
+            comment: None,
+            attributes: MemberAttributes::empty(),
             offset: -0x18,
             size: 4,
             kind: StackSlotKind::Variable {
@@ -333,6 +368,8 @@ mod tests {
         assert!(var.size() == 4);
 
         let retaddr = StackSlot {
+            comment: None,
+            attributes: MemberAttributes::empty(),
             offset: 0x8,
             size: 0x10,
             kind: StackSlotKind::ReturnAddress,
@@ -370,6 +407,8 @@ mod tests {
     fn stack_slot_hash_and_serde() {
         let slots = [
             StackSlot {
+                comment: None,
+                attributes: MemberAttributes::empty(),
                 offset: -0x18,
                 size: 4,
                 kind: StackSlotKind::Variable {
@@ -378,6 +417,8 @@ mod tests {
                 },
             },
             StackSlot {
+                comment: None,
+                attributes: MemberAttributes::empty(),
                 offset: 0,
                 size: 8,
                 kind: StackSlotKind::ReturnAddress,
@@ -409,6 +450,8 @@ mod tests {
             types,
             slots: vec![
                 StackSlot {
+                    comment: None,
+                    attributes: MemberAttributes::empty(),
                     offset: -0x18,
                     size: 4,
                     kind: StackSlotKind::Variable {
@@ -417,6 +460,8 @@ mod tests {
                     },
                 },
                 StackSlot {
+                    comment: None,
+                    attributes: MemberAttributes::empty(),
                     offset: 0,
                     size: 8,
                     kind: StackSlotKind::ReturnAddress,
@@ -433,7 +478,13 @@ mod tests {
     }
 
     fn slot(offset: i64, size: u64, kind: StackSlotKind) -> StackSlot {
-        StackSlot { offset, size, kind }
+        StackSlot {
+            offset,
+            size,
+            kind,
+            comment: None,
+            attributes: MemberAttributes::empty(),
+        }
     }
 
     fn frame_with(slots: Vec<StackSlot>) -> StackFrame {

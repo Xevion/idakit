@@ -29,7 +29,7 @@
 //!   driving a walk through an opaque visitor ([`CtreeVisitor`], [`TypeWalkVisitor`]).
 //! - **A typed flag layer**: the one deliberate exception to "raw declarations only". OR-able bit
 //!   masks that also cross as FFI fields become `bitflags` types ([`SegmentPermissions`], [`FlowFlags`],
-//!   [`FrameVarFlags`], [`FlowChartFlags`], [`BinSearchFlags`]), and closed return-code sets become
+//!   [`MemberAttributes`], [`FlowChartFlags`], [`BinSearchFlags`]), and closed return-code sets become
 //!   validated `num_enum` enums ([`SigWriteCode`], [`TypeApplyCode`]); both stay sound at the
 //!   boundary and spare every caller a hand-rolled bit test. Safe idiomatic wrappers still belong in
 //!   [`idakit`](https://docs.rs/idakit).
@@ -76,7 +76,6 @@ mod bridge_qvec;
 mod bridge_visitors;
 mod bytes;
 mod cfg_flags;
-mod frame_flags;
 mod function_flags;
 mod instruction;
 mod name;
@@ -100,7 +99,6 @@ pub use bridge_qvec::*;
 pub use bridge_visitors::*;
 pub use bytes::*;
 pub use cfg_flags::*;
-pub use frame_flags::*;
 pub use function_flags::*;
 pub use instruction::*;
 pub use name::*;

@@ -38,8 +38,10 @@ pub(super) const FRAME_VAR: SharedStruct = SharedStruct {
         name: Str = "The variable's name.";
         offset: I64 = "Frame-pointer-relative byte offset.";
         size: U64 = "Size in bytes.";
-        flags: U32 = "Reserved-slot flags (return address / saved registers); 0 for an ordinary \
-                      variable.";
+        attributes: U32 = "Raw `udm_t::tafld_bits`; `TAFLD_FRAME_R`/`TAFLD_FRAME_S` mark the \
+                           reserved return-address and saved-registers slots.";
+        has_comment: Bool = "Whether the slot carries a comment.";
+        comment: Str = "The slot's comment; empty when `has_comment` is false.";
         ty: U32 = "Walk-local handle of the variable's type, or `NONE` for a \
                    reserved/untyped slot.";
     },

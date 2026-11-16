@@ -64,10 +64,6 @@ constexpr uint32_t SCALAR_BOOL = 2;
 constexpr uint32_t SCALAR_INTEGRAL = 3;
 constexpr uint32_t SCALAR_FLOAT = 4;
 
-// FrameVar flag bits: reserved return-address slot, reserved saved-registers slot.
-constexpr uint32_t FRAME_VAR_RETADDR = 1u;
-constexpr uint32_t FRAME_VAR_SAVED_REGS = 2u;
-
 } // namespace
 
 // Full definition of the walker the opaque handle in type_walker.h fronts. Holds the visitor
@@ -356,18 +352,20 @@ FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
   visit_walker_t walker;
   walker.vis = &visitor;
   for (const udm_t &m : udt) {
-    // Both clear = an ordinary variable/argument.
-    uint32_t flags =
-        (m.is_retaddr() ? FRAME_VAR_RETADDR : 0u) | (m.is_savregs() ? FRAME_VAR_SAVED_REGS : 0u);
+    // The two frame bits mark the reserved slots; every other tafld_bit (the type-library
+    // provenance bit in practice) crosses raw and leaves the slot a variable.
+    bool reserved = m.is_retaddr() || m.is_savregs();
     // Only a real, typed variable carries a structured type; reserved and untyped slots report
     // NONE, so the table holds only types a variable references.
-    uint32_t ty = (flags == 0 && !m.type.empty()) ? walker.ty(m.type) : gen::NONE;
+    uint32_t ty = (!reserved && !m.type.empty()) ? walker.ty(m.type) : gen::NONE;
     FrameVar fv;
     fv.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
     // udm offset/size are in bits; soff_to_fpoff_ea wants the byte struct offset.
     fv.offset = static_cast<int64_t>(soff_to_fpoff_ea(func_ea, static_cast<uval_t>(m.offset / 8)));
     fv.size = m.size / 8;
-    fv.flags = flags;
+    fv.attributes = m.tafld_bits;
+    fv.has_comment = !m.cmt.empty();
+    fv.comment = rust::String::lossy(std::string(m.cmt.c_str(), m.cmt.length()));
     fv.ty = ty;
     out.vars.push_back(std::move(fv));
   }

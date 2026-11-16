@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::arena::{Arena, Idx};
 
-mod attributes;
+pub(crate) mod attributes;
 mod builder;
 pub mod diff;
 mod edit;

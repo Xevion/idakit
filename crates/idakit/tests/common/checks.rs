@@ -36,6 +36,7 @@ pub const CHECKS: &[(&str, Check, Shares)] = &[
     ("segment_attrs", segment_attrs, Shares::Yes),
     ("func_attrs", func_attrs, Shares::Yes),
     ("type_attrs", type_attrs, Shares::Yes),
+    ("frame_attrs", frame_attrs, Shares::Yes),
 ];
 
 // A regression that empties the check axis would otherwise still pass every corpus trial
@@ -765,4 +766,37 @@ pub fn type_attrs(idb: &Database) -> String {
         "{aggregates} aggregates ({cpp} C++), {vftables} vftable / {bases} base members, \
          {comments} member comments, {modified} modified pointers"
     )
+}
+
+/// Each stack slot's kind agrees with the frame bits in its raw attribute word, and the word holds
+/// no bit outside [`MemberAttributes`]. Everything else in it (type-library provenance in
+/// practice) leaves the slot a variable.
+pub fn frame_attrs(idb: &Database) -> String {
+    use idakit::types::MemberAttributes;
+
+    let (mut frames, mut slots, mut from_til, mut commented) = (0usize, 0usize, 0usize, 0usize);
+    let mut problems = Vec::new();
+    for f in idb.functions().take(2000) {
+        let Ok(Some(frame)) = f.frame() else { continue };
+        frames += 1;
+        for slot in frame.slots() {
+            slots += 1;
+            let bits = slot.attributes();
+            let expect_special = bits
+                .intersects(MemberAttributes::RETURN_ADDRESS | MemberAttributes::SAVED_REGISTERS);
+            if !MemberAttributes::all().contains(bits) || slot.is_special() != expect_special {
+                problems.push(format!(
+                    "{:#x} slot at {}: word {:#x}, kind {:?}",
+                    f.address(),
+                    slot.offset(),
+                    bits.bits(),
+                    slot.kind()
+                ));
+            }
+            from_til += usize::from(bits.contains(MemberAttributes::FROM_TYPE_SYSTEM));
+            commented += usize::from(slot.comment().is_some());
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+    format!("{frames} frames, {slots} slots ({from_til} type-system, {commented} commented)")
 }
