@@ -248,10 +248,11 @@ struct walker_t {
       return nodes->s_break(addr);
     case cit_continue:
       return nodes->s_continue(addr);
-    // cit_empty and any statement kind this facade doesn't model both emit an empty stmt.
     case cit_empty:
-    default:
       return nodes->s_empty(addr);
+    // An unmodelled statement kind is reported, so the sink can reject the walk.
+    default:
+      return nodes->s_unknown(addr, static_cast<uint32_t>(cinsn->op));
     }
   }
 

@@ -117,9 +117,11 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
             s_try(ea: Address, body: U32, catches: SliceU32);
         "A `throw`, or a bare `throw;` when `e` is `NONE`; returns its handle."
             s_throw(ea: Address, e: U32);
-        "An empty statement (or any statement kind the walk doesn't otherwise model); returns its \
-         handle."
+        "An empty statement (`cit_empty`); returns its handle."
             s_empty(ea: Address);
+        "A statement kind the walk doesn't model, carrying its raw `ctype_t`; the sink rejects \
+         the walk. Returns a placeholder handle so the parent can still be built."
+            s_unknown(ea: Address, tag: U32);
         "Sets the raw `EXFL_*` word on the already-minted expression `id`; sent only when the \
          word is non-zero."
             e_flags(id: U32, flags: U32) -> Unit;

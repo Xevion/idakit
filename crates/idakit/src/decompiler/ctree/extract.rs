@@ -76,6 +76,13 @@ pub enum ExtractError {
         raw: u32,
     },
 
+    /// A node carried a statement `ctype` the walker does not model.
+    #[snafu(display("unmodeled statement ctype {tag}"))]
+    UnknownStatementTag {
+        /// The unmodeled raw `ctype_t` value.
+        tag: u32,
+    },
+
     /// Aggregate extraction left type placeholders that were never filled.
     #[snafu(display("{count} type placeholder(s) were referenced but never filled"))]
     UnfilledType {
@@ -676,6 +683,11 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
         self.empty_statement(ea)
     }
 
+    fn s_unknown(&mut self, ea: u64, tag: u32) -> u32 {
+        self.fail(ExtractError::UnknownStatementTag { tag });
+        self.empty_statement(ea)
+    }
+
     fn l_lvar(
         &mut self,
         name: String,
@@ -1047,6 +1059,17 @@ mod tests {
                 u32::from(tag)
             );
         }
+    }
+
+    /// An unmodeled statement ctype fails the walk at `finish` rather than reading as `Empty`.
+    #[test]
+    fn rejects_unknown_statement_ctype() {
+        use sys::CtreeSink;
+
+        let mut cb = CallbackBuilder::new();
+        let s = CtreeSink::s_unknown(&mut cb, 0, 999);
+        let blk = cb.block(0, &[s]);
+        assert!(cb.finish(blk).err() == Some(ExtractError::UnknownStatementTag { tag: 999 }));
     }
 
     /// An unmodeled ctype is a loud error (the `Internal` fallback is reserved for

@@ -467,7 +467,9 @@ pub struct Case {
 /// A statement kind. Child links are arena handles.
 ///
 /// A closed set on the same terms as [`ExpressionKind`]: it covers the finalized decompiler tree,
-/// and extraction rejects an unmodelled tag rather than folding it in here.
+/// and extraction rejects an unmodelled tag as
+/// [`ExtractError::UnknownStatementTag`](super::ExtractError::UnknownStatementTag) rather than
+/// folding it in here.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[doc(alias("cinsn_t"))]
 pub enum StatementKind {
