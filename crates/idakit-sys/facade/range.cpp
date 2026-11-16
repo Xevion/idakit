@@ -35,7 +35,7 @@ namespace gen {
 }
 
 // The byte length of range (end_ea - start_ea).
-uint64_t range_size(::range_t range) { return static_cast<uint64_t>(range.size()); }
+uint64_t range_size(::range_t range) { return widen(range.size()); }
 
 // The n-th chunk (entry chunk first, then tails) of the function at addr, paired with its index
 // in ChunkInfo; throws if there's no function at addr or n is out of range.

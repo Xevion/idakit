@@ -14,7 +14,7 @@ pub const META: Domain = Domain {
         "Application bitness (`inf_get_app_bitness`): 16, 32, or 64."
             bitness() -> I32;
         "Preferred load address of the input (`get_imagebase`)."
-            image_base() -> U64;
+            image_base() -> Address;
         "Processor module id, e.g. `metapc`; `Err` when none is set."
             proc_name() -> Result(String);
         "Human-readable input file format text; `Err` when unavailable."

@@ -19,7 +19,7 @@ namespace gen {
 int32_t bitness() { return static_cast<int32_t>(inf_get_app_bitness()); }
 
 // Base address the input file was loaded at.
-uint64_t image_base() { return static_cast<uint64_t>(get_imagebase()); }
+uint64_t image_base() { return ea_wire(get_imagebase()); }
 
 // Name of the processor module the database was analyzed with; throws when it is unset.
 rust::String proc_name() {

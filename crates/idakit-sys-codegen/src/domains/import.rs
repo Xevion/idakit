@@ -11,7 +11,7 @@ pub const IMPORT: Domain = Domain {
         name: "ImportRec",
         doc: "One import-table row, returned inside the [`imports_build`] snapshot.",
         fields: fields! {
-            ea: U64 = "Address the import is bound to.";
+            ea: Address = "Address the import is bound to.";
             ord: U64 = "Ordinal, or `0` when imported by name.";
             name: Str = "Symbol name, empty when imported by ordinal.";
             module: Str = "Owning module (library) name.";

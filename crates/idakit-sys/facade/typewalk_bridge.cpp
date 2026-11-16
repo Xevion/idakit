@@ -27,6 +27,7 @@
 // type_walker.h.
 #include "gen_facade_consts.h" // gen::NONE
 #include "gen_visitors.h"
+#include "wire.h"
 
 #include "compat.h"
 
@@ -98,7 +99,7 @@ uint32_t visit_walker_t::ty(const tinfo_t &t) {
 uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
   size_t sz = t.get_size();
   uint32_t has_size = (sz != BADSIZE && sz != 0) ? 1 : 0;
-  uint64_t size = has_size ? static_cast<uint64_t>(sz) : 0;
+  uint64_t size = has_size ? widen(sz) : 0;
   uint32_t bytes = has_size ? static_cast<uint32_t>(sz) : 0;
 
   if (t.empty())
@@ -106,8 +107,7 @@ uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
   if (t.is_ptr())
     return vis->ptr(ty(t.get_pointed_object()), size, has_size);
   if (t.is_array())
-    return vis->array(ty(t.get_array_element()), static_cast<uint64_t>(t.get_array_nelems()), size,
-                      has_size);
+    return vis->array(ty(t.get_array_element()), widen(t.get_array_nelems()), size, has_size);
   if (t.is_func())
     return ty_func(t);
   if (t.is_udt())
@@ -330,7 +330,7 @@ FrameWalk frame_type_walk_visit(uint64_t addr, TypeWalkVisitor &visitor) {
     throw std::runtime_error("function has no frame");
 
   FrameWalk out;
-  out.size = static_cast<uint64_t>(get_frame_size_ea(func_ea));
+  out.size = widen(get_frame_size_ea(func_ea));
   visit_walker_t walker;
   walker.vis = &visitor;
   for (const udm_t &m : udt) {

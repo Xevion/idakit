@@ -101,12 +101,12 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
     v.push(FnSpec::rendered(
         format!("netnode_{fam}first{suf}"),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
-        ret!(U64),
+        ret!(Address),
         format!(
             "Lowest populated {bit8}{fam} index under `tag`, or `BADNODE` when the array is empty."
         ),
         nn_return(&format!(
-            "static_cast<uint64_t>(n.{fam}first{suf}(static_cast<uchar>(tag)))"
+            "ea_wire(n.{fam}first{suf}(static_cast<uchar>(tag)))"
         )),
     ));
     v.push(FnSpec::rendered(
@@ -116,23 +116,23 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
             Arg::new("cur", k.idx_ty),
             Arg::new("tag", ArgTy::U32),
         ],
-        ret!(U64),
+        ret!(Address),
         format!(
             "Next populated {bit8}{fam} index after `cur` under `tag`, or `BADNODE` when none."
         ),
         nn_return(&format!(
-            "static_cast<uint64_t>(n.{fam}next{suf}(static_cast<{cast}>(cur), static_cast<uchar>(tag)))"
+            "ea_wire(n.{fam}next{suf}(static_cast<{cast}>(cur), static_cast<uchar>(tag)))"
         )),
     ));
     v.push(FnSpec::rendered(
         format!("netnode_{fam}last{suf}"),
         vec![Arg::new("node", ArgTy::U64), Arg::new("tag", ArgTy::U32)],
-        ret!(U64),
+        ret!(Address),
         format!(
             "Highest populated {bit8}{fam} index under `tag`, or `BADNODE` when the array is empty."
         ),
         nn_return(&format!(
-            "static_cast<uint64_t>(n.{fam}last{suf}(static_cast<uchar>(tag)))"
+            "ea_wire(n.{fam}last{suf}(static_cast<uchar>(tag)))"
         )),
     ));
     v.push(FnSpec::rendered(
@@ -142,12 +142,12 @@ fn iteration(v: &mut Vec<FnSpec>, fam: &str, k: Key) {
             Arg::new("cur", k.idx_ty),
             Arg::new("tag", ArgTy::U32),
         ],
-        ret!(U64),
+        ret!(Address),
         format!(
             "Previous populated {bit8}{fam} index before `cur` under `tag`, or `BADNODE` when none."
         ),
         nn_return(&format!(
-            "static_cast<uint64_t>(n.{fam}prev{suf}(static_cast<{cast}>(cur), static_cast<uchar>(tag)))"
+            "ea_wire(n.{fam}prev{suf}(static_cast<{cast}>(cur), static_cast<uchar>(tag)))"
         )),
     ));
 }
@@ -195,7 +195,9 @@ fn alt(v: &mut Vec<FnSpec>) {
             ],
             ret!(U64),
             format!("Alt value {at} under `tag`, or `0` when unset."),
-            nn_return(&format!("static_cast<uint64_t>(n.altval{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(tag)))")),
+            nn_return(&format!(
+                "widen(n.altval{suf}(static_cast<{cast}>({idx}), static_cast<uchar>(tag)))"
+            )),
         ));
         v.push(FnSpec::rendered(
             format!("netnode_altset{suf}"),
@@ -295,9 +297,9 @@ fn sup(v: &mut Vec<FnSpec>) {
             Arg::new("cur", ArgTy::U64),
             Arg::new("tag", ArgTy::U32),
         ],
-        ret!(U64),
+        ret!(Address),
         "Lowest populated sup index `>= cur` under `tag`, or `BADNODE` when none.".into(),
-        nn_return("static_cast<uint64_t>(n.lower_bound(static_cast<nodeidx_t>(cur), static_cast<uchar>(tag)))"),
+        nn_return("ea_wire(n.lower_bound(static_cast<nodeidx_t>(cur), static_cast<uchar>(tag)))"),
     ));
     v.push(FnSpec::rendered(
         "netnode_lower_bound_idx8".into(),
@@ -306,10 +308,10 @@ fn sup(v: &mut Vec<FnSpec>) {
             Arg::new("idx", ArgTy::U32),
             Arg::new("tag", ArgTy::U32),
         ],
-        ret!(U64),
+        ret!(Address),
         "Lowest populated 8-bit sup index at or after `idx` under `tag`, or `BADNODE` when none."
             .into(),
-        nn_return("static_cast<uint64_t>(n.lower_bound_idx8(static_cast<uchar>(idx), static_cast<uchar>(tag)))"),
+        nn_return("ea_wire(n.lower_bound_idx8(static_cast<uchar>(idx), static_cast<uchar>(tag)))"),
     ));
     v.push(shift("sup"));
     v.push(FnSpec::rendered(
@@ -358,7 +360,7 @@ fn hash(v: &mut Vec<FnSpec>) {
         key(),
         ret!(U64),
         "Hash value for `key` under `tag` decoded as an integer, or `0` when unset.".into(),
-        nn_key_return("static_cast<uint64_t>(n.hashval_long(k.c_str(), static_cast<uchar>(tag)))"),
+        nn_key_return("widen(n.hashval_long(k.c_str(), static_cast<uchar>(tag)))"),
     ));
     v.push(FnSpec::rendered(
         "netnode_hashset".into(),
@@ -549,7 +551,7 @@ const CUSTOM_FNS: &[FnSpec] = fns! {
     // Lifecycle.
     "Resolve the netnode named `name`, creating it when `create`; the node id, or `BADNODE` when it \
      is absent and `create` is false."
-        netnode_by_name(name: Str, create: Bool) -> U64;
+        netnode_by_name(name: Str, create: Bool) -> Address;
     "Whether `node` has any information attached (a named or non-empty node)."
         netnode_exists(node: U64) -> Bool;
     "Whether a netnode named `name` exists, without creating it."
@@ -561,13 +563,13 @@ const CUSTOM_FNS: &[FnSpec] = fns! {
     "Rename `node` to `name` (empty clears the name); `false` when `name` is taken."
         netnode_rename(node: U64, name: Str) -> Bool;
     "Lowest-id existing netnode, or `BADNODE` when the database has none."
-        netnode_first() -> U64;
+        netnode_first() -> Address;
     "Highest-id existing netnode, or `BADNODE` when the database has none."
-        netnode_last() -> U64;
+        netnode_last() -> Address;
     "Next existing netnode after `cur`, or `BADNODE` when `cur` is the last."
-        netnode_next(cur: U64) -> U64;
+        netnode_next(cur: U64) -> Address;
     "Previous existing netnode before `cur`, or `BADNODE` when `cur` is the first."
-        netnode_prev(cur: U64) -> U64;
+        netnode_prev(cur: U64) -> Address;
     "Copy (or move, when `move_`) `count` nodes starting at `node` onto `target`; the number of \
      nodes affected."
         netnode_copyto(node: U64, count: U64, target: U64, move_: Bool) -> Usize;

@@ -18,7 +18,8 @@ plus the bridges that are entirely hand-written because no spec fits them.
 - **C ABI and shared headers**: `abi.h` (the plain `extern "C"` declarations `idakit-sys` binds
   by hand), `internal.h`, `trycatch.h` (the `rust::behavior::trycatch` override every production
   bridge routes through), `type_walker.h` (the opaque tinfo-walker handle shared by the ctree
-  and type-write bridges).
+  and type-write bridges), `wire.h` (the `ea_wire`/`widen` helpers every outbound value goes
+  through; see *Widening onto the wire*).
 - **Per-domain bodies**, namespace `gen`: one `<domain>.cpp` per generated bridge, mirroring the
   matching `src/<domain>.rs` in the idakit crate (`bytes.cpp`, `name.cpp`, `function.cpp`,
   `instruction.cpp`, `import.cpp`, `export.cpp`, `meta.cpp`, `range.cpp`, `reference.cpp`,
@@ -46,6 +47,22 @@ plus the bridges that are entirely hand-written because no spec fits them.
 Within a translation unit: `pro.h`, then `ida.hpp`, then the SDK domain headers the body
 actually needs, then std headers, then the generated `gen_*.h` headers last. Keep each block
 sorted internally so a diff shows only the header that changed.
+
+## Widening onto the wire
+
+Every integer leaving the facade crosses as `uint64_t`, but `ea_t`, `nodeidx_t`, and `sel_t` are
+32-bit on a build without `__EA64__`. A plain cast would zero-extend that build's all-ones
+sentinel (`BADADDR`, `BADNODE`, `BADSEL`) into a value Rust accepts as real, so no body spells
+one. Each widening names what it carries:
+
+- `ea_wire(x)` for an address, node id, or selector: all-ones stays all-ones at any width.
+- `widen(x)` for anything else (a size, count, flag word, ordinal, or signed frame delta).
+
+The codegen spec tags address-domain returns and struct fields as `Scalar::Address`, and templated
+bodies wrap them automatically. `tests/wire.rs` holds the hand-written bodies to the same rule: it
+rejects a bare 64-bit `static_cast`, a `return` from an `Address`-returning `Custom` body that
+skips `ea_wire`, and an assignment to an `Address` field that does. Inbound arguments need nothing,
+since narrowing Rust's `u64::MAX` to a 32-bit `ea_t` already yields that build's `BADADDR`.
 
 ## Error channel
 

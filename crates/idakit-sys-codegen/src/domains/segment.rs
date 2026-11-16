@@ -19,9 +19,9 @@ pub const SEGMENT: Domain = Domain {
         "Number of segments in the current database (`get_segm_qty`)."
             gen_seg_qty() -> Usize = scalar("get_segm_qty()");
         "Start address of segment `n`, or `BADADDR` when `n` is out of range."
-            gen_seg_start(n: I32) -> U64 = seg_scalar("start_ea", "BADADDR");
+            gen_seg_start(n: I32) -> Address = seg_scalar("start_ea", "BADADDR");
         "End address of segment `n`, or `BADADDR` when `n` is out of range."
-            gen_seg_end(n: I32) -> U64 = seg_scalar("end_ea", "BADADDR");
+            gen_seg_end(n: I32) -> Address = seg_scalar("end_ea", "BADADDR");
         "Permission bits (`SEGPERM_*`) of segment `n`, or `0` when out of range."
             gen_seg_perm(n: I32) -> I32 = seg_scalar("get_perm()", "0");
         "Address bits (16/32/64) of segment `n`, or `0` when out of range."
@@ -31,7 +31,7 @@ pub const SEGMENT: Domain = Domain {
         "Class of segment `n`; `Err` when `n` is out of range or has no class."
             gen_seg_class(n: I32) -> Result(String) = seg_string_pos("get_segment_class(&out, ea)");
         "Selector (`sel_t`) of segment `n`, or `BADSEL` when `n` is out of range."
-            gen_seg_sel(n: I32) -> U64 = seg_scalar("get_sel()", "BADSEL");
+            gen_seg_sel(n: I32) -> Address = seg_scalar("get_sel()", "BADSEL");
         "Segment type code (`SEG_*`) of segment `n`, or `SEG_NORM` when `n` is out of range."
             gen_seg_type(n: I32) -> I32 = seg_scalar("get_type()", "SEG_NORM");
         "Background color (`bgcolor_t`) of segment `n`, or `DEFCOLOR` when `n` is out of range."

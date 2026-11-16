@@ -33,7 +33,7 @@ impl Scalar {
             Self::U8 => quote!(u8),
             Self::U16 => quote!(u16),
             Self::U32 => quote!(u32),
-            Self::U64 => quote!(u64),
+            Self::U64 | Self::Address => quote!(u64),
             Self::Usize => quote!(usize),
         }
     }
@@ -45,8 +45,16 @@ impl Scalar {
             Self::U8 => "uint8_t",
             Self::U16 => "uint16_t",
             Self::U32 => "uint32_t",
-            Self::U64 => "uint64_t",
+            Self::U64 | Self::Address => "uint64_t",
             Self::Usize => "size_t",
+        }
+    }
+    /// `expr` converted to this scalar's C++ type: `ea_wire` for an [`Address`](Self::Address),
+    /// so its sentinel survives the widening, a plain `static_cast` for everything else.
+    pub(crate) fn cxx_convert(self, expr: &str) -> String {
+        match self {
+            Self::Address => format!("ea_wire({expr})"),
+            _ => format!("static_cast<{}>({expr})", self.cxx()),
         }
     }
 }
@@ -101,7 +109,7 @@ impl ConstDef {
     /// of `i128`'s `Display`, valid C++ as a unary minus applied to the magnitude literal.
     fn cxx_literal(&self) -> String {
         match self.ty {
-            Scalar::U64 => format!("{}ULL", self.value),
+            Scalar::U64 | Scalar::Address => format!("{}ULL", self.value),
             _ => self.value.to_string(),
         }
     }
@@ -521,22 +529,37 @@ impl FnSpec {
         format!("{} {}({})", self.ret.cxx(), self.name, args.join(", "))
     }
 
+    /// The scalar a scalar-templated body returns.
+    ///
+    /// # Panics
+    /// If the spec pairs a scalar body template with a non-scalar return, a spec authoring error.
+    fn scalar_ret(&self) -> Scalar {
+        match self.ret.shape() {
+            RetShape::Scalar(s) => *s,
+            _ => panic!(
+                "`{}` has a scalar body template but a non-scalar return",
+                self.name
+            ),
+        }
+    }
+
     /// The C++ body for this templated (non-`Custom`) spec, or `None` for `Custom`.
     pub(crate) fn body_source(&self) -> Option<String> {
         let sig = self.cxx_signature();
         let body = match &self.body {
             BodyKind::ScalarCall { call } => {
-                format!("  return static_cast<{}>({});\n", self.ret.cxx(), call)
+                format!("  return {};\n", self.scalar_ret().cxx_convert(call))
             }
             BodyKind::SegScalar {
                 accessor,
                 null_sentinel,
             } => {
-                let cast = self.ret.cxx();
+                let ret = self.scalar_ret();
                 format!(
                     "  segment_info_t si;\n  \
-                     return get_segment_info_by_num(&si, n) ? static_cast<{cast}>(si.{accessor}) \
-                     : static_cast<{cast}>({null_sentinel});\n"
+                     return get_segment_info_by_num(&si, n) ? {} : {};\n",
+                    ret.cxx_convert(&format!("si.{accessor}")),
+                    ret.cxx_convert(null_sentinel),
                 )
             }
             BodyKind::SegString {
@@ -842,10 +865,11 @@ inline rust::Vec<uint8_t> to_rust_bytes(const uint8_t *data, size_t n) {
 
 /// The standalone `gen_helpers.h`: the shared [`HELPERS`] in the `gen` namespace, included
 /// by every domain header (so every generated body and `custom_tus` TU gets them without a per-domain
-/// opt-in). Self-contained: pulls in `qstring` and the `rust::` types it names.
+/// opt-in). Self-contained: pulls in `qstring`, the `rust::` types it names, and `wire.h`'s
+/// `ea_wire`/`widen`, which the templated bodies call.
 pub(crate) fn helpers_header_source() -> String {
     let mut s = String::from("#pragma once\n\n#include <cstddef>\n#include <cstdint>\n\n");
-    s.push_str("#include <pro.h>\n\n#include \"rust/cxx.h\"\n\n");
+    s.push_str("#include <pro.h>\n\n#include \"rust/cxx.h\"\n#include \"wire.h\"\n\n");
     let _ = writeln!(s, "namespace {NAMESPACE} {{\n");
     s.push_str(HELPERS);
     let _ = write!(s, "\n}} // namespace {NAMESPACE}\n");

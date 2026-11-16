@@ -44,22 +44,22 @@ pub const BYTES: Domain = Domain {
          when there is none or it cannot be decoded."
             get_strlit(ea: U64, strtype: I32) -> Result(String);
         "Lowest mapped address in the database (`inf_get_min_ea`)."
-            min_ea() -> U64 = scalar("inf_get_min_ea()");
+            min_ea() -> Address = scalar("inf_get_min_ea()");
         "One past the highest mapped address in the database (`inf_get_max_ea`)."
-            max_ea() -> U64 = scalar("inf_get_max_ea()");
+            max_ea() -> Address = scalar("inf_get_max_ea()");
         "Flag word of the item at `ea` (`get_flags`)."
             get_flags(ea: U64) -> U64;
         "This SDK's `FF_UNK`/`FF_TAIL`/`FF_DATA`/`FF_CODE` values in idakit `ByteClass`'s \
          discriminant order, an alignment source for a mirror test."
             byte_class_ids() -> Vec(U64);
         "Start address of the item covering `ea` (`ea` itself when it is an item head)."
-            get_item_head(ea: U64) -> U64;
+            get_item_head(ea: U64) -> Address;
         "Address just past the item covering `ea` (`get_item_end`)."
-            get_item_end(ea: U64) -> U64;
+            get_item_end(ea: U64) -> Address;
         "Next item head after `ea`, searching up to `maxea`, or `BADADDR` when none."
-            get_next_head(ea: U64, maxea: U64) -> U64;
+            get_next_head(ea: U64, maxea: U64) -> Address;
         "Previous item head before `ea`, searching down to `minea`, or `BADADDR` when none."
-            get_prev_head(ea: U64, minea: U64) -> U64;
+            get_prev_head(ea: U64, minea: U64) -> Address;
         "The regular (or repeatable, when `rptble`) comment at `ea`; `Err` when there is none."
             get_cmt(ea: U64, rptble: Bool) -> Result(String);
         "Compile `pattern` via IDA's own parser (byte width taken from `ea`); `Err` carries the \
@@ -72,7 +72,7 @@ pub const BYTES: Domain = Domain {
             binpat_stats(pat: ExternRef("CompiledBinpat")) -> Shared("BinpatStats");
         "First address in `[start, end)` matching `pat`, or `BADADDR` when absent (headless: \
          `NOBREAK | NOSHOW` forced)."
-            bin_search(start: U64, end: U64, pat: ExternRef("CompiledBinpat"), flags: I32) -> U64;
+            bin_search(start: U64, end: U64, pat: ExternRef("CompiledBinpat"), flags: I32) -> Address;
         "Patch `bytes` over `ea`, or `false` without writing when any target byte is unmapped."
             patch_bytes(ea: U64, bytes: Bytes) -> Bool;
     },

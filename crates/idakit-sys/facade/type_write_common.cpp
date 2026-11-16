@@ -98,7 +98,7 @@ struct recipe_reader {
     }
     uint64_t v = 0;
     for (size_t i = 0; i < n; i++)
-      v |= static_cast<uint64_t>(p[pos++]) << (8 * i);
+      v |= widen(p[pos++]) << (8 * i);
     return v;
   }
 

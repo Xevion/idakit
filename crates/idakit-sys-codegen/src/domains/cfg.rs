@@ -25,8 +25,8 @@ pub const CFG: Domain = Domain {
         name: "BlockInfo",
         doc: "One basic block's bounds and kind, returned by value from [`cfg_block`].",
         fields: fields! {
-            start: U64 = "Start address of the block.";
-            end: U64 = "End address (exclusive) of the block.";
+            start: Address = "Start address of the block.";
+            end: Address = "End address (exclusive) of the block.";
             kind: I32 = "Raw `fc_block_type_t` discriminant (`fcb_normal`, `fcb_ret`, ...).";
         },
     }],

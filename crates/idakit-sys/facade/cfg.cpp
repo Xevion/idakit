@@ -45,8 +45,8 @@ BlockInfo cfg_block(const ::qflow_chart_ea_t &flow, size_t n) {
     throw std::out_of_range("block index out of range");
   const qbasic_block_t &block = flow.blocks[n];
   BlockInfo info;
-  info.start = static_cast<uint64_t>(block.start_ea);
-  info.end = static_cast<uint64_t>(block.end_ea);
+  info.start = ea_wire(block.start_ea);
+  info.end = ea_wire(block.end_ea);
   info.kind = static_cast<int32_t>(flow.calc_block_type(n));
   return info;
 }

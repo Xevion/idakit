@@ -24,6 +24,7 @@
 // the LocPiece shared struct. OUT_DIR is on this TU's include path.
 #include "gen_facade_consts.h" // gen::NONE
 #include "gen_visitors.h"
+#include "wire.h"
 
 namespace bridge {
 
@@ -70,7 +71,7 @@ struct walker_t {
   // Convert one cexpr_t into a node id, recursing into operands first so each child is minted
   // before the parent node that references it.
   uint32_t expr(const cexpr_t *cexpr) {
-    ea_t addr = cexpr->ea;
+    const uint64_t addr = ea_wire(cexpr->ea);
     uint32_t t = bridge::visit_walker_ty(type_walker, cexpr->type);
     switch (cexpr->op) {
     case cot_num:
@@ -83,8 +84,7 @@ struct walker_t {
     case cot_obj: {
       qstring nm;
       get_name(&nm, cexpr->obj_ea);
-      return nodes->e_obj(addr, static_cast<uint64_t>(cexpr->obj_ea),
-                          lossy_str(nm.c_str(), nm.length()), t);
+      return nodes->e_obj(addr, ea_wire(cexpr->obj_ea), lossy_str(nm.c_str(), nm.length()), t);
     }
     case cot_var:
       return nodes->e_var(addr, static_cast<uint32_t>(cexpr->v.idx), t);
@@ -131,7 +131,7 @@ struct walker_t {
   }
 
   // Walk a statement list into an s_block node, children in list order.
-  uint32_t block(const cinsn_list_t &list, ea_t addr) {
+  uint32_t block(const cinsn_list_t &list, uint64_t addr) {
     std::vector<uint32_t> kids;
     kids.reserve(list.size());
     for (const cinsn_t &child : list)
@@ -141,7 +141,7 @@ struct walker_t {
 
   // Convert one cinsn_t into a node id, recursing into nested statements and expressions.
   uint32_t stmt(const cinsn_t *cinsn) {
-    ea_t addr = cinsn->ea;
+    const uint64_t addr = ea_wire(cinsn->ea);
     switch (cinsn->op) {
     case cit_block:
       return block(*cinsn->cblock, addr);
@@ -193,7 +193,7 @@ struct walker_t {
       std::vector<uint64_t> addrs;
       addrs.reserve(cinsn->casm->size());
       for (ea_t insn_addr : *cinsn->casm)
-        addrs.push_back(static_cast<uint64_t>(insn_addr));
+        addrs.push_back(ea_wire(insn_addr));
       return nodes->s_asm(addr, slice_of(addrs));
     }
     case cit_throw:

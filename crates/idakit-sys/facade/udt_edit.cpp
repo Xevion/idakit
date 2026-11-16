@@ -82,7 +82,7 @@ TypeWriteResult udt_add_member(rust::Str type_name, rust::Str member_name,
       uint64_t offset = member_bit;
       if (offset == MEMBER_APPEND) {
         asize_t sz = tif.is_union() ? 0 : tif.get_size();
-        offset = (sz == BADSIZE ? 0 : static_cast<uint64_t>(sz)) * 8;
+        offset = (sz == BADSIZE ? 0 : widen(sz)) * 8;
       }
       uint16 width;
       if (bitfield_width_bits(member_type, width)) {

@@ -13,10 +13,10 @@ pub const FUNCTION: Domain = Domain {
         doc: "One function entry chunk's scalars, plus the strings the caller asked for, returned \
               by value from [`func_entry_info`]. An unrequested or absent string is empty.",
         fields: fields! {
-            start: U64 = "Entry address.";
-            end: U64 = "Entry-chunk end address, exclusive.";
+            start: Address = "Entry address.";
+            end: Address = "Entry-chunk end address, exclusive.";
             flags: U64 = "Raw `func_t::flags` bits (`FUNC_*`).";
-            frame_id: U64 = "Netnode id of the frame structure, `BADNODE` when there is none.";
+            frame_id: Address = "Netnode id of the frame structure, `BADNODE` when there is none.";
             locals_size: U64 = "Size in bytes of the frame's local-variable part (`frsize`).";
             saved_regs_size: U32 = "Size in bytes of the saved-registers part of the frame.";
             purged_bytes: U64 = "Bytes purged from the stack on return.";
@@ -33,11 +33,11 @@ pub const FUNCTION: Domain = Domain {
         "Number of functions in the database (`get_func_qty`)."
             func_qty() -> Usize = scalar("get_func_qty()");
         "Entry address of the `n`-th function, or `BADADDR` when `n` is out of range."
-            func_ea(n: Usize) -> U64;
+            func_ea(n: Usize) -> Address;
         "Entry address of the function containing `ea`, or `BADADDR` when there is none."
-            func_start(ea: U64) -> U64;
+            func_start(ea: U64) -> Address;
         "Entry-chunk end address of the function at `ea`, or `BADADDR` when not a function."
-            func_end(ea: U64) -> U64;
+            func_end(ea: U64) -> Address;
         "`func_t::flags` of the function at `ea`, or `0` when `ea` is not a function."
             func_flags(ea: U64) -> U64;
         "Number of chunks (entry plus tails) of the function at `ea`, or `0`."

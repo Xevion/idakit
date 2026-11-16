@@ -15,10 +15,10 @@
 namespace gen {
 
 // Address of the entry point at idx in the entry-point list.
-uint64_t export_ea(size_t idx) { return static_cast<uint64_t>(get_entry(get_entry_ordinal(idx))); }
+uint64_t export_ea(size_t idx) { return ea_wire(get_entry(get_entry_ordinal(idx))); }
 
 // Ordinal of the entry point at idx in the entry-point list.
-uint64_t export_ordinal(size_t idx) { return static_cast<uint64_t>(get_entry_ordinal(idx)); }
+uint64_t export_ordinal(size_t idx) { return widen(get_entry_ordinal(idx)); }
 
 // Name of the export at idx; throws when the entry has no name.
 rust::String export_name(size_t idx) {

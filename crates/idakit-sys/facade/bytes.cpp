@@ -71,7 +71,7 @@ uint32_t get_u32(uint64_t addr) {
 uint64_t get_u64(uint64_t addr) {
   if (!range_loaded(static_cast<ea_t>(addr), 8))
     throw std::runtime_error("get_u64: covered byte uninitialized");
-  return static_cast<uint64_t>(get_qword(static_cast<ea_t>(addr)));
+  return widen(get_qword(static_cast<ea_t>(addr)));
 }
 
 // Decoded contents of the string literal at addr; throws when there is no literal there or it
@@ -96,7 +96,7 @@ rust::Vec<uint64_t> byte_class_ids() {
   auto value_of = [](bool (*is_class)(flags64_t)) {
     for (flags64_t candidate : {0x000, 0x200, 0x400, 0x600})
       if (is_class(candidate))
-        return static_cast<uint64_t>(candidate);
+        return widen(candidate);
     return UINT64_MAX;
   };
   rust::Vec<uint64_t> out;
@@ -108,28 +108,22 @@ rust::Vec<uint64_t> byte_class_ids() {
 }
 
 // The flags word for addr: byte/data/code kind, name presence, and the other per-byte bits.
-uint64_t get_flags(uint64_t addr) {
-  return static_cast<uint64_t>(::get_flags(static_cast<ea_t>(addr)));
-}
+uint64_t get_flags(uint64_t addr) { return widen(::get_flags(static_cast<ea_t>(addr))); }
 
 // Start address of the item (instruction or data) containing addr.
-uint64_t get_item_head(uint64_t addr) {
-  return static_cast<uint64_t>(::get_item_head(static_cast<ea_t>(addr)));
-}
+uint64_t get_item_head(uint64_t addr) { return ea_wire(::get_item_head(static_cast<ea_t>(addr))); }
 
 // Address just past the item (instruction or data) containing addr.
-uint64_t get_item_end(uint64_t addr) {
-  return static_cast<uint64_t>(::get_item_end(static_cast<ea_t>(addr)));
-}
+uint64_t get_item_end(uint64_t addr) { return ea_wire(::get_item_end(static_cast<ea_t>(addr))); }
 
 // Next defined item head after addr, capped at max_addr; BADADDR when there is none.
 uint64_t get_next_head(uint64_t addr, uint64_t max_addr) {
-  return static_cast<uint64_t>(next_head(static_cast<ea_t>(addr), static_cast<ea_t>(max_addr)));
+  return ea_wire(next_head(static_cast<ea_t>(addr), static_cast<ea_t>(max_addr)));
 }
 
 // Previous defined item head before addr, capped at min_addr; BADADDR when there is none.
 uint64_t get_prev_head(uint64_t addr, uint64_t min_addr) {
-  return static_cast<uint64_t>(prev_head(static_cast<ea_t>(addr), static_cast<ea_t>(min_addr)));
+  return ea_wire(prev_head(static_cast<ea_t>(addr), static_cast<ea_t>(min_addr)));
 }
 
 // Comment at addr (repeatable when rptble is set); throws when there is none.
@@ -189,7 +183,7 @@ uint64_t bin_search(uint64_t start, uint64_t end, const ::compiled_binpat_vec_t 
   // NOBREAK/NOSHOW are mandatory headless: no Ctrl-Break polling, no UI progress.
   ea_t hit = ::bin_search(static_cast<ea_t>(start), static_cast<ea_t>(end), pat,
                           flags | BIN_SEARCH_NOBREAK | BIN_SEARCH_NOSHOW);
-  return static_cast<uint64_t>(hit);
+  return ea_wire(hit);
 }
 
 // Overwrites bytes at addr with data; returns false without writing anything if the range

@@ -60,10 +60,12 @@
 //! MIT. The IDA SDK and runtime are proprietary to Hex-Rays; these bindings link against your own
 //! install and redistribute none of it.
 
-/// IDA's effective address (`ea_t`), compiled `__EA64__`.
+/// IDA's effective address (`ea_t`), carried as 64 bits whatever width the kernel uses.
 pub type Address = u64;
-/// The invalid-address sentinel (`BADADDR`); every `Address`-returning facade call uses it for
-/// "no address".
+/// The invalid-address sentinel (`BADADDR`) as it crosses the facade, used for "no address".
+///
+/// All-ones at any `ea_t` width: the facade widens a 32-bit `ea_t`'s `0xFFFFFFFF` to this value
+/// rather than zero-extending it, and the same holds for `BADNODE` and `BADSEL`.
 pub const BADADDR: Address = u64::MAX;
 
 mod bridge_cfunc;

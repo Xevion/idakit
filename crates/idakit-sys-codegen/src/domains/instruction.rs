@@ -40,7 +40,7 @@ pub const INSTRUCTION: Domain = Domain {
                 index: Struct("RegisterData") = "Memory index register (kind = mem).";
                 disp: I64 = "Memory displacement (kind = mem).";
                 value: U64 = "Immediate value (kind = imm) or far offset (kind = far).";
-                addr: U64 = "Near target, or memory static target / `BADADDR` (kind = near/mem).";
+                addr: Address = "Near target, or memory static target / `BADADDR` (kind = near/mem).";
                 sel: U16 = "Far selector (kind = far).";
                 broadcast: U8 = "EVEX embedded-broadcast factor N of a `{1toN}` memory operand, as IDA renders it, else 0.";
             },
@@ -54,8 +54,8 @@ pub const INSTRUCTION: Domain = Domain {
                           -3 unmodeled operand, -4 unmodeled register.";
                 err_op: U8 = "On the -3/-4 status, the offending operand index.";
                 err_optype: U8 = "On -3 the offending raw operand type; on -4 the register number.";
-                address: U64 = "Instruction address.";
-                target: U64 = "Direct branch/call target, or `BADADDR`.";
+                address: Address = "Instruction address.";
+                target: Address = "Direct branch/call target, or `BADADDR`.";
                 itype: U16 = "Processor-local canonical instruction id.";
                 len: U8 = "Encoded length in bytes.";
                 isa: U8 = "0 = x86, 1 = x64.";

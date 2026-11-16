@@ -14,7 +14,7 @@ pub const STRINGS: Domain = Domain {
         name: "StrlistItem",
         doc: "One string-list entry: its address, octet length, and `STRTYPE` code.",
         fields: fields! {
-            ea: U64 = "Address of the string literal.";
+            ea: Address = "Address of the string literal.";
             length: I32 = "Length in octets (raw bytes, not decoded characters).";
             type_: I32 = "`STRTYPE` code describing the encoding.";
         },

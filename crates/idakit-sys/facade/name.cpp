@@ -37,8 +37,7 @@ rust::String get_ea_name_flags(uint64_t addr, int32_t flags) {
 
 // Address bound to name, or BADADDR when no such name exists.
 uint64_t get_name_ea(rust::Str name) {
-  return static_cast<uint64_t>(
-      ::get_name_ea(BADADDR, std::string(name.data(), name.size()).c_str()));
+  return ea_wire(::get_name_ea(BADADDR, std::string(name.data(), name.size()).c_str()));
 }
 
 // Full demangle (disable_mask 0). An unmangled name leaves `out` empty; throw so the caller sees
@@ -55,7 +54,7 @@ rust::String demangle_name(rust::Str name) {
 size_t nlist_size() { return ::get_nlist_size(); }
 
 // Address of the name-list entry at idx.
-uint64_t nlist_ea(size_t idx) { return static_cast<uint64_t>(::get_nlist_ea(idx)); }
+uint64_t nlist_ea(size_t idx) { return ea_wire(::get_nlist_ea(idx)); }
 
 // Name of the name-list entry at idx; throws when the entry has no name.
 rust::String nlist_name(size_t idx) {

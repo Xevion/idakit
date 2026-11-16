@@ -306,6 +306,7 @@ fn emit_rerun_directives(sdk_include: &str, runtime: &Path) {
     println!("cargo:rerun-if-changed=facade/trycatch.h");
     println!("cargo:rerun-if-changed=facade/compat.h");
     println!("cargo:rerun-if-changed=facade/compat_hexrays.h");
+    println!("cargo:rerun-if-changed=facade/wire.h");
     println!("cargo:rerun-if-env-changed=IDADIR");
     println!("cargo:rerun-if-env-changed=IDAKIT_EMIT_COMPILE_COMMANDS");
     println!("cargo:rerun-if-env-changed=IDA_SDK_DIR");

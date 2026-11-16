@@ -30,8 +30,8 @@ rust::Vec<XrefRec> xrefs_build(uint64_t addr, bool is_to, bool flow) {
                   : xrefs.first_from(static_cast<ea_t>(addr), mode);
   for (; ok; ok = is_to ? xrefs.next_to() : xrefs.next_from()) {
     XrefRec rec;
-    rec.from = static_cast<uint64_t>(xrefs.from);
-    rec.to = static_cast<uint64_t>(xrefs.to);
+    rec.from = ea_wire(xrefs.from);
+    rec.to = ea_wire(xrefs.to);
     rec.type_ = static_cast<int32_t>(xrefs.type);
     rec.iscode = xrefs.iscode != 0;
     rec.user = xrefs.user != 0;

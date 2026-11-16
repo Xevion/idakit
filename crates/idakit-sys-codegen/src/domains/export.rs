@@ -14,7 +14,7 @@ pub const EXPORT: Domain = Domain {
         "Number of exported entry points in the database (`get_entry_qty`)."
             export_qty() -> Usize = scalar("get_entry_qty()");
         "Address of export `idx`, or `BADADDR` when the export is a pure forwarder."
-            export_ea(idx: Usize) -> U64;
+            export_ea(idx: Usize) -> Address;
         "Ordinal of export `idx`."
             export_ordinal(idx: Usize) -> U64;
         "Name of export `idx`; `Err` when it has none."

@@ -127,8 +127,7 @@ void fill_mem(const insn_t &insn, const op_t &op, OperandData &dst) {
   dst.disp = op.type == o_phrase ? 0 : static_cast<int64_t>(op.addr);
   // o_mem resolves to a static address (incl. RIP-relative IDA already folded). op.addr is an
   // offset within the segment, so it needs mapping; the two coincide only where the base is 0.
-  dst.addr = op.type == o_mem ? static_cast<uint64_t>(map_data_ea(insn, op))
-                              : static_cast<uint64_t>(BADADDR);
+  dst.addr = ea_wire(op.type == o_mem ? map_data_ea(insn, op) : BADADDR);
   // EVEX embedded broadcast: with EVEX.b and a memory operand, one element is read and fanned out
   // to N lanes. The factor N is vector width / element width, but neither is cleanly available:
   // op.dtype is the whole vector, and element width depends on the instruction (2 bytes for fp16,
@@ -346,16 +345,16 @@ int classify_op(const insn_t &insn, const op_t &op, int idx, OperandData &dst) {
     return 0;
   case o_imm:
     dst.kind = OP_IMM;
-    dst.value = static_cast<uint64_t>(op.value);
+    dst.value = widen(op.value);
     return 0;
   case o_near:
     dst.kind = OP_NEAR;
-    dst.addr = static_cast<uint64_t>(map_code_ea(insn, op));
+    dst.addr = ea_wire(map_code_ea(insn, op));
     return 0;
   case o_far:
     // Unmapped on purpose: the selector travels beside the offset, so the pair stays intact.
     dst.kind = OP_FAR;
-    dst.value = static_cast<uint64_t>(op.addr);
+    dst.value = widen(op.addr);
     dst.sel = static_cast<uint16_t>(op.segsel);
     return 0;
   default:
@@ -371,8 +370,8 @@ InstructionData decode_insn(uint64_t addr) {
   // Value-initialized: status/err_op/err_optype and every scalar start at 0 (so the success path
   // reports status 0 without an explicit set), mnemonic empty, ops empty.
   InstructionData out{};
-  out.address = addr;
-  out.target = static_cast<uint64_t>(BADADDR);
+  out.address = ea_wire(static_cast<ea_t>(addr));
+  out.target = ea_wire(BADADDR);
 
   // Only the x86 module's operand encoding is modelled; refuse other processors loudly rather than
   // fabricate operands from a foreign op_t layout.
@@ -388,7 +387,7 @@ InstructionData decode_insn(uint64_t addr) {
   }
 
   // The kernel's own ea: echoing the argument back would hide a decode that landed elsewhere.
-  out.address = static_cast<uint64_t>(insn.ea);
+  out.address = ea_wire(insn.ea);
   out.len = static_cast<uint8_t>(insn.size);
   out.isa = inf_is_64bit() ? 1 : 0;
   out.itype = insn.itype;
@@ -482,7 +481,7 @@ InstructionData decode_insn(uint64_t addr) {
   if (stops)
     flow |= FLOW_STOPS;
   out.flow = flow;
-  out.target = has_tgt ? static_cast<uint64_t>(tgt) : static_cast<uint64_t>(BADADDR);
+  out.target = ea_wire(tgt);
   out.ops = std::move(ops);
   return out;
 }

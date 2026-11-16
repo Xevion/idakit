@@ -21,20 +21,18 @@
 namespace gen {
 
 // Start address of the nth function in the functions list, or BADADDR when n is out of range.
-uint64_t func_ea(size_t n) { return static_cast<uint64_t>(get_func_ea_by_num(n)); }
+uint64_t func_ea(size_t n) { return ea_wire(get_func_ea_by_num(n)); }
 
 // Start address of the function containing addr, or BADADDR when there is none.
-uint64_t func_start(uint64_t addr) {
-  return static_cast<uint64_t>(get_func_start(static_cast<ea_t>(addr)));
-}
+uint64_t func_start(uint64_t addr) { return ea_wire(get_func_start(static_cast<ea_t>(addr))); }
 
 // End address (exclusive) of the function containing addr, or BADADDR when there is none. Keyed on
 // the entry chunk, so an address in a tail answers for the whole function.
 uint64_t func_end(uint64_t addr) {
   fchunk_info_t entry;
   if (!get_fchunk_info(&entry, get_func_start(static_cast<ea_t>(addr))))
-    return static_cast<uint64_t>(BADADDR);
-  return static_cast<uint64_t>(entry.end_ea);
+    return ea_wire(BADADDR);
+  return ea_wire(entry.end_ea);
 }
 
 // The function's flags word at addr, or 0 when addr is not inside a function.
@@ -88,14 +86,14 @@ FunctionEntryInfo func_entry_info(uint64_t addr, int32_t fields) {
   if (!get_func_entry_info(&entry, static_cast<ea_t>(addr), fields))
     throw std::runtime_error("no function at address");
   FunctionEntryInfo out;
-  out.start = static_cast<uint64_t>(entry.start_ea);
-  out.end = static_cast<uint64_t>(entry.end_ea);
+  out.start = ea_wire(entry.start_ea);
+  out.end = ea_wire(entry.end_ea);
   out.flags = entry.get_flags();
-  out.frame_id = static_cast<uint64_t>(entry.get_frame_id());
-  out.locals_size = static_cast<uint64_t>(entry.get_frsize());
+  out.frame_id = ea_wire(entry.get_frame_id());
+  out.locals_size = widen(entry.get_frsize());
   out.saved_regs_size = static_cast<uint32_t>(entry.get_frregs());
-  out.purged_bytes = static_cast<uint64_t>(entry.get_argsize());
-  out.frame_pointer_delta = static_cast<uint64_t>(entry.get_fpd());
+  out.purged_bytes = widen(entry.get_argsize());
+  out.frame_pointer_delta = widen(entry.get_fpd());
   out.color = static_cast<uint32_t>(entry.get_color());
   out.name = rust::String::lossy(entry.get_name());
   out.cmt = rust::String::lossy(entry.get_cmt());

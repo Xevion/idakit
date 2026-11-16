@@ -26,8 +26,8 @@ struct collect_ctx_t {
 int idaapi collect_import(ea_t addr, const char *name, uval_t ord, void *param) {
   collect_ctx_t *ctx = reinterpret_cast<collect_ctx_t *>(param);
   ImportRec rec;
-  rec.ea = static_cast<uint64_t>(addr);
-  rec.ord = static_cast<uint64_t>(ord);
+  rec.ea = ea_wire(addr);
+  rec.ord = widen(ord);
   if (name != nullptr)
     rec.name = to_rust_string(name);
   rec.module = to_rust_string(ctx->module->c_str(), ctx->module->length());

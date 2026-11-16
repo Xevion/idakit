@@ -15,8 +15,8 @@ pub const REFERENCE: Domain = Domain {
         name: "XrefRec",
         doc: "One cross-reference edge, returned inside the [`xrefs_build`] snapshot.",
         fields: fields! {
-            from: U64 = "Source address of the reference.";
-            to: U64 = "Target address of the reference.";
+            from: Address = "Source address of the reference.";
+            to: Address = "Target address of the reference.";
             type_: I32 = "Raw `cref_t`/`dref_t` type code of the edge.";
             iscode: Bool = "`true` for a code reference, `false` for a data reference.";
             user: Bool = "`true` when user-defined, `false` when IDA's analysis generated it.";

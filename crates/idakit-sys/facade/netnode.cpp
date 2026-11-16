@@ -26,7 +26,7 @@ namespace gen {
 uint64_t netnode_by_name(rust::Str name, bool create) {
   std::string s(name);
   netnode node(s.c_str(), s.size(), create);
-  return static_cast<uint64_t>(static_cast<nodeidx_t>(node));
+  return ea_wire(static_cast<nodeidx_t>(node));
 }
 
 // Reports whether any data is attached to the netnode with this raw id.
@@ -66,29 +66,25 @@ bool netnode_rename(uint64_t node, rust::Str name) {
 // The lowest netnode id in the database, or BADNODE if there are none.
 uint64_t netnode_first() {
   netnode node;
-  return node.start() ? static_cast<uint64_t>(static_cast<nodeidx_t>(node))
-                      : static_cast<uint64_t>(BADNODE);
+  return ea_wire(node.start() ? static_cast<nodeidx_t>(node) : BADNODE);
 }
 
 // The highest netnode id in the database, or BADNODE if there are none.
 uint64_t netnode_last() {
   netnode node;
-  return node.end() ? static_cast<uint64_t>(static_cast<nodeidx_t>(node))
-                    : static_cast<uint64_t>(BADNODE);
+  return ea_wire(node.end() ? static_cast<nodeidx_t>(node) : BADNODE);
 }
 
 // The next netnode id after cur, or BADNODE if cur is the last one.
 uint64_t netnode_next(uint64_t cur) {
   netnode node(static_cast<nodeidx_t>(cur));
-  return node.next() ? static_cast<uint64_t>(static_cast<nodeidx_t>(node))
-                     : static_cast<uint64_t>(BADNODE);
+  return ea_wire(node.next() ? static_cast<nodeidx_t>(node) : BADNODE);
 }
 
 // The netnode id before cur, or BADNODE if cur is the first one.
 uint64_t netnode_prev(uint64_t cur) {
   netnode node(static_cast<nodeidx_t>(cur));
-  return node.prev() ? static_cast<uint64_t>(static_cast<nodeidx_t>(node))
-                     : static_cast<uint64_t>(BADNODE);
+  return ea_wire(node.prev() ? static_cast<nodeidx_t>(node) : BADNODE);
 }
 
 // Copies (or, if move_, moves) count consecutive netnode ids starting at node onto target;

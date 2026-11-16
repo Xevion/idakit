@@ -102,6 +102,15 @@ pub enum Scalar {
     U32,
     U64,
     Usize,
+    /// An address-domain value (`ea_t`, `nodeidx_t`, `sel_t`) leaving C++: a return, a shared
+    /// struct field, or a visitor argument.
+    ///
+    /// It crosses as `u64`/`uint64_t` like [`U64`](Self::U64), but a templated body widens it
+    /// through `ea_wire`, so the native all-ones sentinel stays all-ones at any `ea_t` width. A
+    /// `Custom` body must do the same, which `idakit-sys`'s wire scan checks against this tag.
+    /// Inbound arguments stay `U64`: narrowing `u64::MAX` to a 32-bit `ea_t` already yields its
+    /// `BADADDR`.
+    Address,
 }
 
 /// One field of a [`SharedStruct`] or a `Trivial` [`ExternTy`] mirror.
@@ -141,6 +150,7 @@ impl FieldTy {
     pub const U32: Self = Self::Scalar(Scalar::U32);
     pub const U64: Self = Self::Scalar(Scalar::U64);
     pub const Usize: Self = Self::Scalar(Scalar::Usize);
+    pub const Address: Self = Self::Scalar(Scalar::Address);
 }
 
 /// One facade function: its shared name, optional `self:` receiver, arguments, return shape, and
@@ -238,6 +248,7 @@ impl ArgTy {
     pub const U32: Self = Self::Scalar(Scalar::U32);
     pub const U64: Self = Self::Scalar(Scalar::U64);
     pub const Usize: Self = Self::Scalar(Scalar::Usize);
+    pub const Address: Self = Self::Scalar(Scalar::Address);
     pub const SliceU32: Self = Self::Slice(Scalar::U32);
     pub const SliceU64: Self = Self::Slice(Scalar::U64);
 }

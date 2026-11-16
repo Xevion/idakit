@@ -32,7 +32,7 @@ StrlistItem strlist_item(size_t n) {
   if (!get_strlist_item(&info, n))
     throw std::out_of_range("string list index out of range");
   StrlistItem item;
-  item.ea = static_cast<uint64_t>(info.ea);
+  item.ea = ea_wire(info.ea);
   item.length = static_cast<int32_t>(info.length);
   item.type_ = static_cast<int32_t>(info.type);
   return item;

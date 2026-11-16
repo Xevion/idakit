@@ -17,13 +17,13 @@ pub const NAME: Domain = Domain {
         "Name at address `ea` under `gtn_flags` (`GN_*` bits); `Err` when the address has none."
             get_ea_name_flags(ea: U64, flags: I32) -> Result(String);
         "Address the symbol `name` resolves to, or `BADADDR` when it is unknown."
-            get_name_ea(name: Str) -> U64;
+            get_name_ea(name: Str) -> Address;
         "Fully demangled form of `name`; `Err` when `name` is not mangled."
             demangle_name(name: Str) -> Result(String);
         "Number of entries in the sorted name list (`get_nlist_size`)."
             nlist_size() -> Usize;
         "Address of name-list entry `idx`."
-            nlist_ea(idx: Usize) -> U64;
+            nlist_ea(idx: Usize) -> Address;
         "Name of name-list entry `idx`; `Err` when `idx` is out of range."
             nlist_name(idx: Usize) -> Result(String);
         "Whether a flags word marks a user-given (explicit) name."

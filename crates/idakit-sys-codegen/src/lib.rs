@@ -84,6 +84,57 @@ pub fn custom_tus() -> Vec<&'static str> {
         .collect()
 }
 
+/// Where an address-domain value leaves a hand-written facade body, for `idakit-sys`'s wire scan.
+///
+/// A templated body widens a `Scalar::Address` through `ea_wire` itself; a
+/// `Custom` body has to, and nothing in its C++ types forces it, so the scan checks these.
+pub struct AddressCrossings {
+    /// `Custom`-bodied functions returning an address.
+    pub custom_returns: Vec<&'static str>,
+    /// Shared-struct field names typed as an address, minus any name a non-address shared-struct
+    /// field also uses, since an assignment to it could be either.
+    pub fields: Vec<&'static str>,
+}
+
+/// The address crossings the domain and visitor specs declare.
+#[must_use]
+pub fn address_crossings() -> AddressCrossings {
+    use model::{BodyKind, FieldTy, RetShape, Scalar};
+
+    let custom_returns = domains()
+        .iter()
+        .flat_map(|d| d.fns)
+        .filter(|f| matches!(f.body, BodyKind::Custom) && f.receiver.is_none())
+        .filter(|f| matches!(f.ret.shape(), RetShape::Scalar(Scalar::Address)))
+        .map(|f| f.name)
+        .collect();
+
+    let all_fields: Vec<_> = domains()
+        .iter()
+        .flat_map(|d| d.structs)
+        .chain(visitors::VISITOR_BRIDGE.structs)
+        .flat_map(|s| s.fields)
+        .collect();
+    let is_address = |ty: &FieldTy| matches!(ty, FieldTy::Scalar(Scalar::Address));
+    let mut fields: Vec<_> = all_fields
+        .iter()
+        .filter(|f| is_address(&f.ty))
+        .map(|f| f.name)
+        .filter(|name| {
+            !all_fields
+                .iter()
+                .any(|f| f.name == *name && !is_address(&f.ty))
+        })
+        .collect();
+    fields.sort_unstable();
+    fields.dedup();
+
+    AddressCrossings {
+        custom_returns,
+        fields,
+    }
+}
+
 /// Generate every artifact into `$OUT_DIR` from [`domains`].
 ///
 /// # Panics
