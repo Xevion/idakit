@@ -60,7 +60,7 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 ///
 /// ```
 /// use idakit::decompiler::ctree::query::base_var;
-/// use idakit::decompiler::ctree::{CtreeBuilder, Local};
+/// use idakit::decompiler::ctree::{CtreeBuilder, Local, LocalFlags};
 /// use idakit::types::StorageLocation;
 /// use idakit::types::{TypeShape, TypeValue};
 ///
@@ -72,9 +72,7 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 /// let this = b.push_local(Local {
 ///     name: "this".into(),
 ///     ty,
-///     is_arg: true,
-///     is_result: false,
-///     is_byref: false,
+///     flags: LocalFlags::ARGUMENT,
 ///     width: 8,
 ///     comment: None,
 ///     location: StorageLocation::Register { register: 0, offset: 0 },
@@ -144,7 +142,7 @@ pub fn global_target(tree: &Ctree, e: ExpressionId) -> Option<GlobalRef> {
 mod tests {
     use super::*;
     use crate::decompiler::ctree::AssignmentOp;
-    use crate::decompiler::ctree::node::Local;
+    use crate::decompiler::ctree::node::{Local, LocalFlags};
     use crate::decompiler::ctree::tree::CtreeBuilder;
     use crate::types::StorageLocation;
     use crate::types::{TypeShape, TypeValue};
@@ -162,9 +160,7 @@ mod tests {
         Local {
             name: name.into(),
             ty: t,
-            is_arg: true,
-            is_result: false,
-            is_byref: false,
+            flags: LocalFlags::ARGUMENT,
             width: 8,
             comment: None,
             location: StorageLocation::Register {

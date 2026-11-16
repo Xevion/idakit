@@ -45,7 +45,7 @@ fn for_each_child(
 ///
 /// ```
 /// use idakit::Address;
-/// use idakit::decompiler::ctree::{CtreeBuilder, Local};
+/// use idakit::decompiler::ctree::{CtreeBuilder, Local, LocalFlags};
 /// use idakit::types::StorageLocation;
 /// use idakit::types::{TypeShape, TypeValue};
 ///
@@ -57,9 +57,7 @@ fn for_each_child(
 /// let arg = b.push_local(Local {
 ///     name: "a".into(),
 ///     ty,
-///     is_arg: true,
-///     is_result: false,
-///     is_byref: false,
+///     flags: LocalFlags::ARGUMENT,
 ///     width: 8,
 ///     comment: None,
 ///     location: StorageLocation::Register { register: 0, offset: 0 },
@@ -158,7 +156,7 @@ impl Ctree {
     pub fn this_local(&self) -> Option<LocalId> {
         self.locals
             .iter()
-            .position(|lv| lv.is_arg)
+            .position(Local::is_argument)
             .map(|i| LocalId(i as u32))
     }
 
@@ -620,7 +618,7 @@ impl Default for CtreeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decompiler::ctree::node::{Local, LocalId};
+    use crate::decompiler::ctree::node::{Local, LocalFlags, LocalId};
     use crate::decompiler::ctree::ops::{AssignmentOp, BinaryOp};
     use crate::types::StorageLocation;
     use crate::types::TypeShape;
@@ -640,9 +638,11 @@ mod tests {
         Local {
             name: name.into(),
             ty,
-            is_arg,
-            is_result: false,
-            is_byref: false,
+            flags: if is_arg {
+                LocalFlags::ARGUMENT
+            } else {
+                LocalFlags::empty()
+            },
             width: 4,
             comment: None,
             location: StorageLocation::Register {

@@ -121,7 +121,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
          handle."
             s_empty(ea: Address);
         "One local variable, appended in index order, the index [`e_var`](Self::e_var)'s `idx` \
-         refers to. `flags`: bit0 `is_arg`, bit1 `is_result`, bit2 `is_byref`. `location` is \
+         refers to. `flags` is the raw `CVAR_*` word. `location` is \
          the variable's flattened `vdloc_t`."
             l_lvar(name: String, ty: U32, flags: U32, width: U32, comment: String,
                    location: StructRef("ArgLoc")) -> Unit;

@@ -509,7 +509,7 @@ fn bin_prec(op: BinaryOp) -> Prec {
 mod tests {
     use super::*;
     use crate::address::Address;
-    use crate::decompiler::ctree::node::Local;
+    use crate::decompiler::ctree::node::{Local, LocalFlags};
     use crate::decompiler::ctree::ops::AssignmentOp;
     use crate::decompiler::ctree::tree::CtreeBuilder;
     use crate::types::StorageLocation;
@@ -531,9 +531,7 @@ mod tests {
         Local {
             name: name.into(),
             ty,
-            is_arg: false,
-            is_result: false,
-            is_byref: false,
+            flags: LocalFlags::empty(),
             width: 4,
             comment: None,
             location: StorageLocation::Register {

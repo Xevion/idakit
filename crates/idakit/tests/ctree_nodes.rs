@@ -237,13 +237,12 @@ fn extraction_problems(observed: &[Observed]) -> Vec<String> {
             shapes.insert(shape_name(&t.shape));
         }
         for l in tree.locals() {
-            if !l.is_arg {
+            if !l.is_argument() {
                 any_non_arg_local = true;
             }
-            // A plain argument: not the result var, not address-taken. Every flag mutant
-            // (OR-always-true, invert, XOR) turns such a local's `is_byref`/`is_result`
-            // true, so its existence pins the whole `flags &` decode.
-            if l.is_arg && !l.is_byref && !l.is_result {
+            // A plain argument: not the result var, not address-taken. A facade that set every
+            // bit, or none, would leave no such local, so its existence pins the CVAR word.
+            if l.is_argument() && !l.is_by_reference() && !l.is_result() {
                 any_plain_arg_local = true;
             }
             if l.comment.is_some() {

@@ -12,6 +12,7 @@
 #include <ida.hpp>
 
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <funcs.hpp> // get_func
@@ -47,10 +48,44 @@ rust::Slice<const uint64_t> slice_of(const std::vector<uint64_t> &v) {
                    : rust::Slice<const uint64_t>(v.data(), v.size());
 }
 
-// l_lvar flag bits: argument, return-value slot, captured by reference.
-constexpr uint32_t LVAR_IS_ARG = 1u;
-constexpr uint32_t LVAR_IS_RESULT = 2u;
-constexpr uint32_t LVAR_IS_USED_BYREF = 4u;
+// An lvar_t's CVAR_* word, rebuilt from its accessors since lvar_t keeps the field private.
+uint32_t cvar_flags(const lvar_t &v) {
+  const std::pair<bool, uint32_t> bits[] = {
+      {v.used(), CVAR_USED},
+      {v.typed(), CVAR_TYPE},
+      {v.has_nice_name(), CVAR_NAME},
+      {v.mreg_done(), CVAR_MREG},
+      {v.is_unknown_width(), CVAR_NOWD},
+      {v.has_user_name(), CVAR_UNAME},
+      {v.has_user_type(), CVAR_UTYPE},
+      {v.is_result_var(), CVAR_RESULT},
+      {v.is_arg_var(), CVAR_ARG},
+      {v.is_fake_var(), CVAR_FAKE},
+      {v.is_overlapped_var(), CVAR_OVER},
+      {v.is_floating_var(), CVAR_FLOAT},
+      {v.is_spoiled_var(), CVAR_SPOILED},
+      {v.is_mapdst_var(), CVAR_MAPDST},
+      {v.is_partialy_typed(), CVAR_PARTIAL},
+      {v.is_thisarg(), CVAR_THISARG},
+      {v.is_split_var(), CVAR_SPLIT},
+      {v.has_regname(), CVAR_REGNAME},
+      {v.is_noptr_var(), CVAR_NOPTR},
+      {v.is_dummy_arg(), CVAR_DUMMY},
+      {v.is_notarg(), CVAR_NOTARG},
+      {v.is_automapped(), CVAR_AUTOMAP},
+      {v.is_used_byref(), CVAR_BYREF},
+      {v.in_asm(), CVAR_INASM},
+      {v.is_decl_unused(), CVAR_UNUSED},
+      {v.is_shared(), CVAR_SHARED},
+      {v.was_scattered_arg(), CVAR_SCARG},
+      {v.is_noprop(), CVAR_NOPROP},
+  };
+  uint32_t out = 0;
+  for (const auto &[set, bit] : bits)
+    if (set)
+      out |= bit;
+  return out;
+}
 
 } // namespace
 
@@ -218,9 +253,7 @@ struct walker_t {
     if (lv == nullptr)
       return;
     for (const lvar_t &lvar : *lv) {
-      uint32_t flags = (lvar.is_arg_var() ? LVAR_IS_ARG : 0u) |
-                       (lvar.is_result_var() ? LVAR_IS_RESULT : 0u) |
-                       (lvar.is_used_byref() ? LVAR_IS_USED_BYREF : 0u);
+      uint32_t flags = cvar_flags(lvar);
       const vdloc_t &loc = lvar.location;
       // vdloc_t is a tagged union over storage kind; only the fields the matching ALOC_* below
       // populates are meaningful. Its register number spans the whole field and carries no

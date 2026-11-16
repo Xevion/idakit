@@ -4,6 +4,7 @@
 
 use std::fmt::Write as _;
 
+use idakit::decompiler::ctree::LocalFlags;
 use idakit::prelude::*;
 use idakit::types::{FunctionTypeFlags, StorageLocation};
 
@@ -438,6 +439,7 @@ pub fn argloc(idb: &Database) -> String {
 
     let mut decompiled = 0usize;
     let mut lvars = 0usize;
+    let mut user_named = 0usize;
     for f in idb.functions().take(200) {
         let Ok(cf) = f.decompile() else { continue };
         let Ok(tree) = cf.ctree() else { continue };
@@ -446,6 +448,25 @@ pub fn argloc(idb: &Database) -> String {
             lvars += 1;
             n[location_index(&lv.location)] += 1;
             assert_fragments_flat(&lv.location);
+            // The SDK's setters keep these: clearing the argument bit clears `this` too, and
+            // marking a variable not-an-argument clears the argument bit.
+            assert!(
+                !lv.is_this_argument() || lv.is_argument(),
+                "local {} is `this` but not an argument",
+                lv.name
+            );
+            assert!(
+                !(lv.is_argument() && lv.flags.contains(LocalFlags::NOT_ARGUMENT)),
+                "local {} is both an argument and not one",
+                lv.name
+            );
+            assert!(
+                LocalFlags::all().contains(lv.flags),
+                "local {} carries unnamed CVAR bits {:#x}",
+                lv.name,
+                lv.flags.bits()
+            );
+            user_named += usize::from(lv.is_user_named());
             // A decompiler local's register is the whole register, never an offset into one.
             assert!(
                 !matches!(lv.location, StorageLocation::Register { offset, .. } if offset != 0),
@@ -464,7 +485,8 @@ pub fn argloc(idb: &Database) -> String {
         n[6]
     );
     format!(
-        "{decompiled} fns, {lvars} lvars | reg={} pair={} stack={} rrel={} static={} scatter={} none={}",
+        "{decompiled} fns, {lvars} lvars ({user_named} user-named) | reg={} pair={} stack={} \
+         rrel={} static={} scatter={} none={}",
         n[0], n[1], n[2], n[3], n[4], n[5], n[7]
     )
 }

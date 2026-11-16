@@ -17,7 +17,9 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use snafu::Snafu;
 use strum::VariantArray;
 
-use super::node::{Case, ExpressionId, ExpressionKind, Local, LocalId, StatementId, StatementKind};
+use super::node::{
+    Case, ExpressionId, ExpressionKind, Local, LocalFlags, LocalId, StatementId, StatementKind,
+};
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use super::tree::{Ctree, CtreeBuilder};
 use crate::address::Address;
@@ -682,9 +684,7 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
         let local = Local {
             name,
             ty: tid(ty),
-            is_arg: flags & 1 != 0,
-            is_result: flags & 2 != 0,
-            is_byref: flags & 4 != 0,
+            flags: LocalFlags::from_bits_retain(flags),
             width,
             comment,
             location,
@@ -1096,9 +1096,7 @@ mod tests {
         cb.push_local(Local {
             name: "argc".into(),
             ty: tid(it),
-            is_arg: true,
-            is_result: false,
-            is_byref: false,
+            flags: LocalFlags::ARGUMENT,
             width: 4,
             comment: None,
             location: StorageLocation::Stack(-4),
@@ -1111,7 +1109,7 @@ mod tests {
         assert!(let ExpressionKind::Var(id) = &tree.expression(eid(v)).kind);
         let lv = tree.local(*id);
         assert!(lv.name == "argc");
-        assert!(lv.is_arg);
+        assert!(lv.is_argument());
         assert!(lv.location == StorageLocation::Stack(-4));
     }
 

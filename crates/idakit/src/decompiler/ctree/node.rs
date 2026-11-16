@@ -12,6 +12,8 @@ use crate::address::Address;
 use crate::arena::Idx;
 use crate::types::{StorageLocation, TypeId};
 
+pub use idakit_sys::LocalFlags;
+
 /// A typed handle into the tree's expression arena, naming an [`ExpressionNode`].
 pub type ExpressionId = Idx<ExpressionNode>;
 /// A typed handle into the tree's statement arena, naming a [`StatementNode`].
@@ -82,18 +84,79 @@ pub struct Local {
     pub name: String,
     /// The variable's type, into the tree's [`TypeTable`](crate::types::TypeTable).
     pub ty: TypeId,
-    /// A function parameter.
-    pub is_arg: bool,
-    /// The synthesized return-value variable.
-    pub is_result: bool,
-    /// Taken by-reference somewhere in the function.
-    pub is_byref: bool,
+    /// The variable's raw `CVAR_*` word; the `is_*`/`has_*` methods read it.
+    #[serde(with = "crate::types::attributes::local_bits")]
+    pub flags: LocalFlags,
     /// Size in bytes.
     pub width: u32,
     /// The user's comment on the variable, if any.
     pub comment: Option<String>,
     /// Where the decompiler placed the variable (register, stack, or scattered).
     pub location: StorageLocation,
+}
+
+impl Local {
+    /// Whether this is a function argument.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_arg_var"))]
+    pub const fn is_argument(&self) -> bool {
+        self.flags.contains(LocalFlags::ARGUMENT)
+    }
+
+    /// Whether this is the function's result variable.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_result_var"))]
+    pub const fn is_result(&self) -> bool {
+        self.flags.contains(LocalFlags::RESULT)
+    }
+
+    /// Whether the variable's address is taken somewhere in the function.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_used_byref"))]
+    pub const fn is_by_reference(&self) -> bool {
+        self.flags.contains(LocalFlags::BY_REFERENCE)
+    }
+
+    /// Whether this is the `this` argument of a C++ member function.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_thisarg"))]
+    pub const fn is_this_argument(&self) -> bool {
+        self.flags.contains(LocalFlags::THIS_ARGUMENT)
+    }
+
+    /// Whether the user named this variable, rather than the decompiler.
+    #[inline]
+    #[must_use]
+    #[doc(alias("has_user_name"))]
+    pub const fn is_user_named(&self) -> bool {
+        self.flags.contains(LocalFlags::USER_NAME)
+    }
+
+    /// Whether the user typed this variable, rather than the decompiler.
+    #[inline]
+    #[must_use]
+    #[doc(alias("has_user_type"))]
+    pub const fn is_user_typed(&self) -> bool {
+        self.flags.contains(LocalFlags::USER_TYPE)
+    }
+
+    /// Whether the user changed anything about this variable: its name, type, pointer
+    /// eligibility, `__unused` declaration, or propagation.
+    #[inline]
+    #[must_use]
+    pub const fn has_user_info(&self) -> bool {
+        self.flags.intersects(
+            LocalFlags::USER_NAME
+                .union(LocalFlags::USER_TYPE)
+                .union(LocalFlags::NOT_POINTER)
+                .union(LocalFlags::DECLARED_UNUSED)
+                .union(LocalFlags::NO_PROPAGATION),
+        )
+    }
 }
 
 /// An expression node with its source address, resolved type, parent, and kind.
@@ -645,6 +708,30 @@ mod tests {
         assert!(statement.is_statement() && !statement.is_expression());
     }
 
+    #[test]
+    fn local_flag_ids_align_with_the_facade() {
+        let ours: Vec<u32> = LocalFlags::all().iter().map(|f| f.bits()).collect();
+        assert!(idakit_sys::local_flag_ids() == ours);
+    }
+
+    /// `has_user_info` follows the SDK's own definition: user name, type, pointer choice,
+    /// `__unused`, or propagation, but not a provenance-free bit like `USED`.
+    #[rstest::rstest]
+    #[case::user_name(LocalFlags::USER_NAME, true)]
+    #[case::no_propagation(LocalFlags::NO_PROPAGATION, true)]
+    #[case::used_only(LocalFlags::USED | LocalFlags::NICE_NAME, false)]
+    fn has_user_info_matches_the_sdk(#[case] flags: LocalFlags, #[case] expected: bool) {
+        let local = Local {
+            name: "v".into(),
+            ty: Idx::from_raw(0),
+            flags,
+            width: 4,
+            comment: None,
+            location: StorageLocation::Unallocated,
+        };
+        assert!(local.has_user_info() == expected);
+    }
+
     /// `LocalId` orders by its wrapped index.
     #[test]
     fn local_id_ord_sorts_by_index() {
@@ -682,9 +769,7 @@ mod tests {
         let local = Local {
             name: "v1".into(),
             ty: Idx::from_raw(0),
-            is_arg: true,
-            is_result: false,
-            is_byref: false,
+            flags: LocalFlags::ARGUMENT,
             width: 8,
             comment: None,
             location: StorageLocation::Register {
@@ -725,9 +810,7 @@ mod tests {
         let local = Local {
             name: "arg1".into(),
             ty: Idx::from_raw(1),
-            is_arg: true,
-            is_result: false,
-            is_byref: false,
+            flags: LocalFlags::ARGUMENT,
             width: 4,
             comment: Some("note".into()),
             location: StorageLocation::Stack(-4),

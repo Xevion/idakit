@@ -257,4 +257,17 @@ rust::Vec<uint32_t> structural_tag_ctype_ids() {
   return collect({cot_empty, cot_tern, cot_cast, cot_idx, cot_insn, cot_sizeof, cot_type});
 }
 
+// idakit-sys LocalFlags: every CVAR_* bit, in declaration order.
+rust::Vec<uint32_t> local_flag_ids() {
+  rust::Vec<uint32_t> out;
+  for (uint32_t bit :
+       {CVAR_USED,    CVAR_TYPE,   CVAR_NAME,    CVAR_MREG,    CVAR_NOWD,  CVAR_UNAME,
+        CVAR_UTYPE,   CVAR_RESULT, CVAR_ARG,     CVAR_FAKE,    CVAR_OVER,  CVAR_FLOAT,
+        CVAR_SPOILED, CVAR_MAPDST, CVAR_PARTIAL, CVAR_THISARG, CVAR_SPLIT, CVAR_REGNAME,
+        CVAR_NOPTR,   CVAR_DUMMY,  CVAR_NOTARG,  CVAR_AUTOMAP, CVAR_BYREF, CVAR_INASM,
+        CVAR_UNUSED,  CVAR_SHARED, CVAR_SCARG,   CVAR_NOPROP})
+    out.push_back(bit);
+  return out;
+}
+
 } // namespace gen

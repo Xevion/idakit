@@ -245,6 +245,7 @@ serde_bits! {
     function_bits: idakit_sys::FunctionTypeFlags as u32;
     parameter_bits: idakit_sys::ParameterFlags as u32;
     qualifier_bits: idakit_sys::Qualifiers as u8;
+    local_bits: idakit_sys::LocalFlags as u32;
 }
 
 #[cfg(test)]

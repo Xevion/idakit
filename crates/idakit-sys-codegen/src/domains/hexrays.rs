@@ -96,5 +96,7 @@ pub const HEXRAYS: Domain = Domain {
         "This SDK's `ctype_t` values for the structural tags idakit's ctree extraction dispatches \
          on, in its `StructuralTag` discriminant order, an alignment source for a mirror test."
             structural_tag_ctype_ids() -> Vec(U32);
+        "Alignment source: every `CVAR_*` bit, in `LocalFlags`'s declaration order."
+            local_flag_ids() -> Vec(U32);
     },
 };
