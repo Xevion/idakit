@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-11-16
+
+### Documentation
+
+- The crate docs state which IDA versions are supported (the newest minor and the one before it)
+  and how a change to that window maps onto semver.
+
 ## [0.2.1](https://github.com/Xevion/idakit/compare/idakit-v0.2.0...idakit-v0.2.1) (2026-10-29)
 
 

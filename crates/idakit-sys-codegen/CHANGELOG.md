@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-11-16
+
+### Added
+
+- `Scalar::Address`, which marks a value crossing the bridge as an address so the facade widens
+  it sentinel-safely, and `address_crossings`, which lists every such crossing.
+
 ## [0.2.1](https://github.com/Xevion/idakit/compare/idakit-sys-codegen-v0.2.0...idakit-sys-codegen-v0.2.1) (2026-10-29)
 
 

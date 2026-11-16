@@ -1,6 +1,6 @@
 [package]
 name = "idakit-sys"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -29,7 +29,7 @@ cxx-build = "=1.0.200"
 dirs = "6.0.0"
 # Exact for the same reason: a newer compatible codegen would regenerate an already-published
 # idakit-sys against a different cxx generation. The two crates release together.
-idakit-sys-codegen = { path = "../idakit-sys-codegen", version = "=0.2.1" }
+idakit-sys-codegen = { path = "../idakit-sys-codegen", version = "=0.2.2" }
 libloading = "0.9.0"
 
 [[example]]
@@ -57,6 +57,6 @@ strum = { version = "0.28.0", features = ["derive"] }
 
 [dev-dependencies]
 assert2 = "0.4.1"
-idakit-sys-codegen = { path = "../idakit-sys-codegen", version = "=0.2.1" }
+idakit-sys-codegen = { path = "../idakit-sys-codegen", version = "=0.2.2" }
 proptest = "1.11.0"
 rstest = "0.26.1"

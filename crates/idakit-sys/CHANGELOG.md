@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.2] - 2026-11-16
+
+### Fixed
+
+- Addresses leaving the facade keep their all-ones sentinel (`BADADDR`, `BADNODE`, `BADSEL`) at
+  any `ea_t` width, so a 32-bit `ea_t` can no longer hand Rust a sentinel that reads as a real
+  address.
+
+### Changed
+
+- `idakit-sys-codegen` is now pinned to an exact version, since both crates must agree on the
+  same `cxx` generation.
+
 ## [0.2.1](https://github.com/Xevion/idakit/compare/idakit-sys-v0.2.0...idakit-sys-v0.2.1) (2026-10-29)
 
 
