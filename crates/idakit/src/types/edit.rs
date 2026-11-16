@@ -865,10 +865,11 @@ impl MemberEdit<'_> {
 
     /// Delete this member from its aggregate.
     ///
-    /// Deleting a non-tail member leaves a `TAFLD_GAP` padding member in its place (IDA names it
-    /// `gapN` and types it as a byte array) rather than shifting later members up, so the aggregate
-    /// keeps its size and later members keep their offsets. Deleting the tail member shrinks the
-    /// aggregate normally.
+    /// Deleting a non-tail member leaves a padding member in its place rather than shifting later
+    /// members up, so the aggregate keeps its size and later members keep their offsets. IDA names
+    /// it `gapN` and types it as a byte array; read back, it carries
+    /// [`MemberAttributes::GAP`](super::MemberAttributes::GAP). Deleting the tail member shrinks
+    /// the aggregate normally.
     ///
     /// # Errors
     /// [`TypeWriteError::NoType`], [`TypeWriteError::NoMember`], or [`TypeWriteError::Rejected`];

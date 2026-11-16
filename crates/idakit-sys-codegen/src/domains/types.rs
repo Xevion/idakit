@@ -19,5 +19,17 @@ pub const TY: Domain = Domain {
         "Name of the local type at `ordinal` (empty for an anonymous type); `Err` when the ordinal \
          holds no type."
             type_name_at(ordinal: U32) -> Result(String);
+        "Alignment source: every `TAUDT_*` bit, in `StructAttributes`'s declaration order. Header \
+         constants only, no kernel needed."
+            struct_attribute_ids() -> Vec(U32);
+        "Alignment source: every `TAFLD_*` bit, in `MemberAttributes`'s declaration order."
+            member_attribute_ids() -> Vec(U32);
+        "Alignment source: every `TAENUM_*` bit, in `EnumAttributes`'s declaration order."
+            enum_attribute_ids() -> Vec(U32);
+        "Alignment source: the `TAPTR_*` flag bits, in `PointerAttributes`'s declaration order."
+            pointer_attribute_ids() -> Vec(U32);
+        "Alignment source: the `TAPTR_*` modifier values, in `PointerModifier`'s discriminant \
+         order."
+            pointer_modifier_ids() -> Vec(U32);
     },
 };

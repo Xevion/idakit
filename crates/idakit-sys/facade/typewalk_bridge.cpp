@@ -80,6 +80,7 @@ struct visit_walker_t {
   uint32_t ty_resolved(const tinfo_t &t);
   uint32_t placeholder(const tinfo_t &t, bool *first);
   uint32_t ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_size);
+  uint32_t ty_ptr(const tinfo_t &t, uint64_t size, uint32_t has_size);
   uint32_t ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_size);
   uint32_t ty_typedef(const tinfo_t &t);
   uint32_t ty_func(const tinfo_t &t);
@@ -105,7 +106,7 @@ uint32_t visit_walker_t::ty_resolved(const tinfo_t &t) {
   if (t.empty())
     return ty_opaque(t);
   if (t.is_ptr())
-    return vis->ptr(ty(t.get_pointed_object()), size, has_size);
+    return ty_ptr(t, size, has_size);
   if (t.is_array())
     return vis->array(ty(t.get_array_element()), widen(t.get_array_nelems()), size, has_size);
   if (t.is_func())
@@ -162,8 +163,21 @@ uint32_t visit_walker_t::placeholder(const tinfo_t &t, bool *first) {
   return vis->anon();
 }
 
+// Pointer: its target, its taptr_bits, and for a __shifted pointer the parent struct and delta.
+// A pointer whose details the SDK can't report still crosses, with an empty word.
+uint32_t visit_walker_t::ty_ptr(const tinfo_t &t, uint64_t size, uint32_t has_size) {
+  ptr_type_data_t pi;
+  if (!t.get_ptr_details(&pi))
+    return vis->ptr(ty(t.get_pointed_object()), size, has_size, 0, gen::NONE, 0);
+  uint32_t target = ty(pi.obj_type);
+  bool shifted = (pi.taptr_bits & TAPTR_SHIFTED) != 0 && !pi.parent.empty();
+  uint32_t parent = shifted ? ty(pi.parent) : gen::NONE;
+  return vis->ptr(target, size, has_size, pi.taptr_bits, parent, shifted ? pi.delta : 0);
+}
+
 // Struct/union: mint the placeholder id, then on first sight only, walk its members and fill
-// the body through fill_struct.
+// the body through fill_struct. udt_type_data_t::version is not read: it is always 1 here,
+// since the facade is rebuilt against the headers that fill the struct.
 uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_size) {
   bool first;
   uint32_t id = placeholder(t, &first);
@@ -172,7 +186,10 @@ uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_si
     // Handles must be minted before the members slice is built (the members carry them), and `ms`
     // must outlive the fill_struct call its slice points into, so keep both alive across the call.
     std::vector<MemberInfo> ms;
-    if (t.get_udt_details(&udt)) {
+    // total_size, unpadded_size, and effalign are only filled under GTD_CALC_LAYOUT, the
+    // default; it is passed explicitly so the layout fields' dependency on it stays visible.
+    bool have = t.get_udt_details(&udt, GTD_CALC_LAYOUT);
+    if (have) {
       ms.reserve(udt.size());
       for (const udm_t &m : udt) {
         MemberInfo md;
@@ -185,13 +202,18 @@ uint32_t visit_walker_t::ty_udt(const tinfo_t &t, uint64_t size, uint32_t has_si
         md.repr_vtype = modeled ? static_cast<uint32_t>(vtype) : 0;
         md.repr_signed = modeled && m.repr.is_signed();
         md.repr_leading_zeros = modeled && m.repr.has_lzeroes();
+        md.attributes = m.tafld_bits;
+        md.has_comment = !m.cmt.empty();
+        md.comment = rust::String::lossy(std::string(m.cmt.c_str(), m.cmt.length()));
         ms.push_back(md);
       }
     }
     rust::Slice<const MemberInfo> slice = ms.empty()
                                               ? rust::Slice<const MemberInfo>()
                                               : rust::Slice<const MemberInfo>(ms.data(), ms.size());
-    vis->fill_struct(id, t.is_union(), slice, size, has_size);
+    vis->fill_struct(id, t.is_union(), slice, size, has_size, have ? udt.taudt_bits : 0,
+                     have ? widen(udt.unpadded_size) : 0, have ? udt.effalign : 0,
+                     have ? udt.sda : 0, have ? udt.pack : 0);
   }
   return id;
 }

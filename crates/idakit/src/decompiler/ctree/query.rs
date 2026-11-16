@@ -285,7 +285,7 @@ mod tests {
             size: Some(u64::from(elem_bytes)),
         });
         let ptr = b.intern_type(TypeValue {
-            shape: TypeShape::Ptr(elem),
+            shape: TypeShape::pointer(elem),
             size: Some(8),
         });
         let this = b.push_local(this_local_def("this", ptr));

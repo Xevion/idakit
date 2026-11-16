@@ -8,7 +8,10 @@
 
 use idakit_sys::{EnumConstInfo, MemberInfo, TypeWalkSink};
 
-use super::{EnumMember, NumberFormat, TypeBuilder, TypeId, TypeMember, ValueRepr};
+use super::{
+    Comment, EnumMember, MemberAttributes, NumberFormat, PointerAttributes, ShiftedPointer,
+    StructAttributes, StructLayout, TypeBuilder, TypeId, TypeMember, ValueRepr,
+};
 use crate::arena::Idx;
 
 /// A walk context the shared type callbacks push interned types into. The u32-handle methods
@@ -24,8 +27,17 @@ pub(crate) trait TypeSink {
             .type_builder()
             .scalar(kind, bytes, signed, size, has_size))
     }
-    fn ptr(&mut self, target: u32, size: u64, has_size: u32) -> u32 {
-        raw(self.type_builder().ptr(tid(target), size, has_size))
+    fn ptr(
+        &mut self,
+        target: u32,
+        size: u64,
+        has_size: u32,
+        attributes: PointerAttributes,
+        shifted: Option<ShiftedPointer>,
+    ) -> u32 {
+        raw(self
+            .type_builder()
+            .ptr(tid(target), size, has_size, attributes, shifted))
     }
     fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
         raw(self.type_builder().array(tid(elem), nelems, size, has_size))
@@ -43,6 +55,10 @@ pub(crate) trait TypeSink {
     fn anon(&mut self) -> u32 {
         raw(self.type_builder().anon())
     }
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the facade's flat fill_struct callback"
+    )]
     fn fill_struct(
         &mut self,
         id: u32,
@@ -50,9 +66,18 @@ pub(crate) trait TypeSink {
         members: Vec<TypeMember>,
         size: u64,
         has_size: u32,
+        attributes: StructAttributes,
+        layout: StructLayout,
     ) {
-        self.type_builder()
-            .fill_struct(tid(id), is_union, members, size, has_size);
+        self.type_builder().fill_struct(
+            tid(id),
+            is_union,
+            members,
+            size,
+            has_size,
+            attributes,
+            layout,
+        );
     }
     #[expect(
         clippy::too_many_arguments,
@@ -98,8 +123,21 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
     fn scalar(&mut self, kind: u32, bytes: u32, signed: u32, size: u64, has_size: u32) -> u32 {
         self.0.scalar(kind, bytes, signed, size, has_size)
     }
-    fn ptr(&mut self, target: u32, size: u64, has_size: u32) -> u32 {
-        self.0.ptr(target, size, has_size)
+    fn ptr(
+        &mut self,
+        target: u32,
+        size: u64,
+        has_size: u32,
+        attributes: u32,
+        parent: u32,
+        delta: i32,
+    ) -> u32 {
+        let shifted = (parent != idakit_sys::NONE).then(|| ShiftedPointer {
+            parent: tid(parent),
+            delta,
+        });
+        let attributes = PointerAttributes::from_bits_retain(attributes);
+        self.0.ptr(target, size, has_size, attributes, shifted)
     }
     fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
         self.0.array(elem, nelems, size, has_size)
@@ -123,24 +161,51 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
         members: &[MemberInfo],
         size: u64,
         has_size: u32,
+        attributes: u32,
+        unpadded_size: u64,
+        effective_alignment: u32,
+        declared_alignment_shift: u32,
+        pack: u32,
     ) {
         let members = members
             .iter()
-            .map(|m| TypeMember {
-                name: m.name.clone(),
-                bit_offset: m.bit_offset,
-                ty: tid(m.ty),
-                bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
-                repr: NumberFormat::try_from(m.repr_vtype)
-                    .ok()
-                    .map(|format| ValueRepr {
-                        format,
-                        signed: m.repr_signed,
-                        leading_zeros: m.repr_leading_zeros,
-                    }),
+            .map(|m| {
+                let attributes = MemberAttributes::from_bits_retain(m.attributes);
+                TypeMember {
+                    name: m.name.clone(),
+                    bit_offset: m.bit_offset,
+                    ty: tid(m.ty),
+                    bitfield_width: (m.bitfield_width != 0).then_some(m.bitfield_width),
+                    repr: NumberFormat::try_from(m.repr_vtype)
+                        .ok()
+                        .map(|format| ValueRepr {
+                            format,
+                            signed: m.repr_signed,
+                            leading_zeros: m.repr_leading_zeros,
+                        }),
+                    comment: m
+                        .has_comment
+                        .then(|| Comment::from_member(&m.comment, attributes))
+                        .flatten(),
+                    attributes,
+                }
             })
             .collect();
-        self.0.fill_struct(id, is_union, members, size, has_size);
+        let layout = StructLayout::from_raw(
+            unpadded_size,
+            effective_alignment,
+            declared_alignment_shift,
+            pack,
+        );
+        self.0.fill_struct(
+            id,
+            is_union,
+            members,
+            size,
+            has_size,
+            StructAttributes::from_bits_retain(attributes),
+            layout,
+        );
     }
     fn fill_enum(
         &mut self,

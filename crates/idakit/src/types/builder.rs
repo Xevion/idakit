@@ -12,7 +12,8 @@
 use std::collections::HashMap;
 
 use super::{
-    EnumMember, NumberFormat, TypeId, TypeMember, TypeShape, TypeTable, TypeValue, ValueRepr,
+    EnumMember, NumberFormat, PointerAttributes, PointerModifier, ShiftedPointer, StructAttributes,
+    StructLayout, TypeId, TypeMember, TypeShape, TypeTable, TypeValue, ValueRepr,
 };
 
 /// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeShape`]. The walker
@@ -98,9 +99,21 @@ impl TypeBuilder {
         })
     }
 
-    pub(crate) fn ptr(&mut self, target: TypeId, size: u64, has_size: u32) -> TypeId {
+    pub(crate) fn ptr(
+        &mut self,
+        target: TypeId,
+        size: u64,
+        has_size: u32,
+        attributes: PointerAttributes,
+        shifted: Option<ShiftedPointer>,
+    ) -> TypeId {
         self.intern(TypeValue {
-            shape: TypeShape::Ptr(target),
+            shape: TypeShape::Ptr {
+                target,
+                modifier: PointerModifier::from_attributes(attributes),
+                shifted,
+                attributes,
+            },
             size: opt_size(size, has_size),
         })
     }
@@ -155,6 +168,10 @@ impl TypeBuilder {
         self.pending.remove(&id).flatten().map(String::from)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the facade's flat fill_struct callback"
+    )]
     pub(crate) fn fill_struct(
         &mut self,
         id: TypeId,
@@ -162,12 +179,24 @@ impl TypeBuilder {
         members: Vec<TypeMember>,
         size: u64,
         has_size: u32,
+        attributes: StructAttributes,
+        layout: StructLayout,
     ) {
         let name = self.take_name(id);
         let shape = if is_union {
-            TypeShape::Union { name, members }
+            TypeShape::Union {
+                name,
+                members,
+                attributes,
+                layout,
+            }
         } else {
-            TypeShape::Struct { name, members }
+            TypeShape::Struct {
+                name,
+                members,
+                attributes,
+                layout,
+            }
         };
         self.fill(
             id,

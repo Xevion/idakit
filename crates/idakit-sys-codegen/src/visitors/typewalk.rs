@@ -16,6 +16,9 @@ pub(super) const MEMBER_INFO: SharedStruct = SharedStruct {
                            outside the numeric subset idakit models.";
         repr_signed: Bool = "`FRB_SIGNED`; meaningless when `repr_vtype` is 0.";
         repr_leading_zeros: Bool = "`FRB_LZERO`; meaningless when `repr_vtype` is 0.";
+        attributes: U32 = "Raw `udm_t::tafld_bits`.";
+        has_comment: Bool = "Whether the member carries a comment.";
+        comment: Str = "The member's comment; empty when `has_comment` is false.";
     },
 };
 
@@ -78,8 +81,10 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
         "A scalar leaf (`kind`: 0 unknown, 1 void, 2 bool, 3 integral, 4 float); returns its \
          handle."
             scalar(kind: U32, bytes: U32, is_signed: U32, size: U64, has_size: U32);
-        "A pointer to the already-visited `target`; returns its handle."
-            ptr(target: U32, size: U64, has_size: U32);
+        "A pointer to the already-visited `target`, with its raw `taptr_bits`; returns its \
+         handle. A `__shifted` pointer names its already-visited `parent` struct and `delta` into \
+         it; `parent` is `NONE` otherwise."
+            ptr(target: U32, size: U64, has_size: U32, attributes: U32, parent: U32, delta: I32);
         "An array of `nelems` of the already-visited `elem`; returns its handle."
             array(elem: U32, nelems: U64, size: U64, has_size: U32);
         "A function of the already-visited `ret` and `params`; returns its handle."
@@ -90,9 +95,13 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
             named_ref(name: String);
         "An anonymous-aggregate placeholder; returns its handle."
             anon();
-        "Fills the struct/union placeholder `id` with its `members`."
+        "Fills the struct/union placeholder `id` with its `members`, raw `taudt_bits`, and \
+         layout. `size` is `total_size`; `declared_alignment_shift` is `sda` (shift + 1, 0 when \
+         unspecified) and `pack` is the raw `#pragma pack` value (0 when unset)."
             fill_struct(id: U32, is_union: Bool, members: SliceStruct("MemberInfo"), size: U64,
-                        has_size: U32) -> Unit;
+                        has_size: U32, attributes: U32, unpadded_size: U64,
+                        effective_alignment: U32, declared_alignment_shift: U32,
+                        pack: U32) -> Unit;
         "Fills the enum placeholder `id` with its `consts` over the already-visited `underlying`. \
          `repr_vtype`/`repr_signed`/`repr_leading_zeros` are the enum's own `value_repr_t`, the \
          same shape [`MemberInfo`](ffi::MemberInfo) carries per-member (0 = `FRB_UNK`/unmodeled)."

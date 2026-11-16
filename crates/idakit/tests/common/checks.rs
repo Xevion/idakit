@@ -35,6 +35,7 @@ pub const CHECKS: &[(&str, Check, Shares)] = &[
     ("argloc", argloc, Shares::No),
     ("segment_attrs", segment_attrs, Shares::Yes),
     ("func_attrs", func_attrs, Shares::Yes),
+    ("type_attrs", type_attrs, Shares::Yes),
 ];
 
 // A regression that empties the check axis would otherwise still pass every corpus trial
@@ -679,4 +680,89 @@ pub fn non_function_rejected(idb: &Database) {
             Err(Error::NoFunction { .. })
         ));
     }
+}
+
+/// Every type attribute word read off the local types holds only its own context's named bits,
+/// frame-slot bits never mark an ordinary struct member, and each struct layout is internally
+/// consistent. A census over the whole corpus found no other bit in any of the four words, so a
+/// stray one means the walker read the wrong field.
+pub fn type_attrs(idb: &Database) -> String {
+    use idakit::types::{MemberAttributes, PointerAttributes, StructAttributes};
+
+    let (mut aggregates, mut cpp, mut vftables, mut bases, mut comments, mut modified) =
+        (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    let frame_bits = MemberAttributes::RETURN_ADDRESS | MemberAttributes::SAVED_REGISTERS;
+    let mut problems = Vec::new();
+
+    for named in idb.named_types().take(3000) {
+        let Ok(ty) = named.resolve() else { continue };
+        for (_, value) in ty.types().iter() {
+            match &value.shape {
+                TypeShape::Struct {
+                    name,
+                    members,
+                    attributes,
+                    layout,
+                }
+                | TypeShape::Union {
+                    name,
+                    members,
+                    attributes,
+                    layout,
+                } => {
+                    aggregates += 1;
+                    let label = name.as_deref().unwrap_or("<anon>");
+                    if !StructAttributes::all().contains(*attributes) {
+                        problems.push(format!("{label}: struct word {:#x}", attributes.bits()));
+                    }
+                    cpp += usize::from(attributes.contains(StructAttributes::CPP_OBJECT));
+                    if let Some(size) = value.size
+                        && layout.unpadded_size > size
+                    {
+                        problems.push(format!(
+                            "{label}: unpadded {} > size {size}",
+                            layout.unpadded_size
+                        ));
+                    }
+                    let aligned = |a: u32| a == 0 || a.is_power_of_two();
+                    if !aligned(layout.effective_alignment)
+                        || !layout.declared_alignment.is_none_or(u32::is_power_of_two)
+                    {
+                        problems.push(format!("{label}: alignment {layout:?}"));
+                    }
+                    for m in members {
+                        let bits = m.attributes;
+                        if !MemberAttributes::all().contains(bits) || bits.intersects(frame_bits) {
+                            problems.push(format!(
+                                "{label}.{}: member word {:#x}",
+                                m.name,
+                                bits.bits()
+                            ));
+                        }
+                        vftables += usize::from(bits.contains(MemberAttributes::VFTABLE));
+                        bases += usize::from(bits.contains(MemberAttributes::BASE_CLASS));
+                        comments += usize::from(m.comment.is_some());
+                    }
+                }
+                TypeShape::Ptr {
+                    attributes,
+                    modifier,
+                    ..
+                } => {
+                    let named_or_field =
+                        PointerAttributes::all().bits() | idakit::sys::POINTER_MODIFIER_MASK;
+                    if attributes.bits() & !named_or_field != 0 {
+                        problems.push(format!("pointer word {:#x}", attributes.bits()));
+                    }
+                    modified += usize::from(modifier.is_some());
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+    format!(
+        "{aggregates} aggregates ({cpp} C++), {vftables} vftable / {bases} base members, \
+         {comments} member comments, {modified} modified pointers"
+    )
 }

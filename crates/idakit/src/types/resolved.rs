@@ -256,8 +256,12 @@ mod tests {
         let field = u32_type(&mut types);
         let root = types.intern(TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("pt".into()),
                 members: vec![TypeMember {
+                    comment: None,
+                    attributes: crate::types::MemberAttributes::empty(),
                     name: "x".into(),
                     bit_offset: 0,
                     ty: field,
@@ -336,8 +340,12 @@ mod tests {
         let field = u32_type(&mut types);
         let root = types.intern(TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("pt".into()),
                 members: vec![TypeMember {
+                    comment: None,
+                    attributes: crate::types::MemberAttributes::empty(),
                     name: "x".into(),
                     bit_offset: 0,
                     ty: field,

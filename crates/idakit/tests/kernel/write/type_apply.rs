@@ -450,7 +450,7 @@ fn type_define_recursive_struct() {
             .iter()
             .find(|m| m.name == "next")
             .expect("member next");
-        assert!(let TypeShape::Ptr(pointee) = &node.get(next.ty).shape);
+        assert!(let TypeShape::Ptr { target: pointee, .. } = &node.get(next.ty).shape);
         assert!(
             *pointee == node.root(),
             "next should point back at the struct's own root type, got a different handle"

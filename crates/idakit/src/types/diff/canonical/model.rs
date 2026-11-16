@@ -392,7 +392,7 @@ fn canon(
         TypeShape::Float { bytes } => CanonicalType::Float {
             bytes: opts.width(*bytes),
         },
-        TypeShape::Ptr(inner) => CanonicalType::Ptr {
+        TypeShape::Ptr { target: inner, .. } => CanonicalType::Ptr {
             pointee: Box::new(canon(table, *inner, opts, stack, false)),
             width: opts.ptr_width(value.size),
         },
@@ -400,7 +400,7 @@ fn canon(
             elem: Box::new(canon(table, *elem, opts, stack, false)),
             len: *len,
         },
-        TypeShape::Struct { name, members } => aggregate(
+        TypeShape::Struct { name, members, .. } => aggregate(
             table,
             id,
             RecordKind::Struct,
@@ -411,7 +411,7 @@ fn canon(
             stack,
             spell_named,
         ),
-        TypeShape::Union { name, members } => aggregate(
+        TypeShape::Union { name, members, .. } => aggregate(
             table,
             id,
             RecordKind::Union,
@@ -917,15 +917,19 @@ mod tests {
         let mid = table.alloc_placeholder();
         let inner = table.alloc_placeholder();
         let mid_ptr = table.intern(TypeValue {
-            shape: TypeShape::Ptr(mid),
+            shape: TypeShape::pointer(mid),
             size: Some(8),
         });
         table.fill(
             inner,
             TypeValue {
                 shape: TypeShape::Struct {
+                    attributes: crate::types::StructAttributes::empty(),
+                    layout: crate::types::StructLayout::default(),
                     name: Some("$C".to_owned()),
                     members: vec![TypeMember {
+                        comment: None,
+                        attributes: crate::types::MemberAttributes::empty(),
                         name: "back".to_owned(),
                         bit_offset: 0,
                         ty: mid_ptr,
@@ -940,8 +944,12 @@ mod tests {
             mid,
             TypeValue {
                 shape: TypeShape::Struct {
+                    attributes: crate::types::StructAttributes::empty(),
+                    layout: crate::types::StructLayout::default(),
                     name: Some("$B".to_owned()),
                     members: vec![TypeMember {
+                        comment: None,
+                        attributes: crate::types::MemberAttributes::empty(),
                         name: "next".to_owned(),
                         bit_offset: 0,
                         ty: inner,
@@ -956,8 +964,12 @@ mod tests {
             outer,
             TypeValue {
                 shape: TypeShape::Struct {
+                    attributes: crate::types::StructAttributes::empty(),
+                    layout: crate::types::StructLayout::default(),
                     name: Some("$A".to_owned()),
                     members: vec![TypeMember {
+                        comment: None,
+                        attributes: crate::types::MemberAttributes::empty(),
                         name: "start".to_owned(),
                         bit_offset: 0,
                         ty: mid,

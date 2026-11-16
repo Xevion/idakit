@@ -116,14 +116,23 @@ fn type_member_edit() {
     });
 }
 
-/// `MemberEdit::comment` sets a member's comment. `TypeMember` does not yet surface a comment on
-/// the read side, so this asserts the write succeeds and a re-comment is stable, rather than
-/// reading the comment back; an unresolved member is still the same typed `NoMember` other member
-/// edits give it.
+/// `MemberEdit::comment` sets a member's comment, and the read side returns it with its kind: the
+/// write is always repeatable, so that is the kind it reads back as. A re-comment replaces the text,
+/// and an unresolved member is still the same typed `NoMember` other member edits give it.
 #[kernel_test]
 fn type_member_comment_edit() {
     crate::common::with_canonical_db(|idb| {
-        use idakit::types::TypeWriteError;
+        use idakit::types::{Comment, CommentKind, TypeShape, TypeWriteError};
+
+        let comment_of = |idb: &Database| {
+            let ty = idb
+                .type_named("idakit_comment_probe")
+                .expect("read the probe back");
+            let TypeShape::Struct { members, .. } = ty.shape() else {
+                panic!("probe is not a struct: {:?}", ty.shape());
+            };
+            members[0].comment.clone()
+        };
 
         idb.types_mut()
             .define("struct idakit_comment_probe { int hp; };")
@@ -134,12 +143,23 @@ fn type_member_comment_edit() {
             .member("hp")
             .comment("current health")
             .expect("set the member comment");
+        assert!(
+            comment_of(idb)
+                == Some(Comment {
+                    text: "current health".into(),
+                    kind: CommentKind::Repeatable,
+                })
+        );
 
         idb.types_mut()
             .edit("idakit_comment_probe")
             .member("hp")
             .comment("current health, again")
             .expect("re-set the member comment");
+        assert!(
+            comment_of(idb).map(|c| c.text) == Some("current health, again".into()),
+            "a re-comment replaces the text"
+        );
 
         let ghost = idb
             .types_mut()
@@ -358,6 +378,20 @@ fn type_member_ref() {
             .member("q")
             .delete()
             .expect("delete the middle member");
+        let gapped = idb
+            .type_named("idakit_gap_ref")
+            .expect("read the gapped struct");
+        let filler = gapped
+            .members()
+            .and_then(|ms| ms.iter().find(|m| m.bit_offset == 32))
+            .expect("a member still covers q's slot");
+        assert!(
+            filler
+                .attributes
+                .contains(idakit::types::MemberAttributes::GAP),
+            "the deleted slot's filler {:?} is not marked as a gap",
+            filler.name
+        );
         let mut types = idb.types_mut();
         let mut edit = types.edit("idakit_gap_ref");
         assert_type_write_err!(

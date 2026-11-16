@@ -44,7 +44,7 @@ fn type_surgery() {
             .expect("walk the edited prototype")
             .expect("a prototype is set");
         assert!(let TypeShape::Function { ret, params, .. } = proto.shape());
-        assert!(let TypeShape::Ptr(_) = &proto.get(*ret).shape);
+        assert!(let TypeShape::Ptr { .. } = &proto.get(*ret).shape);
         assert!(params.len() == 2, "still two params, got {}", params.len());
         assert!(let TypeShape::Int { signed: false, .. } = &proto.get(params[0]).shape);
         // Param names are not in the structural walk; they render in the prototype text.

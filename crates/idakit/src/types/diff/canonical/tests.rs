@@ -14,13 +14,15 @@ fn scalar(table: &mut TypeTable, bytes: u8, signed: bool) -> TypeId {
 
 fn ptr(table: &mut TypeTable, to: TypeId, width: u64) -> TypeId {
     table.intern(TypeValue {
-        shape: TypeShape::Ptr(to),
+        shape: TypeShape::pointer(to),
         size: Some(width),
     })
 }
 
 fn member(name: &str, bit_offset: u64, ty: TypeId) -> TypeMember {
     TypeMember {
+        comment: None,
+        attributes: crate::types::MemberAttributes::empty(),
         name: name.to_owned(),
         bit_offset,
         ty,
@@ -34,6 +36,8 @@ fn point(table: &mut TypeTable) -> TypeId {
     let int = scalar(table, 4, true);
     table.intern(TypeValue {
         shape: TypeShape::Struct {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: Some("point".to_owned()),
             members: vec![member("x", 0, int), member("y", 32, int)],
         },
@@ -87,6 +91,8 @@ fn a_changed_member_keeps_identity_but_changes_the_fingerprint() {
     let int = scalar(&mut b, 4, true);
     let root_b = b.intern(TypeValue {
         shape: TypeShape::Struct {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: Some("point".to_owned()),
             members: vec![
                 member("x", 0, int),
@@ -121,6 +127,8 @@ fn a_named_aggregate_is_spelled_at_root_and_cut_when_referenced() {
         node,
         TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("node".to_owned()),
                 members: vec![member("next", 0, node_ptr)],
             },
@@ -155,6 +163,8 @@ fn a_synthetic_named_cycle_closes_with_a_backref() {
         anon,
         TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("$A".to_owned()),
                 members: vec![member("self", 0, anon_ptr)],
             },
@@ -184,6 +194,8 @@ fn the_size_knob_separates_abi_from_logical() {
     let i32t = scalar(&mut a, 4, true);
     let root_a = a.intern(TypeValue {
         shape: TypeShape::Struct {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: None,
             members: vec![member("v", 0, i32t)],
         },
@@ -194,6 +206,8 @@ fn the_size_knob_separates_abi_from_logical() {
     let i64t = scalar(&mut b, 8, true);
     let root_b = b.intern(TypeValue {
         shape: TypeShape::Struct {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: None,
             members: vec![member("v", 0, i64t)],
         },
@@ -217,8 +231,12 @@ fn bitfields_ride_along_in_the_member() {
     let u32t = scalar(&mut table, 4, false);
     let root = table.intern(TypeValue {
         shape: TypeShape::Struct {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: Some("flags".to_owned()),
             members: vec![TypeMember {
+                comment: None,
+                attributes: crate::types::MemberAttributes::empty(),
                 name: "lo".to_owned(),
                 bit_offset: 0,
                 ty: u32t,
@@ -377,6 +395,8 @@ fn drift_reports_retype_add_and_size() {
     let i64t = scalar(&mut b, 8, true);
     let root = b.intern(TypeValue {
         shape: TypeShape::Struct {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: Some("point".to_owned()),
             members: vec![
                 member("x", 0, i32t),
@@ -413,6 +433,8 @@ fn a_nested_member_change_uses_a_dotted_path() {
         let v = scalar(&mut t, vbytes, true);
         let inner = t.intern(TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: None,
                 members: vec![member("v", 0, v)],
             },
@@ -420,6 +442,8 @@ fn a_nested_member_change_uses_a_dotted_path() {
         });
         let outer = t.intern(TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("outer".to_owned()),
                 members: vec![member("in", 0, inner)],
             },
@@ -502,6 +526,8 @@ fn a_union_reordered_is_the_same_type() {
         let i = scalar(&mut t, 4, true);
         let f = scalar(&mut t, 8, false);
         let by_name = |n: &str| TypeMember {
+            comment: None,
+            attributes: crate::types::MemberAttributes::empty(),
             name: n.to_owned(),
             bit_offset: 0,
             ty: if n == "i" { i } else { f },
@@ -510,6 +536,8 @@ fn a_union_reordered_is_the_same_type() {
         };
         let root = t.intern(TypeValue {
             shape: TypeShape::Union {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("U".to_owned()),
                 members: order.iter().map(|n| by_name(n)).collect(),
             },

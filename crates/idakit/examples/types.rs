@@ -32,7 +32,7 @@ fn one_line(table: &TypeTable, id: TypeId) -> String {
             )
         }
         TypeShape::Float { bytes } => format!("float{}", u32::from(*bytes) * 8),
-        TypeShape::Ptr(inner) => format!("{} *", one_line(table, *inner)),
+        TypeShape::Ptr { target, .. } => format!("{} *", one_line(table, *target)),
         TypeShape::Array { elem, len } => format!("{}[{len}]", one_line(table, *elem)),
         TypeShape::Struct { name, .. } => {
             format!("struct {}", name.as_deref().unwrap_or("<anon>"))

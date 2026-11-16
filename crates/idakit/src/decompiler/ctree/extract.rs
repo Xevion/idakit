@@ -420,8 +420,24 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             has_size,
         )
     }
-    fn ptr(&mut self, target: u32, size: u64, has_size: u32) -> u32 {
-        idakit_sys::TypeWalkSink::ptr(&mut SinkAdapter(self), target, size, has_size)
+    fn ptr(
+        &mut self,
+        target: u32,
+        size: u64,
+        has_size: u32,
+        attributes: u32,
+        parent: u32,
+        delta: i32,
+    ) -> u32 {
+        idakit_sys::TypeWalkSink::ptr(
+            &mut SinkAdapter(self),
+            target,
+            size,
+            has_size,
+            attributes,
+            parent,
+            delta,
+        )
     }
     fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
         idakit_sys::TypeWalkSink::array(&mut SinkAdapter(self), elem, nelems, size, has_size)
@@ -445,6 +461,11 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
         members: &[MemberInfo],
         size: u64,
         has_size: u32,
+        attributes: u32,
+        unpadded_size: u64,
+        effective_alignment: u32,
+        declared_alignment_shift: u32,
+        pack: u32,
     ) {
         idakit_sys::TypeWalkSink::fill_struct(
             &mut SinkAdapter(self),
@@ -453,6 +474,11 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             members,
             size,
             has_size,
+            attributes,
+            unpadded_size,
+            effective_alignment,
+            declared_alignment_shift,
+            pack,
         );
     }
     fn fill_enum(
@@ -879,15 +905,25 @@ mod tests {
     fn builds_recursive_struct() {
         let mut cb = CallbackBuilder::new();
         let node = cb.named_ref("Node".into());
-        let ptr = cb.ptr(node, 8, 1);
+        let ptr = cb.ptr(node, 8, 1, crate::types::PointerAttributes::empty(), None);
         let members = vec![TypeMember {
+            comment: None,
+            attributes: crate::types::MemberAttributes::empty(),
             name: "next".into(),
             bit_offset: 0,
             ty: tid(ptr),
             bitfield_width: None,
             repr: None,
         }];
-        cb.fill_struct(node, false, members, 8, 1);
+        cb.fill_struct(
+            node,
+            false,
+            members,
+            8,
+            1,
+            crate::types::StructAttributes::empty(),
+            crate::types::StructLayout::default(),
+        );
 
         // a variable typed as the struct, so the tree has a reachable node.
         let v = cb.var(0, 0, node);
@@ -895,12 +931,14 @@ mod tests {
         let blk = cb.block(0, &[s]);
         let tree = cb.finish(blk).expect("well-formed");
 
-        assert!(let TypeShape::Struct { name, members } = &tree.type_of(tid(node)).shape);
+        assert!(let TypeShape::Struct { name, members, .. } = &tree.type_of(tid(node)).shape);
         assert!(name.as_deref() == Some("Node"));
         assert!(members.len() == 1);
         assert!(members[0].name == "next");
         // the member pointer resolves back to the struct itself
-        assert!(matches!(tree.type_of(members[0].ty).shape, TypeShape::Ptr(t) if t == tid(node)));
+        assert!(
+            matches!(tree.type_of(members[0].ty).shape, TypeShape::Ptr { target: t, .. } if t == tid(node))
+        );
     }
 
     /// A typedef keeps its alias name and points at the (separately interned) underlying.
@@ -1147,8 +1185,11 @@ mod tests {
             repr_vtype: 0,
             repr_signed: false,
             repr_leading_zeros: false,
+            attributes: 0,
+            has_comment: false,
+            comment: String::new(),
         }];
-        TypeWalkSink::fill_struct(&mut cb, node, false, &members, 4, 1);
+        TypeWalkSink::fill_struct(&mut cb, node, false, &members, 4, 1, 0, 4, 4, 0, 0);
 
         let color = TypeWalkSink::named_ref(&mut cb, "Color".into());
         let consts = vec![EnumConstInfo {
@@ -1163,8 +1204,8 @@ mod tests {
         let a1 = TypeWalkSink::anon(&mut cb);
         let a2 = TypeWalkSink::anon(&mut cb);
         assert!(a1 != a2, "anon reused a handle: {a1} == {a2}");
-        TypeWalkSink::fill_struct(&mut cb, a1, false, &[], 0, 1);
-        TypeWalkSink::fill_struct(&mut cb, a2, true, &[], 0, 1);
+        TypeWalkSink::fill_struct(&mut cb, a1, false, &[], 0, 1, 0, 0, 0, 0, 0);
+        TypeWalkSink::fill_struct(&mut cb, a2, true, &[], 0, 1, 0, 0, 0, 0, 0);
 
         // The three named types must stay distinct; a constant `named_ref` collapses them.
         assert!(node != color && node != alias && color != alias);
@@ -1182,7 +1223,7 @@ mod tests {
         ));
         assert!(let TypeShape::Opaque(name) = &tree.type_of(tid(opq)).shape);
         assert!(name == "Handle");
-        assert!(let TypeShape::Struct { name, members } = &tree.type_of(tid(node)).shape);
+        assert!(let TypeShape::Struct { name, members, .. } = &tree.type_of(tid(node)).shape);
         assert!(name.as_deref() == Some("Node") && members.len() == 1);
         assert!(let TypeShape::Enum { name, .. } = &tree.type_of(tid(color)).shape);
         assert!(name.as_deref() == Some("Color"));

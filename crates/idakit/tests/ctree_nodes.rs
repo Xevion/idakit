@@ -90,7 +90,7 @@ fn shape_name(s: &TypeShape) -> &'static str {
         TypeShape::Bool => "Bool",
         TypeShape::Int { .. } => "Int",
         TypeShape::Float { .. } => "Float",
-        TypeShape::Ptr(_) => "Ptr",
+        TypeShape::Ptr { .. } => "Ptr",
         TypeShape::Array { .. } => "Array",
         TypeShape::Struct { .. } => "Struct",
         TypeShape::Union { .. } => "Union",

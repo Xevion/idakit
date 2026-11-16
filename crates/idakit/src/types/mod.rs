@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::arena::{Arena, Idx};
 
+mod attributes;
 mod builder;
 pub mod diff;
 mod edit;
@@ -29,6 +30,10 @@ mod resolved;
 mod sink;
 mod tinfo;
 
+pub use attributes::{
+    Comment, CommentKind, EnumAttributes, MemberAttributes, PointerAttributes, PointerModifier,
+    ShiftedPointer, StructAttributes, StructLayout,
+};
 pub(crate) use builder::TypeBuilder;
 pub use edit::{
     ConstantEdit, MemberEdit, MemberRef, TypeEdit, TypeEditCode, TypeWriteError, TypesMut,
@@ -68,6 +73,12 @@ pub struct TypeMember {
     /// The field's value representation (radix/char, sign, leading zeros); `None` when unset or
     /// outside the numeric subset [`ValueRepr`] models.
     pub repr: Option<ValueRepr>,
+    /// The field's comment and its kind; `None` when it has none.
+    pub comment: Option<Comment>,
+    /// The field's raw attributes: base class, vtable pointer, synthesized gap, and the rest.
+    #[serde(with = "attributes::member_bits")]
+    #[doc(alias("tafld_bits"))]
+    pub attributes: MemberAttributes,
 }
 
 /// One member of an enum.
@@ -105,8 +116,18 @@ pub enum TypeShape {
         bytes: u8,
     },
     /// `T *`
-    #[doc(alias("is_ptr", "get_pointed_object"))]
-    Ptr(TypeId),
+    #[doc(alias("is_ptr", "get_pointed_object", "get_ptr_details"))]
+    Ptr {
+        /// The pointed-to type.
+        target: TypeId,
+        /// The `__ptr32`/`__ptr64`/`__restrict` modifier, or `None` for a plain pointer.
+        modifier: Option<PointerModifier>,
+        /// The parent struct and delta of a `__shifted` pointer, or `None` for an ordinary one.
+        shifted: Option<ShiftedPointer>,
+        /// The raw attribute word `modifier` and `shifted` are read from.
+        #[serde(with = "attributes::pointer_bits")]
+        attributes: PointerAttributes,
+    },
     /// `T[len]`
     #[doc(alias("is_array", "get_array_element"))]
     Array {
@@ -122,6 +143,11 @@ pub enum TypeShape {
         name: Option<String>,
         /// Fields in declaration order.
         members: Vec<TypeMember>,
+        /// The struct's raw attributes: C++ object, vtable, `ms_struct`, and the rest.
+        #[serde(with = "attributes::struct_bits")]
+        attributes: StructAttributes,
+        /// Padding, alignment, and packing.
+        layout: StructLayout,
     },
     /// a union
     #[doc(alias("is_udt"))]
@@ -130,6 +156,11 @@ pub enum TypeShape {
         name: Option<String>,
         /// Fields in declaration order.
         members: Vec<TypeMember>,
+        /// The union's raw attributes.
+        #[serde(with = "attributes::struct_bits")]
+        attributes: StructAttributes,
+        /// Padding, alignment, and packing.
+        layout: StructLayout,
     },
     /// an enum and its underlying integer type
     #[doc(alias("is_enum", "get_enum_details", "is_bitmask_enum", "get_enum_repr"))]
@@ -175,6 +206,18 @@ pub enum TypeShape {
 }
 
 impl TypeShape {
+    /// A plain pointer to `target`, with no modifier, shift, or attribute bits.
+    #[inline]
+    #[must_use]
+    pub const fn pointer(target: TypeId) -> Self {
+        Self::Ptr {
+            target,
+            modifier: None,
+            shifted: None,
+            attributes: PointerAttributes::empty(),
+        }
+    }
+
     /// The type a pointer addresses, or `None` for a non-pointer.
     ///
     /// A structural accessor (the pointer analogue of reading a struct's members), so callers
@@ -183,7 +226,7 @@ impl TypeShape {
     #[must_use]
     pub fn pointee(&self) -> Option<TypeId> {
         match self {
-            Self::Ptr(elem) => Some(*elem),
+            Self::Ptr { target, .. } => Some(*target),
             _ => None,
         }
     }
@@ -364,15 +407,19 @@ mod tests {
         let mut table = TypeTable::new();
         let node = table.alloc_placeholder();
         let ptr = table.intern(TypeValue {
-            shape: TypeShape::Ptr(node),
+            shape: TypeShape::pointer(node),
             size: Some(8),
         });
         table.fill(
             node,
             TypeValue {
                 shape: TypeShape::Struct {
+                    attributes: StructAttributes::empty(),
+                    layout: StructLayout::default(),
                     name: Some("node".into()),
                     members: vec![TypeMember {
+                        comment: None,
+                        attributes: MemberAttributes::empty(),
                         name: "next".into(),
                         bit_offset: 0,
                         ty: ptr,
@@ -386,7 +433,7 @@ mod tests {
 
         assert!(let TypeShape::Struct { members, .. } = &table.get(node).shape);
         // the member pointer resolves back to the struct itself
-        assert!(table.get(members[0].ty).shape == TypeShape::Ptr(node));
+        assert!(table.get(members[0].ty).shape == TypeShape::pointer(node));
     }
 
     /// `pointee` unwraps a pointer's element type and is `None` for everything else.
@@ -395,7 +442,7 @@ mod tests {
         let mut table = TypeTable::new();
         let elem = table.intern(int(4, true));
         let ptr = table.intern(TypeValue {
-            shape: TypeShape::Ptr(elem),
+            shape: TypeShape::pointer(elem),
             size: Some(8),
         });
         assert!(table.get(ptr).shape.pointee() == Some(elem));
@@ -408,11 +455,15 @@ mod tests {
     #[test]
     fn tag_name_reads_named_types_only() {
         let named = TypeShape::Struct {
+            attributes: StructAttributes::empty(),
+            layout: StructLayout::default(),
             name: Some("pt".into()),
             members: vec![],
         };
         assert!(named.tag_name() == Some("pt"));
         let anon = TypeShape::Struct {
+            attributes: StructAttributes::empty(),
+            layout: StructLayout::default(),
             name: None,
             members: vec![],
         };
@@ -446,8 +497,12 @@ mod tests {
         let field = table.intern(int(4, true));
         table.intern(TypeValue {
             shape: TypeShape::Struct {
+                attributes: StructAttributes::empty(),
+                layout: StructLayout::default(),
                 name: Some("pt".into()),
                 members: vec![TypeMember {
+                    comment: None,
+                    attributes: MemberAttributes::empty(),
                     name: "x".into(),
                     bit_offset: 0,
                     ty: field,
@@ -472,8 +527,12 @@ mod tests {
         let field = table.intern(int(4, true));
         table.intern(TypeValue {
             shape: TypeShape::Struct {
+                attributes: StructAttributes::empty(),
+                layout: StructLayout::default(),
                 name: Some("pt".into()),
                 members: vec![TypeMember {
+                    comment: None,
+                    attributes: MemberAttributes::empty(),
                     name: "x".into(),
                     bit_offset: 0,
                     ty: field,

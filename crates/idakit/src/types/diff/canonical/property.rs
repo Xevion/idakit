@@ -429,6 +429,8 @@ fn materialize_declared(table: &mut TypeTable, decls: &[Declaration]) -> Vec<Typ
             .members
             .iter()
             .map(|(name, bit_offset, bitfield_width, spec)| TypeMember {
+                comment: None,
+                attributes: crate::types::MemberAttributes::empty(),
                 name: name.clone(),
                 bit_offset: *bit_offset,
                 ty: materialize_spec(spec, table, &ids),
@@ -438,10 +440,14 @@ fn materialize_declared(table: &mut TypeTable, decls: &[Declaration]) -> Vec<Typ
             .collect();
         let shape = match decl.kind {
             RecordKind::Struct => TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: decl.tag.name(),
                 members,
             },
             RecordKind::Union => TypeShape::Union {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: decl.tag.name(),
                 members,
             },
@@ -483,7 +489,7 @@ fn materialize_spec(spec: &TypeSpec, table: &mut TypeTable, decl_ids: &[TypeId])
         TypeSpec::Ptr { pointee, width } => {
             let inner = materialize_spec(pointee, table, decl_ids);
             table.intern(TypeValue {
-                shape: TypeShape::Ptr(inner),
+                shape: TypeShape::pointer(inner),
                 size: Some(u64::from(*width)),
             })
         }
@@ -586,10 +592,14 @@ fn table_and_root() -> impl Strategy<Value = (TypeTable, TypeId)> {
 fn embed_canonical_named_stub(tag: &str, kind: AggregateKind, table: &mut TypeTable) -> TypeId {
     let shape = match kind {
         AggregateKind::Struct => TypeShape::Struct {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: Some(tag.to_owned()),
             members: Vec::new(),
         },
         AggregateKind::Union => TypeShape::Union {
+            attributes: crate::types::StructAttributes::empty(),
+            layout: crate::types::StructLayout::default(),
             name: Some(tag.to_owned()),
             members: Vec::new(),
         },
@@ -652,7 +662,7 @@ fn embed_canonical(c: &CanonicalType, table: &mut TypeTable, stack: &mut Vec<Typ
             let inner = embed_canonical(pointee, table, stack);
             let width = width.expect("strict canonicalize output always sets Ptr::width");
             table.intern(TypeValue {
-                shape: TypeShape::Ptr(inner),
+                shape: TypeShape::pointer(inner),
                 size: Some(u64::from(width)),
             })
         }
@@ -678,6 +688,8 @@ fn embed_canonical(c: &CanonicalType, table: &mut TypeTable, stack: &mut Vec<Typ
             let members = members
                 .iter()
                 .map(|m| TypeMember {
+                    comment: None,
+                    attributes: crate::types::MemberAttributes::empty(),
                     name: m.name.clone(),
                     bit_offset: m
                         .bit_offset
@@ -690,10 +702,14 @@ fn embed_canonical(c: &CanonicalType, table: &mut TypeTable, stack: &mut Vec<Typ
             stack.pop();
             let shape = match kind {
                 RecordKind::Struct => TypeShape::Struct {
+                    attributes: crate::types::StructAttributes::empty(),
+                    layout: crate::types::StructLayout::default(),
                     name: tag.clone(),
                     members,
                 },
                 RecordKind::Union => TypeShape::Union {
+                    attributes: crate::types::StructAttributes::empty(),
+                    layout: crate::types::StructLayout::default(),
                     name: tag.clone(),
                     members,
                 },

@@ -387,7 +387,7 @@ impl Printer<'_> {
     /// back to a synthetic `field_<off>` when the type isn't an aggregate we can index.
     fn field_name(&self, obj: ExpressionId, byte_off: u32, through_ptr: bool) -> String {
         let mut ty = self.tree.type_of(self.tree.expression(obj).ty);
-        if through_ptr && let TypeShape::Ptr(p) = &ty.shape {
+        if through_ptr && let TypeShape::Ptr { target: p, .. } = &ty.shape {
             ty = self.tree.type_of(*p);
         }
         let members = match &ty.shape {
@@ -447,7 +447,7 @@ impl Printer<'_> {
                 8 => "double".into(),
                 _ => "long double".into(),
             },
-            TypeShape::Ptr(p) => format!("{} *", self.print_type(*p)),
+            TypeShape::Ptr { target: p, .. } => format!("{} *", self.print_type(*p)),
             TypeShape::Array { elem, len } => format!("{}[{}]", self.print_type(*elem), len),
             TypeShape::Struct { name, .. } => name.clone().unwrap_or_else(|| "struct".into()),
             TypeShape::Union { name, .. } => name.clone().unwrap_or_else(|| "union".into()),
@@ -549,8 +549,12 @@ mod tests {
     fn empty_base_member(b: &mut CtreeBuilder, ty: TypeId) -> TypeId {
         b.intern_type(TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("Derived".into()),
                 members: vec![TypeMember {
+                    comment: None,
+                    attributes: crate::types::MemberAttributes::empty(),
                     name: String::new(),
                     bit_offset: 0,
                     ty,
@@ -565,6 +569,8 @@ mod tests {
     fn base_struct_via_ptr(b: &mut CtreeBuilder) -> ExpressionId {
         let base = b.intern_type(TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("Base".into()),
                 members: vec![],
             },
@@ -572,7 +578,7 @@ mod tests {
         });
         let derived = empty_base_member(b, base);
         let pderived = b.intern_type(TypeValue {
-            shape: TypeShape::Ptr(derived),
+            shape: TypeShape::pointer(derived),
             size: Some(8),
         });
         let v = var_named(b, "this", pderived);
@@ -820,7 +826,7 @@ mod tests {
 
     fn deref_child(b: &mut CtreeBuilder, int: TypeId) -> ExpressionId {
         let ptr = b.intern_type(TypeValue {
-            shape: TypeShape::Ptr(int),
+            shape: TypeShape::pointer(int),
             size: Some(8),
         });
         let vp = var_named(b, "p", ptr);
@@ -910,8 +916,12 @@ mod tests {
         let int = int32(&mut b);
         let s_ty = b.intern_type(TypeValue {
             shape: TypeShape::Struct {
+                attributes: crate::types::StructAttributes::empty(),
+                layout: crate::types::StructLayout::default(),
                 name: Some("S".into()),
                 members: vec![TypeMember {
+                    comment: None,
+                    attributes: crate::types::MemberAttributes::empty(),
                     name: "x".into(),
                     bit_offset: 32,
                     ty: int,
