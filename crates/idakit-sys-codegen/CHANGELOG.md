@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-11-16
+
+### Added
+
+- `ArgTy::StructRef` and `ArgTy::U8` argument kinds.
+
+### Fixed
+
+- Generated visitor methods suppress `clippy::too_many_arguments` at seven arguments, counting the
+  receiver as clippy does.
+
 ## [0.2.2] - 2026-11-16
 
 ### Added

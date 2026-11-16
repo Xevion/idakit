@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.3.0] - 2026-11-16
+
+The type and decompiler reads now carry the whole SDK structure behind each node instead of the
+subset the first caller needed. Most node shapes changed, so this release is breaking.
+
+### Added
+
+- Struct, union, member, pointer, and enum attributes, struct layout and alignment, member and
+  enum-constant comments, and enum bitmask groups and declared signedness.
+- Function prototypes carry named parameters with comments, locations, and flags, plus the calling
+  convention, prototype flags, call type, return location, stack-argument size, and spoiled
+  registers.
+- `TypeShape::Qualified` for `const`/`volatile` types, which reads used to drop.
+- `StorageLocation`, one location model for parameters, return values, and decompiled locals,
+  including a register's in-register offset.
+- Decompiled locals carry every `CVAR_*` bit as `LocalFlags`, including user-named and
+  user-typed provenance and `this`-argument detection.
+- Expressions carry `cexpr_t::exflags` as `ExpressionFlags`, which tells float comparisons from
+  integer ones.
+- Call arguments carry their vararg flag and formal parameter type, number literals their display
+  format (radix, character, enum member, struct offset), and catch clauses what they catch.
+
+### Changed
+
+- `CallingConvention` covers the full `callcnv_t` space, including the ellipsis and usercall
+  variations and custom conventions.
+- `TypeShape::Function`'s `varargs` field is replaced by `TypeShape::is_variadic`, and
+  `TypeShape::Ptr`, `Struct`, `Union`, and `Enum` gained fields.
+- `decompiler::ctree::LocalLocation` is replaced by `types::StorageLocation`.
+- `Local`'s `is_arg`, `is_result`, and `is_byref` fields are replaced by `flags` and predicate
+  methods.
+- `ExpressionKind::Num` carries a `LiteralFormat`, `Call` arguments are `CallArgument`s, and
+  `Try` catches are `Catch`es.
+- `FrameVarFlags` is removed; stack slots expose `MemberAttributes` and their comment.
+- Requires `idakit-sys` 0.3.
+
+### Fixed
+
+- A decompiled statement kind idakit doesn't model is rejected as
+  `ExtractError::UnknownStatementTag` instead of reading as an empty statement.
+
 ## [0.2.2] - 2026-11-16
 
 ### Documentation

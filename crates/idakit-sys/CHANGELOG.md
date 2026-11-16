@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0] - 2026-11-16
+
+### Added
+
+- Typed layers for the type attribute words (`StructAttributes`, `MemberAttributes`,
+  `EnumAttributes`, `PointerAttributes`), prototype flags (`FunctionTypeFlags`,
+  `ParameterFlags`), decompiled-local flags (`LocalFlags`), expression flags (`ExpressionFlags`),
+  and literal properties (`LiteralProperties`).
+- `TypeByte`, a decoder for the SDK's packed `type_t` into its base type, sub-type, and
+  `Qualifiers`.
+- The type and ctree walks carry prototype parameters, locations, qualifiers, local flags,
+  expression flags, call arguments, number formats, and catch clauses across the bridge.
+
+### Changed
+
+- The visitor sinks' method signatures changed to carry the new data, and `func_set_cc` takes the
+  full 32-bit calling convention.
+- `FrameVarFlags` is removed in favour of `MemberAttributes`.
+
 ## [0.2.2] - 2026-11-16
 
 ### Fixed
