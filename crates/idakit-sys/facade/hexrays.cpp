@@ -279,4 +279,12 @@ rust::Vec<uint32_t> expression_flag_ids() {
   return out;
 }
 
+// idakit-sys LiteralProperties: every NF_* bit, in declaration order.
+rust::Vec<uint32_t> literal_property_ids() {
+  rust::Vec<uint32_t> out;
+  for (uint32_t bit : {NF_FIXED, NF_NEGDONE, NF_BINVDONE, NF_NEGATE, NF_BITNOT, NF_VALID})
+    out.push_back(bit);
+  return out;
+}
+
 } // namespace gen

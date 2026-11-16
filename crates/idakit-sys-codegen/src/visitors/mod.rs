@@ -13,7 +13,7 @@ mod ctree;
 mod typewalk;
 
 use super::model::*;
-use ctree::{ARG_LOC, CTREE_SINK, LOC_PIECE};
+use ctree::{ARG_LOC, CALL_ARG, CATCH_CLAUSE, CAUGHT_EXPR, CTREE_SINK, LOC_PIECE, NUM_LITERAL};
 use typewalk::{
     ENUM_CONST_INFO, FRAME_VAR, FRAME_WALK, FUNC_ARG, MEMBER_INFO, SPOILED_REG, TYPE_WALK_SINK,
 };
@@ -75,6 +75,10 @@ pub const VISITOR_BRIDGE: VisitorBridge = VisitorBridge {
     structs: &[
         LOC_PIECE,
         ARG_LOC,
+        CALL_ARG,
+        NUM_LITERAL,
+        CAUGHT_EXPR,
+        CATCH_CLAUSE,
         FUNC_ARG,
         SPOILED_REG,
         MEMBER_INFO,

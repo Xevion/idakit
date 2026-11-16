@@ -52,7 +52,7 @@ fn expr_name(k: &ExpressionKind) -> &'static str {
         ExpressionKind::Cast { .. } => "Cast",
         ExpressionKind::Deref { .. } => "Deref",
         ExpressionKind::Sizeof(_) => "Sizeof",
-        ExpressionKind::Num(_) => "Num",
+        ExpressionKind::Num { .. } => "Num",
         ExpressionKind::Fnum(_) => "Fnum",
         ExpressionKind::Str(_) => "Str",
         ExpressionKind::Obj { .. } => "Obj",

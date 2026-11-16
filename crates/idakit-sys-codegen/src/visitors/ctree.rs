@@ -17,6 +17,55 @@ pub(super) const LOC_PIECE: SharedStruct = SharedStruct {
     },
 };
 
+pub(super) const CALL_ARG: SharedStruct = SharedStruct {
+    name: "CallArg",
+    doc: "One `carg_t` of a call, crossed inside a slice for one `e_call`.",
+    fields: fields! {
+        expr: U32 = "Handle of the already-visited argument expression.";
+        is_vararg: Bool = "Whether the argument matches the `...` tail.";
+        formal_type: U32 = "Walk-local handle of the formal parameter type, or `NONE` when the \
+                            SDK reports none.";
+    },
+};
+
+pub(super) const NUM_LITERAL: SharedStruct = SharedStruct {
+    name: "NumLiteral",
+    doc: "A `cot_num`'s value and its `number_format_t`, the kind decoded by the SDK's own \
+          predicates (`is_enum`, `is_char`, `is_stroff`).",
+    fields: fields! {
+        value: U64 = "The literal's value, read under the node's type.";
+        kind: U32 = "`LITERAL_NUMBER`, `LITERAL_CHAR`, `LITERAL_ENUM`, or \
+                     `LITERAL_STRUCT_OFFSET`.";
+        radix: U32 = "`get_radix()`: 2, 8, 10, or 16.";
+        type_name: Str = "The enum (`LITERAL_ENUM`) or struct (`LITERAL_STRUCT_OFFSET`) name; empty \
+                          otherwise.";
+        serial: U8 = "An enum constant's serial number.";
+        properties: U8 = "Raw `number_format_t::props` (`NF_*`).";
+        original_size: U8 = "`org_nbytes`, the original byte size; 0 when unknown.";
+        operand: U8 = "`opnum`, the operand `representation`'s bits describe.";
+        representation: U64 = "Raw `number_format_t::flags`, the database flags for `operand`.";
+    },
+};
+
+pub(super) const CAUGHT_EXPR: SharedStruct = SharedStruct {
+    name: "CaughtExpr",
+    doc: "One `catchexpr_t` of a catch clause.",
+    fields: fields! {
+        object: U32 = "Handle of the caught object, or `NONE` when the clause names none.";
+        fake_type: Str = "The caught type's name when the object's own type is not enough; empty \
+                          otherwise.";
+    },
+};
+
+pub(super) const CATCH_CLAUSE: SharedStruct = SharedStruct {
+    name: "CatchClause",
+    doc: "One `ccatch_t`: its body and what it catches, empty for `catch (...)`.",
+    fields: fields! {
+        body: U32 = "Handle of the already-visited body block.";
+        caught: VecStruct("CaughtExpr") = "The caught objects.";
+    },
+};
+
 pub(super) const ARG_LOC: SharedStruct = SharedStruct {
     name: "ArgLoc",
     doc: "A flattened `argloc_t` (or a decompiler local's `vdloc_t`). `atype` selects which of the \
@@ -59,7 +108,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
                   reborrows it.",
     methods: methods! {
         "A numeric literal; returns its handle."
-            e_num(ea: Address, value: U64, ty: U32);
+            e_num(ea: Address, literal: StructRef("NumLiteral"), ty: U32);
         "A floating-point literal; returns its handle."
             e_fnum(ea: Address, value: F64, ty: U32);
         "A reference to the global object at `target`, named `name`; returns its handle."
@@ -74,7 +123,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
             e_helper(ea: Address, name: String, ty: U32);
         "A call to the already-visited `callee` with the already-visited `args`; returns its \
          handle."
-            e_call(ea: Address, callee: U32, args: SliceU32, ty: U32);
+            e_call(ea: Address, callee: U32, args: SliceStruct("CallArg"), ty: U32);
         "A `.` member reference into the already-visited `obj` at bit `offset`; returns its handle."
             e_memref(ea: Address, obj: U32, offset: U32, ty: U32);
         "A `->` member pointer into the already-visited `obj` at bit `offset`; returns its handle."
@@ -114,7 +163,7 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
             s_asm(ea: Address, addrs: SliceU64);
         "A `try`/`catch`, the already-visited guarded `body` and each `catches` block; returns its \
          handle."
-            s_try(ea: Address, body: U32, catches: SliceU32);
+            s_try(ea: Address, body: U32, catches: SliceStruct("CatchClause"));
         "A `throw`, or a bare `throw;` when `e` is `NONE`; returns its handle."
             s_throw(ea: Address, e: U32);
         "An empty statement (`cit_empty`); returns its handle."

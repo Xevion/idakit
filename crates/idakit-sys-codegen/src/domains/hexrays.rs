@@ -100,5 +100,7 @@ pub const HEXRAYS: Domain = Domain {
             local_flag_ids() -> Vec(U32);
         "Alignment source: every `EXFL_*` bit, in `ExpressionFlags`'s declaration order."
             expression_flag_ids() -> Vec(U32);
+        "Alignment source: every `NF_*` bit, in `LiteralProperties`'s declaration order."
+            literal_property_ids() -> Vec(U32);
     },
 };

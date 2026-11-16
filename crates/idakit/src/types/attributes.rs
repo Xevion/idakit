@@ -247,6 +247,7 @@ serde_bits! {
     qualifier_bits: idakit_sys::Qualifiers as u8;
     local_bits: idakit_sys::LocalFlags as u32;
     expression_bits: idakit_sys::ExpressionFlags as u32;
+    literal_bits: idakit_sys::LiteralProperties as u8;
 }
 
 #[cfg(test)]

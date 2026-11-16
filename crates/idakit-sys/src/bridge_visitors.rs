@@ -103,8 +103,8 @@ impl CtreeVisitor {
 }
 
 pub use ffi::{
-    ArgLoc, EnumConstInfo, FrameVar, FrameWalk, FuncArg, LocPiece, MemberInfo, SpoiledReg,
-    cfunc_walk_ctree,
+    ArgLoc, CallArg, CatchClause, CaughtExpr, EnumConstInfo, FrameVar, FrameWalk, FuncArg,
+    LocPiece, MemberInfo, NumLiteral, SpoiledReg, cfunc_walk_ctree,
 };
 
 /// Walk the local type named `name` into `sink` via the `cxx` opaque visitor; returns the root

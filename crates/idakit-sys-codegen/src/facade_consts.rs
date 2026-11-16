@@ -18,6 +18,30 @@ pub const FACADE_CONSTS: &[ConstDef] = &[
         doc: "Absent optional child / sentinel for the visitor bridge (ctree and tinfo walks).",
     },
     ConstDef {
+        name: "LITERAL_NUMBER",
+        ty: Scalar::U32,
+        value: 0,
+        doc: "`NumLiteral::kind`: a plain number in `radix`.",
+    },
+    ConstDef {
+        name: "LITERAL_CHAR",
+        ty: Scalar::U32,
+        value: 1,
+        doc: "`NumLiteral::kind`: a character constant.",
+    },
+    ConstDef {
+        name: "LITERAL_ENUM",
+        ty: Scalar::U32,
+        value: 2,
+        doc: "`NumLiteral::kind`: an enum member, `type_name` naming the enum.",
+    },
+    ConstDef {
+        name: "LITERAL_STRUCT_OFFSET",
+        ty: Scalar::U32,
+        value: 3,
+        doc: "`NumLiteral::kind`: an `offsetof`, `type_name` naming the struct.",
+    },
+    ConstDef {
         name: "EXIT_TRAPPED",
         ty: Scalar::I32,
         value: -0x7FFF_FFFF,

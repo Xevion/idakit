@@ -118,7 +118,9 @@ fn analyze(img: &TaintInput) -> usize {
         .calls()
         .filter(|(id, _, args)| {
             img.callees.get(id).is_some_and(|n| matches(n, SINKS))
-                && args.iter().any(|a| expression_tainted(img, *a, &tainted))
+                && args
+                    .iter()
+                    .any(|a| expression_tainted(img, a.expression, &tainted))
         })
         .count()
 }

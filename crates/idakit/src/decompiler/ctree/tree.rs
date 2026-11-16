@@ -8,8 +8,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::node::{
-    ExpressionFlags, ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef,
-    StatementId, StatementKind, StatementNode,
+    CallArgument, ExpressionFlags, ExpressionId, ExpressionKind, ExpressionNode, LiteralFormat,
+    Local, LocalId, NodeRef, StatementId, StatementKind, StatementNode,
 };
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use crate::address::Address;
@@ -72,10 +72,8 @@ fn for_each_child(
 /// let tree = b.finish(block);
 ///
 /// // Whole-tree scans find the call and the local reference without walking the tree shape.
-/// assert_eq!(
-///     tree.calls().collect::<Vec<_>>(),
-///     vec![(call, foo, [a].as_slice())]
-/// );
+/// let (node, callee, args) = tree.calls().next().expect("one call");
+/// assert_eq!((node, callee, args[0].expression), (call, foo, a));
 /// assert_eq!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>(), vec![arg]);
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -178,7 +176,7 @@ impl Ctree {
     ///
     /// The whole-tree scan behind "find every call", without re-spelling the
     /// [`as_call`](ExpressionKind::as_call) filter.
-    pub fn calls(&self) -> impl Iterator<Item = (ExpressionId, ExpressionId, &[ExpressionId])> {
+    pub fn calls(&self) -> impl Iterator<Item = (ExpressionId, ExpressionId, &[CallArgument])> {
         self.expressions()
             .filter_map(|(id, node)| node.kind.as_call().map(|(callee, args)| (id, callee, args)))
     }
@@ -389,7 +387,13 @@ impl CtreeBuilder {
 
     /// An integer literal (raw bits; signedness rides on `ty`).
     pub fn num(&mut self, ty: TypeId, value: u64) -> ExpressionId {
-        self.expression(ty, ExpressionKind::Num(value)).call()
+        self.literal(ty, value, LiteralFormat::default())
+    }
+
+    /// An integer literal shown in `format`.
+    pub fn literal(&mut self, ty: TypeId, value: u64, format: LiteralFormat) -> ExpressionId {
+        self.expression(ty, ExpressionKind::Num { value, format })
+            .call()
     }
 
     /// A floating-point literal.
@@ -489,13 +493,15 @@ impl CtreeBuilder {
             .call()
     }
 
-    /// `callee(args...)`.
+    /// `callee(args...)`. An argument may be a bare [`ExpressionId`] (a declared parameter with no
+    /// known formal type) or a full [`CallArgument`].
     pub fn call_expression(
         &mut self,
         ty: TypeId,
         callee: ExpressionId,
-        args: Vec<ExpressionId>,
+        args: impl IntoIterator<Item = impl Into<CallArgument>>,
     ) -> ExpressionId {
+        let args = args.into_iter().map(Into::into).collect();
         self.expression(ty, ExpressionKind::Call { callee, args })
             .call()
     }
@@ -748,7 +754,7 @@ mod tests {
         let tree = b.finish(block);
 
         let calls: Vec<_> = tree.calls().collect();
-        assert!(calls == vec![(call, f, [a].as_slice())]);
+        assert!(calls == vec![(call, f, [CallArgument::from(a)].as_slice())]);
         assert!(tree.assigns().collect::<Vec<_>>() == vec![(asg, AssignmentOp::Assign, x, call)]);
         // Both `Var` references surface, in allocation order.
         assert!(tree.vars().map(|(_, v)| v).collect::<Vec<_>>() == vec![LocalId(0), LocalId(1)]);
@@ -983,7 +989,8 @@ mod tests {
                 }
                 ExprSpec::Call(callee, args) => {
                     let callee = build_expr(b, ty, callee);
-                    let args = args.iter().map(|a| build_expr(b, ty, a)).collect();
+                    let args: Vec<ExpressionId> =
+                        args.iter().map(|a| build_expr(b, ty, a)).collect();
                     b.call_expression(ty, callee, args)
                 }
             }

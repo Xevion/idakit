@@ -111,8 +111,8 @@ pub fn base_var(tree: &Ctree, e: ExpressionId) -> Option<(LocalId, i64)> {
             y,
         } => {
             let (base, k) = match (tree.kind(*x), tree.kind(*y)) {
-                (_, ExpressionKind::Num(k)) => (*x, *k),
-                (ExpressionKind::Num(k), _) => (*y, *k),
+                (_, ExpressionKind::Num { value: k, .. }) => (*x, *k),
+                (ExpressionKind::Num { value: k, .. }, _) => (*y, *k),
                 _ => return None,
             };
             let elem = pointee_size(tree, base)?;
@@ -259,7 +259,7 @@ mod tests {
                 matches!(tree.kind(*callee), ExpressionKind::Obj { name: Some(n), .. } if n == "OtherCtor")
             })
             .expect("OtherCtor call");
-        assert!(base_var(&tree, args[0]) == Some((LocalId(0), 16)));
+        assert!(base_var(&tree, args[0].expression) == Some((LocalId(0), 16)));
     }
 
     /// Untyped pointer arithmetic threads to the same offset a member access would, since

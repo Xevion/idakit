@@ -197,8 +197,12 @@ impl Printer<'_> {
                 self.line("try");
                 self.statement(body);
                 for c in catches {
-                    self.line("catch");
-                    self.statement(c);
+                    self.line(if c.is_catch_all() {
+                        "catch (...)"
+                    } else {
+                        "catch"
+                    });
+                    self.statement(c.body);
                 }
             }
             StatementKind::Throw(e) => {
@@ -292,7 +296,7 @@ impl Printer<'_> {
                     if i > 0 {
                         self.out.push_str(", ");
                     }
-                    self.expression(a, Prec::ASSIGN);
+                    self.expression(a.expression, Prec::ASSIGN);
                 }
                 self.out.push(')');
             }
@@ -334,7 +338,7 @@ impl Printer<'_> {
                 self.expression(x, Prec::ANY);
                 self.out.push(')');
             }
-            ExpressionKind::Num(v) => {
+            ExpressionKind::Num { value: v, .. } => {
                 let v = *v;
                 if v < 10 {
                     write!(self.out, "{v}").unwrap();

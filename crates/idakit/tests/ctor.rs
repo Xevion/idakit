@@ -75,7 +75,7 @@ fn this_arg_calls(tree: &Ctree) -> Vec<ThisCall> {
     tree.calls()
         .filter_map(|(_, callee, args)| {
             let g = global_target(tree, callee)?;
-            let (v, off) = base_var(tree, *args.first()?)?;
+            let (v, off) = base_var(tree, args.first()?.expression)?;
             if v != this {
                 return None;
             }

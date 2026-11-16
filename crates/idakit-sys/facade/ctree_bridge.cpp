@@ -111,8 +111,27 @@ struct walker_t {
     const uint64_t addr = ea_wire(cexpr->ea);
     uint32_t t = bridge::visit_walker_ty(type_walker, cexpr->type);
     switch (cexpr->op) {
-    case cot_num:
-      return nodes->e_num(addr, cexpr->n->value(cexpr->type), t);
+    case cot_num: {
+      const number_format_t &nf = cexpr->n->nf;
+      NumLiteral lit{};
+      lit.value = cexpr->n->value(cexpr->type);
+      if (nf.is_enum())
+        lit.kind = gen::LITERAL_ENUM;
+      else if (nf.is_char())
+        lit.kind = gen::LITERAL_CHAR;
+      else if (nf.is_stroff())
+        lit.kind = gen::LITERAL_STRUCT_OFFSET;
+      else
+        lit.kind = gen::LITERAL_NUMBER;
+      lit.radix = static_cast<uint32_t>(nf.get_radix());
+      lit.type_name = lossy_str(nf.type_name.c_str(), nf.type_name.length());
+      lit.serial = nf.serial;
+      lit.properties = static_cast<uint8_t>(nf.props);
+      lit.original_size = static_cast<uint8_t>(nf.org_nbytes);
+      lit.operand = static_cast<uint8_t>(nf.opnum);
+      lit.representation = nf.flags;
+      return nodes->e_num(addr, lit, t);
+    }
     case cot_fnum: {
       double d = 0.0;
       cexpr->fpc->fnum.to_double(&d);
@@ -143,13 +162,23 @@ struct walker_t {
       return nodes->e_memptr(addr, expr(cexpr->x), cexpr->m, t);
     case cot_call: {
       uint32_t callee = expr(cexpr->x);
-      std::vector<uint32_t> args;
+      std::vector<CallArg> args;
       if (cexpr->a != nullptr) {
         args.reserve(cexpr->a->size());
-        for (const carg_t &arg : *cexpr->a)
-          args.push_back(expr(&arg));
+        for (const carg_t &arg : *cexpr->a) {
+          CallArg a{};
+          a.expr = expr(&arg);
+          a.is_vararg = arg.is_vararg;
+          a.formal_type = arg.formal_type.empty()
+                              ? gen::NONE
+                              : bridge::visit_walker_ty(type_walker, arg.formal_type);
+          args.push_back(a);
+        }
       }
-      return nodes->e_call(addr, callee, slice_of(args), t);
+      rust::Slice<const CallArg> arg_slice =
+          args.empty() ? rust::Slice<const CallArg>()
+                       : rust::Slice<const CallArg>(args.data(), args.size());
+      return nodes->e_call(addr, callee, arg_slice, t);
     }
     default: {
       // Binary/assign/unary/ternary/cast/index/sizeof/empty/type/insn: operands by the
@@ -236,13 +265,25 @@ struct walker_t {
     case cit_throw:
       return nodes->s_throw(addr, opt_expr(&cinsn->cthrow->expr));
     case cit_try: {
-      // ctry is-a cblock (the guarded body); each catch is a cblock too.
+      // ctry is-a cblock (the guarded body); each catch is a cblock too, plus what it catches.
       uint32_t body = block(*cinsn->ctry, addr);
-      std::vector<uint32_t> catches;
+      std::vector<CatchClause> catches;
       catches.reserve(cinsn->ctry->catchs.size());
-      for (const ccatch_t &cat : cinsn->ctry->catchs)
-        catches.push_back(block(cat, addr));
-      return nodes->s_try(addr, body, slice_of(catches));
+      for (const ccatch_t &cat : cinsn->ctry->catchs) {
+        CatchClause clause{};
+        clause.body = block(cat, addr);
+        for (const catchexpr_t &ce : cat.exprs) {
+          CaughtExpr caught{};
+          caught.object = opt_expr(&ce.obj);
+          caught.fake_type = lossy_str(ce.fake_type.c_str(), ce.fake_type.length());
+          clause.caught.push_back(std::move(caught));
+        }
+        catches.push_back(std::move(clause));
+      }
+      rust::Slice<const CatchClause> catch_slice =
+          catches.empty() ? rust::Slice<const CatchClause>()
+                          : rust::Slice<const CatchClause>(catches.data(), catches.size());
+      return nodes->s_try(addr, body, catch_slice);
     }
     case cit_break:
       return nodes->s_break(addr);

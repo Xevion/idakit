@@ -12,7 +12,7 @@ use crate::address::Address;
 use crate::arena::Idx;
 use crate::types::{StorageLocation, TypeId};
 
-pub use idakit_sys::{ExpressionFlags, LocalFlags};
+pub use idakit_sys::{ExpressionFlags, LiteralProperties, LocalFlags};
 
 /// A typed handle into the tree's expression arena, naming an [`ExpressionNode`].
 pub type ExpressionId = Idx<ExpressionNode>;
@@ -157,6 +157,117 @@ impl Local {
                 .union(LocalFlags::NO_PROPAGATION),
         )
     }
+}
+
+/// One argument of a call, with what the callee's prototype says about it.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[doc(alias("carg_t"))]
+pub struct CallArgument {
+    /// The argument expression.
+    pub expression: ExpressionId,
+    /// Whether the argument falls in the `...` tail rather than a declared parameter.
+    pub is_vararg: bool,
+    /// The declared parameter type, or `None` when the callee's prototype gives none. Differs
+    /// from the expression's own type where the call converts the argument.
+    pub formal_type: Option<TypeId>,
+}
+
+impl From<ExpressionId> for CallArgument {
+    /// A declared-parameter argument with no known formal type.
+    fn from(expression: ExpressionId) -> Self {
+        Self {
+            expression,
+            is_vararg: false,
+            formal_type: None,
+        }
+    }
+}
+
+/// How a number literal is shown, from its `number_format_t`.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
+#[doc(alias("number_format_t"))]
+pub struct LiteralFormat {
+    /// What the literal is shown as.
+    pub kind: LiteralKind,
+    /// The `NF_*` property bits: whether the user fixed the format, or asked for negation or
+    /// bit inversion.
+    #[serde(with = "crate::types::attributes::literal_bits")]
+    pub properties: LiteralProperties,
+    /// The literal's original size in bytes, or `None` when unknown.
+    #[doc(alias("org_nbytes"))]
+    pub original_size: Option<u8>,
+    /// The operand number [`representation`](Self::representation) describes.
+    #[doc(alias("opnum"))]
+    pub operand: u8,
+    /// The raw database flags describing the literal's representation, for forms
+    /// [`kind`](Self::kind) does not name (an offset, a segment, a custom format).
+    #[doc(alias("number_format_t::flags"))]
+    pub representation: u64,
+}
+
+/// What a number literal is shown as.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum LiteralKind {
+    /// A plain number in this radix: 2, 8, 10, or 16.
+    #[doc(alias("get_radix"))]
+    Number {
+        /// The radix.
+        radix: u8,
+    },
+    /// A character constant.
+    #[doc(alias("is_char"))]
+    Char,
+    /// A member of the named enum.
+    #[doc(alias("is_enum"))]
+    Enum {
+        /// The enum's name.
+        name: String,
+        /// The constant's serial number, telling apart members with one value.
+        serial: u8,
+    },
+    /// An `offsetof` into the named struct.
+    #[doc(alias("is_stroff"))]
+    StructOffset {
+        /// The struct's name.
+        name: String,
+    },
+}
+
+impl Default for LiteralKind {
+    /// A plain decimal number.
+    fn default() -> Self {
+        Self::Number { radix: 10 }
+    }
+}
+
+/// One catch clause of a `try`.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[doc(alias("ccatch_t"))]
+pub struct Catch {
+    /// The handler body.
+    pub body: StatementId,
+    /// The caught objects; empty for `catch (...)`.
+    pub caught: Vec<CaughtObject>,
+}
+
+impl Catch {
+    /// Whether this is `catch (...)`.
+    #[inline]
+    #[must_use]
+    pub fn is_catch_all(&self) -> bool {
+        self.caught.is_empty()
+    }
+}
+
+/// One object a catch clause names.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[doc(alias("catchexpr_t"))]
+pub struct CaughtObject {
+    /// The caught object, or `None` when the clause names only a type.
+    #[doc(alias("obj"))]
+    pub object: Option<ExpressionId>,
+    /// The caught type's name, when the object's own type is not detailed enough.
+    pub fake_type: Option<String>,
 }
 
 /// An expression node with its source address, resolved type, parent, and kind.
@@ -310,7 +421,7 @@ pub enum ExpressionKind {
         /// The called expression.
         callee: ExpressionId,
         /// The arguments, in order.
-        args: Vec<ExpressionId>,
+        args: Vec<CallArgument>,
     },
     /// An array index, `array[index]`.
     #[doc(alias("cot_idx"))]
@@ -355,9 +466,15 @@ pub enum ExpressionKind {
     /// A `sizeof(x)`.
     #[doc(alias("cot_sizeof"))]
     Sizeof(ExpressionId),
-    /// An integer literal, as raw bits; signedness comes from the node's type.
-    #[doc(alias("cot_num"))]
-    Num(u64),
+    /// An integer literal, as raw bits (signedness comes from the node's type), and how it is
+    /// shown.
+    #[doc(alias("cot_num", "cnumber_t"))]
+    Num {
+        /// The literal's raw bits.
+        value: u64,
+        /// How the literal is shown: radix, character, enum member, or struct offset.
+        format: LiteralFormat,
+    },
     /// A floating-point literal.
     ///
     /// `PartialEq` on `ExpressionKind` is structural, so `Fnum(NaN)` does not compare equal to
@@ -427,7 +544,7 @@ expression_accessors! {
     /// A ternary's condition and both branches, in order.
     as_ternary: Ternary { cond, then_, else_ } => (ExpressionId, ExpressionId, ExpressionId) = (*cond, *then_, *else_);
     /// `callee(args...)`: the callee and its argument slice.
-    as_call: Call { callee, args } => (ExpressionId, &[ExpressionId]) = (*callee, args.as_slice());
+    as_call: Call { callee, args } => (ExpressionId, &[CallArgument]) = (*callee, args.as_slice());
     /// `array[index]`.
     as_index: Index { array, index } => (ExpressionId, ExpressionId) = (*array, *index);
     /// `obj.field`: the object and the member's byte offset.
@@ -441,7 +558,7 @@ expression_accessors! {
     /// `sizeof(x)`: the operand.
     as_sizeof: Sizeof(x) => ExpressionId = *x;
     /// An integer literal's raw bits.
-    as_num: Num(v) => u64 = *v;
+    as_num: Num { value, .. } => u64 = *value;
     /// A floating-point literal's value.
     as_fnum: Fnum(v) => f64 = *v;
     /// The local variable a `Var` names.
@@ -549,7 +666,7 @@ pub enum StatementKind {
         /// The guarded body.
         body: StatementId,
         /// The catch handlers.
-        catches: Vec<StatementId>,
+        catches: Vec<Catch>,
     },
     /// A `throw [expression];`.
     #[doc(alias("cit_throw"))]
@@ -588,11 +705,11 @@ impl ExpressionKind {
             Call { callee, args } => {
                 f(NodeRef::Expression(*callee));
                 for a in args {
-                    f(NodeRef::Expression(*a));
+                    f(NodeRef::Expression(a.expression));
                 }
             }
             // Leaves carry no child handles.
-            Self::Num(_)
+            Self::Num { .. }
             | Self::Fnum(_)
             | Self::Str(_)
             | Self::Obj { .. }
@@ -662,8 +779,13 @@ impl StatementKind {
             }
             Try { body, catches } => {
                 f(NodeRef::Statement(*body));
-                for s in catches {
-                    f(NodeRef::Statement(*s));
+                for c in catches {
+                    for caught in &c.caught {
+                        if let Some(object) = caught.object {
+                            f(NodeRef::Expression(object));
+                        }
+                    }
+                    f(NodeRef::Statement(c.body));
                 }
             }
             // No child handles.
@@ -746,7 +868,11 @@ mod tests {
         assert!(ExpressionKind::Cast { x: a }.as_cast() == Some(a));
         assert!(ExpressionKind::Deref { x: a, size: 4 }.as_deref() == Some((a, 4)));
         assert!(ExpressionKind::Sizeof(a).as_sizeof() == Some(a));
-        assert!(ExpressionKind::Num(7).as_num() == Some(7));
+        let seven = ExpressionKind::Num {
+            value: 7,
+            format: LiteralFormat::default(),
+        };
+        assert!(seven.as_num() == Some(7));
         assert!(ExpressionKind::Fnum(3.5).as_fnum() == Some(3.5));
         assert!(ExpressionKind::Var(LocalId(3)).as_var() == Some(LocalId(3)));
         assert!(ExpressionKind::Str("hi".into()).as_str() == Some("hi"));
@@ -754,10 +880,11 @@ mod tests {
 
         let call = ExpressionKind::Call {
             callee: a,
-            args: vec![b, c],
+            args: vec![b.into(), c.into()],
         };
         assert!(let Some((callee, args)) = call.as_call());
-        assert!(callee == a && args.len() == 2 && args[0] == b && args[1] == c);
+        assert!(callee == a && args.len() == 2);
+        assert!(args[0].expression == b && args[1].expression == c);
 
         let obj = ExpressionKind::Obj {
             address: Address::new_const(0x10),
@@ -766,7 +893,7 @@ mod tests {
         assert!(obj.as_obj() == Some((Address::new_const(0x10), Some("g"))));
 
         // A wrong-variant query is `None`, not a panic.
-        assert!(let None = ExpressionKind::Num(1).as_binary());
+        assert!(let None = seven.as_binary());
     }
 
     /// `NodeRef` projects to one handle kind and rejects the other.
@@ -785,6 +912,15 @@ mod tests {
     fn expression_flag_ids_align_with_the_facade() {
         let ours: Vec<u32> = ExpressionFlags::all().iter().map(|f| f.bits()).collect();
         assert!(idakit_sys::expression_flag_ids() == ours);
+    }
+
+    #[test]
+    fn literal_property_ids_align_with_the_facade() {
+        let ours: Vec<u32> = LiteralProperties::all()
+            .iter()
+            .map(|f| u32::from(f.bits()))
+            .collect();
+        assert!(idakit_sys::literal_property_ids() == ours);
     }
 
     #[test]
@@ -901,7 +1037,19 @@ mod tests {
             address: Some(Address::new_const(0x1000)),
             ty: Idx::from_raw(0),
             parent: None,
-            kind: ExpressionKind::Num(42),
+            kind: ExpressionKind::Num {
+                value: 42,
+                format: LiteralFormat {
+                    kind: LiteralKind::Enum {
+                        name: "Color".into(),
+                        serial: 1,
+                    },
+                    properties: LiteralProperties::FIXED,
+                    original_size: Some(4),
+                    operand: 0,
+                    representation: 0x0880_0000,
+                },
+            },
             flags: ExpressionFlags::FLOATING_POINT,
         };
         let json = serde_json::to_string(&expression_node).unwrap();

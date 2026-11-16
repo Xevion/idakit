@@ -18,7 +18,8 @@ use snafu::Snafu;
 use strum::VariantArray;
 
 use super::node::{
-    Case, ExpressionFlags, ExpressionId, ExpressionKind, Local, LocalFlags, LocalId, StatementId,
+    CallArgument, Case, Catch, CaughtObject, ExpressionFlags, ExpressionId, ExpressionKind,
+    LiteralFormat, LiteralKind, LiteralProperties, Local, LocalFlags, LocalId, StatementId,
     StatementKind,
 };
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
@@ -156,8 +157,13 @@ impl CallbackBuilder {
             .call())
     }
 
+    #[cfg(test)]
     fn num(&mut self, address: u64, value: u64, ty: u32) -> u32 {
-        self.push_expression(address, ty, ExpressionKind::Num(value))
+        self.literal(address, value, LiteralFormat::default(), ty)
+    }
+
+    fn literal(&mut self, address: u64, value: u64, format: LiteralFormat, ty: u32) -> u32 {
+        self.push_expression(address, ty, ExpressionKind::Num { value, format })
     }
 
     fn fnum(&mut self, address: u64, value: f64, ty: u32) -> u32 {
@@ -192,8 +198,13 @@ impl CallbackBuilder {
         self.push_expression(address, ty, ExpressionKind::Helper(s))
     }
 
+    #[cfg(test)]
     fn call(&mut self, address: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
-        let args = args.iter().map(|&a| eid(a)).collect();
+        let args = args.iter().map(|&a| eid(a).into()).collect();
+        self.call_with(address, callee, args, ty)
+    }
+
+    fn call_with(&mut self, address: u64, callee: u32, args: Vec<CallArgument>, ty: u32) -> u32 {
         self.push_expression(
             address,
             ty,
@@ -363,8 +374,19 @@ impl CallbackBuilder {
         self.push_statement(address, StatementKind::Asm(out))
     }
 
+    #[cfg(test)]
     fn try_(&mut self, address: u64, body: u32, catches: &[u32]) -> u32 {
-        let catches = catches.iter().map(|&s| sid(s)).collect();
+        let catches = catches
+            .iter()
+            .map(|&s| Catch {
+                body: sid(s),
+                caught: Vec::new(),
+            })
+            .collect();
+        self.try_with(address, body, catches)
+    }
+
+    fn try_with(&mut self, address: u64, body: u32, catches: Vec<Catch>) -> u32 {
         self.push_statement(
             address,
             StatementKind::Try {
@@ -553,8 +575,28 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
 /// safe method above. Names, string literals, and comments arrive as owned `String`, decoded
 /// leniently facade-side (IDA emits UTF-8; any undecodable unit is U+FFFD).
 impl idakit_sys::CtreeSink for CallbackBuilder {
-    fn e_num(&mut self, ea: u64, value: u64, ty: u32) -> u32 {
-        self.num(ea, value, ty)
+    fn e_num(&mut self, ea: u64, literal: &idakit_sys::NumLiteral, ty: u32) -> u32 {
+        let name = || literal.type_name.clone();
+        let kind = match literal.kind {
+            idakit_sys::LITERAL_CHAR => LiteralKind::Char,
+            idakit_sys::LITERAL_ENUM => LiteralKind::Enum {
+                name: name(),
+                serial: literal.serial,
+            },
+            idakit_sys::LITERAL_STRUCT_OFFSET => LiteralKind::StructOffset { name: name() },
+            // `get_radix` answers 2, 8, 10, or 16, so the narrowing never saturates.
+            _ => LiteralKind::Number {
+                radix: u8::try_from(literal.radix).unwrap_or(u8::MAX),
+            },
+        };
+        let format = LiteralFormat {
+            kind,
+            properties: LiteralProperties::from_bits_retain(literal.properties),
+            original_size: (literal.original_size != 0).then_some(literal.original_size),
+            operand: literal.operand,
+            representation: literal.representation,
+        };
+        self.literal(ea, literal.value, format, ty)
     }
 
     fn e_fnum(&mut self, ea: u64, value: f64, ty: u32) -> u32 {
@@ -582,8 +624,16 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
         self.helper(ea, name, ty)
     }
 
-    fn e_call(&mut self, ea: u64, callee: u32, args: &[u32], ty: u32) -> u32 {
-        self.call(ea, callee, args, ty)
+    fn e_call(&mut self, ea: u64, callee: u32, args: &[idakit_sys::CallArg], ty: u32) -> u32 {
+        let args = args
+            .iter()
+            .map(|a| CallArgument {
+                expression: eid(a.expr),
+                is_vararg: a.is_vararg,
+                formal_type: (a.formal_type != NONE).then(|| tid(a.formal_type)),
+            })
+            .collect();
+        self.call_with(ea, callee, args, ty)
     }
 
     fn e_memref(&mut self, ea: u64, obj: u32, offset: u32, ty: u32) -> u32 {
@@ -671,8 +721,22 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
         self.asm(ea, addrs)
     }
 
-    fn s_try(&mut self, ea: u64, body: u32, catches: &[u32]) -> u32 {
-        self.try_(ea, body, catches)
+    fn s_try(&mut self, ea: u64, body: u32, catches: &[idakit_sys::CatchClause]) -> u32 {
+        let catches = catches
+            .iter()
+            .map(|c| Catch {
+                body: sid(c.body),
+                caught: c
+                    .caught
+                    .iter()
+                    .map(|o| CaughtObject {
+                        object: (o.object != NONE).then(|| eid(o.object)),
+                        fake_type: (!o.fake_type.is_empty()).then(|| o.fake_type.clone()),
+                    })
+                    .collect(),
+            })
+            .collect();
+        self.try_with(ea, body, catches)
     }
 
     fn s_throw(&mut self, ea: u64, e: u32) -> u32 {
@@ -842,10 +906,12 @@ mod tests {
             matches!(tree.expression(*callee).kind, ExpressionKind::Helper(ref h) if h == "printf")
         );
         assert!(args.len() == 2);
-        assert!(matches!(tree.expression(args[0]).kind, ExpressionKind::Str(ref s) if s == "%d"));
+        assert!(
+            matches!(tree.expression(args[0].expression).kind, ExpressionKind::Str(ref s) if s == "%d")
+        );
         assert!(matches!(
-            tree.expression(args[1]).kind,
-            ExpressionKind::Num(42)
+            tree.expression(args[1].expression).kind,
+            ExpressionKind::Num { value: 42, .. }
         ));
     }
 
@@ -1170,7 +1236,22 @@ mod tests {
         let thr = CtreeSink::s_throw(&mut cb, 0, thrown);
         let guard = cb.block(0, &[]);
         let catch = cb.block(0, &[]);
-        let tri = CtreeSink::s_try(&mut cb, 0, guard, &[catch]);
+        let catch_all = cb.block(0, &[]);
+        let caught = cb.var(0, 0, it);
+        let clauses = [
+            sys::CatchClause {
+                body: catch,
+                caught: vec![sys::CaughtExpr {
+                    object: caught,
+                    fake_type: "std::exception".into(),
+                }],
+            },
+            sys::CatchClause {
+                body: catch_all,
+                caught: Vec::new(),
+            },
+        ];
+        let tri = CtreeSink::s_try(&mut cb, 0, guard, &clauses);
 
         let blk = cb.block(0, &[s_mref, s_mptr, s_text, cont, go, asm, thr, tri]);
         let tree = cb.finish(blk).expect("well-formed");
@@ -1201,7 +1282,15 @@ mod tests {
             StatementKind::Throw(Some(_))
         ));
         assert!(let StatementKind::Try { catches, .. } = &tree.statement(sid(tri)).kind);
-        assert!(catches.len() == 1);
+        assert!(catches.len() == 2);
+        assert!(
+            catches[0].caught
+                == [CaughtObject {
+                    object: Some(eid(caught)),
+                    fake_type: Some("std::exception".into()),
+                }]
+        );
+        assert!(!catches[0].is_catch_all() && catches[1].is_catch_all());
     }
 
     /// Drive the [`idakit_sys::TypeWalkSink`] forwarders (the ones the ctree walk uses, distinct

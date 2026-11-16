@@ -13,8 +13,9 @@ mod tree;
 pub use extract::ExtractError;
 pub(crate) use extract::walk;
 pub use node::{
-    Case, ExpressionFlags, ExpressionId, ExpressionKind, ExpressionNode, Local, LocalFlags,
-    LocalId, NodeRef, StatementId, StatementKind, StatementNode,
+    CallArgument, Case, Catch, CaughtObject, ExpressionFlags, ExpressionId, ExpressionKind,
+    ExpressionNode, LiteralFormat, LiteralKind, LiteralProperties, Local, LocalFlags, LocalId,
+    NodeRef, StatementId, StatementKind, StatementNode,
 };
 pub use ops::{AssignmentOp, BinaryOp, UnaryOp};
 pub use tree::{Ctree, CtreeBuilder, Descendants};

@@ -312,10 +312,16 @@ pub fn cfg(idb: &Database) -> String {
 /// manifest, which skips this check at the trial level rather than letting it pass vacuously;
 /// every fixture that reaches this function is expected to decompile at least one.
 pub fn decompile(idb: &Database) -> String {
-    use idakit::decompiler::ctree::{ExpressionFlags, NodeRef, StatementKind};
+    use idakit::decompiler::ctree::{
+        ExpressionFlags, ExpressionKind, LiteralKind, NodeRef, StatementKind,
+    };
     let mut decompiled = 0usize;
     let mut flagged = 0usize;
     let mut floating = 0usize;
+    let mut symbolic = 0usize;
+    let mut typed_args = 0usize;
+    let mut vararg_args = 0usize;
+    let mut catch_clauses = 0usize;
     let mut deep_checked = false;
     for f in idb.functions().take(50) {
         let Ok(cf) = f.decompile() else { continue };
@@ -345,6 +351,21 @@ pub fn decompile(idb: &Database) -> String {
             );
             floating += usize::from(e.is_floating_point());
             flagged += usize::from(!e.flags.is_empty());
+            match &e.kind {
+                ExpressionKind::Num { format, .. } => {
+                    symbolic += usize::from(!matches!(format.kind, LiteralKind::Number { .. }));
+                }
+                ExpressionKind::Call { args, .. } => {
+                    typed_args += args.iter().filter(|a| a.formal_type.is_some()).count();
+                    vararg_args += args.iter().filter(|a| a.is_vararg).count();
+                }
+                _ => {}
+            }
+        }
+        for (_, s) in tree.statements() {
+            if let StatementKind::Try { catches, .. } = &s.kind {
+                catch_clauses += catches.len();
+            }
         }
 
         if deep_checked {
@@ -369,7 +390,11 @@ pub fn decompile(idb: &Database) -> String {
         deep_checked = true;
     }
     assert!(decompiled > 0, "no functions decompiled");
-    format!("{decompiled} decompiled, {flagged} flagged expressions ({floating} floating-point)")
+    format!(
+        "{decompiled} decompiled, {flagged} flagged expressions ({floating} floating-point), \
+         {symbolic} symbolic literals, {typed_args} typed + {vararg_args} vararg call args, \
+         {catch_clauses} catch clauses"
+    )
 }
 
 /// A function with a stored prototype walks into a `Function`-rooted [`Type`] whose child
