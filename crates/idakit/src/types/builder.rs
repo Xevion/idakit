@@ -12,8 +12,9 @@
 use std::collections::HashMap;
 
 use super::{
-    EnumMember, NumberFormat, PointerAttributes, PointerModifier, ShiftedPointer, StructAttributes,
-    StructLayout, TypeId, TypeMember, TypeShape, TypeTable, TypeValue, ValueRepr,
+    EnumAttributes, EnumGroup, EnumMember, NumberFormat, PointerAttributes, PointerModifier,
+    ShiftedPointer, Signedness, StructAttributes, StructLayout, TypeId, TypeMember, TypeShape,
+    TypeTable, TypeValue, ValueRepr,
 };
 
 /// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeShape`]. The walker
@@ -222,6 +223,8 @@ impl TypeBuilder {
         repr_vtype: u32,
         repr_signed: bool,
         repr_leading_zeros: bool,
+        attributes: EnumAttributes,
+        groups: Option<Vec<EnumGroup>>,
     ) {
         let name = self.take_name(id);
         let repr = NumberFormat::try_from(repr_vtype)
@@ -240,6 +243,9 @@ impl TypeBuilder {
                     members,
                     is_bitmask,
                     repr,
+                    signedness: Signedness::from_attributes(attributes),
+                    groups,
+                    attributes,
                 },
                 size: opt_size(size, has_size),
             },

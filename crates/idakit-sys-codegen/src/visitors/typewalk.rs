@@ -28,6 +28,9 @@ pub(super) const ENUM_CONST_INFO: SharedStruct = SharedStruct {
     fields: fields! {
         name: Str = "The constant's name.";
         value: U64 = "The constant's value.";
+        has_comment: Bool = "Whether the constant carries a comment.";
+        comment: Str = "The constant's (always repeatable) comment; empty when `has_comment` is \
+                        false.";
     },
 };
 
@@ -104,12 +107,13 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
                         has_size: U32, attributes: U32, unpadded_size: U64,
                         effective_alignment: U32, declared_alignment_shift: U32,
                         pack: U32) -> Unit;
-        "Fills the enum placeholder `id` with its `consts` over the already-visited `underlying`. \
+        "Fills the enum placeholder `id` with its `consts` over the already-visited `underlying`, \
+         its raw `taenum_bits`, and its bitmask `group_sizes` (empty when the SDK reports none). \
          `repr_vtype`/`repr_signed`/`repr_leading_zeros` are the enum's own `value_repr_t`, the \
          same shape [`MemberInfo`](ffi::MemberInfo) carries per-member (0 = `FRB_UNK`/unmodeled)."
             fill_enum(id: U32, underlying: U32, consts: SliceStruct("EnumConstInfo"), size: U64,
                       has_size: U32, is_bitmask: Bool, repr_vtype: U32, repr_signed: Bool,
-                      repr_leading_zeros: Bool) -> Unit;
+                      repr_leading_zeros: Bool, attributes: U32, group_sizes: SliceU32) -> Unit;
         "Fills the typedef placeholder `id` with its already-visited `underlying`."
             fill_typedef(id: U32, underlying: U32) -> Unit;
     },

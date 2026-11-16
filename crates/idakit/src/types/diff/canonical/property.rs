@@ -518,11 +518,15 @@ fn materialize_spec(spec: &TypeSpec, table: &mut TypeTable, decl_ids: &[TypeId])
             });
             table.intern(TypeValue {
                 shape: TypeShape::Enum {
+                    signedness: None,
+                    groups: None,
+                    attributes: crate::types::EnumAttributes::empty(),
                     name: tag.name(),
                     underlying,
                     members: members
                         .iter()
                         .map(|(name, value)| EnumMember {
+                            comment: None,
                             name: name.clone(),
                             value: *value,
                         })
@@ -612,6 +616,9 @@ fn embed_canonical_named_stub(tag: &str, kind: AggregateKind, table: &mut TypeTa
                 size: Some(4),
             });
             TypeShape::Enum {
+                signedness: None,
+                groups: None,
+                attributes: crate::types::EnumAttributes::empty(),
                 name: Some(tag.to_owned()),
                 underlying,
                 members: Vec::new(),
@@ -726,11 +733,15 @@ fn embed_canonical(c: &CanonicalType, table: &mut TypeTable, stack: &mut Vec<Typ
             let underlying = embed_canonical(underlying, table, stack);
             table.intern(TypeValue {
                 shape: TypeShape::Enum {
+                    signedness: None,
+                    groups: None,
+                    attributes: crate::types::EnumAttributes::empty(),
                     name: tag.clone(),
                     underlying,
                     members: members
                         .iter()
                         .map(|(name, value)| EnumMember {
+                            comment: None,
                             name: name.clone(),
                             value: *value,
                         })

@@ -222,16 +222,31 @@ uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_s
   if (first) {
     enum_type_data_t ed;
     std::vector<EnumConstInfo> cs;
+    std::vector<uint32_t> groups;
     bool sgn = false;
+    uint32_t attributes = 0;
     if (t.get_enum_details(&ed)) {
-      sgn = ed.is_number_signed();
+      attributes = ed.taenum_bits;
+      // The declared storage signedness when there is one; the display style otherwise, since
+      // an enum printed as signed decimal is the best remaining evidence.
+      if ((ed.taenum_bits & TAENUM_SIGNED) != 0)
+        sgn = true;
+      else if ((ed.taenum_bits & TAENUM_UNSIGNED) != 0)
+        sgn = false;
+      else
+        sgn = ed.is_number_signed();
       cs.reserve(ed.size());
       for (const edm_t &m : ed) {
         EnumConstInfo ec;
         ec.name = rust::String::lossy(std::string(m.name.c_str(), m.name.length()));
         ec.value = m.value;
+        ec.has_comment = !m.cmt.empty();
+        ec.comment = rust::String::lossy(std::string(m.cmt.c_str(), m.cmt.length()));
         cs.push_back(ec);
       }
+      groups.reserve(ed.group_sizes.size());
+      for (int n : ed.group_sizes)
+        groups.push_back(static_cast<uint32_t>(n));
     }
     uint32_t base_bytes = has_size ? static_cast<uint32_t>(size) : 4;
     uint32_t underlying = vis->scalar(SCALAR_INTEGRAL, base_bytes, sgn ? 1 : 0, size, has_size);
@@ -243,8 +258,11 @@ uint32_t visit_walker_t::ty_enum(const tinfo_t &t, uint64_t size, uint32_t has_s
     uint32_t repr_vtype = modeled ? static_cast<uint32_t>(repr.get_vtype()) : 0;
     bool repr_signed = modeled && repr.is_signed();
     bool repr_leading_zeros = modeled && repr.has_lzeroes();
+    rust::Slice<const uint32_t> group_slice =
+        groups.empty() ? rust::Slice<const uint32_t>()
+                       : rust::Slice<const uint32_t>(groups.data(), groups.size());
     vis->fill_enum(id, underlying, slice, size, has_size, t.is_bitmask_enum(), repr_vtype,
-                   repr_signed, repr_leading_zeros);
+                   repr_signed, repr_leading_zeros, attributes, group_slice);
   }
   return id;
 }

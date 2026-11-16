@@ -9,13 +9,15 @@
 //! comment text with the `REGULAR_COMMENT` bit that gives its kind. The raw masks stay the escape
 //! hatch beneath both.
 
+use std::ops::Range;
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 pub use idakit_sys::{EnumAttributes, MemberAttributes, PointerAttributes, StructAttributes};
 
-use super::TypeId;
+use super::{EnumMember, TypeId};
 
 /// A member comment and its kind, which IDA stores as one fact across two fields.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -141,6 +143,78 @@ pub struct ShiftedPointer {
     pub delta: i32,
 }
 
+/// An enum's declared storage signedness.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum Signedness {
+    /// Declared signed (`TAENUM_SIGNED`).
+    #[doc(alias("TAENUM_SIGNED"))]
+    Signed,
+    /// Declared unsigned (`TAENUM_UNSIGNED`).
+    #[doc(alias("TAENUM_UNSIGNED"))]
+    Unsigned,
+}
+
+impl Signedness {
+    /// The signedness an enum word declares, or `None` when it declares neither.
+    ///
+    /// The two bits are exclusive in practice (a corpus census never saw both), so both set is
+    /// treated as no declaration rather than guessed.
+    #[must_use]
+    pub fn from_attributes(attributes: EnumAttributes) -> Option<Self> {
+        let signed = attributes.contains(EnumAttributes::SIGNED);
+        let unsigned = attributes.contains(EnumAttributes::UNSIGNED);
+        match (signed, unsigned) {
+            (true, false) => Some(Self::Signed),
+            (false, true) => Some(Self::Unsigned),
+            _ => None,
+        }
+    }
+}
+
+/// One bitmask group of an enum, as index ranges into its flat member list.
+///
+/// A group with more than one member, or whose sole member has more than one bit set, opens with
+/// a mask member naming the bits the rest of the group selects among.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[doc(alias("group_sizes"))]
+pub struct EnumGroup {
+    /// Index of the group's mask member, or `None` for a trivial single-bit group.
+    pub mask: Option<usize>,
+    /// Indices of the group's value members.
+    pub members: Range<usize>,
+}
+
+impl EnumGroup {
+    /// Splits `members` into groups of the SDK's `sizes`, or `None` when there are none or they
+    /// don't cover the members exactly.
+    pub(crate) fn from_sizes(sizes: &[u32], members: &[EnumMember]) -> Option<Vec<Self>> {
+        if sizes.is_empty() {
+            return None;
+        }
+        let mut groups = Vec::with_capacity(sizes.len());
+        let mut start = 0usize;
+        for &size in sizes {
+            let end = start.checked_add(usize::try_from(size).ok()?)?;
+            let span = members.get(start..end)?;
+            let non_trivial =
+                span.len() > 1 || span.first().is_some_and(|m| m.value.count_ones() > 1);
+            groups.push(if non_trivial {
+                Self {
+                    mask: Some(start),
+                    members: start + 1..end,
+                }
+            } else {
+                Self {
+                    mask: None,
+                    members: start..end,
+                }
+            });
+            start = end;
+        }
+        (start == members.len()).then_some(groups)
+    }
+}
+
 /// `#[serde(with)]` adapters carrying each mask as its raw `u32`, since the masks are defined in
 /// `idakit-sys`, which has no serde.
 macro_rules! serde_bits {
@@ -164,6 +238,7 @@ macro_rules! serde_bits {
 serde_bits! {
     struct_bits: idakit_sys::StructAttributes;
     member_bits: idakit_sys::MemberAttributes;
+    enum_bits: idakit_sys::EnumAttributes;
     pointer_bits: idakit_sys::PointerAttributes;
 }
 
@@ -228,6 +303,53 @@ mod tests {
     ) {
         assert!(let Some(Comment { kind: k, .. }) = Comment::from_member("note", attributes));
         assert!(k == kind);
+    }
+
+    fn member(value: u64) -> EnumMember {
+        EnumMember {
+            name: format!("m{value:x}"),
+            value,
+            comment: None,
+        }
+    }
+
+    /// A multi-member or multi-bit group opens with its mask; a lone single-bit value is its own
+    /// trivial group; sizes that miss or overrun the member list decode to nothing.
+    #[test]
+    fn groups_split_on_sizes() {
+        // mask 0x3 over {1, 2}, then a lone single-bit flag 0x4, then a lone multi-bit 0x18.
+        let members: Vec<_> = [0x3, 0x1, 0x2, 0x4, 0x18].into_iter().map(member).collect();
+        let groups = EnumGroup::from_sizes(&[3, 1, 1], &members).expect("sizes cover the members");
+        assert!(
+            groups
+                == [
+                    EnumGroup {
+                        mask: Some(0),
+                        members: 1..3
+                    },
+                    EnumGroup {
+                        mask: None,
+                        members: 3..4
+                    },
+                    EnumGroup {
+                        mask: Some(4),
+                        members: 5..5
+                    },
+                ]
+        );
+        assert!(EnumGroup::from_sizes(&[], &members).is_none());
+        assert!(EnumGroup::from_sizes(&[3, 1], &members).is_none());
+        assert!(EnumGroup::from_sizes(&[3, 3], &members).is_none());
+    }
+
+    #[rstest]
+    #[case::neither(0x0000, None)]
+    #[case::signed(0x0080, Some(Signedness::Signed))]
+    #[case::unsigned(0x0040, Some(Signedness::Unsigned))]
+    #[case::both(0x00C0, None)]
+    #[case::signed_with_display_bits(0x0480, Some(Signedness::Signed))]
+    fn signedness_reads_the_declared_pair(#[case] raw: u32, #[case] expect: Option<Signedness>) {
+        assert!(Signedness::from_attributes(EnumAttributes::from_bits_retain(raw)) == expect);
     }
 
     #[test]

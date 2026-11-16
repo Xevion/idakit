@@ -31,8 +31,8 @@ mod sink;
 mod tinfo;
 
 pub use attributes::{
-    Comment, CommentKind, EnumAttributes, MemberAttributes, PointerAttributes, PointerModifier,
-    ShiftedPointer, StructAttributes, StructLayout,
+    Comment, CommentKind, EnumAttributes, EnumGroup, MemberAttributes, PointerAttributes,
+    PointerModifier, ShiftedPointer, Signedness, StructAttributes, StructLayout,
 };
 pub(crate) use builder::TypeBuilder;
 pub use edit::{
@@ -89,6 +89,10 @@ pub struct EnumMember {
     pub name: String,
     /// The constant's integer value.
     pub value: u64,
+    /// The constant's comment, or `None` when it has none. Enum constants only carry repeatable
+    /// comments, so there is no kind to report.
+    #[doc(alias("edm_t::cmt"))]
+    pub comment: Option<String>,
 }
 
 /// The shape of a type. Child types are [`TypeId`] handles, so recursion and sharing
@@ -176,6 +180,15 @@ pub enum TypeShape {
         /// The enum's value representation (radix/char, sign, leading zeros); `None` when unset
         /// or outside the numeric subset [`ValueRepr`] models.
         repr: Option<ValueRepr>,
+        /// The enum's declared storage signedness, or `None` when it declares neither.
+        signedness: Option<Signedness>,
+        /// A bitmask enum's groups over [`members`](Self::Enum::members), or `None` for a plain
+        /// enum (or a bitmask the SDK reports no groups for).
+        groups: Option<Vec<EnumGroup>>,
+        /// The raw attribute word `signedness` and the display bits behind `repr` are read from.
+        #[serde(with = "attributes::enum_bits")]
+        #[doc(alias("taenum_bits"))]
+        attributes: EnumAttributes,
     },
     /// a function prototype
     #[doc(alias("is_func", "get_func_details"))]

@@ -430,6 +430,9 @@ fn canon(
             // constants distinguish two enums for diffing.
             is_bitmask: _,
             repr: _,
+            signedness: _,
+            groups: _,
+            attributes: _,
         } => {
             if let Some(cut) = nominal_cut(name.as_deref(), AggregateKind::Enum, spell_named) {
                 return cut;

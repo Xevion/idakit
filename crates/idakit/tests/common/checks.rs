@@ -688,10 +688,13 @@ pub fn non_function_rejected(idb: &Database) {
 /// consistent. A census over the whole corpus found no other bit in any of the four words, so a
 /// stray one means the walker read the wrong field.
 pub fn type_attrs(idb: &Database) -> String {
-    use idakit::types::{MemberAttributes, PointerAttributes, StructAttributes};
+    use idakit::types::{
+        EnumAttributes, MemberAttributes, PointerAttributes, Signedness, StructAttributes,
+    };
 
     let (mut aggregates, mut cpp, mut vftables, mut bases, mut comments, mut modified) =
         (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut enums, mut grouped, mut declared) = (0usize, 0usize, 0usize);
     let frame_bits = MemberAttributes::RETURN_ADDRESS | MemberAttributes::SAVED_REGISTERS;
     let mut problems = Vec::new();
 
@@ -757,6 +760,53 @@ pub fn type_attrs(idb: &Database) -> String {
                     }
                     modified += usize::from(modifier.is_some());
                 }
+                TypeShape::Enum {
+                    name,
+                    underlying,
+                    members,
+                    is_bitmask,
+                    signedness,
+                    groups,
+                    attributes,
+                    ..
+                } => {
+                    enums += 1;
+                    let label = name.as_deref().unwrap_or("<anon>");
+                    if !EnumAttributes::all().contains(*attributes) {
+                        problems.push(format!("{label}: enum word {:#x}", attributes.bits()));
+                    }
+                    if let Some(groups) = groups {
+                        grouped += 1;
+                        // Groups tile the member list: each starts where the last ended.
+                        let mut next = 0;
+                        for g in groups {
+                            let start = g.mask.unwrap_or(g.members.start);
+                            if !*is_bitmask
+                                || start != next
+                                || g.mask.is_some_and(|m| m + 1 != g.members.start)
+                            {
+                                problems.push(format!("{label}: group {g:?} after {next}"));
+                            }
+                            next = g.members.end;
+                        }
+                        if next != members.len() {
+                            problems.push(format!(
+                                "{label}: groups end at {next} of {}",
+                                members.len()
+                            ));
+                        }
+                    }
+                    if let Some(s) = signedness {
+                        declared += 1;
+                        if let TypeShape::Int { signed, .. } = ty.get(*underlying).shape
+                            && signed != (*s == Signedness::Signed)
+                        {
+                            problems.push(format!(
+                                "{label}: declared {s:?}, underlying signed={signed}"
+                            ));
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -764,7 +814,8 @@ pub fn type_attrs(idb: &Database) -> String {
     assert!(problems.is_empty(), "{}", problems.join("\n"));
     format!(
         "{aggregates} aggregates ({cpp} C++), {vftables} vftable / {bases} base members, \
-         {comments} member comments, {modified} modified pointers"
+         {comments} member comments, {modified} modified pointers, {enums} enums ({grouped} \
+         grouped, {declared} declared signedness)"
     )
 }
 

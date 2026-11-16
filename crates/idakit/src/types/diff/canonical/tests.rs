@@ -260,14 +260,19 @@ fn an_enum_spells_at_root_and_cuts_when_referenced() {
     let int = scalar(&mut table, 4, false);
     let color = table.intern(TypeValue {
         shape: TypeShape::Enum {
+            signedness: None,
+            groups: None,
+            attributes: crate::types::EnumAttributes::empty(),
             name: Some("color".to_owned()),
             underlying: int,
             members: vec![
                 EnumMember {
+                    comment: None,
                     name: "red".to_owned(),
                     value: 0,
                 },
                 EnumMember {
+                    comment: None,
                     name: "green".to_owned(),
                     value: 1,
                 },
@@ -487,11 +492,15 @@ fn enum_of(table: &mut TypeTable, tag: &str, consts: &[(&str, u64)]) -> TypeId {
     let underlying = scalar(table, 4, false);
     table.intern(TypeValue {
         shape: TypeShape::Enum {
+            signedness: None,
+            groups: None,
+            attributes: crate::types::EnumAttributes::empty(),
             name: Some(tag.to_owned()),
             underlying,
             members: consts
                 .iter()
                 .map(|(n, v)| EnumMember {
+                    comment: None,
                     name: (*n).to_owned(),
                     value: *v,
                 })

@@ -492,6 +492,8 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
         repr_vtype: u32,
         repr_signed: bool,
         repr_leading_zeros: bool,
+        attributes: u32,
+        group_sizes: &[u32],
     ) {
         idakit_sys::TypeWalkSink::fill_enum(
             &mut SinkAdapter(self),
@@ -504,6 +506,8 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             repr_vtype,
             repr_signed,
             repr_leading_zeros,
+            attributes,
+            group_sizes,
         );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
@@ -1195,8 +1199,23 @@ mod tests {
         let consts = vec![EnumConstInfo {
             name: "RED".into(),
             value: 1,
+            has_comment: false,
+            comment: String::new(),
         }];
-        TypeWalkSink::fill_enum(&mut cb, color, int, &consts, 4, 1, false, 0, false, false);
+        TypeWalkSink::fill_enum(
+            &mut cb,
+            color,
+            int,
+            &consts,
+            4,
+            1,
+            false,
+            0,
+            false,
+            false,
+            0,
+            &[],
+        );
 
         let alias = TypeWalkSink::named_ref(&mut cb, "myint".into());
         TypeWalkSink::fill_typedef(&mut cb, alias, int);

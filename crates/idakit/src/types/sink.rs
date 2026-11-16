@@ -9,8 +9,9 @@
 use idakit_sys::{EnumConstInfo, MemberInfo, TypeWalkSink};
 
 use super::{
-    Comment, EnumMember, MemberAttributes, NumberFormat, PointerAttributes, ShiftedPointer,
-    StructAttributes, StructLayout, TypeBuilder, TypeId, TypeMember, ValueRepr,
+    Comment, EnumAttributes, EnumGroup, EnumMember, MemberAttributes, NumberFormat,
+    PointerAttributes, ShiftedPointer, StructAttributes, StructLayout, TypeBuilder, TypeId,
+    TypeMember, ValueRepr,
 };
 use crate::arena::Idx;
 
@@ -94,6 +95,8 @@ pub(crate) trait TypeSink {
         repr_vtype: u32,
         repr_signed: bool,
         repr_leading_zeros: bool,
+        attributes: EnumAttributes,
+        groups: Option<Vec<EnumGroup>>,
     ) {
         self.type_builder().fill_enum(
             tid(id),
@@ -105,6 +108,8 @@ pub(crate) trait TypeSink {
             repr_vtype,
             repr_signed,
             repr_leading_zeros,
+            attributes,
+            groups,
         );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
@@ -218,14 +223,18 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
         repr_vtype: u32,
         repr_signed: bool,
         repr_leading_zeros: bool,
+        attributes: u32,
+        group_sizes: &[u32],
     ) {
-        let members = consts
+        let members: Vec<_> = consts
             .iter()
             .map(|c| EnumMember {
                 name: c.name.clone(),
                 value: c.value,
+                comment: c.has_comment.then(|| c.comment.clone()),
             })
             .collect();
+        let groups = EnumGroup::from_sizes(group_sizes, &members);
         self.0.fill_enum(
             id,
             underlying,
@@ -236,6 +245,8 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
             repr_vtype,
             repr_signed,
             repr_leading_zeros,
+            EnumAttributes::from_bits_retain(attributes),
+            groups,
         );
     }
     fn fill_typedef(&mut self, id: u32, underlying: u32) {
