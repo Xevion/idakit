@@ -118,6 +118,9 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
          `func_type_data_t`'s `retloc`, `stkargs`, and `spoiled`; returns its handle."
             func(ret: U32, params: SliceStruct("FuncArg"), cc: U32, flags: U32,
                  retloc: StructRef("ArgLoc"), stkargs: U64, spoiled: SliceStruct("SpoiledReg"));
+        "A `const`/`volatile` qualification of the already-visited `inner`, with the raw \
+         `type_t` modifier bits; returns its handle. `size` is the qualified type's own size."
+            qualified(inner: U32, qualifiers: U8, size: U64, has_size: U32);
         "A named-but-bodyless / unresolved leaf carrying its resolved `name`; returns its handle."
             opaque(name: String);
         "A by-name placeholder for a named aggregate/typedef; returns its handle."

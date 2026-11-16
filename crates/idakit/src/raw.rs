@@ -318,7 +318,7 @@ impl Database {
         fn delete_type(&mut self, type_name: &str) -> sys::TypeWriteResult = sys::delete_type(type_name);
         fn rename_type(&mut self, type_name: &str, new_name: &str) -> sys::TypeWriteResult
             = sys::rename_type(type_name, new_name);
-        fn forward_declare_type(&mut self, type_name: &str, decl_type: u32) -> sys::TypeWriteResult
+        fn forward_declare_type(&mut self, type_name: &str, decl_type: u8) -> sys::TypeWriteResult
             = sys::forward_declare_type(type_name, decl_type);
     }
 

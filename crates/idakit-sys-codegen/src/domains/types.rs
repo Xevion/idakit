@@ -38,5 +38,13 @@ pub const TY: Domain = Domain {
             call_type_ids() -> Vec(U32);
         "Alignment source: every `FAI_*` bit, in `ParameterFlags`'s declaration order."
             parameter_flag_ids() -> Vec(U32);
+        "Alignment source: every `BT_*` base type, in `BaseType`'s discriminant order."
+            base_type_ids() -> Vec(U32);
+        "Alignment source: every `BTMT_*` sub-type value, concatenated in `Subtype`'s variant \
+         order, each group in its own enum's discriminant order."
+            type_subtype_ids() -> Vec(U32);
+        "Alignment source: `BTM_CONST`, `BTM_VOLATILE`, then `TYPE_BASE_MASK`, `TYPE_FLAGS_MASK`, \
+         and `TYPE_MODIF_MASK`."
+            type_modifier_ids() -> Vec(U32);
     },
 };

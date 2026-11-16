@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use super::{
     CallType, EnumAttributes, EnumGroup, EnumMember, FunctionTypeFlags, NumberFormat, Parameter,
-    PointerAttributes, PointerModifier, ShiftedPointer, Signedness, SpoiledRegister,
+    PointerAttributes, PointerModifier, Qualifiers, ShiftedPointer, Signedness, SpoiledRegister,
     StorageLocation, StructAttributes, StructLayout, TypeId, TypeMember, TypeShape, TypeTable,
     TypeValue, ValueRepr,
 };
@@ -168,6 +168,23 @@ impl TypeBuilder {
                 spoiled,
             },
             size: None,
+        })
+    }
+
+    /// A `const`/`volatile` qualification of `inner`, carrying the raw `type_t` modifier bits.
+    pub(crate) fn qualified(
+        &mut self,
+        inner: TypeId,
+        modifiers: u8,
+        size: u64,
+        has_size: u32,
+    ) -> TypeId {
+        self.intern(TypeValue {
+            shape: TypeShape::Qualified {
+                inner,
+                qualifiers: Qualifiers::from_bits_retain(modifiers),
+            },
+            size: opt_size(size, has_size),
         })
     }
 

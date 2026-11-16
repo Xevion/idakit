@@ -67,6 +67,11 @@ pub(crate) trait TypeSink {
             spoiled,
         ))
     }
+    fn qualified(&mut self, inner: u32, modifiers: u8, size: u64, has_size: u32) -> u32 {
+        raw(self
+            .type_builder()
+            .qualified(tid(inner), modifiers, size, has_size))
+    }
     fn opaque(&mut self, name: String) -> u32 {
         raw(self.type_builder().opaque(name))
     }
@@ -203,6 +208,9 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
             stkargs,
             spoiled,
         )
+    }
+    fn qualified(&mut self, inner: u32, qualifiers: u8, size: u64, has_size: u32) -> u32 {
+        self.0.qualified(inner, qualifiers, size, has_size)
     }
     fn opaque(&mut self, name: String) -> u32 {
         self.0.opaque(name)

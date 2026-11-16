@@ -300,6 +300,25 @@ fn type_function_build() {
             .expect("a prototype is set after the variadic apply");
         assert!(proto.shape().is_variadic());
 
+        // A const qualifier written through the builder reads back as a Qualified node over the
+        // pointee, not dropped.
+        idb.function_mut(entry)
+            .expect("a function at the entry")
+            .set_type(expr::function(expr::void()).arg(expr::char_().const_().pointer()))
+            .expect("apply a const-pointee prototype");
+        let proto = idb
+            .function(entry)
+            .prototype_type()
+            .expect("walk the const-pointee prototype")
+            .expect("a prototype is set after the const-pointee apply");
+        assert!(let TypeShape::Function { params, .. } = proto.shape());
+        assert!(let TypeShape::Ptr { target, .. } = &proto.get(params[0].ty).shape);
+        assert!(
+            let TypeShape::Qualified { inner, qualifiers } = &proto.get(*target).shape
+        );
+        assert!(*qualifiers == idakit::types::Qualifiers::CONST);
+        assert!(let TypeShape::Int { bytes: 1, .. } = &proto.get(*inner).shape);
+
         // A builder-supplied calling convention applies. Its rendering is arch-dependent, so no
         // string check, matching type_surgery's cc note.
         idb.function_mut(entry)

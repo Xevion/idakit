@@ -14,7 +14,7 @@ use std::fmt::Write;
 use super::node::{Case, ExpressionId, ExpressionKind, LocalId, StatementId, StatementKind};
 use super::ops::{BinaryOp, UnaryOp};
 use super::tree::Ctree;
-use crate::types::{TypeId, TypeShape};
+use crate::types::{Qualifiers, TypeId, TypeShape};
 
 /// A C operator precedence level, ordered so a higher level binds tighter.
 ///
@@ -418,6 +418,7 @@ impl Printer<'_> {
             | TypeShape::Union { name, .. }
             | TypeShape::Enum { name, .. } => name.clone(),
             TypeShape::Typedef { name, .. } | TypeShape::Opaque(name) => Some(name.clone()),
+            TypeShape::Qualified { inner, .. } => self.type_tag_name(*inner),
             _ => None,
         }
     }
@@ -460,6 +461,16 @@ impl Printer<'_> {
                 format!("{} (*)({})", self.print_type(*ret), parts.join(", "))
             }
             TypeShape::Typedef { name, .. } | TypeShape::Opaque(name) => name.clone(),
+            TypeShape::Qualified { inner, qualifiers } => {
+                let mut out = String::new();
+                if qualifiers.contains(Qualifiers::CONST) {
+                    out.push_str("const ");
+                }
+                if qualifiers.contains(Qualifiers::VOLATILE) {
+                    out.push_str("volatile ");
+                }
+                out + &self.print_type(*inner)
+            }
             TypeShape::Unknown => "_UNKNOWN".into(),
         }
     }

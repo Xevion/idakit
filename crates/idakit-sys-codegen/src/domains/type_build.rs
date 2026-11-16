@@ -237,11 +237,11 @@ pub const TYPE_BUILD: Domain = Domain {
          `TEDIT_*` codes as the `udt_*`/`enum_*` fns."
             rename_type(type_name: Str, new_name: Str) -> Shared("TypeWriteResult");
         "Reserve `type_name` in the local til as an incomplete aggregate \
-         (`tinfo_t::create_forward_decl`), without a body. `decl_type` is a `type_t` \
+         (`tinfo_t::create_forward_decl`), without a body. `decl_type` is the `type_t` \
          (`BTF_STRUCT`/`BTF_UNION`/`BTF_ENUM`) selecting the aggregate kind. `code` is the raw \
          `tinfo_code_t` (`0` = ok); no `TEDIT_*` pre-failure, since there is no existing \
          type to load first."
-            forward_declare_type(type_name: Str, decl_type: U32) -> Shared("TypeWriteResult");
+            forward_declare_type(type_name: Str, decl_type: U8) -> Shared("TypeWriteResult");
         "Replace the return type of the function type at `ea` with the recipe type, then rebuild \
          and re-apply. See the `SIG_*` codes."
             func_set_rettype(ea: U64, recipe: Bytes) -> Shared("TypeWriteResult");

@@ -383,6 +383,9 @@ fn canon(
 ) -> CanonicalType {
     let value = table.get(id);
     match &value.shape {
+        // Qualifiers are not part of the canonical form yet, so a qualified type compares as its
+        // inner type.
+        TypeShape::Qualified { inner, .. } => canon(table, *inner, opts, stack, spell_named),
         TypeShape::Void => CanonicalType::Void,
         TypeShape::Bool => CanonicalType::Bool,
         TypeShape::Int { bytes, signed } => CanonicalType::Int {

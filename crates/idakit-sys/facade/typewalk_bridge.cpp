@@ -139,9 +139,14 @@ struct visit_walker_t {
 
 // Walk any tinfo_t into a handle, peeling off one typedef indirection before resolving.
 uint32_t visit_walker_t::ty(const tinfo_t &t) {
-  if (!t.empty() && t.is_typedef())
-    return ty_typedef(t);
-  return ty_resolved(t);
+  uint32_t id = (!t.empty() && t.is_typedef()) ? ty_typedef(t) : ty_resolved(t);
+  // An array's modifiers mirror its element's, so only the element carries the qualifier.
+  type_t mods = (t.empty() || t.is_array()) ? 0 : t.get_modifiers();
+  if (mods == 0)
+    return id;
+  size_t sz = t.get_size();
+  uint32_t has_size = (sz != BADSIZE && sz != 0) ? 1 : 0;
+  return vis->qualified(id, mods, has_size ? widen(sz) : 0, has_size);
 }
 
 // Dispatch a non-typedef tinfo_t to its kind-specific walker by the SDK's own predicates,

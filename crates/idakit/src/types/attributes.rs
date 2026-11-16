@@ -15,7 +15,9 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
-pub use idakit_sys::{EnumAttributes, MemberAttributes, PointerAttributes, StructAttributes};
+pub use idakit_sys::{
+    EnumAttributes, MemberAttributes, PointerAttributes, Qualifiers, StructAttributes,
+};
 
 use super::{EnumMember, TypeId};
 
@@ -218,30 +220,31 @@ impl EnumGroup {
 /// `#[serde(with)]` adapters carrying each mask as its raw `u32`, since the masks are defined in
 /// `idakit-sys`, which has no serde.
 macro_rules! serde_bits {
-    ($($module:ident: $ty:ty;)*) => {$(
+    ($($module:ident: $ty:ty as $int:ident;)*) => {$(
         pub(crate) mod $module {
             use serde::{Deserialize, Deserializer, Serializer};
 
             // serde's `with` contract fixes the by-reference receiver, Copy or not.
             #[allow(clippy::trivially_copy_pass_by_ref)]
             pub(crate) fn serialize<S: Serializer>(f: &$ty, s: S) -> Result<S::Ok, S::Error> {
-                s.serialize_u32(f.bits())
+                serde::Serialize::serialize(&f.bits(), s)
             }
 
             pub(crate) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<$ty, D::Error> {
-                u32::deserialize(d).map(<$ty>::from_bits_retain)
+                $int::deserialize(d).map(<$ty>::from_bits_retain)
             }
         }
     )*};
 }
 
 serde_bits! {
-    struct_bits: idakit_sys::StructAttributes;
-    member_bits: idakit_sys::MemberAttributes;
-    enum_bits: idakit_sys::EnumAttributes;
-    pointer_bits: idakit_sys::PointerAttributes;
-    function_bits: idakit_sys::FunctionTypeFlags;
-    parameter_bits: idakit_sys::ParameterFlags;
+    struct_bits: idakit_sys::StructAttributes as u32;
+    member_bits: idakit_sys::MemberAttributes as u32;
+    enum_bits: idakit_sys::EnumAttributes as u32;
+    pointer_bits: idakit_sys::PointerAttributes as u32;
+    function_bits: idakit_sys::FunctionTypeFlags as u32;
+    parameter_bits: idakit_sys::ParameterFlags as u32;
+    qualifier_bits: idakit_sys::Qualifiers as u8;
 }
 
 #[cfg(test)]

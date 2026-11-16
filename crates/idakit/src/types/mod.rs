@@ -24,6 +24,7 @@ pub(crate) mod attributes;
 mod builder;
 pub mod diff;
 mod edit;
+mod encoding;
 pub mod expr;
 mod location;
 mod named;
@@ -35,7 +36,7 @@ mod tinfo;
 
 pub use attributes::{
     Comment, CommentKind, EnumAttributes, EnumGroup, MemberAttributes, PointerAttributes,
-    PointerModifier, ShiftedPointer, Signedness, StructAttributes, StructLayout,
+    PointerModifier, Qualifiers, ShiftedPointer, Signedness, StructAttributes, StructLayout,
 };
 pub(crate) use builder::TypeBuilder;
 pub use edit::{
@@ -221,6 +222,15 @@ pub enum TypeShape {
         /// The registers the function spoils, when it declares them (see
         /// [`FunctionTypeFlags::SPOILED`]).
         spoiled: Vec<SpoiledRegister>,
+    },
+    /// a `const` and/or `volatile` qualification of another type
+    #[doc(alias("get_modifiers", "is_decl_const", "is_decl_volatile"))]
+    Qualified {
+        /// The unqualified type.
+        inner: TypeId,
+        /// The qualifiers, never empty.
+        #[serde(with = "attributes::qualifier_bits")]
+        qualifiers: Qualifiers,
     },
     /// a typedef to another type
     #[doc(alias("is_typedef"))]

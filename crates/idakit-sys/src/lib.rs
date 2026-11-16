@@ -87,6 +87,7 @@ mod segment_flags;
 mod strings;
 mod ty_build;
 mod type_attr_flags;
+mod type_byte;
 
 #[doc(hidden)]
 pub use bridge_cfunc::*;
@@ -111,3 +112,4 @@ pub use segment_flags::*;
 pub use strings::*;
 pub use ty_build::*;
 pub use type_attr_flags::*;
+pub use type_byte::*;

@@ -246,6 +246,7 @@ pub enum ArgTy {
 impl ArgTy {
     pub const Bool: Self = Self::Scalar(Scalar::Bool);
     pub const I32: Self = Self::Scalar(Scalar::I32);
+    pub const U8: Self = Self::Scalar(Scalar::U8);
     pub const U32: Self = Self::Scalar(Scalar::U32);
     pub const U64: Self = Self::Scalar(Scalar::U64);
     pub const Usize: Self = Self::Scalar(Scalar::Usize);

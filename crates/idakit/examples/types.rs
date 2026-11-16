@@ -45,6 +45,9 @@ fn one_line(table: &TypeTable, id: TypeId) -> String {
             format!("{} ({}{})", one_line(table, *ret), ps.join(", "), tail)
         }
         TypeShape::Typedef { name, .. } | TypeShape::Opaque(name) => name.clone(),
+        TypeShape::Qualified { inner, qualifiers } => {
+            format!("{qualifiers:?} {}", one_line(table, *inner))
+        }
         TypeShape::Unknown => "<unknown>".to_owned(),
     }
 }

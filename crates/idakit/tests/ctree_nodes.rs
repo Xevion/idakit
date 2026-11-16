@@ -97,6 +97,7 @@ fn shape_name(s: &TypeShape) -> &'static str {
         TypeShape::Enum { .. } => "Enum",
         TypeShape::Function { .. } => "Function",
         TypeShape::Typedef { .. } => "Typedef",
+        TypeShape::Qualified { .. } => "Qualified",
         TypeShape::Opaque(_) => "Opaque",
         TypeShape::Unknown => "Unknown",
     }

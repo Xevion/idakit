@@ -460,6 +460,15 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
             spoiled,
         )
     }
+    fn qualified(&mut self, inner: u32, qualifiers: u8, size: u64, has_size: u32) -> u32 {
+        idakit_sys::TypeWalkSink::qualified(
+            &mut SinkAdapter(self),
+            inner,
+            qualifiers,
+            size,
+            has_size,
+        )
+    }
     fn opaque(&mut self, name: String) -> u32 {
         idakit_sys::TypeWalkSink::opaque(&mut SinkAdapter(self), name)
     }

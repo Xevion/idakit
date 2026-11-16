@@ -86,14 +86,13 @@ TypeWriteResult rename_type(rust::Str type_name, rust::Str new_name) {
 // Reserve `type_name` in the local til as an incomplete aggregate, without a body.
 // `decl_type` selects BTF_STRUCT/BTF_UNION/BTF_ENUM. No TEDIT_NO_TYPE pre-check here, since
 // there is no existing type to load first: `code` is create_forward_decl's raw tinfo_code_t.
-TypeWriteResult forward_declare_type(rust::Str type_name, uint32_t decl_type) {
+TypeWriteResult forward_declare_type(rust::Str type_name, uint8_t decl_type) {
   try {
     TypeWriteResult out{};
     std::string tn(type_name.data(), type_name.size());
     out.code = guarded<int>(static_cast<int>(TERR_SAVE_ERROR), true, [&]() -> int {
       tinfo_t tif;
-      return static_cast<int>(
-          tif.create_forward_decl(get_idati(), static_cast<type_t>(decl_type), tn.c_str()));
+      return static_cast<int>(tif.create_forward_decl(get_idati(), decl_type, tn.c_str()));
     });
     out.reason = captured_reason();
     return out;

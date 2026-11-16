@@ -17,6 +17,7 @@ use snafu::Snafu;
 use strum::VariantArray;
 
 use idakit_sys as sys;
+use idakit_sys::{ComplexKind, TypeByte};
 
 use crate::Database;
 use crate::error::{Error, Result};
@@ -39,21 +40,13 @@ const ETF_COMPATIBLE: u32 = 0x0000_0008;
 /// already used by another enum).
 const ETF_FORCENAME: u32 = 0x0000_0020;
 
-/// The SDK's `BTF_STRUCT`/`BTF_UNION`/`BTF_ENUM` (`type_t`, `typeinf.hpp`): the aggregate-kind
-/// byte `create_forward_decl` takes to select what a forward declaration reserves.
-const BTF_STRUCT: u32 = 0x0D;
-/// The SDK's `BTF_UNION` (`type_t`, `typeinf.hpp`).
-const BTF_UNION: u32 = 0x1D;
-/// The SDK's `BTF_ENUM` (`type_t`, `typeinf.hpp`).
-const BTF_ENUM: u32 = 0x2D;
-
-/// Maps an [`AggregateKind`] to the raw `type_t` `create_forward_decl` expects.
-const fn decl_type_of(kind: AggregateKind) -> u32 {
-    match kind {
-        AggregateKind::Struct => BTF_STRUCT,
-        AggregateKind::Union => BTF_UNION,
-        AggregateKind::Enum => BTF_ENUM,
-    }
+/// The `type_t` `create_forward_decl` takes to reserve a `kind` aggregate.
+const fn decl_type_of(kind: AggregateKind) -> TypeByte {
+    TypeByte::complex(match kind {
+        AggregateKind::Struct => ComplexKind::Struct,
+        AggregateKind::Union => ComplexKind::Union,
+        AggregateKind::Enum => ComplexKind::Enum,
+    })
 }
 
 impl Database {
@@ -192,7 +185,7 @@ impl TypesMut<'_> {
         let name = name.as_ref();
         let result = self
             .db
-            .forward_declare_type(nul_checked(name, "name")?, decl_type_of(kind));
+            .forward_declare_type(nul_checked(name, "name")?, decl_type_of(kind).0);
         edit_result(result.code, &result.reason, name, None)
     }
 
