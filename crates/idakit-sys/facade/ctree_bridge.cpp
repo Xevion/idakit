@@ -97,9 +97,17 @@ struct walker_t {
   // type_walker.h); created/freed around the walk in cfunc_walk_ctree below.
   bridge::visit_walker_t *type_walker;
 
-  // Convert one cexpr_t into a node id, recursing into operands first so each child is minted
-  // before the parent node that references it.
+  // Convert one cexpr_t into a node id, then attach its exflags word when it has one.
   uint32_t expr(const cexpr_t *cexpr) {
+    uint32_t id = expr_node(cexpr);
+    if (cexpr->exflags != 0)
+      nodes->e_flags(id, cexpr->exflags);
+    return id;
+  }
+
+  // Mint one cexpr_t's node, recursing into operands first so each child is minted before the
+  // parent node that references it.
+  uint32_t expr_node(const cexpr_t *cexpr) {
     const uint64_t addr = ea_wire(cexpr->ea);
     uint32_t t = bridge::visit_walker_ty(type_walker, cexpr->type);
     switch (cexpr->op) {

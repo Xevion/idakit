@@ -120,6 +120,9 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
         "An empty statement (or any statement kind the walk doesn't otherwise model); returns its \
          handle."
             s_empty(ea: Address);
+        "Sets the raw `EXFL_*` word on the already-minted expression `id`; sent only when the \
+         word is non-zero."
+            e_flags(id: U32, flags: U32) -> Unit;
         "One local variable, appended in index order, the index [`e_var`](Self::e_var)'s `idx` \
          refers to. `flags` is the raw `CVAR_*` word. `location` is \
          the variable's flattened `vdloc_t`."

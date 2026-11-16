@@ -312,8 +312,10 @@ pub fn cfg(idb: &Database) -> String {
 /// manifest, which skips this check at the trial level rather than letting it pass vacuously;
 /// every fixture that reaches this function is expected to decompile at least one.
 pub fn decompile(idb: &Database) -> String {
-    use idakit::decompiler::ctree::{NodeRef, StatementKind};
+    use idakit::decompiler::ctree::{ExpressionFlags, NodeRef, StatementKind};
     let mut decompiled = 0usize;
+    let mut flagged = 0usize;
+    let mut floating = 0usize;
     let mut deep_checked = false;
     for f in idb.functions().take(50) {
         let Ok(cf) = f.decompile() else { continue };
@@ -333,6 +335,17 @@ pub fn decompile(idb: &Database) -> String {
             visitor_total - expected,
             f.name()
         );
+
+        for (_, e) in tree.expressions() {
+            assert!(
+                ExpressionFlags::all().contains(e.flags),
+                "an expression in {} carries unnamed EXFL bits {:#x}",
+                f.name(),
+                e.flags.bits()
+            );
+            floating += usize::from(e.is_floating_point());
+            flagged += usize::from(!e.flags.is_empty());
+        }
 
         if deep_checked {
             continue;
@@ -356,7 +369,7 @@ pub fn decompile(idb: &Database) -> String {
         deep_checked = true;
     }
     assert!(decompiled > 0, "no functions decompiled");
-    format!("{decompiled} decompiled")
+    format!("{decompiled} decompiled, {flagged} flagged expressions ({floating} floating-point)")
 }
 
 /// A function with a stored prototype walks into a `Function`-rooted [`Type`] whose child

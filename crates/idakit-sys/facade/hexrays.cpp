@@ -270,4 +270,13 @@ rust::Vec<uint32_t> local_flag_ids() {
   return out;
 }
 
+// idakit-sys ExpressionFlags: every EXFL_* bit, in declaration order.
+rust::Vec<uint32_t> expression_flag_ids() {
+  rust::Vec<uint32_t> out;
+  for (uint32_t bit : {EXFL_CPADONE, EXFL_LVALUE, EXFL_FPOP, EXFL_ALONE, EXFL_CSTR, EXFL_PARTIAL,
+                       EXFL_UNDEF, EXFL_JUMPOUT, EXFL_VFTABLE})
+    out.push_back(bit);
+  return out;
+}
+
 } // namespace gen

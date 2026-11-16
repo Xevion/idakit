@@ -8,8 +8,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::node::{
-    ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef, StatementId,
-    StatementKind, StatementNode,
+    ExpressionFlags, ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef,
+    StatementId, StatementKind, StatementNode,
 };
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use crate::address::Address;
@@ -584,13 +584,20 @@ impl CtreeBuilder {
         #[builder(start_fn)] ty: TypeId,
         #[builder(start_fn)] kind: ExpressionKind,
         address: Option<Address>,
+        #[builder(default)] flags: ExpressionFlags,
     ) -> ExpressionId {
         self.expressions.alloc(ExpressionNode {
             address,
             ty,
             parent: None,
             kind,
+            flags,
         })
+    }
+
+    /// Set an already-allocated expression's `EXFL_*` word.
+    pub(crate) fn set_expression_flags(&mut self, id: ExpressionId, flags: ExpressionFlags) {
+        self.expressions[id].flags = flags;
     }
 
     /// Allocate a statement node (parent set later by [`finish`](Self::finish)). `address`

@@ -98,5 +98,7 @@ pub const HEXRAYS: Domain = Domain {
             structural_tag_ctype_ids() -> Vec(U32);
         "Alignment source: every `CVAR_*` bit, in `LocalFlags`'s declaration order."
             local_flag_ids() -> Vec(U32);
+        "Alignment source: every `EXFL_*` bit, in `ExpressionFlags`'s declaration order."
+            expression_flag_ids() -> Vec(U32);
     },
 };

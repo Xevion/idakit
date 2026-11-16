@@ -12,7 +12,7 @@ use crate::address::Address;
 use crate::arena::Idx;
 use crate::types::{StorageLocation, TypeId};
 
-pub use idakit_sys::LocalFlags;
+pub use idakit_sys::{ExpressionFlags, LocalFlags};
 
 /// A typed handle into the tree's expression arena, naming an [`ExpressionNode`].
 pub type ExpressionId = Idx<ExpressionNode>;
@@ -173,6 +173,77 @@ pub struct ExpressionNode {
     pub parent: Option<NodeRef>,
     /// What this expression is.
     pub kind: ExpressionKind,
+    /// The expression's raw `EXFL_*` word; the `is_*` methods read it.
+    #[serde(with = "crate::types::attributes::expression_bits")]
+    pub flags: ExpressionFlags,
+}
+
+impl ExpressionNode {
+    /// Whether this is a floating-point operation.
+    ///
+    /// The comparison operators carry no float variant, so this is the only way to tell a float
+    /// comparison from an integer one.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_fpop"))]
+    pub const fn is_floating_point(&self) -> bool {
+        self.flags.contains(ExpressionFlags::FLOATING_POINT)
+    }
+
+    /// Whether this is an lvalue even though it doesn't look like one.
+    #[inline]
+    #[must_use]
+    pub const fn is_odd_lvalue(&self) -> bool {
+        self.flags.contains(ExpressionFlags::ODD_LVALUE)
+    }
+
+    /// Whether this is a string literal.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_cstr"))]
+    pub const fn is_string_literal(&self) -> bool {
+        self.flags.contains(ExpressionFlags::STRING_LITERAL)
+    }
+
+    /// Whether this expression's type is considered partial.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_type_partial"))]
+    pub const fn is_partially_typed(&self) -> bool {
+        self.flags.contains(ExpressionFlags::PARTIAL_TYPE)
+    }
+
+    /// Whether this expression uses an undefined value.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_undef_val"))]
+    pub const fn is_undefined_value(&self) -> bool {
+        self.flags.contains(ExpressionFlags::UNDEFINED_VALUE)
+    }
+
+    /// Whether this is a jump out of the function.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_jumpout"))]
+    pub const fn is_jump_out(&self) -> bool {
+        self.flags.contains(ExpressionFlags::JUMP_OUT)
+    }
+
+    /// Whether this member pointer or reference points at a virtual function table.
+    #[inline]
+    #[must_use]
+    pub const fn is_vftable(&self) -> bool {
+        self.flags.contains(ExpressionFlags::VFTABLE)
+    }
+
+    /// Whether pointer-arithmetic correction is done.
+    #[inline]
+    #[must_use]
+    #[doc(alias("cpadone"))]
+    pub const fn is_pointer_arithmetic_done(&self) -> bool {
+        self.flags
+            .contains(ExpressionFlags::POINTER_ARITHMETIC_DONE)
+    }
 }
 
 /// A statement node with its source address, parent, and kind.
@@ -709,6 +780,12 @@ mod tests {
     }
 
     #[test]
+    fn expression_flag_ids_align_with_the_facade() {
+        let ours: Vec<u32> = ExpressionFlags::all().iter().map(|f| f.bits()).collect();
+        assert!(idakit_sys::expression_flag_ids() == ours);
+    }
+
+    #[test]
     fn local_flag_ids_align_with_the_facade() {
         let ours: Vec<u32> = LocalFlags::all().iter().map(|f| f.bits()).collect();
         assert!(idakit_sys::local_flag_ids() == ours);
@@ -823,6 +900,7 @@ mod tests {
             ty: Idx::from_raw(0),
             parent: None,
             kind: ExpressionKind::Num(42),
+            flags: ExpressionFlags::FLOATING_POINT,
         };
         let json = serde_json::to_string(&expression_node).unwrap();
         assert!(serde_json::from_str::<ExpressionNode>(&json).unwrap() == expression_node);

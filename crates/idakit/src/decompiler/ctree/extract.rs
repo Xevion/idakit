@@ -18,7 +18,8 @@ use snafu::Snafu;
 use strum::VariantArray;
 
 use super::node::{
-    Case, ExpressionId, ExpressionKind, Local, LocalFlags, LocalId, StatementId, StatementKind,
+    Case, ExpressionFlags, ExpressionId, ExpressionKind, Local, LocalFlags, LocalId, StatementId,
+    StatementKind,
 };
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use super::tree::{Ctree, CtreeBuilder};
@@ -555,6 +556,11 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
 
     fn e_obj(&mut self, ea: u64, target: u64, name: String, ty: u32) -> u32 {
         self.obj(ea, target, (!name.is_empty()).then_some(name), ty)
+    }
+
+    fn e_flags(&mut self, id: u32, flags: u32) {
+        self.b
+            .set_expression_flags(eid(id), ExpressionFlags::from_bits_retain(flags));
     }
 
     fn e_var(&mut self, ea: u64, idx: u32, ty: u32) -> u32 {
