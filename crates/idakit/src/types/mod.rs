@@ -18,13 +18,16 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::arena::{Arena, Idx};
+use crate::function::CallingConvention;
 
 pub(crate) mod attributes;
 mod builder;
 pub mod diff;
 mod edit;
 pub mod expr;
+mod location;
 mod named;
+mod prototype;
 mod repr;
 mod resolved;
 mod sink;
@@ -39,7 +42,9 @@ pub use edit::{
     ConstantEdit, MemberEdit, MemberRef, TypeEdit, TypeEditCode, TypeWriteError, TypesMut,
 };
 pub use expr::TypeExpr;
+pub use location::{StorageLocation, StoragePiece};
 pub use named::{NamedType, NamedTypes};
+pub use prototype::{CallType, FunctionTypeFlags, Parameter, ParameterFlags, SpoiledRegister};
 pub use repr::{NumberFormat, ValueRepr};
 pub use resolved::Type;
 pub(crate) use resolved::walk_type;
@@ -191,14 +196,31 @@ pub enum TypeShape {
         attributes: EnumAttributes,
     },
     /// a function prototype
-    #[doc(alias("is_func", "get_func_details"))]
+    #[doc(alias("is_func", "get_func_details", "func_type_data_t"))]
     Function {
         /// Return type.
+        #[doc(alias("rettype"))]
         ret: TypeId,
-        /// Parameter types, in order.
-        params: Vec<TypeId>,
-        /// Whether the prototype is variadic.
-        varargs: bool,
+        /// The parameters, in order, hidden ones included (see [`Parameter::is_hidden`]).
+        params: Vec<Parameter>,
+        /// The calling convention, or `None` when the SDK reports none (`CM_CC_INVALID`).
+        #[doc(alias("get_cc"))]
+        calling_convention: Option<CallingConvention>,
+        /// The prototype's flags, without the call-type field (read into `call_type`).
+        #[serde(with = "attributes::function_bits")]
+        flags: FunctionTypeFlags,
+        /// How the function is called.
+        call_type: CallType,
+        /// Where the return value lives, or [`Unallocated`](StorageLocation::Unallocated) when
+        /// locations were not computed.
+        #[doc(alias("retloc"))]
+        return_location: StorageLocation,
+        /// Size in bytes of the stack arguments, 0 when locations were not computed.
+        #[doc(alias("stkargs"))]
+        stack_argument_size: u64,
+        /// The registers the function spoils, when it declares them (see
+        /// [`FunctionTypeFlags::SPOILED`]).
+        spoiled: Vec<SpoiledRegister>,
     },
     /// a typedef to another type
     #[doc(alias("is_typedef"))]
@@ -229,6 +251,46 @@ impl TypeShape {
             shifted: None,
             attributes: PointerAttributes::empty(),
         }
+    }
+
+    /// A bare prototype for tests: unnamed parameters, `__cdecl` (`__ellipsis` when variadic), and
+    /// no computed locations.
+    #[cfg(test)]
+    pub(crate) fn test_function(ret: TypeId, params: Vec<TypeId>, variadic: bool) -> Self {
+        Self::Function {
+            ret,
+            params: params
+                .into_iter()
+                .map(|ty| Parameter {
+                    name: None,
+                    ty,
+                    comment: None,
+                    location: StorageLocation::Unallocated,
+                    flags: ParameterFlags::empty(),
+                })
+                .collect(),
+            calling_convention: Some(if variadic {
+                CallingConvention::Ellipsis { variation: 0 }
+            } else {
+                CallingConvention::Cdecl
+            }),
+            flags: FunctionTypeFlags::empty(),
+            call_type: CallType::Default,
+            return_location: StorageLocation::Unallocated,
+            stack_argument_size: 0,
+            spoiled: Vec::new(),
+        }
+    }
+
+    /// Whether this is a variadic function prototype, which its calling convention decides.
+    #[inline]
+    #[must_use]
+    #[doc(alias("is_vararg_cc"))]
+    pub fn is_variadic(&self) -> bool {
+        matches!(
+            self,
+            Self::Function { calling_convention: Some(cc), .. } if cc.is_vararg()
+        )
     }
 
     /// The type a pointer addresses, or `None` for a non-pointer.

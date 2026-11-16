@@ -22,7 +22,7 @@
 #include "type_walker.h"
 #include "typewalk_bridge.h"
 // The generated visitor-bridge header defines the TypeWalkVisitor class (its member functions) and
-// the MemberInfo / EnumConstInfo / FrameVar / FrameWalk shared structs. OUT_DIR is on this TU's
+// the shared structs it takes (MemberInfo, FuncArg, ArgLoc, and the rest). OUT_DIR is on this TU's
 // include path; the ctree walk drives visit_walker_t only through the opaque handle in
 // type_walker.h.
 #include "gen_facade_consts.h" // gen::NONE
@@ -63,6 +63,59 @@ constexpr uint32_t SCALAR_VOID = 1;
 constexpr uint32_t SCALAR_BOOL = 2;
 constexpr uint32_t SCALAR_INTEGRAL = 3;
 constexpr uint32_t SCALAR_FLOAT = 4;
+
+// One fragment of a scattered argloc_t; a fragment is a register or stack/static slot, never
+// itself scattered.
+LocPiece loc_piece(const argpart_t &part) {
+  LocPiece piece{};
+  piece.atype = static_cast<uint32_t>(part.atype());
+  if (part.is_reg1()) {
+    piece.reg = static_cast<uint32_t>(part.reg1());
+    piece.regoff = static_cast<uint16_t>(part.regoff());
+  } else if (part.is_stkoff()) {
+    piece.sval = static_cast<int64_t>(part.stkoff());
+  } else if (part.is_ea()) {
+    piece.sval = static_cast<int64_t>(ea_wire(part.get_ea()));
+  }
+  piece.off = part.off;
+  piece.size = part.size;
+  return piece;
+}
+
+// argloc_t flattened onto the ArgLoc wire; only the fields its atype names are set.
+ArgLoc arg_loc(const argloc_t &loc) {
+  ArgLoc out{};
+  out.atype = static_cast<uint32_t>(loc.atype());
+  switch (loc.atype()) {
+  case ALOC_STACK:
+    out.sval = static_cast<int64_t>(loc.stkoff());
+    break;
+  case ALOC_REG1:
+    out.reg1 = static_cast<uint32_t>(loc.reg1());
+    out.regoff = static_cast<uint16_t>(loc.regoff());
+    break;
+  case ALOC_REG2:
+    out.reg1 = static_cast<uint32_t>(loc.reg1());
+    out.reg2 = static_cast<uint32_t>(loc.reg2());
+    break;
+  case ALOC_RREL: {
+    const rrel_t &rr = loc.get_rrel();
+    out.reg1 = static_cast<uint32_t>(rr.reg);
+    out.sval = static_cast<int64_t>(rr.off);
+    break;
+  }
+  case ALOC_STATIC:
+    out.sval = static_cast<int64_t>(ea_wire(loc.get_ea()));
+    break;
+  case ALOC_DIST:
+    for (const argpart_t &part : loc.scattered())
+      out.pieces.push_back(loc_piece(part));
+    break;
+  default:
+    break; // ALOC_NONE / ALOC_CUSTOM: atype alone carries it
+  }
+  return out;
+}
 
 } // namespace
 
@@ -286,26 +339,46 @@ uint32_t visit_walker_t::ty_typedef(const tinfo_t &t) {
   return id;
 }
 
-// A function type's return and parameter handles; falls back to an unknown-scalar return with no
-// params if the SDK can't report the signature's details.
+// A function type's return, parameters, and the rest of func_type_data_t. When the SDK can't report
+// the details, the return is an unknown scalar and the calling convention is CM_CC_INVALID.
 uint32_t visit_walker_t::ty_func(const tinfo_t &t) {
   func_type_data_t fd;
-  std::vector<uint32_t> params;
+  std::vector<FuncArg> params;
+  std::vector<SpoiledReg> spoiled;
   uint32_t ret;
-  uint32_t vararg = 0;
+  uint32_t cc = CM_CC_INVALID;
+  uint32_t flags = 0;
+  uint64_t stkargs = 0;
+  ArgLoc retloc{};
   if (t.get_func_details(&fd)) {
     ret = ty(fd.rettype);
     params.reserve(fd.size());
-    for (const funcarg_t &a : fd)
-      params.push_back(ty(a.type));
-    vararg = fd.is_vararg_cc() ? 1 : 0;
+    for (const funcarg_t &a : fd) {
+      FuncArg param{};
+      param.name = lossy_str(a.name);
+      param.comment = lossy_str(a.cmt);
+      param.ty = ty(a.type);
+      param.flags = a.flags;
+      param.location = arg_loc(a.argloc);
+      params.push_back(std::move(param));
+    }
+    cc = fd.get_cc();
+    flags = static_cast<uint32_t>(fd.flags);
+    retloc = arg_loc(fd.retloc);
+    stkargs = widen(fd.stkargs);
+    spoiled.reserve(fd.spoiled.size());
+    for (const reg_info_t &r : fd.spoiled)
+      spoiled.push_back(SpoiledReg{static_cast<uint32_t>(r.reg), static_cast<uint32_t>(r.size)});
   } else {
     ret = vis->scalar(SCALAR_UNKNOWN, 0, 0, 0, 0);
   }
-  rust::Slice<const uint32_t> slice =
-      params.empty() ? rust::Slice<const uint32_t>()
-                     : rust::Slice<const uint32_t>(params.data(), params.size());
-  return vis->func(ret, slice, vararg);
+  rust::Slice<const FuncArg> param_slice =
+      params.empty() ? rust::Slice<const FuncArg>()
+                     : rust::Slice<const FuncArg>(params.data(), params.size());
+  rust::Slice<const SpoiledReg> spoiled_slice =
+      spoiled.empty() ? rust::Slice<const SpoiledReg>()
+                      : rust::Slice<const SpoiledReg>(spoiled.data(), spoiled.size());
+  return vis->func(ret, param_slice, cc, flags, retloc, stkargs, spoiled_slice);
 }
 
 // Create a walker bound to the opaque TypeWalkVisitor* at `visitor`, owned by the caller through

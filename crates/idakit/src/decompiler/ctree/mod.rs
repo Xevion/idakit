@@ -13,8 +13,8 @@ mod tree;
 pub use extract::ExtractError;
 pub(crate) use extract::walk;
 pub use node::{
-    Case, ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, LocalLocation,
-    LocationPiece, NodeRef, StatementId, StatementKind, StatementNode,
+    Case, ExpressionId, ExpressionKind, ExpressionNode, Local, LocalId, NodeRef, StatementId,
+    StatementKind, StatementNode,
 };
 pub use ops::{AssignmentOp, BinaryOp, UnaryOp};
 pub use tree::{Ctree, CtreeBuilder, Descendants};

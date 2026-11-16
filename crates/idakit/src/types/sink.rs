@@ -6,12 +6,12 @@
 //! as the sys-side [`TypeWalkSink`] the `cxx` visitor drives, marshalling each borrowed span into
 //! the owned form [`TypeSink`] takes, so each consumer implements only [`TypeSink`].
 
-use idakit_sys::{EnumConstInfo, MemberInfo, TypeWalkSink};
+use idakit_sys::{ArgLoc, EnumConstInfo, FuncArg, MemberInfo, SpoiledReg, TypeWalkSink};
 
 use super::{
-    Comment, EnumAttributes, EnumGroup, EnumMember, MemberAttributes, NumberFormat,
-    PointerAttributes, ShiftedPointer, StructAttributes, StructLayout, TypeBuilder, TypeId,
-    TypeMember, ValueRepr,
+    Comment, EnumAttributes, EnumGroup, EnumMember, MemberAttributes, NumberFormat, Parameter,
+    ParameterFlags, PointerAttributes, ShiftedPointer, SpoiledRegister, StorageLocation,
+    StructAttributes, StructLayout, TypeBuilder, TypeId, TypeMember, ValueRepr,
 };
 use crate::arena::Idx;
 
@@ -43,9 +43,29 @@ pub(crate) trait TypeSink {
     fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
         raw(self.type_builder().array(tid(elem), nelems, size, has_size))
     }
-    fn function(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
-        let params = params.iter().map(|&p| tid(p)).collect();
-        raw(self.type_builder().function(tid(ret), params, vararg))
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the facade's flat func callback"
+    )]
+    fn function(
+        &mut self,
+        ret: u32,
+        params: Vec<Parameter>,
+        cc: u32,
+        flags: u32,
+        return_location: StorageLocation,
+        stack_argument_size: u64,
+        spoiled: Vec<SpoiledRegister>,
+    ) -> u32 {
+        raw(self.type_builder().function(
+            tid(ret),
+            params,
+            cc,
+            flags,
+            return_location,
+            stack_argument_size,
+            spoiled,
+        ))
     }
     fn opaque(&mut self, name: String) -> u32 {
         raw(self.type_builder().opaque(name))
@@ -147,8 +167,42 @@ impl<T: TypeSink> TypeWalkSink for SinkAdapter<'_, T> {
     fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
         self.0.array(elem, nelems, size, has_size)
     }
-    fn func(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
-        self.0.function(ret, params, vararg)
+    fn func(
+        &mut self,
+        ret: u32,
+        params: &[FuncArg],
+        cc: u32,
+        flags: u32,
+        retloc: &ArgLoc,
+        stkargs: u64,
+        spoiled: &[SpoiledReg],
+    ) -> u32 {
+        let params = params
+            .iter()
+            .map(|p| Parameter {
+                name: (!p.name.is_empty()).then(|| p.name.clone()),
+                ty: tid(p.ty),
+                comment: (!p.comment.is_empty()).then(|| p.comment.clone()),
+                location: StorageLocation::from_wire(&p.location),
+                flags: ParameterFlags::from_bits_retain(p.flags),
+            })
+            .collect();
+        let spoiled = spoiled
+            .iter()
+            .map(|r| SpoiledRegister {
+                register: r.reg,
+                size: r.size,
+            })
+            .collect();
+        self.0.function(
+            ret,
+            params,
+            cc,
+            flags,
+            StorageLocation::from_wire(retloc),
+            stkargs,
+            spoiled,
+        )
     }
     fn opaque(&mut self, name: String) -> u32 {
         self.0.opaque(name)

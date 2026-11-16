@@ -1,4 +1,4 @@
-//! Tally decompiled-local `LocalLocation` variants across a database, printing the histogram and
+//! Tally decompiled-local `StorageLocation` variants across a database, printing the histogram and
 //! a few example scattered/pair locations. Verifies which argloc variants a fixture exercises.
 //!
 //!   `cargo run -p idakit --example probe_argloc -- <db.i64> [max-funcs]`
@@ -6,7 +6,7 @@
 use idakit::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use idakit::decompiler::ctree::LocalLocation as L;
+    use idakit::types::StorageLocation as L;
     let mut args = std::env::args().skip(1);
     let bin = args
         .next()
@@ -27,13 +27,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 decompiled += 1;
                 for lv in tree.locals() {
                     let i = match &lv.location {
-                        L::Register(_) => 0,
+                        L::Register { .. } => 0,
                         L::RegisterPair { .. } => 1,
                         L::Stack(_) => 2,
                         L::RegisterRelative { .. } => 3,
                         L::Static(_) => 4,
                         L::Scattered(_) => 5,
-                        L::Custom => 6,
+                        L::Custom(_) => 6,
                         L::Unallocated => 7,
                     };
                     n[i] += 1;

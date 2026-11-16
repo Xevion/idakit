@@ -4,15 +4,34 @@ use super::super::model::*;
 
 pub(super) const LOC_PIECE: SharedStruct = SharedStruct {
     name: "LocPiece",
-    doc: "One fragment of a scattered (`ALOC_DIST`) local's location. `atype` is the fragment's \
-          own `ALOC_*` (a register or stack slot); `off`/`size` give the byte range of the whole \
+    doc: "One fragment of a scattered (`ALOC_DIST`) location. `atype` is the fragment's own \
+          `ALOC_*` (a register or stack slot); `off`/`size` give the byte range of the whole \
           value this fragment covers.",
     fields: fields! {
         atype: U32 = "The fragment's own `ALOC_*` discriminant.";
         reg: U32 = "Register number, meaningful only for a register fragment.";
+        regoff: U16 = "Byte offset within the register, meaningful only for a register fragment.";
         sval: I64 = "Stack offset or static address, meaningful only for a stack/static fragment.";
         off: U32 = "Byte offset of this fragment within the whole scattered value.";
         size: U32 = "Byte size of this fragment.";
+    },
+};
+
+pub(super) const ARG_LOC: SharedStruct = SharedStruct {
+    name: "ArgLoc",
+    doc: "A flattened `argloc_t` (or a decompiler local's `vdloc_t`). `atype` selects which of the \
+          other scalars are meaningful, the way the SDK's union does; `pieces` is filled only for \
+          a scattered (`ALOC_DIST`) location.",
+    fields: fields! {
+        atype: U32 = "The `ALOC_*` discriminant.";
+        reg1: U32 = "The register (`ALOC_REG1`), low register (`ALOC_REG2`), or base register \
+                     (`ALOC_RREL`).";
+        reg2: U32 = "The high register of an `ALOC_REG2` pair.";
+        regoff: U16 = "Byte offset within an `ALOC_REG1` register; always 0 for a decompiler \
+                       local.";
+        sval: I64 = "Stack offset (`ALOC_STACK`), static address (`ALOC_STATIC`), or \
+                     register-relative offset (`ALOC_RREL`).";
+        pieces: VecStruct("LocPiece") = "The fragments of a scattered location.";
     },
 };
 
@@ -102,11 +121,9 @@ pub(super) const CTREE_SINK: VisitorSink = VisitorSink {
          handle."
             s_empty(ea: Address);
         "One local variable, appended in index order, the index [`e_var`](Self::e_var)'s `idx` \
-         refers to. `flags`: bit0 `is_arg`, bit1 `is_result`, bit2 `is_byref`. \
-         `atype`/`reg1`/`reg2`/`sval` are the flattened `argloc_t` scalars; `pieces` is the \
-         scattered-location fragments, empty unless `atype` marks a scattered (`ALOC_DIST`) \
-         location."
-            l_lvar(name: String, ty: U32, flags: U32, width: U32, comment: String, atype: U32,
-                   reg1: U32, reg2: U32, sval: I64, pieces: SliceStruct("LocPiece")) -> Unit;
+         refers to. `flags`: bit0 `is_arg`, bit1 `is_result`, bit2 `is_byref`. `location` is \
+         the variable's flattened `vdloc_t`."
+            l_lvar(name: String, ty: U32, flags: U32, width: U32, comment: String,
+                   location: StructRef("ArgLoc")) -> Unit;
     },
 };

@@ -210,14 +210,8 @@ pub(crate) fn walk_type(
     let Some(root) = root else {
         return Ok(None);
     };
-    // The builder is error-type-agnostic (see the ctree walk): surface an over-wide scalar or an
-    // unfilled placeholder rather than shipping a malformed table.
-    if let Some(bytes) = b.types.too_wide() {
-        return Err(ExtractError::ScalarTooWide { bytes });
-    }
-    let unfilled = b.types.unfilled();
-    if unfilled != 0 {
-        return Err(ExtractError::UnfilledType { count: unfilled });
+    if let Some(e) = b.types.failure() {
+        return Err(e);
     }
     Ok(Some(Type {
         root: tid(root),

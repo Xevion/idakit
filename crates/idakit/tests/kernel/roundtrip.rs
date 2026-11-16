@@ -466,7 +466,7 @@ fn run(idb: &mut Database) {
             // Every child handle resolves against the image's own table.
             let _ = image.get(*ret);
             for p in params {
-                let _ = image.get(*p);
+                let _ = image.get(p.ty);
             }
             println!(
                 "prototype at {ea:#x}: {} params, {typed} typed functions in sample",

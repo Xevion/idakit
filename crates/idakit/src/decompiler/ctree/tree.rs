@@ -45,7 +45,8 @@ fn for_each_child(
 ///
 /// ```
 /// use idakit::Address;
-/// use idakit::decompiler::ctree::{CtreeBuilder, Local, LocalLocation};
+/// use idakit::decompiler::ctree::{CtreeBuilder, Local};
+/// use idakit::types::StorageLocation;
 /// use idakit::types::{TypeShape, TypeValue};
 ///
 /// let mut b = CtreeBuilder::new();
@@ -61,7 +62,7 @@ fn for_each_child(
 ///     is_byref: false,
 ///     width: 8,
 ///     comment: None,
-///     location: LocalLocation::Register(0),
+///     location: StorageLocation::Register { register: 0, offset: 0 },
 /// });
 ///
 /// // `foo(a);`
@@ -619,8 +620,9 @@ impl Default for CtreeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decompiler::ctree::node::{Local, LocalId, LocalLocation};
+    use crate::decompiler::ctree::node::{Local, LocalId};
     use crate::decompiler::ctree::ops::{AssignmentOp, BinaryOp};
+    use crate::types::StorageLocation;
     use crate::types::TypeShape;
     use assert2::assert;
 
@@ -643,7 +645,10 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: None,
-            location: LocalLocation::Register(0),
+            location: StorageLocation::Register {
+                register: 0,
+                offset: 0,
+            },
         }
     }
 

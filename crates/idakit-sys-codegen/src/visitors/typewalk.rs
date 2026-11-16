@@ -60,6 +60,27 @@ pub(super) const FRAME_WALK: SharedStruct = SharedStruct {
     },
 };
 
+pub(super) const FUNC_ARG: SharedStruct = SharedStruct {
+    name: "FuncArg",
+    doc: "One `funcarg_t`, crossed inside a slice for one `func` call.",
+    fields: fields! {
+        name: Str = "The parameter's name; empty when unnamed.";
+        comment: Str = "The parameter's comment; empty when it has none.";
+        ty: U32 = "Walk-local handle of the parameter's type.";
+        flags: U32 = "Raw `funcarg_t::flags` (`FAI_*`).";
+        location: Struct("ArgLoc") = "The parameter's location.";
+    },
+};
+
+pub(super) const SPOILED_REG: SharedStruct = SharedStruct {
+    name: "SpoiledReg",
+    doc: "One `reg_info_t` of a prototype's spoiled-register list.",
+    fields: fields! {
+        reg: U32 = "Register number.";
+        size: U32 = "Size in bytes of the spoiled part.";
+    },
+};
+
 /// The tinfo type walk's sink: one method per node kind, driven depth-first by
 /// `facade/typewalk_bridge.cpp`'s `visit_walker_t`.
 pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
@@ -92,8 +113,11 @@ pub(super) const TYPE_WALK_SINK: VisitorSink = VisitorSink {
             ptr(target: U32, size: U64, has_size: U32, attributes: U32, parent: U32, delta: I32);
         "An array of `nelems` of the already-visited `elem`; returns its handle."
             array(elem: U32, nelems: U64, size: U64, has_size: U32);
-        "A function of the already-visited `ret` and `params`; returns its handle."
-            func(ret: U32, params: SliceU32, vararg: U32);
+        "A function of the already-visited `ret` and `params`, with the raw `callcnv_t` `cc` (0, \
+         `CM_CC_INVALID`, when the SDK reports no details), the raw `FTI_*` `flags`, and \
+         `func_type_data_t`'s `retloc`, `stkargs`, and `spoiled`; returns its handle."
+            func(ret: U32, params: SliceStruct("FuncArg"), cc: U32, flags: U32,
+                 retloc: StructRef("ArgLoc"), stkargs: U64, spoiled: SliceStruct("SpoiledReg"));
         "A named-but-bodyless / unresolved leaf carrying its resolved `name`; returns its handle."
             opaque(name: String);
         "A by-name placeholder for a named aggregate/typedef; returns its handle."

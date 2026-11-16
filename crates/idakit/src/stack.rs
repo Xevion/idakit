@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::Database;
 use crate::address::Address;
-use crate::decompiler::ctree::ExtractError;
 use crate::error::{Error, Result};
 use crate::types::{
     Comment, MemberAttributes, SinkAdapter, TypeBuilder, TypeId, TypeSink, TypeTable, TypeValue,
@@ -257,19 +256,10 @@ impl Database {
         let Some(walk) = sys::walk_frame_type(address.get(), &mut SinkAdapter(&mut ft)) else {
             return Ok(None);
         };
-        // The builder is error-type-agnostic (see the ctree walk): surface an over-wide scalar or
-        // an unfilled placeholder as an extraction failure rather than shipping a malformed table.
-        if let Some(bytes) = ft.types.too_wide() {
+        if let Some(source) = ft.types.failure() {
             return Err(Error::Extract {
                 address: address.get(),
-                source: ExtractError::ScalarTooWide { bytes },
-            });
-        }
-        let unfilled = ft.types.unfilled();
-        if unfilled != 0 {
-            return Err(Error::Extract {
-                address: address.get(),
-                source: ExtractError::UnfilledType { count: unfilled },
+                source,
             });
         }
         let slots = walk

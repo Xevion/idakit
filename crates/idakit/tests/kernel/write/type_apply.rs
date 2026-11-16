@@ -277,14 +277,8 @@ fn type_function_build() {
             .prototype_type()
             .expect("walk the built prototype")
             .expect("a prototype is set after the built apply");
-        assert!(
-            let TypeShape::Function {
-                ret,
-                params,
-                varargs,
-            } = proto.shape()
-        );
-        assert!(!*varargs, "the fixed prototype is not variadic");
+        assert!(let shape @ TypeShape::Function { ret, params, .. } = proto.shape());
+        assert!(!shape.is_variadic(), "the fixed prototype is not variadic");
         assert!(params.len() == 2, "two parameters, got {}", params.len());
         assert!(
             proto.get(*ret).shape
@@ -304,7 +298,7 @@ fn type_function_build() {
             .prototype_type()
             .expect("walk the variadic prototype")
             .expect("a prototype is set after the variadic apply");
-        assert!(let TypeShape::Function { varargs: true, .. } = proto.shape());
+        assert!(proto.shape().is_variadic());
 
         // A builder-supplied calling convention applies. Its rendering is arch-dependent, so no
         // string check, matching type_surgery's cc note.
@@ -316,9 +310,14 @@ fn type_function_build() {
                     .calling_convention(CallingConvention::Cdecl),
             )
             .expect("apply a prototype with a calling convention");
+        let proto = idb
+            .function(entry)
+            .prototype_type()
+            .expect("walk the cc-carrying prototype")
+            .expect("a prototype is set after applying a cc-carrying builder");
+        // The effective convention is arch-dependent, so only its presence is checked.
         assert!(
-            idb.function(entry).prototype().is_some(),
-            "a prototype should be set after applying a cc-carrying builder"
+            let TypeShape::Function { calling_convention: Some(_), .. } = proto.shape()
         );
     });
 }

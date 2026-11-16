@@ -46,13 +46,8 @@ fn type_surgery() {
         assert!(let TypeShape::Function { ret, params, .. } = proto.shape());
         assert!(let TypeShape::Ptr { .. } = &proto.get(*ret).shape);
         assert!(params.len() == 2, "still two params, got {}", params.len());
-        assert!(let TypeShape::Int { signed: false, .. } = &proto.get(params[0]).shape);
-        // Param names are not in the structural walk; they render in the prototype text.
-        let text = idb.function(entry).prototype().expect("prototype text");
-        assert!(
-            text.contains("idakit_count"),
-            "the renamed arg should render: {text:?}"
-        );
+        assert!(let TypeShape::Int { signed: false, .. } = &proto.get(params[0].ty).shape);
+        assert!(params[1].name.as_deref() == Some("idakit_count"));
 
         // An out-of-range index is a typed TypeWriteError, without mutating.
         let r = idb

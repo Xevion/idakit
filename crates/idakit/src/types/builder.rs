@@ -12,10 +12,13 @@
 use std::collections::HashMap;
 
 use super::{
-    EnumAttributes, EnumGroup, EnumMember, NumberFormat, PointerAttributes, PointerModifier,
-    ShiftedPointer, Signedness, StructAttributes, StructLayout, TypeId, TypeMember, TypeShape,
-    TypeTable, TypeValue, ValueRepr,
+    CallType, EnumAttributes, EnumGroup, EnumMember, FunctionTypeFlags, NumberFormat, Parameter,
+    PointerAttributes, PointerModifier, ShiftedPointer, Signedness, SpoiledRegister,
+    StorageLocation, StructAttributes, StructLayout, TypeId, TypeMember, TypeShape, TypeTable,
+    TypeValue, ValueRepr,
 };
+use crate::decompiler::ctree::ExtractError;
+use crate::function::CallingConvention;
 
 /// Scalar-kind tags the facade's `t_scalar` callback uses to pick a [`TypeShape`]. The walker
 /// emits only these four (a non-structural type is routed to [`opaque`](TypeBuilder::opaque)
@@ -40,8 +43,10 @@ pub(crate) struct TypeBuilder {
     name2type: HashMap<Box<str>, TypeId>,
     /// Placeholder handle -> its name (`None` = anonymous), pending its body.
     pending: HashMap<TypeId, Option<Box<str>>>,
-    /// First scalar whose byte width overflowed `u8`, if any; a caller-mapped failure.
+    /// First scalar whose byte width overflowed `u8`, if any.
     too_wide: Option<u32>,
+    /// First raw calling convention that decoded to no [`CallingConvention`], if any.
+    invalid_calling_convention: Option<u32>,
 }
 
 impl TypeBuilder {
@@ -51,6 +56,7 @@ impl TypeBuilder {
             name2type: HashMap::new(),
             pending: HashMap::new(),
             too_wide: None,
+            invalid_calling_convention: None,
         }
     }
 
@@ -126,12 +132,40 @@ impl TypeBuilder {
         })
     }
 
-    pub(crate) fn function(&mut self, ret: TypeId, params: Vec<TypeId>, vararg: u32) -> TypeId {
+    /// A function prototype. `cc` is the raw `callcnv_t`, where 0 (`CM_CC_INVALID`) means none
+    /// and any other undecodable value is recorded as a failure; `flags` is the raw `FTI_*` word.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the facade's flat func callback"
+    )]
+    pub(crate) fn function(
+        &mut self,
+        ret: TypeId,
+        params: Vec<Parameter>,
+        cc: u32,
+        flags: u32,
+        return_location: StorageLocation,
+        stack_argument_size: u64,
+        spoiled: Vec<SpoiledRegister>,
+    ) -> TypeId {
+        let calling_convention = match cc {
+            0 => None,
+            raw => CallingConvention::try_from(raw)
+                .inspect_err(|_| {
+                    self.invalid_calling_convention.get_or_insert(raw);
+                })
+                .ok(),
+        };
         self.intern(TypeValue {
             shape: TypeShape::Function {
                 ret,
                 params,
-                varargs: vararg != 0,
+                calling_convention,
+                flags: FunctionTypeFlags::from_bits_retain(flags & !idakit_sys::CALL_TYPE_MASK),
+                call_type: CallType::from_flags(flags),
+                return_location,
+                stack_argument_size,
+                spoiled,
             },
             size: None,
         })
@@ -265,20 +299,22 @@ impl TypeBuilder {
         );
     }
 
-    /// The first over-wide scalar's byte count, if the walk emitted one: a placeholder stands in
-    /// its place, and the caller turns this into its own error at finish.
-    pub(crate) fn too_wide(&self) -> Option<u32> {
-        self.too_wide
+    /// The first value the walk could not represent, or `None` for a well-formed table: an
+    /// over-wide scalar, an undecodable calling convention, or a placeholder never filled (it
+    /// would stay [`TypeShape::Unknown`]).
+    pub(crate) fn failure(&self) -> Option<ExtractError> {
+        if let Some(bytes) = self.too_wide {
+            return Some(ExtractError::ScalarTooWide { bytes });
+        }
+        if let Some(raw) = self.invalid_calling_convention {
+            return Some(ExtractError::InvalidCallingConvention { raw });
+        }
+        let count = self.pending.len();
+        (count != 0).then_some(ExtractError::UnfilledType { count })
     }
 
-    /// How many placeholders were referenced but never filled: a non-zero count means the
-    /// table still carries a [`TypeShape::Unknown`] stand-in, which the caller rejects.
-    pub(crate) fn unfilled(&self) -> usize {
-        self.pending.len()
-    }
-
-    /// Take the built table. Check [`too_wide`](Self::too_wide)/[`unfilled`](Self::unfilled)
-    /// first if a well-formed result matters.
+    /// Take the built table. Check [`failure`](Self::failure) first if a well-formed result
+    /// matters.
     pub(crate) fn into_table(self) -> TypeTable {
         self.table
     }
@@ -317,26 +353,58 @@ mod tests {
         assert!(matches!(table.get(unknown).shape, TypeShape::Unknown));
     }
 
-    /// A scalar wider than a `u8` can hold records its byte count in [`too_wide`](TypeBuilder::too_wide)
-    /// and stands a zero-width placeholder in its place.
+    /// A scalar wider than a `u8` fails the walk with its byte count and stands a zero-width
+    /// placeholder in its place.
     #[test]
     fn over_wide_scalar_is_recorded() {
         let mut b = TypeBuilder::new();
         let id = b.scalar(scalar_kind::INT, 300, 0, 0, 0);
-        assert!(b.too_wide() == Some(300));
+        assert!(b.failure() == Some(ExtractError::ScalarTooWide { bytes: 300 }));
         assert!(matches!(
             b.into_table().get(id).shape,
             TypeShape::Int { bytes: 0, .. }
         ));
     }
 
-    /// A reserved-but-unfilled placeholder counts as [`unfilled`](TypeBuilder::unfilled); an empty
-    /// builder has none.
+    /// A reserved-but-unfilled placeholder fails the walk; an empty builder does not.
     #[test]
     fn a_reserved_placeholder_counts_as_unfilled() {
         let mut b = TypeBuilder::new();
-        assert!(b.unfilled() == 0);
+        assert!(b.failure().is_none());
         b.anon();
-        assert!(b.unfilled() == 1);
+        assert!(b.failure() == Some(ExtractError::UnfilledType { count: 1 }));
+    }
+
+    fn prototype(b: &mut TypeBuilder, cc: u32, flags: u32) -> TypeShape {
+        let ret = b.scalar(scalar_kind::VOID, 0, 0, 0, 0);
+        let id = b.function(
+            ret,
+            Vec::new(),
+            cc,
+            flags,
+            StorageLocation::Unallocated,
+            0,
+            Vec::new(),
+        );
+        b.table.get(id).shape.clone()
+    }
+
+    /// `CM_CC_INVALID` reads as no convention, any other undecodable code fails the walk, and the
+    /// call-type field is split out of the flags.
+    #[test]
+    fn function_decodes_its_calling_convention_and_flags() {
+        let mut b = TypeBuilder::new();
+        let shape = prototype(&mut b, 0, 0);
+        assert!(let TypeShape::Function { calling_convention: None, .. } = shape);
+        assert!(b.failure().is_none());
+
+        let shape = prototype(&mut b, 0x40, 0x0142);
+        assert!(shape.is_variadic());
+        assert!(let TypeShape::Function { flags, call_type: CallType::Near, .. } = shape);
+        assert!(flags == FunctionTypeFlags::NO_RETURN | FunctionTypeFlags::LOCATIONS);
+        assert!(b.failure().is_none());
+
+        prototype(&mut b, 0xA3, 0);
+        assert!(b.failure() == Some(ExtractError::InvalidCallingConvention { raw: 0xA3 }));
     }
 }

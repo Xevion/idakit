@@ -39,13 +39,9 @@ fn one_line(table: &TypeTable, id: TypeId) -> String {
         }
         TypeShape::Union { name, .. } => format!("union {}", name.as_deref().unwrap_or("<anon>")),
         TypeShape::Enum { name, .. } => format!("enum {}", name.as_deref().unwrap_or("<anon>")),
-        TypeShape::Function {
-            ret,
-            params,
-            varargs,
-        } => {
-            let ps: Vec<String> = params.iter().map(|p| one_line(table, *p)).collect();
-            let tail = if *varargs { ", ..." } else { "" };
+        shape @ TypeShape::Function { ret, params, .. } => {
+            let ps: Vec<String> = params.iter().map(|p| one_line(table, p.ty)).collect();
+            let tail = if shape.is_variadic() { ", ..." } else { "" };
             format!("{} ({}{})", one_line(table, *ret), ps.join(", "), tail)
         }
         TypeShape::Typedef { name, .. } | TypeShape::Opaque(name) => name.clone(),
@@ -213,19 +209,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if let Some((ea, _, image)) = shown.iter().max_by_key(|(_, _, im)| param_count(im))
-                && let TypeShape::Function {
-                    ret,
-                    params,
-                    varargs,
-                } = image.shape()
+                && let shape @ TypeShape::Function { ret, params, .. } = image.shape()
                 && !params.is_empty()
             {
                 println!("\n  every parameter is a resolved TypeId -- {ea:#x}:");
                 println!("    ret    {}", one_line(image.types(), *ret));
                 for (i, p) in params.iter().enumerate() {
-                    println!("    arg{i}   {}", one_line(image.types(), *p));
+                    let name = p.name.as_deref().unwrap_or("");
+                    println!("    arg{i}   {} {name}", one_line(image.types(), p.ty));
                 }
-                if *varargs {
+                if shape.is_variadic() {
                     println!("    ...");
                 }
             }

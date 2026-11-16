@@ -240,6 +240,8 @@ serde_bits! {
     member_bits: idakit_sys::MemberAttributes;
     enum_bits: idakit_sys::EnumAttributes;
     pointer_bits: idakit_sys::PointerAttributes;
+    function_bits: idakit_sys::FunctionTypeFlags;
+    parameter_bits: idakit_sys::ParameterFlags;
 }
 
 #[cfg(test)]

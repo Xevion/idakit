@@ -5,6 +5,7 @@
 use std::fmt::Write as _;
 
 use idakit::prelude::*;
+use idakit::types::{FunctionTypeFlags, StorageLocation};
 
 /// One named invariant over an open database.
 pub type Check = fn(&Database) -> String;
@@ -33,6 +34,7 @@ pub const CHECKS: &[(&str, Check, Shares)] = &[
     ("decompile", decompile, Shares::No),
     ("types", types, Shares::Yes),
     ("argloc", argloc, Shares::No),
+    ("prototypes", prototypes, Shares::Yes),
     ("segment_attrs", segment_attrs, Shares::Yes),
     ("func_attrs", func_attrs, Shares::Yes),
     ("type_attrs", type_attrs, Shares::Yes),
@@ -392,7 +394,7 @@ pub fn types(idb: &Database) -> String {
             };
             let _ = image.get(*ret);
             for p in params {
-                let _ = image.get(*p);
+                let _ = image.get(p.ty);
             }
             checked_proto = true;
         }
@@ -424,7 +426,7 @@ pub fn types(idb: &Database) -> String {
     format!("{typed} typed prototypes, {named} named round-trips")
 }
 
-/// Every decompiled local's [`LocalLocation`] is one the model structures, tallied by variant so
+/// Every decompiled local's [`StorageLocation`] is one the model structures, tallied by variant so
 /// the corpus matrix surfaces the per-architecture argloc spread. `Custom` (`ALOC_CUSTOM`) is a
 /// tripwire: it means a processor module produced an argloc idakit doesn't model, which we want
 /// to see rather than silently absorb. Every scattered fragment must itself be a register
@@ -432,20 +434,7 @@ pub fn types(idb: &Database) -> String {
 /// this check is expected to decompile: one with no Hex-Rays module declares
 /// `decompiler = false` and is skipped at the trial level.
 pub fn argloc(idb: &Database) -> String {
-    use idakit::decompiler::ctree::LocalLocation;
-
-    // Register / RegisterPair / Stack / RegisterRelative / Static / Scattered / Custom / Unallocated
     let mut n = [0usize; 8];
-    let index = |loc: &LocalLocation| match loc {
-        LocalLocation::Register(_) => 0,
-        LocalLocation::RegisterPair { .. } => 1,
-        LocalLocation::Stack(_) => 2,
-        LocalLocation::RegisterRelative { .. } => 3,
-        LocalLocation::Static(_) => 4,
-        LocalLocation::Scattered(_) => 5,
-        LocalLocation::Custom => 6,
-        LocalLocation::Unallocated => 7,
-    };
 
     let mut decompiled = 0usize;
     let mut lvars = 0usize;
@@ -455,19 +444,15 @@ pub fn argloc(idb: &Database) -> String {
         decompiled += 1;
         for lv in tree.locals() {
             lvars += 1;
-            n[index(&lv.location)] += 1;
-            if let LocalLocation::Scattered(pieces) = &lv.location {
-                for p in pieces {
-                    assert!(
-                        matches!(
-                            p.location,
-                            LocalLocation::Register(_) | LocalLocation::Stack(_)
-                        ),
-                        "scattered fragment is neither register nor stack: {:?}",
-                        p.location
-                    );
-                }
-            }
+            n[location_index(&lv.location)] += 1;
+            assert_fragments_flat(&lv.location);
+            // A decompiler local's register is the whole register, never an offset into one.
+            assert!(
+                !matches!(lv.location, StorageLocation::Register { offset, .. } if offset != 0),
+                "local {} carries a register offset: {:?}",
+                lv.name,
+                lv.location
+            );
         }
     }
 
@@ -481,6 +466,114 @@ pub fn argloc(idb: &Database) -> String {
     format!(
         "{decompiled} fns, {lvars} lvars | reg={} pair={} stack={} rrel={} static={} scatter={} none={}",
         n[0], n[1], n[2], n[3], n[4], n[5], n[7]
+    )
+}
+
+/// A location's slot in the per-variant tally: Register / RegisterPair / Stack /
+/// RegisterRelative / Static / Scattered / Custom / Unallocated.
+fn location_index(loc: &StorageLocation) -> usize {
+    match loc {
+        StorageLocation::Register { .. } => 0,
+        StorageLocation::RegisterPair { .. } => 1,
+        StorageLocation::Stack(_) => 2,
+        StorageLocation::RegisterRelative { .. } => 3,
+        StorageLocation::Static(_) => 4,
+        StorageLocation::Scattered(_) => 5,
+        StorageLocation::Custom(_) => 6,
+        StorageLocation::Unallocated => 7,
+    }
+}
+
+/// Every fragment of a scattered location is a register or stack slot, never itself scattered,
+/// mirroring `argpart_t`.
+fn assert_fragments_flat(loc: &StorageLocation) {
+    if let StorageLocation::Scattered(pieces) = loc {
+        for p in pieces {
+            assert!(
+                matches!(
+                    p.location,
+                    StorageLocation::Register { .. } | StorageLocation::Stack(_)
+                ),
+                "scattered fragment is neither register nor stack: {:?}",
+                p.location
+            );
+        }
+    }
+}
+
+/// Every stored prototype walks without an extraction error, and, once any typedef is followed to
+/// its function body, its function-level facts hold together: a prototype whose locations were computed names a calling convention, every
+/// parameter and the return value sit in a location the model structures (no `Custom`, flat
+/// fragments), and a declared spoiled list is non-empty only under `FunctionTypeFlags::SPOILED`.
+/// Tallies conventions, hidden parameters, and named parameters, so the matrix shows the spread.
+pub fn prototypes(idb: &Database) -> String {
+    use std::collections::BTreeMap;
+
+    let mut typed = 0usize;
+    let mut params_seen = 0usize;
+    let mut named = 0usize;
+    let mut hidden = 0usize;
+    let mut unresolved = 0usize;
+    let mut conventions: BTreeMap<String, usize> = BTreeMap::new();
+    for f in idb.functions().take(2000) {
+        let image = match f.prototype_type() {
+            Ok(Some(image)) => image,
+            Ok(None) => continue,
+            Err(e) => panic!("prototype at {:#x} failed to walk: {e}", f.address()),
+        };
+        // A prototype may be stored as a typedef naming a function type; follow it to the body.
+        let mut shape = image.shape();
+        while let TypeShape::Typedef { underlying, .. } = shape {
+            shape = &image.get(*underlying).shape;
+        }
+        let TypeShape::Function {
+            params,
+            calling_convention,
+            flags,
+            return_location,
+            spoiled,
+            ..
+        } = shape
+        else {
+            unresolved += 1;
+            continue;
+        };
+        typed += 1;
+        if flags.contains(FunctionTypeFlags::LOCATIONS) {
+            assert!(
+                calling_convention.is_some(),
+                "prototype at {:#x} computed locations but names no calling convention",
+                f.address()
+            );
+        }
+        if !spoiled.is_empty() {
+            assert!(
+                flags.contains(FunctionTypeFlags::SPOILED),
+                "prototype at {:#x} lists spoiled registers without FTI_SPOILED",
+                f.address()
+            );
+        }
+        *conventions
+            .entry(format!("{calling_convention:?}"))
+            .or_default() += 1;
+        for loc in std::iter::once(return_location).chain(params.iter().map(|p| &p.location)) {
+            assert!(
+                !matches!(loc, StorageLocation::Custom(_)),
+                "prototype at {:#x} has an unmodeled custom location: {loc:?}",
+                f.address()
+            );
+            assert_fragments_flat(loc);
+        }
+        params_seen += params.len();
+        named += params.iter().filter(|p| p.name.is_some()).count();
+        hidden += params.iter().filter(|p| p.is_hidden()).count();
+    }
+    if typed == 0 {
+        return "no typed prototypes in prefix".to_string();
+    }
+    format!(
+        "{typed} prototypes ({unresolved} unresolved), {params_seen} params ({named} named, \
+         {hidden} hidden) | cc {conventions:?}"
     )
 }
 

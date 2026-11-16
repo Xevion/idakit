@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use crate::address::Address;
 use crate::arena::Idx;
-use crate::types::TypeId;
+use crate::types::{StorageLocation, TypeId};
 
 /// A typed handle into the tree's expression arena, naming an [`ExpressionNode`].
 pub type ExpressionId = Idx<ExpressionNode>;
@@ -73,97 +73,6 @@ pub struct LocalId(
     pub u32,
 );
 
-/// Where a local variable lives, as the decompiler placed it.
-///
-/// [`Register`](LocalLocation::Register) and [`Stack`](LocalLocation::Stack) cover essentially
-/// every x86-64 local; the pair, register-relative, scattered, and static forms are artifacts of
-/// other architectures' calling conventions (AArch64 register pairs, AAPCS struct-scatter, MIPS
-/// and PPC register-relative), rare to absent on x86-64.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-#[doc(alias("argloc_t"))]
-pub enum LocalLocation {
-    /// In a single register, by number. A decompiler register location carries no in-register
-    /// offset, so none is stored here.
-    #[doc(alias("ALOC_REG1"))]
-    Register(u32),
-    /// Split across a register pair, the low half in `low` and the high half in `high`.
-    /// Arises for values wider than one register on register-based ABIs; absent on x86-64.
-    #[doc(alias("ALOC_REG2"))]
-    RegisterPair {
-        /// Register number holding the low half.
-        low: u32,
-        /// Register number holding the high half.
-        high: u32,
-    },
-    /// On the stack, at this frame offset.
-    #[doc(alias("ALOC_STACK"))]
-    Stack(i64),
-    /// Register-relative, at `[reg + offset]`. Uncommon.
-    #[doc(alias("ALOC_RREL"))]
-    RegisterRelative {
-        /// Base register number.
-        reg: u32,
-        /// Byte offset added to the base register.
-        offset: i64,
-    },
-    /// At a fixed global address. Uncommon for a local.
-    #[doc(alias("ALOC_STATIC"))]
-    Static(Address),
-    /// Scattered across several register or stack fragments, each covering a byte range of the
-    /// value. Arises from struct-by-value on register ABIs; effectively absent on x86-64.
-    #[doc(alias("ALOC_DIST"))]
-    Scattered(Vec<LocationPiece>),
-    /// A processor-specific custom location idakit does not structure.
-    #[doc(alias("ALOC_CUSTOM"))]
-    Custom,
-    /// No location assigned, since the decompiler left the variable unallocated.
-    #[doc(alias("ALOC_NONE"))]
-    Unallocated,
-}
-
-impl LocalLocation {
-    /// Build from the facade's decoded location fields. `atype` selects the variant; the remaining
-    /// fields form a union, so only the ones `atype` names are meaningful, and `pieces` is filled
-    /// only for a scattered location.
-    pub(crate) fn from_argloc(
-        atype: u32,
-        reg1: u32,
-        reg2: u32,
-        sval: i64,
-        pieces: Vec<LocationPiece>,
-    ) -> Self {
-        match atype {
-            0 => Self::Unallocated,
-            1 => Self::Stack(sval),
-            2 => Self::Scattered(pieces),
-            3 => Self::Register(reg1),
-            4 => Self::RegisterPair {
-                low: reg1,
-                high: reg2,
-            },
-            5 => Self::RegisterRelative {
-                reg: reg1,
-                offset: sval,
-            },
-            6 => Self::Static(Address::new_const(sval as u64)),
-            // Custom locations are 7 or higher; no other location types are defined.
-            _ => Self::Custom,
-        }
-    }
-}
-
-/// One fragment of a [`Scattered`](LocalLocation::Scattered) local, naming where it lives
-/// and which byte range of the whole value it covers.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-pub struct LocationPiece {
-    /// Where this fragment lives: a register or stack slot, never itself scattered.
-    pub location: LocalLocation,
-    /// Byte offset of this fragment within the whole value.
-    pub offset: u32,
-    /// Byte size of this fragment.
-    pub size: u32,
-}
-
 /// One local variable of a decompiled function: its name, resolved type, and role.
 /// [`ExpressionKind::Var`] indexes the tree's local table to one of these.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -184,7 +93,7 @@ pub struct Local {
     /// The user's comment on the variable, if any.
     pub comment: Option<String>,
     /// Where the decompiler placed the variable (register, stack, or scattered).
-    pub location: LocalLocation,
+    pub location: StorageLocation,
 }
 
 /// An expression node with its source address, resolved type, parent, and kind.
@@ -630,7 +539,6 @@ impl StatementKind {
 #[cfg(test)]
 mod tests {
     use assert2::assert;
-    use rstest::rstest;
 
     use super::*;
 
@@ -737,41 +645,6 @@ mod tests {
         assert!(statement.is_statement() && !statement.is_expression());
     }
 
-    /// `from_argloc` maps each location discriminant to its variant, reading only the fields that
-    /// discriminant selects, and folds custom locations (7 or higher) into `Custom`.
-    #[rstest]
-    #[case::unallocated(0, 0, 0, 0, LocalLocation::Unallocated)]
-    #[case::stack(1, 0, 0, -8, LocalLocation::Stack(-8))]
-    #[case::register(3, 5, 0, 0, LocalLocation::Register(5))]
-    #[case::register_pair(4, 5, 6, 0, LocalLocation::RegisterPair { low: 5, high: 6 })]
-    #[case::register_relative(5, 5, 0, 16, LocalLocation::RegisterRelative { reg: 5, offset: 16 })]
-    #[case::static_(6, 0, 0, 0x1000, LocalLocation::Static(Address::new_const(0x1000)))]
-    #[case::custom_lower_bound(7, 0, 0, 0, LocalLocation::Custom)]
-    #[case::custom_above_lower_bound(42, 0, 0, 0, LocalLocation::Custom)]
-    fn from_argloc_maps_known_atypes(
-        #[case] atype: u32,
-        #[case] reg1: u32,
-        #[case] reg2: u32,
-        #[case] sval: i64,
-        #[case] expected: LocalLocation,
-    ) {
-        assert!(LocalLocation::from_argloc(atype, reg1, reg2, sval, vec![]) == expected);
-    }
-
-    /// A scattered location carries its fragments verbatim.
-    #[test]
-    fn from_argloc_scattered_carries_its_fragments() {
-        let piece = LocationPiece {
-            location: LocalLocation::Stack(16),
-            offset: 0,
-            size: 8,
-        };
-        assert!(
-            LocalLocation::from_argloc(2, 0, 0, 0, vec![piece.clone()])
-                == LocalLocation::Scattered(vec![piece])
-        );
-    }
-
     /// `LocalId` orders by its wrapped index.
     #[test]
     fn local_id_ord_sorts_by_index() {
@@ -800,29 +673,11 @@ mod tests {
         );
     }
 
-    /// `LocalLocation`, `LocationPiece`, `Local`, `Case`, and `StatementKind` all hash, so
+    /// `Local`, `Case`, and `StatementKind` all hash, so
     /// each can key a `HashSet`/`HashMap`.
     #[test]
     fn hash_targets_key_a_hash_set() {
         use std::collections::HashSet;
-
-        let mut locations = HashSet::new();
-        locations.insert(LocalLocation::Register(1));
-        locations.insert(LocalLocation::Stack(-8));
-        assert!(locations.contains(&LocalLocation::Register(1)));
-        assert!(!locations.contains(&LocalLocation::Register(2)));
-
-        let mut pieces = HashSet::new();
-        pieces.insert(LocationPiece {
-            location: LocalLocation::Stack(0),
-            offset: 0,
-            size: 4,
-        });
-        assert!(pieces.contains(&LocationPiece {
-            location: LocalLocation::Stack(0),
-            offset: 0,
-            size: 4,
-        }));
 
         let local = Local {
             name: "v1".into(),
@@ -832,7 +687,10 @@ mod tests {
             is_byref: false,
             width: 8,
             comment: None,
-            location: LocalLocation::Register(0),
+            location: StorageLocation::Register {
+                register: 0,
+                offset: 0,
+            },
         };
         let mut locals = HashSet::new();
         locals.insert(local.clone());
@@ -864,18 +722,6 @@ mod tests {
         let json = serde_json::to_string(&local_id).unwrap();
         assert!(serde_json::from_str::<LocalId>(&json).unwrap() == local_id);
 
-        let location = LocalLocation::RegisterRelative { reg: 2, offset: 16 };
-        let json = serde_json::to_string(&location).unwrap();
-        assert!(serde_json::from_str::<LocalLocation>(&json).unwrap() == location);
-
-        let piece = LocationPiece {
-            location: LocalLocation::Stack(-4),
-            offset: 4,
-            size: 4,
-        };
-        let json = serde_json::to_string(&piece).unwrap();
-        assert!(serde_json::from_str::<LocationPiece>(&json).unwrap() == piece);
-
         let local = Local {
             name: "arg1".into(),
             ty: Idx::from_raw(1),
@@ -884,7 +730,7 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: Some("note".into()),
-            location: LocalLocation::Stack(-4),
+            location: StorageLocation::Stack(-4),
         };
         let json = serde_json::to_string(&local).unwrap();
         assert!(serde_json::from_str::<Local>(&json).unwrap() == local);
@@ -920,28 +766,5 @@ mod tests {
         };
         let json = serde_json::to_string(&case).unwrap();
         assert!(serde_json::from_str::<Case>(&json).unwrap() == case);
-    }
-
-    mod proptests {
-        use proptest::prelude::*;
-
-        use super::*;
-
-        proptest! {
-            /// The `atype >= 7` boundary that folds every custom location into `Custom` holds
-            /// for any register/offset payload, not just the curated cases above.
-            #[test]
-            fn atype_at_or_above_seven_is_always_custom(
-                atype in 7u32..=u32::MAX,
-                reg1 in any::<u32>(),
-                reg2 in any::<u32>(),
-                sval in any::<i64>(),
-            ) {
-                prop_assert_eq!(
-                    LocalLocation::from_argloc(atype, reg1, reg2, sval, vec![]),
-                    LocalLocation::Custom
-                );
-            }
-        }
     }
 }

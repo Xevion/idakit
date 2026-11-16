@@ -452,13 +452,9 @@ impl Printer<'_> {
             TypeShape::Struct { name, .. } => name.clone().unwrap_or_else(|| "struct".into()),
             TypeShape::Union { name, .. } => name.clone().unwrap_or_else(|| "union".into()),
             TypeShape::Enum { name, .. } => name.clone().unwrap_or_else(|| "enum".into()),
-            TypeShape::Function {
-                ret,
-                params,
-                varargs,
-            } => {
-                let mut parts: Vec<String> = params.iter().map(|p| self.print_type(*p)).collect();
-                if *varargs {
+            shape @ TypeShape::Function { ret, params, .. } => {
+                let mut parts: Vec<String> = params.iter().map(|p| self.print_type(p.ty)).collect();
+                if shape.is_variadic() {
                     parts.push("...".into());
                 }
                 format!("{} (*)({})", self.print_type(*ret), parts.join(", "))
@@ -502,9 +498,10 @@ fn bin_prec(op: BinaryOp) -> Prec {
 mod tests {
     use super::*;
     use crate::address::Address;
-    use crate::decompiler::ctree::node::{Local, LocalLocation};
+    use crate::decompiler::ctree::node::Local;
     use crate::decompiler::ctree::ops::AssignmentOp;
     use crate::decompiler::ctree::tree::CtreeBuilder;
+    use crate::types::StorageLocation;
     use crate::types::{TypeMember, TypeShape, TypeValue};
     use assert2::assert;
     use rstest::rstest;
@@ -528,7 +525,10 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: None,
-            location: LocalLocation::Register(0),
+            location: StorageLocation::Register {
+                register: 0,
+                offset: 0,
+            },
         }
     }
 

@@ -60,7 +60,8 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 ///
 /// ```
 /// use idakit::decompiler::ctree::query::base_var;
-/// use idakit::decompiler::ctree::{CtreeBuilder, Local, LocalLocation};
+/// use idakit::decompiler::ctree::{CtreeBuilder, Local};
+/// use idakit::types::StorageLocation;
 /// use idakit::types::{TypeShape, TypeValue};
 ///
 /// let mut b = CtreeBuilder::new();
@@ -76,7 +77,7 @@ pub fn strip_casts(tree: &Ctree, mut e: ExpressionId) -> ExpressionId {
 ///     is_byref: false,
 ///     width: 8,
 ///     comment: None,
-///     location: LocalLocation::Register(0),
+///     location: StorageLocation::Register { register: 0, offset: 0 },
 /// });
 ///
 /// // `(T)this->field`, at byte offset 16, the cast real decompiler output wraps around it.
@@ -143,8 +144,9 @@ pub fn global_target(tree: &Ctree, e: ExpressionId) -> Option<GlobalRef> {
 mod tests {
     use super::*;
     use crate::decompiler::ctree::AssignmentOp;
-    use crate::decompiler::ctree::node::{Local, LocalLocation};
+    use crate::decompiler::ctree::node::Local;
     use crate::decompiler::ctree::tree::CtreeBuilder;
+    use crate::types::StorageLocation;
     use crate::types::{TypeShape, TypeValue};
     use assert2::assert;
     use rstest::rstest;
@@ -165,7 +167,10 @@ mod tests {
             is_byref: false,
             width: 8,
             comment: None,
-            location: LocalLocation::Register(0),
+            location: StorageLocation::Register {
+                register: 0,
+                offset: 0,
+            },
         }
     }
 

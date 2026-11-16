@@ -21,7 +21,7 @@
 #include "ctree_bridge.h"
 #include "type_walker.h"
 // The generated visitor-bridge header defines the CtreeVisitor class (its member functions) and
-// the LocPiece shared struct. OUT_DIR is on this TU's include path.
+// the ArgLoc / LocPiece shared structs. OUT_DIR is on this TU's include path.
 #include "gen_facade_consts.h" // gen::NONE
 #include "gen_visitors.h"
 #include "wire.h"
@@ -45,12 +45,6 @@ rust::Slice<const uint32_t> slice_of(const std::vector<uint32_t> &v) {
 rust::Slice<const uint64_t> slice_of(const std::vector<uint64_t> &v) {
   return v.empty() ? rust::Slice<const uint64_t>()
                    : rust::Slice<const uint64_t>(v.data(), v.size());
-}
-
-// Same borrow, for a scattered local's LocPiece fragments.
-rust::Slice<const LocPiece> slice_of(const std::vector<LocPiece> &v) {
-  return v.empty() ? rust::Slice<const LocPiece>()
-                   : rust::Slice<const LocPiece>(v.data(), v.size());
 }
 
 // l_lvar flag bits: argument, return-value slot, captured by reference.
@@ -228,63 +222,53 @@ struct walker_t {
                        (lvar.is_result_var() ? LVAR_IS_RESULT : 0u) |
                        (lvar.is_used_byref() ? LVAR_IS_USED_BYREF : 0u);
       const vdloc_t &loc = lvar.location;
-      uint32_t atype = static_cast<uint32_t>(loc.atype());
-      uint32_t reg1 = 0;
-      uint32_t reg2 = 0;
-      int64_t sval = 0;
-      std::vector<LocPiece> pieces;
-      // vdloc_t is a tagged union over storage kind; only the fields the matching ALOC_*
-      // below populates are meaningful, the rest stay at their zero default.
+      // vdloc_t is a tagged union over storage kind; only the fields the matching ALOC_* below
+      // populates are meaningful. Its register number spans the whole field and carries no
+      // in-register offset, so regoff stays 0.
+      ArgLoc location{};
+      location.atype = static_cast<uint32_t>(loc.atype());
       switch (loc.atype()) {
       case ALOC_STACK:
-        sval = static_cast<int64_t>(lvar.get_stkoff());
+        location.sval = static_cast<int64_t>(lvar.get_stkoff());
         break;
       case ALOC_REG1:
-        reg1 = static_cast<uint32_t>(loc.reg1());
+        location.reg1 = static_cast<uint32_t>(loc.reg1());
         break;
       case ALOC_REG2:
-        reg1 = static_cast<uint32_t>(loc.reg1());
-        reg2 = static_cast<uint32_t>(loc.reg2());
+        location.reg1 = static_cast<uint32_t>(loc.reg1());
+        location.reg2 = static_cast<uint32_t>(loc.reg2());
         break;
       case ALOC_RREL: {
         const rrel_t &rr = loc.get_rrel();
-        reg1 = static_cast<uint32_t>(rr.reg);
-        sval = static_cast<int64_t>(rr.off);
+        location.reg1 = static_cast<uint32_t>(rr.reg);
+        location.sval = static_cast<int64_t>(rr.off);
         break;
       }
       case ALOC_STATIC:
-        sval = static_cast<int64_t>(loc.get_ea());
+        location.sval = static_cast<int64_t>(ea_wire(loc.get_ea()));
         break;
-      case ALOC_DIST: {
-        // A value scattered across multiple registers/stack slots; flatten each fragment into
-        // its own LocPiece instead of the single reg1/reg2/sval triple above.
-        const scattered_aloc_t &sc = loc.scattered();
-        pieces.reserve(sc.size());
-        for (const argpart_t &part : sc) {
-          LocPiece piece;
+      case ALOC_DIST:
+        for (const argpart_t &part : loc.scattered()) {
+          LocPiece piece{};
           piece.atype = static_cast<uint32_t>(part.atype());
-          piece.reg = 0;
-          piece.sval = 0;
           if (part.is_reg1())
             piece.reg = static_cast<uint32_t>(part.reg1());
           else if (part.is_stkoff())
             piece.sval = static_cast<int64_t>(part.stkoff());
           else if (part.is_ea())
-            piece.sval = static_cast<int64_t>(part.get_ea());
+            piece.sval = static_cast<int64_t>(ea_wire(part.get_ea()));
           piece.off = part.off;
           piece.size = part.size;
-          pieces.push_back(piece);
+          location.pieces.push_back(piece);
         }
         break;
-      }
       default:
         break; // ALOC_NONE / ALOC_CUSTOM: atype alone carries it
       }
       uint32_t ty = bridge::visit_walker_ty(type_walker, lvar.tif);
       nodes->l_lvar(lossy_str(lvar.name.c_str(), lvar.name.length()), ty, flags,
                     static_cast<uint32_t>(lvar.width),
-                    lossy_str(lvar.cmt.c_str(), lvar.cmt.length()), atype, reg1, reg2, sval,
-                    slice_of(pieces));
+                    lossy_str(lvar.cmt.c_str(), lvar.cmt.length()), location);
     }
   }
 };

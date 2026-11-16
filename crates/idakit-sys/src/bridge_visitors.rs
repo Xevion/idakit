@@ -102,7 +102,10 @@ impl CtreeVisitor {
     }
 }
 
-pub use ffi::{EnumConstInfo, FrameVar, FrameWalk, LocPiece, MemberInfo, cfunc_walk_ctree};
+pub use ffi::{
+    ArgLoc, EnumConstInfo, FrameVar, FrameWalk, FuncArg, LocPiece, MemberInfo, SpoiledReg,
+    cfunc_walk_ctree,
+};
 
 /// Walk the local type named `name` into `sink` via the `cxx` opaque visitor; returns the root
 /// handle, or `None` when no such type exists (or a name was not valid UTF-8, surfaced as a thrown

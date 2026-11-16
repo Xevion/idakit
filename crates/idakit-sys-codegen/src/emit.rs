@@ -159,7 +159,7 @@ impl ArgTy {
                 let id = format_ident!("{name}");
                 quote!(#id)
             }
-            Self::ExternRef(name) => {
+            Self::ExternRef(name) | Self::StructRef(name) => {
                 let id = format_ident!("{name}");
                 quote!(&#id)
             }
@@ -185,20 +185,27 @@ impl ArgTy {
             Self::ExternRef(name) => format!("const ::{}&", ExternTy::cxx_name_of(name)),
             Self::F64 => "double".into(),
             Self::SliceStruct(name) => format!("rust::Slice<const {name}>"),
+            Self::StructRef(name) => format!("const {name} &"),
             Self::VisitorMut(name) => format!("{name} &"),
         };
         format!("{ty} {arg_name}")
     }
 
-    /// `self`'s Rust token, `ffi_qualified` prefixing a [`ArgTy::SliceStruct`]'s struct name with
-    /// `ffi::` for use outside `mod ffi` (the sink trait and the visitor's forwarding impl); inside
-    /// `mod ffi` the bare name already resolves, so callers there pass `false`.
+    /// `self`'s Rust token, `ffi_qualified` prefixing a shared struct's name with `ffi::` for use
+    /// outside `mod ffi` (the sink trait and the visitor's forwarding impl); inside `mod ffi` the
+    /// bare name already resolves, so callers there pass `false`.
     pub(crate) fn visitor_rust(&self, ffi_qualified: bool) -> TokenStream {
-        if let (true, Self::SliceStruct(name)) = (ffi_qualified, self) {
-            let id = format_ident!("{name}");
-            return quote!(&[ffi::#id]);
+        match (ffi_qualified, self) {
+            (true, Self::SliceStruct(name)) => {
+                let id = format_ident!("{name}");
+                quote!(&[ffi::#id])
+            }
+            (true, Self::StructRef(name)) => {
+                let id = format_ident!("{name}");
+                quote!(&ffi::#id)
+            }
+            _ => self.rust(),
         }
-        self.rust()
     }
 }
 
@@ -592,9 +599,9 @@ impl FnSpec {
 
 impl VisitorMethod {
     /// `#[allow(clippy::too_many_arguments)]` on all three faces once the arg count crosses
-    /// clippy's default threshold of 7 (the visitor's `&mut self` receiver doesn't count).
+    /// clippy's default threshold of 7, which counts the `&mut self` receiver.
     pub(crate) fn too_many_args_allow(&self) -> Option<TokenStream> {
-        (self.args.len() > 7).then(|| quote!(#[allow(clippy::too_many_arguments)]))
+        (self.args.len() >= 7).then(|| quote!(#[allow(clippy::too_many_arguments)]))
     }
 }
 

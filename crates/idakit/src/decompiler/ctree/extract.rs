@@ -17,15 +17,12 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use snafu::Snafu;
 use strum::VariantArray;
 
-use super::node::{
-    Case, ExpressionId, ExpressionKind, Local, LocalId, LocalLocation, LocationPiece, StatementId,
-    StatementKind,
-};
+use super::node::{Case, ExpressionId, ExpressionKind, Local, LocalId, StatementId, StatementKind};
 use super::ops::{AssignmentOp, BinaryOp, UnaryOp};
 use super::tree::{Ctree, CtreeBuilder};
 use crate::address::Address;
 use crate::arena::Idx;
-use crate::types::{SinkAdapter, TypeBuilder, TypeSink, raw, tid};
+use crate::types::{SinkAdapter, StorageLocation, TypeBuilder, TypeSink, raw, tid};
 
 /// A structural `ctype_t` tag the generic operator callback dispatches by name.
 ///
@@ -67,6 +64,13 @@ pub enum ExtractError {
     ScalarTooWide {
         /// The over-wide byte count.
         bytes: u32,
+    },
+
+    /// A function prototype carried a calling convention outside the SDK's encoding.
+    #[snafu(display("calling convention {raw:#x} is not a valid callcnv_t"))]
+    InvalidCallingConvention {
+        /// The undecodable raw `callcnv_t`.
+        raw: u32,
     },
 
     /// Aggregate extraction left type placeholders that were never filled.
@@ -384,15 +388,8 @@ impl CallbackBuilder {
         if let Some(e) = self.error.take() {
             return Err(e);
         }
-        // Type-side failures the builder recorded but can't name (it is error-type-agnostic):
-        // an over-wide scalar left a placeholder in its place, or a named type was referenced
-        // but never filled (it would stay `TypeShape::Unknown`). Surface them, don't ship a gap.
-        if let Some(bytes) = self.b.types().too_wide() {
-            return Err(ExtractError::ScalarTooWide { bytes });
-        }
-        let unfilled = self.b.types().unfilled();
-        if unfilled != 0 {
-            return Err(ExtractError::UnfilledType { count: unfilled });
+        if let Some(e) = self.b.types().failure() {
+            return Err(e);
         }
         Ok(self.b.finish(sid(root)))
     }
@@ -442,8 +439,26 @@ impl idakit_sys::TypeWalkSink for CallbackBuilder {
     fn array(&mut self, elem: u32, nelems: u64, size: u64, has_size: u32) -> u32 {
         idakit_sys::TypeWalkSink::array(&mut SinkAdapter(self), elem, nelems, size, has_size)
     }
-    fn func(&mut self, ret: u32, params: &[u32], vararg: u32) -> u32 {
-        idakit_sys::TypeWalkSink::func(&mut SinkAdapter(self), ret, params, vararg)
+    fn func(
+        &mut self,
+        ret: u32,
+        params: &[idakit_sys::FuncArg],
+        cc: u32,
+        flags: u32,
+        retloc: &idakit_sys::ArgLoc,
+        stkargs: u64,
+        spoiled: &[idakit_sys::SpoiledReg],
+    ) -> u32 {
+        idakit_sys::TypeWalkSink::func(
+            &mut SinkAdapter(self),
+            ret,
+            params,
+            cc,
+            flags,
+            retloc,
+            stkargs,
+            spoiled,
+        )
     }
     fn opaque(&mut self, name: String) -> u32 {
         idakit_sys::TypeWalkSink::opaque(&mut SinkAdapter(self), name)
@@ -651,21 +666,9 @@ impl idakit_sys::CtreeSink for CallbackBuilder {
         flags: u32,
         width: u32,
         comment: String,
-        atype: u32,
-        reg1: u32,
-        reg2: u32,
-        sval: i64,
-        pieces: &[idakit_sys::LocPiece],
+        location: &idakit_sys::ArgLoc,
     ) {
-        let pieces = pieces
-            .iter()
-            .map(|p| LocationPiece {
-                location: LocalLocation::from_argloc(p.atype, p.reg, 0, p.sval, Vec::new()),
-                offset: p.off,
-                size: p.size,
-            })
-            .collect();
-        let location = LocalLocation::from_argloc(atype, reg1, reg2, sval, pieces);
+        let location = StorageLocation::from_wire(location);
         let comment = (!comment.is_empty()).then_some(comment);
         let local = Local {
             name,
@@ -711,7 +714,8 @@ mod tests {
     use idakit_sys as sys;
 
     use super::*;
-    use crate::types::{TypeMember, TypeShape};
+    use crate::function::CallingConvention;
+    use crate::types::{CallType, FunctionTypeFlags, SpoiledRegister, TypeMember, TypeShape};
 
     /// Raw operator-tag discriminants used by the operator tests.
     const COT_ASGADD: u32 = 6;
@@ -1088,7 +1092,7 @@ mod tests {
             is_byref: false,
             width: 4,
             comment: None,
-            location: LocalLocation::Stack(-4),
+            location: StorageLocation::Stack(-4),
         });
         let v = cb.var(0, 0, it);
         let s = cb.expression_statement(0, v);
@@ -1099,7 +1103,7 @@ mod tests {
         let lv = tree.local(*id);
         assert!(lv.name == "argc");
         assert!(lv.is_arg);
-        assert!(lv.location == LocalLocation::Stack(-4));
+        assert!(lv.location == StorageLocation::Stack(-4));
     }
 
     /// Drive the [`idakit_sys::CtreeSink`] node callbacks that finalized decompiler output rarely
@@ -1177,7 +1181,32 @@ mod tests {
         let int = int_ty(&mut cb);
 
         let arr = TypeWalkSink::array(&mut cb, int, 3, 12, 1);
-        let func = TypeWalkSink::func(&mut cb, int, &[int, int], 0);
+        let reg = |reg1| sys::ArgLoc {
+            atype: 3,
+            reg1,
+            reg2: 0,
+            regoff: 0,
+            sval: 0,
+            pieces: Vec::new(),
+        };
+        let params = [
+            sys::FuncArg {
+                name: "argc".into(),
+                comment: String::new(),
+                ty: int,
+                flags: 0,
+                location: reg(7),
+            },
+            sys::FuncArg {
+                name: String::new(),
+                comment: "out".into(),
+                ty: int,
+                flags: 0x2,
+                location: reg(6),
+            },
+        ];
+        let spoiled = [sys::SpoiledReg { reg: 1, size: 8 }];
+        let func = TypeWalkSink::func(&mut cb, int, &params, 0x30, 0x0141, &reg(0), 16, &spoiled);
         let opq = TypeWalkSink::opaque(&mut cb, "Handle".into());
 
         let node = TypeWalkSink::named_ref(&mut cb, "Node".into());
@@ -1236,10 +1265,36 @@ mod tests {
             tree.type_of(tid(arr)).shape,
             TypeShape::Array { .. }
         ));
-        assert!(matches!(
-            tree.type_of(tid(func)).shape,
-            TypeShape::Function { .. }
-        ));
+        assert!(
+            let TypeShape::Function {
+                params,
+                calling_convention: Some(CallingConvention::Cdecl),
+                flags,
+                call_type: CallType::Near,
+                return_location: StorageLocation::Register { register: 0, offset: 0 },
+                stack_argument_size: 16,
+                spoiled,
+                ..
+            } = &tree.type_of(tid(func)).shape
+        );
+        assert!(*flags == FunctionTypeFlags::SPOILED | FunctionTypeFlags::LOCATIONS);
+        assert!(
+            spoiled
+                == &[SpoiledRegister {
+                    register: 1,
+                    size: 8
+                }]
+        );
+        assert!(params[0].name.as_deref() == Some("argc") && params[0].comment.is_none());
+        assert!(
+            params[0].location
+                == StorageLocation::Register {
+                    register: 7,
+                    offset: 0
+                }
+        );
+        assert!(params[1].name.is_none() && params[1].comment.as_deref() == Some("out"));
+        assert!(params[1].is_hidden());
         assert!(let TypeShape::Opaque(name) = &tree.type_of(tid(opq)).shape);
         assert!(name == "Handle");
         assert!(let TypeShape::Struct { name, members, .. } = &tree.type_of(tid(node)).shape);

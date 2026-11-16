@@ -326,11 +326,7 @@ fn a_function_prototype_canonicalizes() {
         ptr(&mut table, ch, 8)
     };
     let proto = table.intern(TypeValue {
-        shape: TypeShape::Function {
-            ret: int,
-            params: vec![cstr],
-            varargs: true,
-        },
+        shape: TypeShape::test_function(int, vec![cstr], true),
         size: None,
     });
     let c = canonicalize(&table, proto, CanonicalOptions::strict());

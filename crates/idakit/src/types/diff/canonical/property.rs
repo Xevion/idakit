@@ -548,11 +548,7 @@ fn materialize_spec(spec: &TypeSpec, table: &mut TypeTable, decl_ids: &[TypeId])
                 .map(|p| materialize_spec(p, table, decl_ids))
                 .collect();
             table.intern(TypeValue {
-                shape: TypeShape::Function {
-                    ret,
-                    params,
-                    varargs: *varargs,
-                },
+                shape: TypeShape::test_function(ret, params, *varargs),
                 size: None,
             })
         }
@@ -763,11 +759,7 @@ fn embed_canonical(c: &CanonicalType, table: &mut TypeTable, stack: &mut Vec<Typ
                 .map(|p| embed_canonical(p, table, stack))
                 .collect();
             table.intern(TypeValue {
-                shape: TypeShape::Function {
-                    ret,
-                    params,
-                    varargs: *varargs,
-                },
+                shape: TypeShape::test_function(ret, params, *varargs),
                 size: None,
             })
         }

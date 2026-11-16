@@ -31,5 +31,12 @@ pub const TY: Domain = Domain {
         "Alignment source: the `TAPTR_*` modifier values, in `PointerModifier`'s discriminant \
          order."
             pointer_modifier_ids() -> Vec(U32);
+        "Alignment source: every independent `FTI_*` bit, in `FunctionTypeFlags`'s declaration \
+         order."
+            function_type_flag_ids() -> Vec(U32);
+        "Alignment source: the `FTI_*CALL` values, in `CallType`'s discriminant order."
+            call_type_ids() -> Vec(U32);
+        "Alignment source: every `FAI_*` bit, in `ParameterFlags`'s declaration order."
+            parameter_flag_ids() -> Vec(U32);
     },
 };

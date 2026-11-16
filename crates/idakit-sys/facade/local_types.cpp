@@ -1,7 +1,8 @@
 // Hand-written Custom bodies for the generated local-type read domain (namespace gen).
 // Render a function's prototype and name the local type at an ordinal; both throw when the SDK has
 // no value, which cxx maps to a Rust Err. The ordinal-limit passthrough is templated, not here.
-// The *_ids emitters name each tattr context's SDK bits, so a renumbering fails idakit's tests.
+// The *_ids emitters name the SDK's tattr, FTI_, and FAI_ values, so a renumbering fails idakit's
+// tests.
 
 #include <ida.hpp>
 #include <pro.h>
@@ -67,6 +68,22 @@ rust::Vec<uint32_t> pointer_attribute_ids() { return collect({TAPTR_SHIFTED}); }
 // idakit PointerModifier.
 rust::Vec<uint32_t> pointer_modifier_ids() {
   return collect({TAPTR_PTR32, TAPTR_PTR64, TAPTR_RESTRICT});
+}
+
+// idakit FunctionTypeFlags.
+rust::Vec<uint32_t> function_type_flag_ids() {
+  return collect({FTI_SPOILED, FTI_NORET, FTI_PURE, FTI_HIGH, FTI_STATIC, FTI_VIRTUAL, FTI_ARGLOCS,
+                  FTI_EXPLOCS, FTI_CONST, FTI_CTOR, FTI_DTOR});
+}
+
+// idakit CallType.
+rust::Vec<uint32_t> call_type_ids() {
+  return collect({FTI_DEFCALL, FTI_NEARCALL, FTI_FARCALL, FTI_INTCALL});
+}
+
+// idakit ParameterFlags.
+rust::Vec<uint32_t> parameter_flag_ids() {
+  return collect({FAI_HIDDEN, FAI_RETPTR, FAI_STRUCT, FAI_ARRAY, FAI_UNUSED});
 }
 
 } // namespace gen

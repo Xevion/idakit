@@ -449,17 +449,13 @@ fn canon(
                 size: opts.size(value.size),
             }
         }
-        TypeShape::Function {
-            ret,
-            params,
-            varargs,
-        } => CanonicalType::Function {
+        shape @ TypeShape::Function { ret, params, .. } => CanonicalType::Function {
             ret: Box::new(canon(table, *ret, opts, stack, false)),
             params: params
                 .iter()
-                .map(|p| canon(table, *p, opts, stack, false))
+                .map(|p| canon(table, p.ty, opts, stack, false))
                 .collect(),
-            varargs: *varargs,
+            varargs: shape.is_variadic(),
         },
         TypeShape::Typedef { name, underlying } => CanonicalType::Typedef {
             name: name.clone(),

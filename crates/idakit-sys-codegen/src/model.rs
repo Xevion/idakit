@@ -234,6 +234,8 @@ pub enum ArgTy {
     F64,
     /// A borrowed slice of a shared struct, by name (`&[Name]` / `rust::Slice<const Name>`).
     SliceStruct(&'static str),
+    /// A borrowed shared struct, by name (`&Name` / `const Name &`).
+    StructRef(&'static str),
     /// A borrowed mutable reference to an `extern "Rust"` opaque visitor, by name (`&mut Name` /
     /// `Name &`).
     VisitorMut(&'static str),
@@ -244,7 +246,6 @@ pub enum ArgTy {
 impl ArgTy {
     pub const Bool: Self = Self::Scalar(Scalar::Bool);
     pub const I32: Self = Self::Scalar(Scalar::I32);
-    pub const I64: Self = Self::Scalar(Scalar::I64);
     pub const U32: Self = Self::Scalar(Scalar::U32);
     pub const U64: Self = Self::Scalar(Scalar::U64);
     pub const Usize: Self = Self::Scalar(Scalar::Usize);

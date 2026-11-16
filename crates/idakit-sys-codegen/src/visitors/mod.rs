@@ -13,8 +13,10 @@ mod ctree;
 mod typewalk;
 
 use super::model::*;
-use ctree::{CTREE_SINK, LOC_PIECE};
-use typewalk::{ENUM_CONST_INFO, FRAME_VAR, FRAME_WALK, MEMBER_INFO, TYPE_WALK_SINK};
+use ctree::{ARG_LOC, CTREE_SINK, LOC_PIECE};
+use typewalk::{
+    ENUM_CONST_INFO, FRAME_VAR, FRAME_WALK, FUNC_ARG, MEMBER_INFO, SPOILED_REG, TYPE_WALK_SINK,
+};
 
 /// The visitor bridge's `extern "C++"` driver block: the four standalone type-walk entry points
 /// plus the ctree walk's `cfunc_walk_ctree`, all hand-written in `facade/ctree_bridge.cpp` /
@@ -67,11 +69,14 @@ const DRIVERS: &[VisitorDriverFn] = &[
     },
 ];
 
-/// The whole visitor bridge, built once: the five shared structs, the ctree and tinfo sink pairs,
+/// The whole visitor bridge, built once: the shared structs, the ctree and tinfo sink pairs,
 /// and the shared driver block.
 pub const VISITOR_BRIDGE: VisitorBridge = VisitorBridge {
     structs: &[
         LOC_PIECE,
+        ARG_LOC,
+        FUNC_ARG,
+        SPOILED_REG,
         MEMBER_INFO,
         ENUM_CONST_INFO,
         FRAME_VAR,
