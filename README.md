@@ -112,6 +112,24 @@ A handful of shapes recur across every domain:
   - You don't have to bring one, though: it can analyze a binary from scratch.
   - A 32-bit binary is fine, since the limitation is the database format, not the target.
 
+## Supported IDA versions
+
+idakit supports the newest IDA minor release and the one before it, currently 9.4 and 9.3. The
+window rolls: when a new minor ships, support for it is added and the oldest is retired, so
+9.3 goes when 9.5 arrives. IDA has been shipping a minor about twice a year, which gives each
+one roughly ten months of support.
+
+Both minors in the window build from the same source. The build detects your installed version
+and fetches the matching SDK headers, so nothing selects a version by hand. CI runs the newest
+minor on every platform and the previous one on Linux, macOS, and Windows.
+
+A change to the window follows semver:
+
+- Retiring a minor is a breaking release, since it stops a build that worked before.
+- Adding a minor is a feature release, unless the new SDK grows an enum idakit mirrors. Those
+  enums are exhaustive, so a new variant breaks a downstream `match` and makes the release
+  breaking too.
+
 ## Building
 
 idakit locates your IDA install automatically, in order:

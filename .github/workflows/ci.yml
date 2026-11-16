@@ -56,22 +56,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The support window is the newest IDA minor plus the one before it. The newest runs every
+        # platform; the previous one keeps a leg per OS, since its breakage so far has followed the
+        # toolchain rather than the architecture.
         include:
-          - { runner: ubuntu-24.04, platform: linux-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
-          - { runner: ubuntu-24.04-arm, platform: linux-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
-          - { runner: macos-15-intel, platform: macos-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
-          - { runner: macos-15, platform: macos-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
-          - { runner: windows-2022, platform: windows-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           - { runner: ubuntu-24.04, platform: linux-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: ubuntu-24.04-arm, platform: linux-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: macos-15-intel, platform: macos-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: macos-15, platform: macos-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: windows-2022, platform: windows-x64, version: 9.4.260714, sdk-tag: v9.4.0-release }
           - { runner: windows-11-arm, platform: windows-arm64, version: 9.4.260714, sdk-tag: v9.4.0-release }
+          - { runner: ubuntu-24.04, platform: linux-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: macos-15, platform: macos-arm64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
+          - { runner: windows-2022, platform: windows-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release }
           # The floating label runs ahead of the pinned image, so the next Ubuntu's breakage shows up
           # here instead of surprising every job when the pin moves. Reports without gating the run.
-          - { runner: ubuntu-latest, platform: linux-x64, version: 9.3.260421sp2, sdk-tag: v9.3.1-release, canary: true }
-          # - { runner: ubuntu-24.04, platform: linux-x64, version: 9.2.250908, sdk-tag: v9.2.0-release }
+          - { runner: ubuntu-latest, platform: linux-x64, version: 9.4.260714, sdk-tag: v9.4.0-release, canary: true }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
@@ -259,9 +259,9 @@ jobs:
       - name: Fetch IDA runtime
         uses: $/.github/actions/fetch-runtime
         with:
-          version: 9.3.260421sp2
+          version: 9.4.260714
           platform: linux-x64
-          sdk-tag: v9.3.1-release
+          sdk-tag: v9.4.0-release
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Pedantic warnings
