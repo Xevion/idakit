@@ -651,7 +651,7 @@ impl TypeExpr {
                 buf.extend_from_slice(&count.to_le_bytes());
                 buf.push(u8::from(*varargs));
                 // 0 tells the facade to leave the target's default convention.
-                let cc_raw = cc.map_or(0u16, |c| u16::from(u8::from(c)));
+                let cc_raw = cc.map_or(0u32, u32::from);
                 buf.extend_from_slice(&cc_raw.to_le_bytes());
                 for p in params.iter().take(count as usize) {
                     encode_len_prefixed(buf, p.name.as_deref().unwrap_or(""));
@@ -1065,12 +1065,12 @@ mod tests {
     #[case(named("Foo").const_().pointer(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 8, 6])]
     #[case(named("Foo").pointer().const_(), vec![4, 3, 0, 0, 0, b'F', b'o', b'o', 6, 8])]
     // A function pushes its return then each param, then FUNCTION (10) with a u32 count, a u8
-    // varargs flag, a u16 cc (0 here), then one u32-length-prefixed name per param.
-    #[case(function(void()).build(), vec![0, 10, 0, 0, 0, 0, 0, 0, 0])]
+    // varargs flag, a u32 cc (0 here), then one u32-length-prefixed name per param.
+    #[case(function(void()).build(), vec![0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0])]
     #[case(function(int32()).arg(int32()).build(),
-        vec![2, 4, 1, 2, 4, 1, 10, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])]
+        vec![2, 4, 1, 2, 4, 1, 10, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])]
     #[case(function(int32()).named_arg("a", uint8()).variadic().build(),
-        vec![2, 4, 1, 2, 1, 0, 10, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, b'a'])]
+        vec![2, 4, 1, 2, 1, 0, 10, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, b'a'])]
     fn serializes_to_postfix_bytecode(#[case] recipe: TypeExpr, #[case] expected: Vec<u8>) {
         assert!(recipe.serialize() == expected);
     }
@@ -1145,7 +1145,7 @@ mod tests {
     #[test]
     fn calling_convention_reaches_the_recipe() {
         // The only difference between the two builders is the cc, so their serialized recipes must
-        // differ; an unset cc encodes as 0, a set one as its CM_CC_* byte.
+        // differ; an unset cc encodes as 0, a set one as its little-endian CM_CC_* code.
         let default = function(int32()).arg(int32()).build().serialize();
         let stdcall = function(int32())
             .arg(int32())
@@ -1156,12 +1156,12 @@ mod tests {
             default != stdcall,
             "a set cc must change the encoded recipe"
         );
-        // The stdcall byte appears only in the cc-carrying recipe; the default's fixed fields never
+        // The stdcall code appears only in the cc-carrying recipe; the default's fixed fields never
         // produce it (this recipe has no param names to collide with it).
+        let code = u32::from(CallingConvention::Stdcall).to_le_bytes();
         assert!(
-            stdcall.contains(&u8::from(CallingConvention::Stdcall))
-                && !default.contains(&u8::from(CallingConvention::Stdcall)),
-            "the stdcall byte should appear only in the cc-carrying recipe"
+            stdcall.windows(4).any(|w| w == code) && !default.windows(4).any(|w| w == code),
+            "the stdcall code should appear only in the cc-carrying recipe"
         );
     }
 

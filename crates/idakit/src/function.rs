@@ -10,8 +10,6 @@
 //! mutates one field, and re-applies; a failure is a typed
 //! [`TypeWriteError`](crate::types::TypeWriteError).
 
-use std::ffi::c_int;
-
 use idakit_sys::{self as sys, RenameFlags};
 use serde::{Deserialize, Serialize};
 
@@ -32,8 +30,8 @@ use crate::xref::Xrefs;
 mod signature;
 
 pub use idakit_sys::FuncFlags;
-pub use signature::CallingConvention;
 use signature::sig_result;
+pub use signature::{CallingConvention, InvalidCallingConvention, UserCallKind};
 
 impl Database {
     /// A typed cursor at `address`.
@@ -640,10 +638,7 @@ impl FunctionEdit<'_> {
     #[doc(alias("set_cc"))]
     pub fn set_calling_convention(&mut self, cc: CallingConvention) -> Result<()> {
         let entry = self.inner.address();
-        let result = self
-            .inner
-            .db_mut()
-            .func_set_cc(entry, c_int::from(u8::from(cc)));
+        let result = self.inner.db_mut().func_set_cc(entry, u32::from(cc));
         let out = sig_result(result.code, entry, None, &result.reason);
         self.inner.queued(out, PendingInvalidation::Dependents)
     }

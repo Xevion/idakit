@@ -276,7 +276,7 @@ impl Database {
             = sys::func_set_argtype(address.get(), idx, buf);
         fn func_rename_arg(&mut self, address: Address, idx: usize, name: &str) -> sys::SigWriteResult
             = sys::func_rename_arg(address.get(), idx, name);
-        fn func_set_cc(&mut self, address: Address, cc: c_int) -> sys::TypeWriteResult
+        fn func_set_cc(&mut self, address: Address, cc: u32) -> sys::TypeWriteResult
             = sys::func_set_cc(address.get(), cc);
         fn func_prepend_this(&mut self, address: Address, buf: &[u8]) -> sys::TypeWriteResult
             = sys::func_prepend_this(address.get(), buf);

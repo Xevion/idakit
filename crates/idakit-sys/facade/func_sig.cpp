@@ -131,7 +131,7 @@ SigWriteResult func_rename_arg(uint64_t addr, size_t idx, rust::Str name) {
 
 // Set the calling convention of the function type at `addr` to the raw CM_CC_* code `cc`,
 // then rebuild and re-apply.
-TypeWriteResult func_set_cc(uint64_t addr, int32_t cc) {
+TypeWriteResult func_set_cc(uint64_t addr, uint32_t cc) {
   try {
     TypeWriteResult out{};
     out.code = guarded<int>(SIG_APPLY, true, [&]() -> int {

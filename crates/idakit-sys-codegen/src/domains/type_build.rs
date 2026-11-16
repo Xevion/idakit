@@ -253,7 +253,7 @@ pub const TYPE_BUILD: Domain = Domain {
             func_rename_arg(ea: U64, idx: Usize, name: Str) -> Shared("SigWriteResult");
         "Set the calling convention of the function type at `ea` to the raw `CM_CC_*` code `cc`, \
          then rebuild and re-apply."
-            func_set_cc(ea: U64, cc: I32) -> Shared("TypeWriteResult");
+            func_set_cc(ea: U64, cc: U32) -> Shared("TypeWriteResult");
         "Insert an implicit `this` parameter of the recipe type at index 0, then rebuild and \
          re-apply."
             func_prepend_this(ea: U64, recipe: Bytes) -> Shared("TypeWriteResult");
@@ -348,11 +348,10 @@ pub const TYPE_BUILD: Domain = Domain {
         "Apply the built `handle` at `ea` (`apply_tinfo`, `TINFO_DEFINITE | flags`). `code` is \
          `TYPE_OK`/`_ERR_APPLY`; the handle is not consumed."
             tinfo_apply(ea: U64, handle: ExternRef("TInfo"), flags: I32) -> Shared("TypeWriteResult");
-        "This SDK's `CM_CC_*` values in idakit `CallingConvention`'s discriminant order, an \
-         alignment source pinning the Rust mirror to this SDK build in a test. Emitted in the \
-         raw pre-shifted high-nibble space the SDK stores them in (`CM_CC_CDECL` is `0x30`); \
-         covers only the modelled plain conventions."
-            cm_cc_ids() -> Vec(U8);
+        "This SDK's named `CM_CC_*` codes in a fixed order, the alignment source pinning idakit's \
+         `CallingConvention` codec to the header in a test. Includes the three codes that are not \
+         conventions (`INVALID`, `SPOILED`, `RESERVE3`)."
+            cm_cc_ids() -> Vec(U32);
         "This SDK's `FRB_*` value-type nibbles in idakit `NumberFormat`'s discriminant order, an \
          alignment source for a mirror test. Covers only the modelled non-info-carrying subset."
             frb_vtype_ids() -> Vec(U32);

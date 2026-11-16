@@ -215,7 +215,7 @@ int build_recipe(const uint8_t *buf, size_t len, tinfo_t &out) {
     case RECIPE_FUNCTION: {
       uint64_t nparams = reader.uint_le(4); // param count is a 4-byte field
       uint8_t varargs = reader.u8();
-      uint64_t cc = reader.uint_le(2); // calling-convention code is a 2-byte field
+      uint64_t cc = reader.uint_le(4); // callcnv_t is a 4-byte field
       // Each param entry costs at least its own 4-byte length prefix, so reject a count the rest
       // of the buffer cannot hold before allocating on it.
       if (!reader.ok || nparams > (reader.len - reader.pos) / 4)
@@ -278,13 +278,16 @@ bool load_named_type(const char *type_name, tinfo_t &tif) {
 // every real TERR_* code (TERR_COUNT is a count, not a code). Header constants only, no kernel
 // needed.
 
-// idakit CallingConvention. Raw pre-shifted high-nibble space, matching func_set_cc, which casts
-// the code straight to callcnv_t without masking or shifting.
-rust::Vec<uint8_t> cm_cc_ids() {
-  rust::Vec<uint8_t> out;
-  for (callcnv_t c : {CM_CC_UNKNOWN, CM_CC_CDECL, CM_CC_STDCALL, CM_CC_PASCAL, CM_CC_FASTCALL,
-                      CM_CC_THISCALL, CM_CC_SWIFT, CM_CC_GOLANG})
-    out.push_back(static_cast<uint8_t>(c));
+// idakit CallingConvention's codec table: every named CM_CC_* code, including the three that
+// are not conventions, so the Rust side pins what each decodes to.
+rust::Vec<uint32_t> cm_cc_ids() {
+  rust::Vec<uint32_t> out;
+  for (callcnv_t c :
+       {CM_CC_UNKNOWN, CM_CC_VOIDARG, CM_CC_CDECL, CM_CC_ELLIPSIS, CM_CC_STDCALL, CM_CC_PASCAL,
+        CM_CC_FASTCALL, CM_CC_THISCALL, CM_CC_SWIFT, CM_CC_GOLANG, CM_CC_SPECIALE, CM_CC_SPECIALP,
+        CM_CC_SPECIAL, CM_CC_LAST_USERCALL, CM_CC_GOSTK, CM_CC_FIRST_PLAIN_CUSTOM, CM_CC_INVALID,
+        CM_CC_SPOILED, CM_CC_RESERVE3})
+    out.push_back(c);
   return out;
 }
 
